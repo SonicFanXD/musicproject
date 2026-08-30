@@ -9,9 +9,11 @@ class AudioEngine: NSObject, ObservableObject {
     @Published var currentSong: Song?
     @Published var currentRouteName: String = "Altavoz"
 
+    // Cola de reproducción
     private var playlist: [Song] = []
     private(set) var currentIndex: Int = 0
 
+    // Motor
     private let engine = AVAudioEngine()
     private let playerNode = AVAudioPlayerNode()
     private var audioFile: AVAudioFile?
@@ -19,8 +21,12 @@ class AudioEngine: NSObject, ObservableObject {
     private var sampleRate: Double = 44100
     private var seekOffset: TimeInterval = 0
 
+    // Persistencia
     private let stateDefaultsKey = "com.aurora.playbackState"
     private var hasRestored: Bool = false
+
+    // ✅ FIX 2: Flag para evitar llamadas recursivas de playNext
+    private var isFinishing: Bool = false
 
     override init() {
         super.init()
@@ -29,14 +35,9 @@ class AudioEngine: NSObject, ObservableObject {
         observeRouteChanges()
         observeInterruptions()
         setupRemoteCommandCenter()
-        
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(applicationWillResignActive),
-            name: UIApplication.willResignActiveNotification,
-            object: nil
-        )
     }
+
+    // MARK: - Configuración inicial
 
     private func setupSession() {
         let session = AVAudioSession.sharedInstance()
@@ -54,6 +55,8 @@ class AudioEngine: NSObject, ObservableObject {
         engine.connect(playerNode, to: engine.mainMixerNode, format: nil)
     }
 
+    // MARK: - Reproducción con cola
+
     func play(song: Song, from playlist: [Song]? = nil) {
         if let playlist = playlist {
             self.playlist = playlist
@@ -67,6 +70,8 @@ class AudioEngine: NSObject, ObservableObject {
             self.playlist = [song]
             currentIndex = 0
         }
+
+        isFinishing = false
         playCurrentSong()
         saveState()
     }
@@ -98,12 +103,16 @@ class AudioEngine: NSObject, ObservableObject {
             currentSong = song
             seekOffset = 0
             isPlaying = true
+            isFinishing = false
             startDisplayTimer()
-            updateNowPlayingInfo()
+            updateNowPlayingInfo(with: song)
             saveState()
         } catch {
             print("Error al reproducir \(song.title): \(error.localizedDescription)")
-            playNext()
+            // Si falla, saltamos a la siguiente solo si no estamos terminando
+            if !isFinishing {
+                playNext()
+            }
         }
     }
 
@@ -112,7 +121,10 @@ class AudioEngine: NSObject, ObservableObject {
 
         let framesToPlay = AVAudioFrameCount(file.length - startFrame)
         guard framesToPlay > 0 else {
-            playNext()
+            // ✅ FIX 2: Solo llamamos a playNext si no estamos ya en proceso de finalizar
+            if !isFinishing {
+                playNext()
+            }
             return
         }
 
@@ -130,6 +142,8 @@ class AudioEngine: NSObject, ObservableObject {
         playerNode.play()
     }
 
+    // MARK: - Controles de cola
+
     func playNext() {
         guard !playlist.isEmpty else { return }
         let nextIndex = currentIndex + 1
@@ -138,6 +152,7 @@ class AudioEngine: NSObject, ObservableObject {
             return
         }
         currentIndex = nextIndex
+        isFinishing = false
         playCurrentSong()
     }
 
@@ -150,14 +165,17 @@ class AudioEngine: NSObject, ObservableObject {
         let prevIndex = currentIndex - 1
         guard prevIndex >= 0 else { return }
         currentIndex = prevIndex
+        isFinishing = false
         playCurrentSong()
     }
+
+    // MARK: - Pausa / Reanudar / Detener
 
     func pause() {
         playerNode.pause()
         isPlaying = false
         stopDisplayTimer()
-        updateNowPlayingInfo()
+        updateNowPlayingInfo(with: currentSong)
         saveState()
     }
 
@@ -168,8 +186,9 @@ class AudioEngine: NSObject, ObservableObject {
         }
         playerNode.play()
         isPlaying = true
+        isFinishing = false
         startDisplayTimer()
-        updateNowPlayingInfo()
+        updateNowPlayingInfo(with: currentSong)
         saveState()
     }
 
@@ -179,6 +198,7 @@ class AudioEngine: NSObject, ObservableObject {
         isPlaying = false
         currentTime = 0
         seekOffset = 0
+        isFinishing = false
         stopDisplayTimer()
     }
 
@@ -195,9 +215,11 @@ class AudioEngine: NSObject, ObservableObject {
             playerNode.pause()
         }
 
-        updateNowPlayingInfo()
+        updateNowPlayingInfo(with: currentSong)
         saveState()
     }
+
+    // MARK: - Progreso
 
     private func startDisplayTimer() {
         stopDisplayTimer()
@@ -219,17 +241,27 @@ class AudioEngine: NSObject, ObservableObject {
         currentTime = seekOffset + elapsed
     }
 
+    // MARK: - Manejo de fin de canción (FIX 2)
+
     private func handlePlaybackFinished() {
+        // Evitar ejecución múltiple
+        if isFinishing { return }
+        isFinishing = true
+
         if isPlaying {
             playNext()
         } else {
             isPlaying = false
             currentTime = 0
             stopDisplayTimer()
-            updateNowPlayingInfo()
+            updateNowPlayingInfo(with: currentSong)
             saveState()
         }
+
+        isFinishing = false
     }
+
+    // MARK: - Cambios de ruta
 
     private func observeRouteChanges() {
         NotificationCenter.default.addObserver(
@@ -262,6 +294,8 @@ class AudioEngine: NSObject, ObservableObject {
         }
     }
 
+    // MARK: - Interrupciones
+
     private func observeInterruptions() {
         NotificationCenter.default.addObserver(
             self,
@@ -289,6 +323,8 @@ class AudioEngine: NSObject, ObservableObject {
             break
         }
     }
+
+    // MARK: - Pantalla de bloqueo y Centro de Control (FIX 3: metadatos completos)
 
     private func setupRemoteCommandCenter() {
         let commandCenter = MPRemoteCommandCenter.shared()
@@ -339,21 +375,56 @@ class AudioEngine: NSObject, ObservableObject {
         }
     }
 
-    private func updateNowPlayingInfo() {
-        guard let song = currentSong else {
+    private func updateNowPlayingInfo(with song: Song?) {
+        guard let song = song else {
             MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
             return
         }
 
-       let info: [String: Any] = [
+        var info: [String: Any] = [
             MPMediaItemPropertyTitle: song.title,
             MPMediaItemPropertyPlaybackDuration: duration,
             MPNowPlayingInfoPropertyElapsedPlaybackTime: currentTime,
             MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1.0 : 0.0
         ]
 
+        // ✅ FIX 3: Leer metadatos del archivo de audio
+        let asset = AVURLAsset(url: song.url, options: nil)
+        let metadata = asset.commonMetadata
+
+        for item in metadata {
+            switch item.commonKey {
+            case .commonKeyArtist:
+                if let artist = item.value as? String {
+                    info[MPMediaItemPropertyArtist] = artist
+                }
+            case .commonKeyAlbumName:
+                if let album = item.value as? String {
+                    info[MPMediaItemPropertyAlbumTitle] = album
+                }
+            case .commonKeyTitle:
+                if let title = item.value as? String {
+                    info[MPMediaItemPropertyTitle] = title
+                }
+            case .commonKeyArtwork:
+                if let data = item.dataValue, let image = UIImage(data: data) {
+                    let artwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+                    info[MPMediaItemPropertyArtwork] = artwork
+                }
+            default:
+                break
+            }
+        }
+
+        if !playlist.isEmpty {
+            info[MPNowPlayingInfoPropertyQueueIndex] = currentIndex
+            info[MPNowPlayingInfoPropertyQueueCount] = playlist.count
+        }
+
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
     }
+
+    // MARK: - Persistencia de estado
 
     func saveState() {
         guard let song = currentSong else {
@@ -420,16 +491,12 @@ class AudioEngine: NSObject, ObservableObject {
                 isPlaying = false
             }
 
-            updateNowPlayingInfo()
+            updateNowPlayingInfo(with: song)
             hasRestored = true
         } catch {
             print("Error al restaurar estado: \(error.localizedDescription)")
             UserDefaults.standard.removeObject(forKey: stateDefaultsKey)
         }
-    }
-
-    @objc private func applicationWillResignActive() {
-        saveState()
     }
 
     deinit {
