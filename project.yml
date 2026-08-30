@@ -1,44 +1,31 @@
-```yaml
 name: AuroraPlayer
-
 options:
   bundleIdPrefix: com.aurora
+  createIntermediateGroups: true
+  usesTabs: false
+  indentWidth: 4
+  tabWidth: 4
   deploymentTarget:
-    iOS: "16.0"
+    iOS: 16.0
 
 targets:
-
   AuroraPlayer:
     type: application
     platform: iOS
-
-    deploymentTarget: "16.0"
-
     sources:
-      - path: AuroraPlayerApp.swift
-      - path: AuroraPlayer/Resources/Models.swift
-      - path: AuroraPlayer/Services/AudioEngine.swift
-      - path: AuroraPlayer/Services/FileAccessService.swift
-      - path: AuroraPlayer/Views/ContentView.swift
-      - path: AuroraPlayer/Views/FolderPickerView.swift
-      - path: AuroraPlayer/Views/PlayerBar.swift
-
+      - AuroraPlayer
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.aurora.auroraplayer
+        PRODUCT_BUNDLE_IDENTIFIER: com.aurora.player
         INFOPLIST_FILE: Info.plist
-
-        IPHONEOS_DEPLOYMENT_TARGET: "16.0"
-
-        TARGETED_DEVICE_FAMILY: "1"
-
-        SWIFT_VERSION: "5.0"
-
         CODE_SIGN_STYLE: Automatic
-
-        DEVELOPMENT_TEAM: ""
-
-        ARCHS: arm64
-
-        VALID_ARCHS: arm64
-```
+        DEVELOPMENT_TEAM: TU_TEAM_ID_AQUI
+        TARGETED_DEVICE_FAMILY: 1,2
+        ASSETCATALOG_COMPILER_LAUNCHIMAGE_NAME: LaunchScreen
+        MARKETING_VERSION: 1.0
+        CURRENT_PROJECT_VERSION: 1
+    info:
+      path: Info.plist
+      properties:
+        UIBackgroundModes: [audio]
+        UILaunchStoryboardName: LaunchScreen
