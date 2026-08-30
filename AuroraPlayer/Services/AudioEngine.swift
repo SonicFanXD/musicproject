@@ -424,8 +424,9 @@ class AudioEngine: NSObject, ObservableObject {
         // ✅ Crear una imagen por defecto para evitar el gris al pausar
         let artworkImage = UIImage(systemName: "music.note.list")?
             .withTintColor(.systemPink, renderingMode: .alwaysOriginal)
-        let artwork = artworkImage.map { MPMediaItemArtwork(boundsSize: $0.size) { _ in $0 } }
-
+        let artwork = artworkImage.map { image in
+    MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+}
         var info: [String: Any] = [
             MPMediaItemPropertyTitle: song.title,
             MPMediaItemPropertyArtist: artist,
