@@ -1,22 +1,20 @@
 name: AuroraPlayer
 options:
   bundleIdPrefix: com.aurora
-  createIntermediateGroups: true
-  usesTabs: false
-  indentWidth: 4
-  tabWidth: 4
-  deploymentTarget:
-    iOS: 16.0
-
 targets:
   AuroraPlayer:
     type: application
     platform: iOS
     deploymentTarget: 16.0
     sources:
-      - path: AuroraPlayer
-        # Aquí NO debe aparecer Info.plist como recurso
+      - AuroraPlayer
     settings:
-      base:
-        INFOPLIST_FILE: Info.plist
-        PRODUCT_BUNDLE_IDENTIFIER: com.aurora.player
+      INFOPLIST_FILE: Info.plist
+      PRODUCT_BUNDLE_IDENTIFIER: com.aurora.player
+      CODE_SIGN_STYLE: Automatic
+      DEVELOPMENT_TEAM: TU_TEAM_ID
+    info:
+      path: Info.plist
+      properties:
+        UIBackgroundModes: [audio]
+        UILaunchStoryboardName: LaunchScreen
