@@ -18,11 +18,8 @@ class AudioEngine: NSObject, ObservableObject {
     private var displayTimer: Timer?
     private var sampleRate: Double = 44100
     private var seekOffset: TimeInterval = 0
-
-    // ✅ Flag para evitar ejecuciones simultáneas de skip
     private var isChangingTrack = false
 
-    // Persistencia
     private let stateDefaultsKey = "com.aurora.playbackState"
     private var hasRestored: Bool = false
 
@@ -83,7 +80,6 @@ class AudioEngine: NSObject, ObservableObject {
             currentIndex = 0
         }
 
-        // ✅ Pequeño retraso para evitar conflictos
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
             self?.playCurrentSong()
         }
@@ -105,7 +101,6 @@ class AudioEngine: NSObject, ObservableObject {
             sampleRate = file.processingFormat.sampleRate
             duration = Double(file.length) / sampleRate
 
-            // Si la duración es 0, pasar a la siguiente
             guard duration > 0 else {
                 playNext()
                 return
@@ -157,10 +152,10 @@ class AudioEngine: NSObject, ObservableObject {
         playerNode.play()
     }
 
-    // MARK: - Controles de cola (con flag anti-crash)
+    // MARK: - Controles
 
     func playNext() {
-        guard !isChangingTrack else { return }  // ✅ Si ya está en proceso, salir
+        guard !isChangingTrack else { return }
         isChangingTrack = true
 
         guard !playlist.isEmpty else {
@@ -170,7 +165,6 @@ class AudioEngine: NSObject, ObservableObject {
 
         let nextIndex = currentIndex + 1
         guard nextIndex < playlist.count else {
-            // Fin de la lista
             stop()
             isChangingTrack = false
             return
@@ -179,7 +173,6 @@ class AudioEngine: NSObject, ObservableObject {
         currentIndex = nextIndex
         playCurrentSong()
 
-        // ✅ Liberar el flag después de un breve retraso
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
             self?.isChangingTrack = false
         }
@@ -285,7 +278,6 @@ class AudioEngine: NSObject, ObservableObject {
     }
 
     private func handlePlaybackFinished() {
-        // Si no está en medio de un cambio manual, pasar a la siguiente
         if isPlaying && !isChangingTrack {
             playNext()
         } else {
@@ -360,7 +352,7 @@ class AudioEngine: NSObject, ObservableObject {
         }
     }
 
-    // MARK: - Pantalla de bloqueo y Centro de Control
+    // MARK: - Pantalla de bloqueo
 
     private func setupRemoteCommandCenter() {
         let commandCenter = MPRemoteCommandCenter.shared()
@@ -417,16 +409,16 @@ class AudioEngine: NSObject, ObservableObject {
             return
         }
 
-        // ✅ Metadatos básicos
         let artist = song.url.deletingLastPathComponent().lastPathComponent
         let album = song.url.deletingLastPathComponent().lastPathComponent
 
-        // ✅ Crear una imagen por defecto para evitar el gris al pausar
+        // ✅ CORREGIDO: evitar el error de compilación en la línea 427
         let artworkImage = UIImage(systemName: "music.note.list")?
             .withTintColor(.systemPink, renderingMode: .alwaysOriginal)
         let artwork = artworkImage.map { image in
-    MPMediaItemArtwork(boundsSize: image.size) { _ in image }
-}
+            MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+        }
+
         var info: [String: Any] = [
             MPMediaItemPropertyTitle: song.title,
             MPMediaItemPropertyArtist: artist,
@@ -437,13 +429,13 @@ class AudioEngine: NSObject, ObservableObject {
         ]
 
         if let artwork = artwork {
-            info[MPMediaItemPropertyArtwork] = artwork  // ✅ Así no se pone gris
+            info[MPMediaItemPropertyArtwork] = artwork
         }
 
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
     }
 
-    // MARK: - Persistencia de estado
+    // MARK: - Persistencia
 
     func saveState() {
         guard let song = currentSong else {
@@ -481,7 +473,6 @@ class AudioEngine: NSObject, ObservableObject {
             self.currentIndex = 0
         }
 
-        // Reproducir desde el punto guardado
         do {
             let file = try AVAudioFile(forReading: song.url)
             audioFile = file

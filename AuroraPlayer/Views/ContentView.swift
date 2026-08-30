@@ -56,7 +56,10 @@ struct ContentView: View {
                 }
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)  // ✅ Ocupa todo el ancho y alto
+        // ✅ CORRECCIÓN: fuerza pantalla completa
+        .edgesIgnoringSafeArea(.all)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(UIColor.systemBackground))
         .onChange(of: fileAccessService.songs) { newSongs in
             if !hasRestored && !newSongs.isEmpty {
                 audioEngine.restoreState(with: newSongs)
