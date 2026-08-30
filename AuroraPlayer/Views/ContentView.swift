@@ -56,9 +56,7 @@ struct ContentView: View {
                 }
             }
         }
-        // ✅ FIX 1: Forzar que ocupe toda la pantalla (relación de aspecto)
-        .edgesIgnoringSafeArea(.all)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)  // ✅ Ocupa todo el ancho y alto
         .onChange(of: fileAccessService.songs) { newSongs in
             if !hasRestored && !newSongs.isEmpty {
                 audioEngine.restoreState(with: newSongs)

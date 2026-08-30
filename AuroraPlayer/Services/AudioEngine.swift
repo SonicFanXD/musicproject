@@ -9,11 +9,9 @@ class AudioEngine: NSObject, ObservableObject {
     @Published var currentSong: Song?
     @Published var currentRouteName: String = "Altavoz"
 
-    // Cola de reproducción
     private var playlist: [Song] = []
     private(set) var currentIndex: Int = 0
 
-    // Motor
     private let engine = AVAudioEngine()
     private let playerNode = AVAudioPlayerNode()
     private var audioFile: AVAudioFile?
@@ -21,12 +19,12 @@ class AudioEngine: NSObject, ObservableObject {
     private var sampleRate: Double = 44100
     private var seekOffset: TimeInterval = 0
 
+    // ✅ Flag para evitar ejecuciones simultáneas de skip
+    private var isChangingTrack = false
+
     // Persistencia
     private let stateDefaultsKey = "com.aurora.playbackState"
     private var hasRestored: Bool = false
-
-    // ✅ FIX 2: Flag para evitar llamadas recursivas de playNext
-    private var isFinishing: Bool = false
 
     override init() {
         super.init()
@@ -35,9 +33,10 @@ class AudioEngine: NSObject, ObservableObject {
         observeRouteChanges()
         observeInterruptions()
         setupRemoteCommandCenter()
+        setupBackgroundNotification()
     }
 
-    // MARK: - Configuración inicial
+    // MARK: - Configuración
 
     private func setupSession() {
         let session = AVAudioSession.sharedInstance()
@@ -55,7 +54,20 @@ class AudioEngine: NSObject, ObservableObject {
         engine.connect(playerNode, to: engine.mainMixerNode, format: nil)
     }
 
-    // MARK: - Reproducción con cola
+    private func setupBackgroundNotification() {
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(applicationWillResignActive),
+            name: UIApplication.willResignActiveNotification,
+            object: nil
+        )
+    }
+
+    @objc private func applicationWillResignActive() {
+        saveState()
+    }
+
+    // MARK: - Reproducción
 
     func play(song: Song, from playlist: [Song]? = nil) {
         if let playlist = playlist {
@@ -71,8 +83,10 @@ class AudioEngine: NSObject, ObservableObject {
             currentIndex = 0
         }
 
-        isFinishing = false
-        playCurrentSong()
+        // ✅ Pequeño retraso para evitar conflictos
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+            self?.playCurrentSong()
+        }
         saveState()
     }
 
@@ -91,6 +105,12 @@ class AudioEngine: NSObject, ObservableObject {
             sampleRate = file.processingFormat.sampleRate
             duration = Double(file.length) / sampleRate
 
+            // Si la duración es 0, pasar a la siguiente
+            guard duration > 0 else {
+                playNext()
+                return
+            }
+
             engine.disconnectNodeInput(playerNode)
             engine.connect(playerNode, to: engine.mainMixerNode, format: file.processingFormat)
 
@@ -103,15 +123,12 @@ class AudioEngine: NSObject, ObservableObject {
             currentSong = song
             seekOffset = 0
             isPlaying = true
-            isFinishing = false
             startDisplayTimer()
-            updateNowPlayingInfo(with: song)
+            updateNowPlayingInfo()
             saveState()
         } catch {
             print("Error al reproducir \(song.title): \(error.localizedDescription)")
-            if !isFinishing {
-                playNext()
-            }
+            playNext()
         }
     }
 
@@ -120,8 +137,8 @@ class AudioEngine: NSObject, ObservableObject {
 
         let framesToPlay = AVAudioFrameCount(file.length - startFrame)
         guard framesToPlay > 0 else {
-            if !isFinishing {
-                playNext()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+                self?.playNext()
             }
             return
         }
@@ -140,31 +157,61 @@ class AudioEngine: NSObject, ObservableObject {
         playerNode.play()
     }
 
-    // MARK: - Controles de cola
+    // MARK: - Controles de cola (con flag anti-crash)
 
     func playNext() {
-        guard !playlist.isEmpty else { return }
-        let nextIndex = currentIndex + 1
-        guard nextIndex < playlist.count else {
-            stop()
+        guard !isChangingTrack else { return }  // ✅ Si ya está en proceso, salir
+        isChangingTrack = true
+
+        guard !playlist.isEmpty else {
+            isChangingTrack = false
             return
         }
+
+        let nextIndex = currentIndex + 1
+        guard nextIndex < playlist.count else {
+            // Fin de la lista
+            stop()
+            isChangingTrack = false
+            return
+        }
+
         currentIndex = nextIndex
-        isFinishing = false
         playCurrentSong()
+
+        // ✅ Liberar el flag después de un breve retraso
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+            self?.isChangingTrack = false
+        }
     }
 
     func playPrevious() {
-        guard !playlist.isEmpty else { return }
-        if currentTime > 3.0 {
-            seek(to: 0)
+        guard !isChangingTrack else { return }
+        isChangingTrack = true
+
+        guard !playlist.isEmpty else {
+            isChangingTrack = false
             return
         }
+
+        if currentTime > 3.0 {
+            seek(to: 0)
+            isChangingTrack = false
+            return
+        }
+
         let prevIndex = currentIndex - 1
-        guard prevIndex >= 0 else { return }
+        guard prevIndex >= 0 else {
+            isChangingTrack = false
+            return
+        }
+
         currentIndex = prevIndex
-        isFinishing = false
         playCurrentSong()
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+            self?.isChangingTrack = false
+        }
     }
 
     // MARK: - Pausa / Reanudar / Detener
@@ -173,7 +220,7 @@ class AudioEngine: NSObject, ObservableObject {
         playerNode.pause()
         isPlaying = false
         stopDisplayTimer()
-        updateNowPlayingInfo(with: currentSong)
+        updateNowPlayingInfo()
         saveState()
     }
 
@@ -184,9 +231,8 @@ class AudioEngine: NSObject, ObservableObject {
         }
         playerNode.play()
         isPlaying = true
-        isFinishing = false
         startDisplayTimer()
-        updateNowPlayingInfo(with: currentSong)
+        updateNowPlayingInfo()
         saveState()
     }
 
@@ -196,7 +242,6 @@ class AudioEngine: NSObject, ObservableObject {
         isPlaying = false
         currentTime = 0
         seekOffset = 0
-        isFinishing = false
         stopDisplayTimer()
     }
 
@@ -213,7 +258,7 @@ class AudioEngine: NSObject, ObservableObject {
             playerNode.pause()
         }
 
-        updateNowPlayingInfo(with: currentSong)
+        updateNowPlayingInfo()
         saveState()
     }
 
@@ -239,26 +284,20 @@ class AudioEngine: NSObject, ObservableObject {
         currentTime = seekOffset + elapsed
     }
 
-    // MARK: - Manejo de fin de canción (FIX 2)
-
     private func handlePlaybackFinished() {
-        if isFinishing { return }
-        isFinishing = true
-
-        if isPlaying {
+        // Si no está en medio de un cambio manual, pasar a la siguiente
+        if isPlaying && !isChangingTrack {
             playNext()
         } else {
             isPlaying = false
             currentTime = 0
             stopDisplayTimer()
-            updateNowPlayingInfo(with: currentSong)
+            updateNowPlayingInfo()
             saveState()
         }
-
-        isFinishing = false
     }
 
-    // MARK: - Cambios de ruta
+    // MARK: - Ruta de audio
 
     private func observeRouteChanges() {
         NotificationCenter.default.addObserver(
@@ -321,7 +360,7 @@ class AudioEngine: NSObject, ObservableObject {
         }
     }
 
-    // MARK: - Pantalla de bloqueo y Centro de Control (FIX 3: metadatos completos)
+    // MARK: - Pantalla de bloqueo y Centro de Control
 
     private func setupRemoteCommandCenter() {
         let commandCenter = MPRemoteCommandCenter.shared()
@@ -372,61 +411,34 @@ class AudioEngine: NSObject, ObservableObject {
         }
     }
 
-    private func updateNowPlayingInfo(with song: Song?) {
-        guard let song = song else {
+    private func updateNowPlayingInfo() {
+        guard let song = currentSong else {
             MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
             return
         }
 
+        // ✅ Metadatos básicos
+        let artist = song.url.deletingLastPathComponent().lastPathComponent
+        let album = song.url.deletingLastPathComponent().lastPathComponent
+
+        // ✅ Crear una imagen por defecto para evitar el gris al pausar
+        let artworkImage = UIImage(systemName: "music.note.list")?
+            .withTintColor(.systemPink, renderingMode: .alwaysOriginal)
+        let artwork = artworkImage.map { MPMediaItemArtwork(boundsSize: $0.size) { _ in $0 } }
+
         var info: [String: Any] = [
             MPMediaItemPropertyTitle: song.title,
+            MPMediaItemPropertyArtist: artist,
+            MPMediaItemPropertyAlbumTitle: album,
             MPMediaItemPropertyPlaybackDuration: duration,
             MPNowPlayingInfoPropertyElapsedPlaybackTime: currentTime,
             MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1.0 : 0.0
         ]
 
-        // ✅ FIX 3: Leer metadatos del archivo de audio de forma moderna
-        let asset = AVURLAsset(url: song.url)
-        let metadataItems = asset.commonMetadata
-
-        for item in metadataItems {
-            // Usamos el nuevo sistema basado en load
-            Task {
-                do {
-                    switch item.commonKey {
-                    case .commonKeyArtist:
-                        if let value = try await item.load(.value) as? String {
-                            info[MPMediaItemPropertyArtist] = value
-                        }
-                    case .commonKeyAlbumName:
-                        if let value = try await item.load(.value) as? String {
-                            info[MPMediaItemPropertyAlbumTitle] = value
-                        }
-                    case .commonKeyTitle:
-                        if let value = try await item.load(.value) as? String {
-                            info[MPMediaItemPropertyTitle] = value
-                        }
-                    case .commonKeyArtwork:
-                        if let data = try await item.load(.dataValue),
-                           let image = UIImage(data: data) {
-                            let artwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
-                            info[MPMediaItemPropertyArtwork] = artwork
-                        }
-                    default:
-                        break
-                    }
-                    
-                    // Actualizamos la info de forma segura después de cargar los metadatos
-                    DispatchQueue.main.async {
-                        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
-                    }
-                } catch {
-                    print("Error loading metadata: \(error)")
-                }
-            }
+        if let artwork = artwork {
+            info[MPMediaItemPropertyArtwork] = artwork  // ✅ Así no se pone gris
         }
 
-        // Actualización inmediata con la info que tenemos (título, duración, etc.)
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
     }
 
@@ -468,6 +480,7 @@ class AudioEngine: NSObject, ObservableObject {
             self.currentIndex = 0
         }
 
+        // Reproducir desde el punto guardado
         do {
             let file = try AVAudioFile(forReading: song.url)
             audioFile = file
@@ -497,7 +510,7 @@ class AudioEngine: NSObject, ObservableObject {
                 isPlaying = false
             }
 
-            updateNowPlayingInfo(with: song)
+            updateNowPlayingInfo()
             hasRestored = true
         } catch {
             print("Error al restaurar estado: \(error.localizedDescription)")
