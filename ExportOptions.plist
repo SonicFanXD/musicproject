@@ -6,9 +6,14 @@
     <string>development</string>
     <key>teamID</key>
     <string>TU_TEAM_ID</string>
+    <key>provisioningProfiles</key>
+    <dict>
+        <key>com.aurora.auroraplayer</key>
+        <string>TU_PERFIL_DE_PROVISIONAMIENTO</string>
+    </dict>
+    <key>signingCertificate</key>
+    <string>Apple Development</string>
     <key>signingStyle</key>
     <string>automatic</string>
-    <key>destination</key>
-    <string>export</string>
 </dict>
 </plist>

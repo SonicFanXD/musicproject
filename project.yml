@@ -3,17 +3,8 @@ options:
   bundleIdPrefix: com.aurora
   deploymentTarget:
     iOS: 16.0
-  xcodeVersion: "15.0"
-settings:
-  BASE:
-    PRODUCT_BUNDLE_IDENTIFIER: com.aurora.player
-    CURRENT_PROJECT_VERSION: 1.0.0
-    MARKETING_VERSION: 1.0.0
-  configs:
-    Debug:
-      PRODUCT_BUNDLE_IDENTIFIER: com.aurora.player.debug
-    Release:
-      PRODUCT_BUNDLE_IDENTIFIER: com.aurora.player
+  usesTabs: false
+  indentWidth: 4
 
 targets:
   AuroraPlayer:
@@ -21,30 +12,29 @@ targets:
     platform: iOS
     deploymentTarget: 16.0
     sources:
-      - AuroraPlayer
-    settings:
-      base:
-        INFOPLIST_FILE: Info.plist
-        TARGETED_DEVICE_FAMILY: "1,2"
-        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
-        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
-        SWIFT_VERSION: 5.0
-        CODE_SIGN_STYLE: Automatic
-        DEVELOPMENT_TEAM: "" # Lo dejarás vacío para que lo pongas tú
-        PROVISIONING_PROFILE_SPECIFIER: ""
-        DEBUG_INFORMATION_FORMAT: dwarf-with-dsym
-        ENABLE_BITCODE: NO
+      - path: AuroraPlayer
+        excludes:
+          - "**/*.plist"
     info:
       path: Info.plist
       properties:
+        CFBundleDisplayName: Aurora Player
+        CFBundleName: AuroraPlayer
+        CFBundleIdentifier: $(PRODUCT_BUNDLE_IDENTIFIER)
+        CFBundleVersion: "1.0"
+        CFBundleShortVersionString: "1.0"
         UIBackgroundModes:
           - audio
-        UILaunchStoryboardName: LaunchScreen
-        UISupportedInterfaceOrientations:
-          - UIInterfaceOrientationPortrait
-        UISupportedInterfaceOrientations~ipad:
-          - UIInterfaceOrientationPortrait
-          - UIInterfaceOrientationPortraitUpsideDown
-          - UIInterfaceOrientationLandscapeLeft
-          - UIInterfaceOrientationLandscapeRight
-        NSPhotoLibraryUsageDescription: "Aurora Player necesita acceder a tus archivos de música."
+        LSRequiresIPhoneOS: true
+        UIRequiredDeviceCapabilities:
+          - armv7
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.aurora.auroraplayer
+        INFOPLIST_FILE: Info.plist
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+    dependencies:
+      - framework: AVFoundation.framework
+      - framework: MediaPlayer.framework
+      - framework: UIKit.framework
+      - framework: SwiftUI.framework
