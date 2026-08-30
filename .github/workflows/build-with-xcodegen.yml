@@ -26,6 +26,9 @@ jobs:
       - name: Build and archive
         run: |
           xcodebuild -project AuroraPlayer.xcodeproj -scheme AuroraPlayer -configuration Release -archivePath build/AuroraPlayer.xcarchive archive
+
+      - name: Export IPA
+        run: |
           xcodebuild -exportArchive -archivePath build/AuroraPlayer.xcarchive -exportPath build -exportOptionsPlist ExportOptions.plist
 
       - name: Upload IPA
