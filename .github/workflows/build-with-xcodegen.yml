@@ -1,38 +1,26 @@
-name: Build with XcodeGen
-
-on:
-  push:
-    branches: [ main ]
-  workflow_dispatch:
-
-jobs:
-  build:
-    runs-on: macos-latest
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Select Xcode
-        run: sudo xcode-select -switch /Applications/Xcode.app
-
-      - name: Install XcodeGen
-        run: |
-          brew install xcodegen
-
-      - name: Generate Xcode project
-        run: xcodegen generate
-
-      - name: Build and archive
-        run: |
-          xcodebuild -project AuroraPlayer.xcodeproj -scheme AuroraPlayer -configuration Release -archivePath build/AuroraPlayer.xcarchive archive
-
-      - name: Export IPA
-        run: |
-          xcodebuild -exportArchive -archivePath build/AuroraPlayer.xcarchive -exportPath build -exportOptionsPlist ExportOptions.plist
-
-      - name: Upload IPA
-        uses: actions/upload-artifact@v4
-        with:
-          name: AuroraPlayer.ipa
-          path: build/AuroraPlayer.ipa
+name: AuroraPlayer
+options:
+  bundleIdPrefix: com.aurora
+  deploymentTarget:
+    iOS: 16.0
+  developmentTeam: ${APPLE_TEAM_ID}
+  signingStyle: automatic
+targets:
+  AuroraPlayer:
+    type: application
+    platform: iOS
+    sources:
+      - AuroraPlayer
+    info:
+      path: AuroraPlayer/Info.plist
+      properties:
+        UIBackgroundModes:
+          - audio
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.aurora.auroraplayer
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        SWIFT_VERSION: 5.0
+        CODE_SIGN_IDENTITY: Apple Development
+        CODE_SIGN_STYLE: Automatic
+    dependencies: []
