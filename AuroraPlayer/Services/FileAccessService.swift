@@ -1,4 +1,4 @@
-```swift
+swift
 import Foundation
 import AVFoundation
 import UIKit
@@ -463,4 +463,4 @@ final class FileAccessService: ObservableObject {
         }
     }
 }
-```
+

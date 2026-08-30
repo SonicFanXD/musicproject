@@ -1,4 +1,4 @@
-```swift
+swift
 import SwiftUI
 
 struct ContentView: View {
@@ -295,4 +295,4 @@ struct ContentView: View {
         }
     }
 }
-```
+

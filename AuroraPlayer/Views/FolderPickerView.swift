@@ -1,4 +1,4 @@
-```swift
+swift
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -104,4 +104,4 @@ struct FolderPickerView:
         }
     }
 }
-```
+

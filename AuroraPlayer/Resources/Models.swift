@@ -1,4 +1,4 @@
-```swift
+swift
 import Foundation
 import CryptoKit
 
@@ -101,4 +101,4 @@ struct Song: Identifiable, Equatable {
         lhs.id == rhs.id
     }
 }
-```
+

@@ -1,4 +1,4 @@
-```swift
+
 import SwiftUI
 
 struct PlayerBar: View {
@@ -188,4 +188,4 @@ struct PlayerBar: View {
         }
     }
 }
-```
+
