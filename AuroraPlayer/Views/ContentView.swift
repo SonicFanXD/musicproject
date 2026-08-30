@@ -56,7 +56,7 @@ struct ContentView: View {
                 }
             }
         }
-        .onChange(of: fileAccessService.songs) { newSongs in
+        .onChange(of: fileAccessService.songs) { _, newSongs in
             if !hasRestored && !newSongs.isEmpty {
                 audioEngine.restoreState(with: newSongs)
                 hasRestored = true
