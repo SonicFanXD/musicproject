@@ -1,5 +1,5 @@
 
-import SwiftUI
+import UI
 
 struct PlayerBar: View {
 
