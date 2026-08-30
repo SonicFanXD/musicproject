@@ -24,7 +24,8 @@ jobs:
           xcodebuild -exportArchive -archivePath build/AuroraPlayer.xcarchive -exportPath build -exportOptionsPlist ExportOptions.plist
 
       - name: Upload IPA
-        uses: actions/upload-artifact@v3
-        with:
-          name: AuroraPlayer.ipa
-          path: build/AuroraPlayer.ipa
+     - name: Upload IPA
+  uses: actions/upload-artifact@v4
+  with:
+    name: AuroraPlayer.ipa
+    path: build/AuroraPlayer.ipa
