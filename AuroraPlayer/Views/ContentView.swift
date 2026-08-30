@@ -57,7 +57,6 @@ struct ContentView: View {
             }
         }
         .onChange(of: fileAccessService.songs) { newSongs in
-            // Restaurar estado solo una vez cuando las canciones estén cargadas
             if !hasRestored && !newSongs.isEmpty {
                 audioEngine.restoreState(with: newSongs)
                 hasRestored = true
