@@ -56,7 +56,14 @@ struct ContentView: View {
                 }
             }
         }
-        .onChange(of: fileAccessService.songs) { _, newSongs in
+        // Elimina la línea completa de .onChange
+// y añade esto al final del body, después del .sheet
+.onChange(of: fileAccessService.songs.count) { _, _ in
+    if !hasRestored && !fileAccessService.songs.isEmpty {
+        audioEngine.restoreState(with: fileAccessService.songs)
+        hasRestored = true
+    }
+}
             if !hasRestored && !newSongs.isEmpty {
                 audioEngine.restoreState(with: newSongs)
                 hasRestored = true
