@@ -1,4 +1,4 @@
-name: Build iOS App
+name: Build with XcodeGen
 
 on:
   push:
@@ -8,19 +8,28 @@ on:
 jobs:
   build:
     runs-on: macos-latest
+
     steps:
-      - uses: actions/checkout@v3
-      
-      - name: Select Xcode
-        run: sudo xcode-select -switch /Applications/Xcode.app
-      
+      - uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: |
+          brew install xcodegen
+
+      - name: Generate Xcode project
+        run: |
+          xcodegen generate
+
       - name: Build and archive
         run: |
           xcodebuild -project AuroraPlayer.xcodeproj -scheme AuroraPlayer -configuration Release -archivePath build/AuroraPlayer.xcarchive archive
+
+      - name: Export IPA
+        run: |
           xcodebuild -exportArchive -archivePath build/AuroraPlayer.xcarchive -exportPath build -exportOptionsPlist ExportOptions.plist
-      
+
       - name: Upload IPA
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: AuroraPlayer.ipa
           path: build/AuroraPlayer.ipa
