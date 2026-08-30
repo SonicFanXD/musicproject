@@ -8,10 +8,10 @@ class AudioEngine: NSObject, ObservableObject {
     @Published var duration: TimeInterval = 0
     @Published var currentSong: Song?
     @Published var currentRouteName: String = "Altavoz"
-
+    
     private var playlist: [Song] = []
     private(set) var currentIndex: Int = 0
-
+    
     private let engine = AVAudioEngine()
     private let playerNode = AVAudioPlayerNode()
     private var audioFile: AVAudioFile?
@@ -19,12 +19,14 @@ class AudioEngine: NSObject, ObservableObject {
     private var sampleRate: Double = 44100
     private var seekOffset: TimeInterval = 0
     private var isChangingTrack = false
-
+    private var isFinished = false // Flag para saber si terminó naturalmente
+    
     private let stateDefaultsKey = "com.aurora.playbackState"
     private var hasRestored: Bool = false
-
+    
     override init() {
         super.init()
+        Logger.shared.log("🔧 AudioEngine inicializado")
         setupSession()
         setupEngine()
         observeRouteChanges()
@@ -32,25 +34,27 @@ class AudioEngine: NSObject, ObservableObject {
         setupRemoteCommandCenter()
         setupBackgroundNotification()
     }
-
+    
     // MARK: - Configuración
-
+    
     private func setupSession() {
         let session = AVAudioSession.sharedInstance()
         do {
             try session.setCategory(.playback, mode: .default, options: [])
             try session.setActive(true)
             updateRouteName()
+            Logger.shared.log("✅ Sesión de audio configurada")
         } catch {
-            print("Error configurando AVAudioSession: \(error.localizedDescription)")
+            Logger.shared.log("❌ Error configurando AVAudioSession: \(error.localizedDescription)")
         }
     }
-
+    
     private func setupEngine() {
         engine.attach(playerNode)
         engine.connect(playerNode, to: engine.mainMixerNode, format: nil)
+        Logger.shared.log("✅ Motor de audio configurado")
     }
-
+    
     private func setupBackgroundNotification() {
         NotificationCenter.default.addObserver(
             self,
@@ -59,14 +63,16 @@ class AudioEngine: NSObject, ObservableObject {
             object: nil
         )
     }
-
+    
     @objc private func applicationWillResignActive() {
         saveState()
+        Logger.shared.log("📱 App en segundo plano, estado guardado")
     }
-
+    
     // MARK: - Reproducción
-
+    
     func play(song: Song, from playlist: [Song]? = nil) {
+        Logger.shared.log("▶️ Solicitud de reproducción: \(song.title)")
         if let playlist = playlist {
             self.playlist = playlist
             if let index = playlist.firstIndex(where: { $0.id == song.id }) {
@@ -79,65 +85,74 @@ class AudioEngine: NSObject, ObservableObject {
             self.playlist = [song]
             currentIndex = 0
         }
-
+        Logger.shared.log("📋 Cola actualizada, índice: \(currentIndex), total: \(self.playlist.count)")
+        
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
             self?.playCurrentSong()
         }
         saveState()
     }
-
+    
     private func playCurrentSong() {
         guard currentIndex >= 0 && currentIndex < playlist.count else {
+            Logger.shared.log("⚠️ Índice fuera de rango, deteniendo")
             stop()
             return
         }
-
+        
         let song = playlist[currentIndex]
+        Logger.shared.log("🎵 Reproduciendo: \(song.title) (índice \(currentIndex))")
         stop()
-
+        
         do {
             let file = try AVAudioFile(forReading: song.url)
             audioFile = file
             sampleRate = file.processingFormat.sampleRate
             duration = Double(file.length) / sampleRate
-
+            Logger.shared.log("📊 Duración: \(duration) segundos")
+            
             guard duration > 0 else {
+                Logger.shared.log("⚠️ Duración 0, saltando a siguiente")
                 playNext()
                 return
             }
-
+            
             engine.disconnectNodeInput(playerNode)
             engine.connect(playerNode, to: engine.mainMixerNode, format: file.processingFormat)
-
+            
             if !engine.isRunning {
                 try engine.start()
             }
-
+            
             scheduleFile(file, from: 0)
-
+            
             currentSong = song
             seekOffset = 0
             isPlaying = true
+            isFinished = false
             startDisplayTimer()
             updateNowPlayingInfo()
             saveState()
+            Logger.shared.log("▶️ Reproduciendo activamente")
         } catch {
-            print("Error al reproducir \(song.title): \(error.localizedDescription)")
+            Logger.shared.log("❌ Error al reproducir \(song.title): \(error.localizedDescription)")
             playNext()
         }
     }
-
+    
     private func scheduleFile(_ file: AVAudioFile, from startFrame: AVAudioFramePosition) {
         playerNode.stop()
-
+        Logger.shared.log("⏳ Programando segmento desde frame \(startFrame)")
+        
         let framesToPlay = AVAudioFrameCount(file.length - startFrame)
         guard framesToPlay > 0 else {
+            Logger.shared.log("⚠️ Sin frames que reproducir, saltando...")
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
                 self?.playNext()
             }
             return
         }
-
+        
         playerNode.scheduleSegment(
             file,
             startingFrame: startFrame,
@@ -148,75 +163,90 @@ class AudioEngine: NSObject, ObservableObject {
                 self?.handlePlaybackFinished()
             }
         }
-
+        
         playerNode.play()
+        Logger.shared.log("▶️ Reproducción iniciada")
     }
-
+    
     // MARK: - Controles
-
+    
     func playNext() {
-        guard !isChangingTrack else { return }
+        guard !isChangingTrack else {
+            Logger.shared.log("⏭️ Ya en cambio de pista, ignorando")
+            return
+        }
         isChangingTrack = true
-
+        Logger.shared.log("⏭️ Siguiente canción solicitado")
+        
         guard !playlist.isEmpty else {
+            Logger.shared.log("⚠️ Cola vacía")
             isChangingTrack = false
             return
         }
-
+        
         let nextIndex = currentIndex + 1
         guard nextIndex < playlist.count else {
+            Logger.shared.log("⏹️ Fin de la lista, deteniendo")
             stop()
             isChangingTrack = false
             return
         }
-
+        
         currentIndex = nextIndex
         playCurrentSong()
-
+        
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
             self?.isChangingTrack = false
         }
     }
-
+    
     func playPrevious() {
-        guard !isChangingTrack else { return }
+        guard !isChangingTrack else {
+            Logger.shared.log("⏮️ Ya en cambio de pista, ignorando")
+            return
+        }
         isChangingTrack = true
-
+        Logger.shared.log("⏮️ Canción anterior solicitado")
+        
         guard !playlist.isEmpty else {
+            Logger.shared.log("⚠️ Cola vacía")
             isChangingTrack = false
             return
         }
-
+        
         if currentTime > 3.0 {
+            Logger.shared.log("⏪ Reiniciando canción actual")
             seek(to: 0)
             isChangingTrack = false
             return
         }
-
+        
         let prevIndex = currentIndex - 1
         guard prevIndex >= 0 else {
+            Logger.shared.log("⚠️ Ya es la primera canción")
             isChangingTrack = false
             return
         }
-
+        
         currentIndex = prevIndex
         playCurrentSong()
-
+        
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
             self?.isChangingTrack = false
         }
     }
-
+    
     // MARK: - Pausa / Reanudar / Detener
-
+    
     func pause() {
         playerNode.pause()
         isPlaying = false
         stopDisplayTimer()
         updateNowPlayingInfo()
         saveState()
+        Logger.shared.log("⏸️ Pausado")
     }
-
+    
     func resume() {
         guard audioFile != nil else { return }
         if !engine.isRunning {
@@ -227,8 +257,9 @@ class AudioEngine: NSObject, ObservableObject {
         startDisplayTimer()
         updateNowPlayingInfo()
         saveState()
+        Logger.shared.log("▶️ Reanudado")
     }
-
+    
     func stop() {
         playerNode.stop()
         audioFile = nil
@@ -236,49 +267,53 @@ class AudioEngine: NSObject, ObservableObject {
         currentTime = 0
         seekOffset = 0
         stopDisplayTimer()
+        Logger.shared.log("⏹️ Detenido")
     }
-
+    
     func seek(to time: TimeInterval) {
         guard let file = audioFile else { return }
         let clampedTime = max(0, min(time, duration))
         let startFrame = AVAudioFramePosition(clampedTime * sampleRate)
-
+        
         seekOffset = clampedTime
         scheduleFile(file, from: startFrame)
         currentTime = clampedTime
-
+        
         if !isPlaying {
             playerNode.pause()
         }
-
+        
         updateNowPlayingInfo()
         saveState()
+        Logger.shared.log("⏩ Seek a \(clampedTime) segundos")
     }
-
+    
     // MARK: - Progreso
-
+    
     private func startDisplayTimer() {
         stopDisplayTimer()
         displayTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             self?.updateCurrentTime()
         }
     }
-
+    
     private func stopDisplayTimer() {
         displayTimer?.invalidate()
         displayTimer = nil
     }
-
+    
     private func updateCurrentTime() {
         guard let nodeTime = playerNode.lastRenderTime,
               let playerTime = playerNode.playerTime(forNodeTime: nodeTime) else { return }
-
+        
         let elapsed = Double(playerTime.sampleTime) / playerTime.sampleRate
         currentTime = seekOffset + elapsed
     }
-
+    
     private func handlePlaybackFinished() {
+        Logger.shared.log("🏁 Canción finalizada, isPlaying: \(isPlaying), isChangingTrack: \(isChangingTrack)")
         if isPlaying && !isChangingTrack {
+            Logger.shared.log("🔄 Pasando a siguiente automáticamente")
             playNext()
         } else {
             isPlaying = false
@@ -286,11 +321,12 @@ class AudioEngine: NSObject, ObservableObject {
             stopDisplayTimer()
             updateNowPlayingInfo()
             saveState()
+            Logger.shared.log("⏹️ Reproducción finalizada (manual o interrupción)")
         }
     }
-
+    
     // MARK: - Ruta de audio
-
+    
     private func observeRouteChanges() {
         NotificationCenter.default.addObserver(
             self,
@@ -299,15 +335,15 @@ class AudioEngine: NSObject, ObservableObject {
             object: nil
         )
     }
-
+    
     @objc private func handleRouteChange(_ notification: Notification) {
         updateRouteName()
     }
-
+    
     private func updateRouteName() {
         let session = AVAudioSession.sharedInstance()
         guard let output = session.currentRoute.outputs.first else { return }
-
+        
         DispatchQueue.main.async {
             switch output.portType {
             case .bluetoothA2DP, .bluetoothHFP, .bluetoothLE:
@@ -319,11 +355,12 @@ class AudioEngine: NSObject, ObservableObject {
             default:
                 self.currentRouteName = output.portName
             }
+            Logger.shared.log("🔊 Ruta de audio cambiada a: \(self.currentRouteName)")
         }
     }
-
+    
     // MARK: - Interrupciones
-
+    
     private func observeInterruptions() {
         NotificationCenter.default.addObserver(
             self,
@@ -332,43 +369,45 @@ class AudioEngine: NSObject, ObservableObject {
             object: nil
         )
     }
-
+    
     @objc private func handleInterruption(_ notification: Notification) {
         guard let info = notification.userInfo,
               let typeValue = info[AVAudioSessionInterruptionTypeKey] as? UInt,
               let type = AVAudioSession.InterruptionType(rawValue: typeValue) else { return }
-
+        
         switch type {
         case .began:
             if isPlaying { pause() }
+            Logger.shared.log("📞 Interrupción comenzó")
         case .ended:
             guard let optionsValue = info[AVAudioSessionInterruptionOptionKey] as? UInt else { return }
             let options = AVAudioSession.InterruptionOptions(rawValue: optionsValue)
             if options.contains(.shouldResume) {
                 resume()
+                Logger.shared.log("📞 Interrupción terminó, reanudando")
             }
         @unknown default:
             break
         }
     }
-
+    
     // MARK: - Pantalla de bloqueo
-
+    
     private func setupRemoteCommandCenter() {
         let commandCenter = MPRemoteCommandCenter.shared()
-
+        
         commandCenter.playCommand.addTarget { [weak self] _ in
             guard let self = self, self.currentSong != nil else { return .noActionableNowPlayingItem }
             self.resume()
             return .success
         }
-
+        
         commandCenter.pauseCommand.addTarget { [weak self] _ in
             guard let self = self, self.currentSong != nil else { return .noActionableNowPlayingItem }
             self.pause()
             return .success
         }
-
+        
         commandCenter.togglePlayPauseCommand.addTarget { [weak self] _ in
             guard let self = self, self.currentSong != nil else { return .noActionableNowPlayingItem }
             if self.isPlaying {
@@ -378,21 +417,21 @@ class AudioEngine: NSObject, ObservableObject {
             }
             return .success
         }
-
+        
         commandCenter.nextTrackCommand.addTarget { [weak self] _ in
             guard let self = self else { return .commandFailed }
             self.playNext()
             return .success
         }
         commandCenter.nextTrackCommand.isEnabled = true
-
+        
         commandCenter.previousTrackCommand.addTarget { [weak self] _ in
             guard let self = self else { return .commandFailed }
             self.playPrevious()
             return .success
         }
         commandCenter.previousTrackCommand.isEnabled = true
-
+        
         commandCenter.changePlaybackPositionCommand.addTarget { [weak self] event in
             guard let self = self,
                   let positionEvent = event as? MPChangePlaybackPositionCommandEvent else {
@@ -401,24 +440,25 @@ class AudioEngine: NSObject, ObservableObject {
             self.seek(to: positionEvent.positionTime)
             return .success
         }
+        Logger.shared.log("🎛️ Comandos remotos configurados")
     }
-
+    
     private func updateNowPlayingInfo() {
         guard let song = currentSong else {
             MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
             return
         }
-
+        
         let artist = song.url.deletingLastPathComponent().lastPathComponent
         let album = song.url.deletingLastPathComponent().lastPathComponent
-
-        // ✅ CORREGIDO: evitar el error de compilación en la línea 427
+        
+        // Imagen por defecto para evitar gris
         let artworkImage = UIImage(systemName: "music.note.list")?
             .withTintColor(.systemPink, renderingMode: .alwaysOriginal)
         let artwork = artworkImage.map { image in
             MPMediaItemArtwork(boundsSize: image.size) { _ in image }
         }
-
+        
         var info: [String: Any] = [
             MPMediaItemPropertyTitle: song.title,
             MPMediaItemPropertyArtist: artist,
@@ -427,22 +467,23 @@ class AudioEngine: NSObject, ObservableObject {
             MPNowPlayingInfoPropertyElapsedPlaybackTime: currentTime,
             MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1.0 : 0.0
         ]
-
+        
         if let artwork = artwork {
             info[MPMediaItemPropertyArtwork] = artwork
         }
-
+        
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+        Logger.shared.log("📝 Metadatos actualizados: \(song.title) - \(artist)")
     }
-
+    
     // MARK: - Persistencia
-
+    
     func saveState() {
         guard let song = currentSong else {
             UserDefaults.standard.removeObject(forKey: stateDefaultsKey)
             return
         }
-
+        
         let state: [String: Any] = [
             "songID": song.id.uuidString,
             "currentTime": currentTime,
@@ -450,8 +491,9 @@ class AudioEngine: NSObject, ObservableObject {
             "duration": duration
         ]
         UserDefaults.standard.set(state, forKey: stateDefaultsKey)
+        Logger.shared.log("💾 Estado guardado: \(song.title) en \(currentTime)s")
     }
-
+    
     func restoreState(with allSongs: [Song]) {
         guard !hasRestored else { return }
         guard let state = UserDefaults.standard.dictionary(forKey: stateDefaultsKey) else { return }
@@ -461,10 +503,10 @@ class AudioEngine: NSObject, ObservableObject {
             UserDefaults.standard.removeObject(forKey: stateDefaultsKey)
             return
         }
-
+        
         let savedTime = state["currentTime"] as? TimeInterval ?? 0
         let wasPlaying = state["isPlaying"] as? Bool ?? false
-
+        
         self.playlist = allSongs
         if let index = allSongs.firstIndex(where: { $0.id == songID }) {
             self.currentIndex = index
@@ -472,27 +514,27 @@ class AudioEngine: NSObject, ObservableObject {
             self.playlist.insert(song, at: 0)
             self.currentIndex = 0
         }
-
+        
         do {
             let file = try AVAudioFile(forReading: song.url)
             audioFile = file
             sampleRate = file.processingFormat.sampleRate
             duration = Double(file.length) / sampleRate
-
+            
             engine.disconnectNodeInput(playerNode)
             engine.connect(playerNode, to: engine.mainMixerNode, format: file.processingFormat)
-
+            
             if !engine.isRunning {
                 try engine.start()
             }
-
+            
             let startFrame = AVAudioFramePosition(savedTime * sampleRate)
             scheduleFile(file, from: startFrame)
-
+            
             currentSong = song
             seekOffset = savedTime
             currentTime = savedTime
-
+            
             if wasPlaying {
                 playerNode.play()
                 isPlaying = true
@@ -501,16 +543,18 @@ class AudioEngine: NSObject, ObservableObject {
                 playerNode.pause()
                 isPlaying = false
             }
-
+            
             updateNowPlayingInfo()
             hasRestored = true
+            Logger.shared.log("♻️ Estado restaurado: \(song.title) en \(savedTime)s")
         } catch {
-            print("Error al restaurar estado: \(error.localizedDescription)")
+            Logger.shared.log("❌ Error al restaurar estado: \(error.localizedDescription)")
             UserDefaults.standard.removeObject(forKey: stateDefaultsKey)
         }
     }
-
+    
     deinit {
         NotificationCenter.default.removeObserver(self)
+        Logger.shared.log("🗑️ AudioEngine destruido")
     }
 }
