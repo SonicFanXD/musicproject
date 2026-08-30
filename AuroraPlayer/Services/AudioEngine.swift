@@ -109,7 +109,6 @@ class AudioEngine: NSObject, ObservableObject {
             saveState()
         } catch {
             print("Error al reproducir \(song.title): \(error.localizedDescription)")
-            // Si falla, saltamos a la siguiente solo si no estamos terminando
             if !isFinishing {
                 playNext()
             }
@@ -121,7 +120,6 @@ class AudioEngine: NSObject, ObservableObject {
 
         let framesToPlay = AVAudioFrameCount(file.length - startFrame)
         guard framesToPlay > 0 else {
-            // ✅ FIX 2: Solo llamamos a playNext si no estamos ya en proceso de finalizar
             if !isFinishing {
                 playNext()
             }
@@ -244,7 +242,6 @@ class AudioEngine: NSObject, ObservableObject {
     // MARK: - Manejo de fin de canción (FIX 2)
 
     private func handlePlaybackFinished() {
-        // Evitar ejecución múltiple
         if isFinishing { return }
         isFinishing = true
 
@@ -388,39 +385,48 @@ class AudioEngine: NSObject, ObservableObject {
             MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1.0 : 0.0
         ]
 
-        // ✅ FIX 3: Leer metadatos del archivo de audio
-        let asset = AVURLAsset(url: song.url, options: nil)
-        let metadata = asset.commonMetadata
+        // ✅ FIX 3: Leer metadatos del archivo de audio de forma moderna
+        let asset = AVURLAsset(url: song.url)
+        let metadataItems = asset.commonMetadata
 
-        for item in metadata {
-            switch item.commonKey {
-            case .commonKeyArtist:
-                if let artist = item.value as? String {
-                    info[MPMediaItemPropertyArtist] = artist
+        for item in metadataItems {
+            // Usamos el nuevo sistema basado en load
+            Task {
+                do {
+                    switch item.commonKey {
+                    case .commonKeyArtist:
+                        if let value = try await item.load(.value) as? String {
+                            info[MPMediaItemPropertyArtist] = value
+                        }
+                    case .commonKeyAlbumName:
+                        if let value = try await item.load(.value) as? String {
+                            info[MPMediaItemPropertyAlbumTitle] = value
+                        }
+                    case .commonKeyTitle:
+                        if let value = try await item.load(.value) as? String {
+                            info[MPMediaItemPropertyTitle] = value
+                        }
+                    case .commonKeyArtwork:
+                        if let data = try await item.load(.dataValue),
+                           let image = UIImage(data: data) {
+                            let artwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+                            info[MPMediaItemPropertyArtwork] = artwork
+                        }
+                    default:
+                        break
+                    }
+                    
+                    // Actualizamos la info de forma segura después de cargar los metadatos
+                    DispatchQueue.main.async {
+                        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+                    }
+                } catch {
+                    print("Error loading metadata: \(error)")
                 }
-            case .commonKeyAlbumName:
-                if let album = item.value as? String {
-                    info[MPMediaItemPropertyAlbumTitle] = album
-                }
-            case .commonKeyTitle:
-                if let title = item.value as? String {
-                    info[MPMediaItemPropertyTitle] = title
-                }
-            case .commonKeyArtwork:
-                if let data = item.dataValue, let image = UIImage(data: data) {
-                    let artwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
-                    info[MPMediaItemPropertyArtwork] = artwork
-                }
-            default:
-                break
             }
         }
 
-        if !playlist.isEmpty {
-            info[MPNowPlayingInfoPropertyQueueIndex] = currentIndex
-            info[MPNowPlayingInfoPropertyQueueCount] = playlist.count
-        }
-
+        // Actualización inmediata con la info que tenemos (título, duración, etc.)
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
     }
 
