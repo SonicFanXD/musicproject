@@ -10,16 +10,11 @@ jobs:
     runs-on: macos-latest
 
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Install XcodeGen
-        run: |
-          brew install xcodegen
-
-      - name: Generate Xcode project
-        run: |
-          xcodegen generate
-
+      - uses: actions/checkout@v3
+      
+      - name: Select Xcode
+        run: sudo xcode-select -switch /Applications/Xcode.app
+      
       - name: Build and archive
         run: |
           xcodebuild -project AuroraPlayer.xcodeproj -scheme AuroraPlayer -configuration Release -archivePath build/AuroraPlayer.xcarchive archive
@@ -29,7 +24,7 @@ jobs:
           xcodebuild -exportArchive -archivePath build/AuroraPlayer.xcarchive -exportPath build -exportOptionsPlist ExportOptions.plist
 
       - name: Upload IPA
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v3
         with:
           name: AuroraPlayer.ipa
           path: build/AuroraPlayer.ipa
