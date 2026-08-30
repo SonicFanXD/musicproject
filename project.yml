@@ -1,29 +1,44 @@
+```yaml
 name: AuroraPlayer
+
 options:
   bundleIdPrefix: com.aurora
   deploymentTarget:
-    iOS: 16.0
+    iOS: "16.0"
+
 targets:
+
   AuroraPlayer:
     type: application
     platform: iOS
-    deploymentTarget: 16.0
+
+    deploymentTarget: "16.0"
+
     sources:
-      - AuroraPlayerApp.swift
-      - AuroraPlayer/Resources/Models.swift
-      - AuroraPlayer/Services/AudioEngine.swift
-      - AuroraPlayer/Services/FileAccessService.swift
-      - AuroraPlayer/Views/ContentView.swift
-      - AuroraPlayer/Views/FolderPickerView.swift
-      - AuroraPlayer/Views/PlayerBar.swift
-    info:
-      path: Info.plist
-      properties:
-        UIBackgroundModes:
-          - audio
+      - path: AuroraPlayerApp.swift
+      - path: AuroraPlayer/Resources/Models.swift
+      - path: AuroraPlayer/Services/AudioEngine.swift
+      - path: AuroraPlayer/Services/FileAccessService.swift
+      - path: AuroraPlayer/Views/ContentView.swift
+      - path: AuroraPlayer/Views/FolderPickerView.swift
+      - path: AuroraPlayer/Views/PlayerBar.swift
+
     settings:
       base:
-        INFOPLIST_FILE: Info.plist
         PRODUCT_BUNDLE_IDENTIFIER: com.aurora.auroraplayer
+        INFOPLIST_FILE: Info.plist
+
+        IPHONEOS_DEPLOYMENT_TARGET: "16.0"
+
+        TARGETED_DEVICE_FAMILY: "1"
+
+        SWIFT_VERSION: "5.0"
+
         CODE_SIGN_STYLE: Automatic
-        DEVELOPMENT_TEAM: ""  # Deja vacío o pon tu Team ID si lo tienes
+
+        DEVELOPMENT_TEAM: ""
+
+        ARCHS: arm64
+
+        VALID_ARCHS: arm64
+```

@@ -1,166 +1,466 @@
+```swift
 import Foundation
+import AVFoundation
+import UIKit
 
-class FileAccessService: ObservableObject {
-    @Published var folders: [MusicFolder] = []
-    @Published var songs: [Song] = []
+final class FileAccessService: ObservableObject {
 
-    private let defaultsKey = "com.aurora.musicFolders"
+    @Published private(set) var folders: [MusicFolder] = []
+    @Published private(set) var songs: [Song] = []
+
+    private let defaultsKey =
+        "com.aurora.musicFolders"
+
     private var activeURLs: [UUID: URL] = [:]
 
+    private var scanGeneration = UUID()
+
     private let supportedExtensions: Set<String> = [
-        "mp3", "m4a", "aac", "wav", "wave", "aiff", "aif", "flac"
+        "mp3",
+        "m4a",
+        "aac",
+        "wav",
+        "wave",
+        "aiff",
+        "aif",
+        "flac"
     ]
 
     init() {
         loadFolders()
     }
 
+    // MARK: - Add folder
+
     func addFolder(url: URL) {
+
         guard url.startAccessingSecurityScopedResource() else {
-            print("No se pudo acceder a la carpeta seleccionada")
+            print(
+                "AuroraPlayer: no se pudo acceder a la carpeta."
+            )
             return
         }
 
         do {
-            let bookmarkData = try url.bookmarkData(
-                options: .minimalBookmark,
-                includingResourceValuesForKeys: nil,
-                relativeTo: nil
-            )
+
+            let bookmarkData =
+                try url.bookmarkData(
+                    options: .minimalBookmark,
+                    includingResourceValuesForKeys: nil,
+                    relativeTo: nil
+                )
+
+            // Evitar agregar la misma carpeta dos veces.
+            if folders.contains(
+                where: {
+                    $0.displayName ==
+                    url.lastPathComponent
+                }
+            ) {
+                url.stopAccessingSecurityScopedResource()
+                return
+            }
 
             let folder = MusicFolder(
-                displayName: url.lastPathComponent,
-                bookmarkData: bookmarkData
+                displayName:
+                    url.lastPathComponent,
+                bookmarkData:
+                    bookmarkData
             )
 
             folders.append(folder)
+
             activeURLs[folder.id] = url
+
             saveFolders()
-            scanFolder(url)
+
+            scanFolder(
+                url,
+                generation: scanGeneration
+            )
+
         } catch {
-            print("Error al crear el marcador: \(error.localizedDescription)")
+
+            print(
+                "AuroraPlayer bookmark error:",
+                error.localizedDescription
+            )
+
             url.stopAccessingSecurityScopedResource()
         }
     }
 
-    func removeFolder(_ folder: MusicFolder) {
-        if let url = activeURLs[folder.id] {
+    // MARK: - Remove folder
+
+    func removeFolder(
+        _ folder: MusicFolder
+    ) {
+
+        if let url =
+            activeURLs[folder.id] {
+
             url.stopAccessingSecurityScopedResource()
-            activeURLs.removeValue(forKey: folder.id)
+
+            activeURLs.removeValue(
+                forKey: folder.id
+            )
         }
 
-        folders.removeAll { $0.id == folder.id }
+        folders.removeAll {
+            $0.id == folder.id
+        }
+
         saveFolders()
+
         rescanAllFolders()
     }
+
+    // MARK: - Refresh
 
     func refreshAllFolders() {
         rescanAllFolders()
     }
 
+    private func rescanAllFolders() {
+
+        // Invalidamos cualquier escaneo anterior.
+        scanGeneration = UUID()
+
+        let generation = scanGeneration
+
+        songs = []
+
+        for folder in folders {
+            resolveAndScan(
+                folder,
+                generation: generation
+            )
+        }
+    }
+
+    // MARK: - Load folders
+
     private func loadFolders() {
-        guard let data = UserDefaults.standard.data(forKey: defaultsKey),
-              let savedFolders = try? JSONDecoder().decode([MusicFolder].self, from: data) else {
+
+        guard
+            let data =
+                UserDefaults.standard.data(
+                    forKey: defaultsKey
+                ),
+            let savedFolders =
+                try? JSONDecoder().decode(
+                    [MusicFolder].self,
+                    from: data
+                )
+        else {
             return
         }
 
         folders = savedFolders
+
         rescanAllFolders()
     }
 
-    private func rescanAllFolders() {
-        songs = []
-        for folder in folders {
-            resolveAndScan(folder)
-        }
-    }
+    // MARK: - Resolve bookmark
 
-    private func resolveAndScan(_ folder: MusicFolder) {
-        if let previousURL = activeURLs[folder.id] {
+    private func resolveAndScan(
+        _ folder: MusicFolder,
+        generation: UUID
+    ) {
+
+        if let previousURL =
+            activeURLs[folder.id] {
+
             previousURL.stopAccessingSecurityScopedResource()
-            activeURLs.removeValue(forKey: folder.id)
+
+            activeURLs.removeValue(
+                forKey: folder.id
+            )
         }
 
         var isStale = false
-        do {
-            let url = try URL(
-                resolvingBookmarkData: folder.bookmarkData,
-                bookmarkDataIsStale: &isStale
-            )
 
-            guard url.startAccessingSecurityScopedResource() else {
-                print("No se pudo acceder a: \(folder.displayName)")
+        do {
+
+            let url =
+                try URL(
+                    resolvingBookmarkData:
+                        folder.bookmarkData,
+                    bookmarkDataIsStale:
+                        &isStale
+                )
+
+            guard
+                url.startAccessingSecurityScopedResource()
+            else {
+                print(
+                    "AuroraPlayer: acceso rechazado:",
+                    folder.displayName
+                )
                 return
             }
 
             activeURLs[folder.id] = url
 
             if isStale {
-                print("Bookmark obsoleto para \(folder.displayName). Regenerando...")
+
                 do {
-                    let newBookmarkData = try url.bookmarkData(
-                        options: .minimalBookmark,
-                        includingResourceValuesForKeys: nil,
-                        relativeTo: nil
-                    )
-                    if let index = folders.firstIndex(where: { $0.id == folder.id }) {
-                        let updatedFolder = MusicFolder(
-                            id: folder.id,
-                            displayName: folder.displayName,
-                            bookmarkData: newBookmarkData
+
+                    let newBookmark =
+                        try url.bookmarkData(
+                            options: .minimalBookmark,
+                            includingResourceValuesForKeys: nil,
+                            relativeTo: nil
                         )
-                        folders[index] = updatedFolder
+
+                    if let index =
+                        folders.firstIndex(
+                            where: {
+                                $0.id == folder.id
+                            }
+                        ) {
+
+                        folders[index] =
+                            MusicFolder(
+                                id: folder.id,
+                                displayName:
+                                    folder.displayName,
+                                bookmarkData:
+                                    newBookmark
+                            )
+
                         saveFolders()
-                        print("Bookmark regenerado y guardado")
                     }
+
                 } catch {
-                    print("Error al regenerar bookmark: \(error.localizedDescription)")
+
+                    print(
+                        "AuroraPlayer: error actualizando bookmark:",
+                        error.localizedDescription
+                    )
                 }
             }
 
-            scanFolder(url)
+            scanFolder(
+                url,
+                generation: generation
+            )
+
         } catch {
-            print("Error al resolver bookmark de \(folder.displayName): \(error.localizedDescription)")
+
+            print(
+                "AuroraPlayer: error resolviendo bookmark:",
+                error.localizedDescription
+            )
         }
     }
 
-    private func scanFolder(_ url: URL) {
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            guard let self = self else { return }
+    // MARK: - Scan
 
-            let keys: [URLResourceKey] = [.isDirectoryKey]
+    private func scanFolder(
+        _ url: URL,
+        generation: UUID
+    ) {
+
+        DispatchQueue.global(
+            qos: .userInitiated
+        ).async { [weak self] in
+
+            guard let self else {
+                return
+            }
+
+            let keys: [URLResourceKey] = [
+                .isDirectoryKey
+            ]
+
             var foundSongs: [Song] = []
 
-            if let enumerator = FileManager.default.enumerator(
-                at: url,
-                includingPropertiesForKeys: keys,
-                options: [.skipsHiddenFiles]
-            ) {
-                for case let fileURL as URL in enumerator {
-                    let values = try? fileURL.resourceValues(forKeys: Set(keys))
-                    if values?.isDirectory == true { continue }
+            guard
+                let enumerator =
+                    FileManager.default.enumerator(
+                        at: url,
+                        includingPropertiesForKeys:
+                            keys,
+                        options: [
+                            .skipsHiddenFiles
+                        ]
+                    )
+            else {
+                return
+            }
 
-                    let ext = fileURL.pathExtension.lowercased()
-                    guard self.supportedExtensions.contains(ext) else { continue }
+            for case let fileURL as URL in enumerator {
 
-                    foundSongs.append(Song(url: fileURL))
+                autoreleasepool {
+
+                    let values =
+                        try? fileURL.resourceValues(
+                            forKeys:
+                                Set(keys)
+                        )
+
+                    if values?.isDirectory == true {
+                        return
+                    }
+
+                    let ext =
+                        fileURL
+                            .pathExtension
+                            .lowercased()
+
+                    guard
+                        self.supportedExtensions
+                            .contains(ext)
+                    else {
+                        return
+                    }
+
+                    let metadata =
+                        self.readMetadata(
+                            from: fileURL
+                        )
+
+                    let song =
+                        Song(
+                            url: fileURL,
+                            title: metadata.title,
+                            artist: metadata.artist,
+                            album: metadata.album,
+                            artworkData:
+                                metadata.artworkData
+                        )
+
+                    foundSongs.append(song)
                 }
+            }
+
+            foundSongs.sort {
+                $0.title.localizedCaseInsensitiveCompare(
+                    $1.title
+                ) == .orderedAscending
             }
 
             DispatchQueue.main.async {
-                self.songs.append(contentsOf: foundSongs)
+
+                guard
+                    self.scanGeneration ==
+                        generation
+                else {
+                    return
+                }
+
+                self.songs.append(
+                    contentsOf: foundSongs
+                )
+
+                self.songs.sort {
+                    $0.title.localizedCaseInsensitiveCompare(
+                        $1.title
+                    ) == .orderedAscending
+                }
             }
         }
     }
 
+    // MARK: - Metadata
+
+    private struct SongMetadata {
+        let title: String?
+        let artist: String
+        let album: String
+        let artworkData: Data?
+    }
+
+    private func readMetadata(
+        from url: URL
+    ) -> SongMetadata {
+
+        let asset =
+            AVAsset(url: url)
+
+        var title: String?
+        var artist = ""
+        var album = ""
+        var artworkData: Data?
+
+        for item in asset.commonMetadata {
+
+            guard
+                let identifier =
+                    item.commonKey?.rawValue
+            else {
+                continue
+            }
+
+            switch identifier {
+
+            case AVMetadataKeySpace.common
+                .rawValue + ".title":
+
+                if let value =
+                    item.stringValue,
+                   !value.isEmpty {
+                    title = value
+                }
+
+            case AVMetadataKeySpace.common
+                .rawValue + ".artist":
+
+                artist =
+                    item.stringValue ?? ""
+
+            case AVMetadataKeySpace.common
+                .rawValue + ".albumName":
+
+                album =
+                    item.stringValue ?? ""
+
+            case AVMetadataKeySpace.common
+                .rawValue + ".artwork":
+
+                if let data =
+                    item.dataValue {
+                    artworkData = data
+                }
+
+            default:
+                break
+            }
+        }
+
+        return SongMetadata(
+            title: title,
+            artist: artist,
+            album: album,
+            artworkData: artworkData
+        )
+    }
+
+    // MARK: - Persistence
+
     private func saveFolders() {
-        guard let data = try? JSONEncoder().encode(folders) else { return }
-        UserDefaults.standard.set(data, forKey: defaultsKey)
+
+        guard
+            let data =
+                try? JSONEncoder().encode(
+                    folders
+                )
+        else {
+            return
+        }
+
+        UserDefaults.standard.set(
+            data,
+            forKey: defaultsKey
+        )
     }
 
     deinit {
+
         for (_, url) in activeURLs {
             url.stopAccessingSecurityScopedResource()
         }
     }
 }
+```
