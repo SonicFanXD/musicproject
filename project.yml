@@ -18,7 +18,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.aurora.player
         INFOPLIST_FILE: AuroraPlayer/Info.plist
         CODE_SIGN_STYLE: Automatic
-        DEVELOPMENT_TEAM: ""   # ← Déjalo vacío si no tienes Team ID, o pon el tuyo
+        DEVELOPMENT_TEAM: ""
         TARGETED_DEVICE_FAMILY: "1,2"
         IPHONEOS_DEPLOYMENT_TARGET: 16.0
     info:

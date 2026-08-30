@@ -9,22 +9,19 @@ struct PlayerBar: View {
             ProgressView(value: audioEngine.currentTime, total: max(audioEngine.duration, 1))
                 .tint(.accentColor)
 
-            HStack(spacing: 12) {
-                artwork
-
+            HStack {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(song.title)
                         .font(.subheadline)
                         .bold()
                         .lineLimit(1)
 
-                    Text(song.artist.isEmpty ? audioEngine.currentRouteName : song.artist)
+                    Text(audioEngine.currentRouteName)
                         .font(.caption2)
                         .foregroundColor(.secondary)
-                        .lineLimit(1)
                 }
 
-                Spacer(minLength: 4)
+                Spacer()
 
                 HStack(spacing: 18) {
                     Button {
@@ -56,23 +53,5 @@ struct PlayerBar: View {
         }
         .padding()
         .background(.thinMaterial)
-    }
-
-    @ViewBuilder
-    private var artwork: some View {
-        if let data = song.artworkData,
-           let image = UIImage(data: data) {
-            Image(uiImage: image)
-                .resizable()
-                .scaledToFill()
-                .frame(width: 44, height: 44)
-                .clipShape(RoundedRectangle(cornerRadius: 7))
-        } else {
-            Image(systemName: "music.note")
-                .font(.system(size: 22))
-                .frame(width: 44, height: 44)
-                .background(Color.secondary.opacity(0.15))
-                .clipShape(RoundedRectangle(cornerRadius: 7))
-        }
     }
 }

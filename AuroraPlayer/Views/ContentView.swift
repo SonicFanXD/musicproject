@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct ContentView: View {
-    @EnvironmentObject private var audioEngine: AudioEngine
+    @StateObject private var audioEngine = AudioEngine()
     @StateObject private var fileAccessService = FileAccessService()
     @State private var showFolderPicker = false
     @State private var hasRestored = false
@@ -68,40 +68,12 @@ struct ContentView: View {
         Button {
             audioEngine.play(song: song, from: fileAccessService.songs)
         } label: {
-            HStack(spacing: 12) {
-                Group {
-                    if let data = song.artworkData,
-                       let image = UIImage(data: data) {
-                        Image(uiImage: image)
-                            .resizable()
-                            .scaledToFill()
-                    } else {
-                        Image(systemName: iconFor(song))
-                            .foregroundColor(audioEngine.currentSong?.id == song.id ? .accentColor : .secondary)
-                    }
-                }
-                .frame(width: 42, height: 42)
-                .clipShape(RoundedRectangle(cornerRadius: 6))
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(song.title)
-                        .foregroundColor(.primary)
-                        .lineLimit(1)
-
-                    if !song.artist.isEmpty {
-                        Text(song.artist)
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                            .lineLimit(1)
-                    }
-                }
-
+            HStack {
+                Image(systemName: iconFor(song))
+                    .foregroundColor(audioEngine.currentSong?.id == song.id ? .accentColor : .secondary)
+                Text(song.title)
+                    .foregroundColor(.primary)
                 Spacer()
-
-                if audioEngine.currentSong?.id == song.id {
-                    Image(systemName: audioEngine.isPlaying ? "speaker.wave.2.fill" : "pause.fill")
-                        .foregroundColor(.accentColor)
-                }
             }
         }
         .buttonStyle(.plain)
@@ -117,4 +89,8 @@ struct ContentView: View {
             fileAccessService.removeFolder(fileAccessService.folders[index])
         }
     }
+}
+
+#Preview {
+    ContentView()
 }

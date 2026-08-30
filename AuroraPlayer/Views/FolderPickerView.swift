@@ -1,5 +1,4 @@
 import SwiftUI
-import UIKit
 import UniformTypeIdentifiers
 
 struct FolderPickerView: UIViewControllerRepresentable {
@@ -19,7 +18,7 @@ struct FolderPickerView: UIViewControllerRepresentable {
         Coordinator(isPresented: $isPresented, onFolderPicked: onFolderPicked)
     }
 
-    final class Coordinator: NSObject, UIDocumentPickerDelegate {
+    class Coordinator: NSObject, UIDocumentPickerDelegate {
         @Binding var isPresented: Bool
         let onFolderPicked: (URL) -> Void
 
