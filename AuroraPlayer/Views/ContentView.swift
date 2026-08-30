@@ -95,9 +95,7 @@ struct ContentView: View {
         for index in offsets {
             fileAccessService.removeFolder(fileAccessService.folders[index])
         }
-    }
 }
-
 #Preview {
     ContentView()
 }
