@@ -9,7 +9,11 @@ targets:
     type: application
     platform: iOS
     sources:
-      - AuroraPlayer
+      - path: AuroraPlayer
+        excludes:
+          - "Info.plist"
+          - "*.storyboard"
+      - path: AuroraPlayerApp.swift   # ✅ Agregar esta línea
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.aurora.player
@@ -35,12 +39,5 @@ targets:
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
         UIRequiredDeviceCapabilities: [armv7]
-        UISupportedInterfaceOrientations:
-          - UIInterfaceOrientationPortrait
-          - UIInterfaceOrientationLandscapeLeft
-          - UIInterfaceOrientationLandscapeRight
-        UISupportedInterfaceOrientations~ipad:
-          - UIInterfaceOrientationPortrait
-          - UIInterfaceOrientationPortraitUpsideDown
-          - UIInterfaceOrientationLandscapeLeft
-          - UIInterfaceOrientationLandscapeRight
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
+        UISupportedInterfaceOrientations~ipad: [UIInterfaceOrientationPortrait, UIInterfaceOrientationPortraitUpsideDown, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
