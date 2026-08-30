@@ -1,22 +1,13 @@
-```swift
 import SwiftUI
 
 @main
 struct AuroraPlayerApp: App {
-
-    @StateObject
-    private var audioEngine =
-        AudioEngine()
-
     var body: some Scene {
-
         WindowGroup {
-
             ContentView()
-                .environmentObject(
-                    audioEngine
-                )
+                .background(Color(UIColor.systemBackground))
+                .edgesIgnoringSafeArea(.all)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 }
-```

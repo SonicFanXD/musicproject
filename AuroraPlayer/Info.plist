@@ -2,7 +2,12 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <!-- Configuración básica de la app -->
+    <key>UIBackgroundModes</key>
+    <array>
+        <string>audio</string>
+    </array>
+    <key>UILaunchStoryboardName</key>
+    <string>LaunchScreen</string>
     <key>CFBundleDevelopmentRegion</key>
     <string>$(DEVELOPMENT_LANGUAGE)</string>
     <key>CFBundleExecutable</key>
@@ -21,46 +26,27 @@
     <string>1</string>
     <key>LSRequiresIPhoneOS</key>
     <true/>
-    
-    <!-- Modo de audio en segundo plano -->
-    <key>UIBackgroundModes</key>
-    <array>
-        <string>audio</string>
-    </array>
-    
-    <!-- Pantalla de lanzamiento (para la relación de aspecto) -->
-    <key>UILaunchStoryboardName</key>
-    <string>LaunchScreen</string>
-    
-    <!-- Escenas de la interfaz (SwiftUI) -->
     <key>UIApplicationSceneManifest</key>
     <dict>
         <key>UIApplicationSupportsMultipleScenes</key>
         <false/>
     </dict>
-    
-    <!-- Estilo de la barra de estado -->
-    <key>UIStatusBarStyle</key>
-    <string>UIStatusBarStyleDefault</string>
-    
-    <!-- Requiere pantalla completa -->
-    <key>UIRequiresFullScreen</key>
-    <true/>
-    
-    <!-- Orientaciones soportadas -->
-    <key>UISupportedInterfaceOrientations~iphone</key>
+    <key>UIRequiredDeviceCapabilities</key>
+    <array>
+        <string>armv7</string>
+    </array>
+    <key>UISupportedInterfaceOrientations</key>
     <array>
         <string>UIInterfaceOrientationPortrait</string>
         <string>UIInterfaceOrientationLandscapeLeft</string>
         <string>UIInterfaceOrientationLandscapeRight</string>
     </array>
-    
-    <!-- Fuentes y apariencia -->
-    <key>UIAppFonts</key>
-    <array/>
-    
-    <!-- Prevenir el modo oscuro (opcional) -->
-    <key>UIUserInterfaceStyle</key>
-    <string>Light</string>
+    <key>UISupportedInterfaceOrientations~ipad</key>
+    <array>
+        <string>UIInterfaceOrientationPortrait</string>
+        <string>UIInterfaceOrientationPortraitUpsideDown</string>
+        <string>UIInterfaceOrientationLandscapeLeft</string>
+        <string>UIInterfaceOrientationLandscapeRight</string>
+    </array>
 </dict>
 </plist>

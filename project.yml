@@ -9,10 +9,11 @@ targets:
     type: application
     platform: iOS
     sources:
-      - path: AuroraPlayer
-        excludes:
-          - "Info.plist"
-          - "*.storyboard"
+  - AuroraPlayerApp.swift
+  - path: AuroraPlayer
+    excludes:
+      - "Info.plist"
+      - "*.storyboard"
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.aurora.player
