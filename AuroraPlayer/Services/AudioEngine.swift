@@ -345,7 +345,7 @@ class AudioEngine: NSObject, ObservableObject {
             return
         }
 
-        var info: [String: Any] = [
+       let info: [String: Any] = [
             MPMediaItemPropertyTitle: song.title,
             MPMediaItemPropertyPlaybackDuration: duration,
             MPNowPlayingInfoPropertyElapsedPlaybackTime: currentTime,

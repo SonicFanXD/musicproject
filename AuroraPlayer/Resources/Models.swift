@@ -12,7 +12,7 @@ struct MusicFolder: Identifiable, Codable {
     }
 }
 
-struct Song: Identifiable {
+struct Song: Identifiable, Equatable {
     let id: UUID
     let url: URL
     let title: String
@@ -21,5 +21,9 @@ struct Song: Identifiable {
         self.id = id
         self.url = url
         self.title = url.deletingPathExtension().lastPathComponent
+    }
+
+    static func == (lhs: Song, rhs: Song) -> Bool {
+        lhs.id == rhs.id
     }
 }
