@@ -3,10 +3,13 @@ import AVFoundation
 
 class FileAccessService: ObservableObject {
     @Published var folders: [MusicFolder] = []
+    @Published var files: [MusicFile] = []
     @Published var songs: [Song] = []
 
     private let defaultsKey = "com.aurora.musicFolders"
+    private let filesDefaultsKey = "com.aurora.musicFiles"
     private var activeURLs: [UUID: URL] = [:]
+    private var activeFileURLs: [UUID: URL] = [:]
     private var scanGeneration = 0
 
     private let supportedExtensions: Set<String> = [
@@ -15,11 +18,12 @@ class FileAccessService: ObservableObject {
 
     init() {
         loadFolders()
+        loadFiles()
     }
 
     func addFolder(url: URL) {
         guard url.startAccessingSecurityScopedResource() else {
-            print("No se pudo acceder a la carpeta seleccionada")
+            AppLog.error(.library, "No se pudo acceder a la carpeta seleccionada")
             return
         }
 
@@ -40,7 +44,7 @@ class FileAccessService: ObservableObject {
             saveFolders()
             scanFolder(url)
         } catch {
-            print("Error al crear el marcador: \(error.localizedDescription)")
+            AppLog.error(.library, "Error al crear bookmark: \(error.localizedDescription)")
             url.stopAccessingSecurityScopedResource()
         }
     }
@@ -60,6 +64,30 @@ class FileAccessService: ObservableObject {
         rescanAllFolders()
     }
 
+    func addFiles(urls: [URL]) {
+        for url in urls where supportedExtensions.contains(url.pathExtension.lowercased()) {
+            guard url.startAccessingSecurityScopedResource() else { continue }
+            do {
+                let bookmark = try url.bookmarkData(options: .minimalBookmark, includingResourceValuesForKeys: nil, relativeTo: nil)
+                let file = MusicFile(displayName: url.lastPathComponent, bookmarkData: bookmark)
+                files.append(file)
+                activeFileURLs[file.id] = url
+                saveFiles()
+                scanSingleFile(url)
+            } catch {
+                url.stopAccessingSecurityScopedResource()
+                AppLog.error(.library, "Bookmark de archivo: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    func removeFile(_ file: MusicFile) {
+        activeFileURLs.removeValue(forKey: file.id)?.stopAccessingSecurityScopedResource()
+        files.removeAll { $0.id == file.id }
+        saveFiles()
+        rescanAllFolders()
+    }
+
     private func loadFolders() {
         guard let data = UserDefaults.standard.data(forKey: defaultsKey),
               let savedFolders = try? JSONDecoder().decode([MusicFolder].self, from: data) else {
@@ -70,11 +98,31 @@ class FileAccessService: ObservableObject {
         rescanAllFolders()
     }
 
+    private func loadFiles() {
+        guard let data = UserDefaults.standard.data(forKey: filesDefaultsKey),
+              let saved = try? JSONDecoder().decode([MusicFile].self, from: data) else { return }
+        files = saved
+        for file in files { resolveAndScan(file) }
+    }
+
+    private func resolveAndScan(_ file: MusicFile) {
+        var stale = false
+        do {
+            let url = try URL(resolvingBookmarkData: file.bookmarkData, bookmarkDataIsStale: &stale)
+            guard url.startAccessingSecurityScopedResource() else { return }
+            activeFileURLs[file.id] = url
+            scanSingleFile(url)
+        } catch { AppLog.error(.library, "No se pudo restaurar \(file.displayName): \(error.localizedDescription)") }
+    }
+
     private func rescanAllFolders() {
         scanGeneration += 1
         songs = []
         for folder in folders {
             resolveAndScan(folder)
+        }
+        for file in files {
+            resolveAndScan(file)
         }
     }
 
@@ -92,14 +140,14 @@ class FileAccessService: ObservableObject {
             )
 
             guard url.startAccessingSecurityScopedResource() else {
-                print("No se pudo acceder a: \(folder.displayName)")
+                AppLog.error(.library, "No se pudo acceder a: \(folder.displayName)")
                 return
             }
 
             activeURLs[folder.id] = url
 
             if isStale {
-                print("Bookmark obsoleto para \(folder.displayName). Regenerando...")
+                AppLog.info(.library, "Actualizando bookmark de \(folder.displayName)")
                 do {
                     let newBookmarkData = try url.bookmarkData(
                         options: .minimalBookmark,
@@ -114,16 +162,16 @@ class FileAccessService: ObservableObject {
                         )
                         folders[index] = updatedFolder
                         saveFolders()
-                        print("Bookmark regenerado y guardado")
+                        AppLog.info(.library, "Bookmark actualizado")
                     }
                 } catch {
-                    print("Error al regenerar bookmark: \(error.localizedDescription)")
+                    AppLog.error(.library, "Error al regenerar bookmark: \(error.localizedDescription)")
                 }
             }
 
             scanFolder(url)
         } catch {
-            print("Error al resolver bookmark de \(folder.displayName): \(error.localizedDescription)")
+            AppLog.error(.library, "Error al resolver bookmark de \(folder.displayName): \(error.localizedDescription)")
         }
     }
 
@@ -154,7 +202,8 @@ class FileAccessService: ObservableObject {
                             title: metadata.title,
                             artist: metadata.artist,
                             album: metadata.album,
-                            artworkData: metadata.artworkData
+                            artworkData: metadata.artworkData,
+                            duration: metadata.duration
                         )
                     )
                 }
@@ -169,11 +218,27 @@ class FileAccessService: ObservableObject {
         }
     }
 
+    private func scanSingleFile(_ url: URL) {
+        let generation = scanGeneration
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self else { return }
+            let metadata = self.readMetadata(from: url)
+            let song = Song(url: url, title: metadata.title, artist: metadata.artist, album: metadata.album, artworkData: metadata.artworkData, duration: metadata.duration)
+            DispatchQueue.main.async {
+                guard generation == self.scanGeneration, !self.songs.contains(where: { $0.url == url }) else { return }
+                self.songs.append(song)
+                self.songs.sort { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+                AppLog.info(.library, "Archivo añadido: \(song.title)")
+            }
+        }
+    }
+
     private struct SongMetadata {
         let title: String?
         let artist: String
         let album: String
         let artworkData: Data?
+        let duration: TimeInterval
     }
 
     private func readMetadata(from url: URL) -> SongMetadata {
@@ -204,7 +269,8 @@ class FileAccessService: ObservableObject {
             title: title,
             artist: artist,
             album: album,
-            artworkData: artworkData
+            artworkData: artworkData,
+            duration: asset.duration.isNumeric ? max(0, asset.duration.seconds) : 0
         )
     }
 
@@ -213,9 +279,15 @@ class FileAccessService: ObservableObject {
         UserDefaults.standard.set(data, forKey: defaultsKey)
     }
 
+    private func saveFiles() {
+        guard let data = try? JSONEncoder().encode(files) else { return }
+        UserDefaults.standard.set(data, forKey: filesDefaultsKey)
+    }
+
     deinit {
         for (_, url) in activeURLs {
             url.stopAccessingSecurityScopedResource()
         }
+        for (_, url) in activeFileURLs { url.stopAccessingSecurityScopedResource() }
     }
 }

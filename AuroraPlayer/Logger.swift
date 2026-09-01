@@ -1,12 +1,27 @@
 import Foundation
+import os
 
-class Logger {
-    static let shared = Logger()
-    private init() {}
+enum LogCategory: String {
+    case playback, library, metadata, interface, system
+}
 
-    func log(_ message: String) {
+enum AppLog {
+    private static let subsystem = Bundle.main.bundleIdentifier ?? "com.aurora.player"
+
+    static func info(_ category: LogCategory, _ message: String) {
+        os.Logger(subsystem: subsystem, category: category.rawValue)
+            .info("\(message, privacy: .public)")
+    }
+
+    static func error(_ category: LogCategory, _ message: String) {
+        os.Logger(subsystem: subsystem, category: category.rawValue)
+            .error("\(message, privacy: .public)")
+    }
+
+    static func debug(_ category: LogCategory, _ message: String) {
         #if DEBUG
-        print("🔵 [AuroraPlayer] \(message)")
+        os.Logger(subsystem: subsystem, category: category.rawValue)
+            .debug("\(message, privacy: .public)")
         #endif
     }
 }

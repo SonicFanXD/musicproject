@@ -1,9 +1,12 @@
 import SwiftUI
+import UIKit
 
 struct ContentView: View {
     @StateObject private var audioEngine = AudioEngine()
     @StateObject private var fileAccessService = FileAccessService()
     @State private var showFolderPicker = false
+    @State private var showFilePicker = false
+    @State private var showNowPlaying = false
     @State private var hasRestored = false
 
     var body: some View {
@@ -20,6 +23,16 @@ struct ContentView: View {
                             showFolderPicker = true
                         } label: {
                             Label("Agregar carpeta", systemImage: "folder.badge.plus")
+                        }
+                    }
+
+                    Section("Archivos añadidos") {
+                        ForEach(fileAccessService.files) { file in
+                            Label(file.displayName, systemImage: "music.note")
+                        }
+                        .onDelete(perform: deleteFiles)
+                        Button { showFilePicker = true } label: {
+                            Label("Agregar canciones", systemImage: "music.note.list")
                         }
                     }
 
@@ -56,6 +69,12 @@ struct ContentView: View {
                     fileAccessService.addFolder(url: url)
                 }
             }
+            .sheet(isPresented: $showFilePicker) {
+                MusicFilePickerView(isPresented: $showFilePicker) { urls in fileAccessService.addFiles(urls: urls) }
+            }
+            .sheet(isPresented: $showNowPlaying) {
+                NowPlayingView(audioEngine: audioEngine)
+            }
         }
         .onChange(of: fileAccessService.songs) { newSongs in
             guard !hasRestored, !newSongs.isEmpty else { return }
@@ -66,14 +85,21 @@ struct ContentView: View {
 
     private func songRow(_ song: Song) -> some View {
         Button {
+            AppLog.debug(.interface, "Selección de canción: \(song.title)")
             audioEngine.play(song: song, from: fileAccessService.songs)
         } label: {
-            HStack {
-                Image(systemName: iconFor(song))
-                    .foregroundColor(audioEngine.currentSong?.id == song.id ? .accentColor : .secondary)
-                Text(song.title)
-                    .foregroundColor(.primary)
+            HStack(spacing: 12) {
+                artwork(for: song)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(song.title).foregroundColor(.primary).lineLimit(1)
+                    Text([song.artist, song.album].filter { !$0.isEmpty }.joined(separator: " · "))
+                        .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                }
                 Spacer()
+                if song.duration > 0 {
+                    Text(durationText(song.duration)).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                }
+                Image(systemName: iconFor(song)).foregroundColor(audioEngine.currentSong?.id == song.id ? .accentColor : .secondary)
             }
         }
         .buttonStyle(.plain)
@@ -84,10 +110,26 @@ struct ContentView: View {
         return audioEngine.isPlaying ? "speaker.wave.2.fill" : "play.fill"
     }
 
+    private func durationText(_ value: TimeInterval) -> String {
+        String(format: "%d:%02d", Int(value) / 60, Int(value) % 60)
+    }
+
+    @ViewBuilder private func artwork(for song: Song) -> some View {
+        if let data = song.artworkData, let image = UIImage(data: data) {
+            Image(uiImage: image).resizable().scaledToFill().frame(width: 44, height: 44).clipShape(RoundedRectangle(cornerRadius: 6))
+        } else {
+            Image(systemName: "music.note").frame(width: 44, height: 44).background(.quaternary, in: RoundedRectangle(cornerRadius: 6))
+        }
+    }
+
     private func deleteFolders(at offsets: IndexSet) {
         for index in offsets {
             fileAccessService.removeFolder(fileAccessService.folders[index])
         }
+    }
+
+    private func deleteFiles(at offsets: IndexSet) {
+        for index in offsets { fileAccessService.removeFile(fileAccessService.files[index]) }
     }
 }
 
