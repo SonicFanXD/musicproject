@@ -89,7 +89,7 @@ private struct LyricsView: View {
     let lyrics: String
     let currentTime: TimeInterval
     private var lines: [LyricLine] { LyricLine.parse(lyrics) }
-    private var activeIndex: Int? { lines.lastIndex { $0.time <= currentTime } }
+    private var activeIndex: Int? { lines.lastIndex { $0.time.map { $0 <= currentTime } ?? false } }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {

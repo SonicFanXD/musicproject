@@ -18,7 +18,14 @@ struct LogsView: View {
                 }
                 .padding(.vertical, 2)
             }
-            .overlay { if entries.isEmpty { ContentUnavailableView("Sin registros", systemImage: "text.alignleft") } }
+            .overlay {
+                if entries.isEmpty {
+                    VStack(spacing: 8) {
+                        Image(systemName: "text.alignleft").font(.title2).foregroundStyle(.secondary)
+                        Text("Sin registros").foregroundStyle(.secondary)
+                    }
+                }
+            }
             .navigationTitle("Registros")
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) { Button("Cerrar") { dismiss() } }

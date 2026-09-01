@@ -161,7 +161,9 @@ final class AudioEngine: NSObject, ObservableObject {
 
     private func startDisplayTimer() {
         stopDisplayTimer()
-        displayTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in self?.updateCurrentTime() }
+        displayTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.updateCurrentTime() }
+        }
     }
     private func stopDisplayTimer() { displayTimer?.invalidate(); displayTimer = nil }
     private func updateCurrentTime() {
