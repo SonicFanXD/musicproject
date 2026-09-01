@@ -6,6 +6,7 @@ class FileAccessService: ObservableObject {
 
     private let defaultsKey = "com.aurora.musicFolders"
     private var activeURLs: [UUID: URL] = [:]
+    private var scanGeneration = 0
 
     private let supportedExtensions: Set<String> = [
         "mp3", "m4a", "aac", "wav", "wave", "aiff", "aif", "flac"
@@ -69,6 +70,7 @@ class FileAccessService: ObservableObject {
     }
 
     private func rescanAllFolders() {
+        scanGeneration += 1
         songs = []
         for folder in folders {
             resolveAndScan(folder)
@@ -125,6 +127,7 @@ class FileAccessService: ObservableObject {
     }
 
     private func scanFolder(_ url: URL) {
+        let generation = scanGeneration
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
 
@@ -148,7 +151,10 @@ class FileAccessService: ObservableObject {
             }
 
             DispatchQueue.main.async {
-                self.songs.append(contentsOf: foundSongs)
+                guard generation == self.scanGeneration else { return }
+
+                let existingURLs = Set(self.songs.map(\.url))
+                self.songs.append(contentsOf: foundSongs.filter { !existingURLs.contains($0.url) })
             }
         }
     }

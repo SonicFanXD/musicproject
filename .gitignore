@@ -22,8 +22,8 @@ Podfile.lock
 Carthage/
 *.framework
 
-# Swift Package Manager
-.swiftpm/
+#  Package Manager
+.pm/
 Package.resolved
 
 # macOS

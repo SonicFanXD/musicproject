@@ -1,6 +1,7 @@
 import Foundation
 import AVFoundation
 import MediaPlayer
+import UIKit
 
 class AudioEngine: NSObject, ObservableObject {
     @Published var isPlaying: Bool = false
@@ -20,6 +21,7 @@ class AudioEngine: NSObject, ObservableObject {
     private var seekOffset: TimeInterval = 0
     private var isChangingTrack: Bool = false
     private var workItem: DispatchWorkItem?
+    private var playbackGeneration = 0
 
     private let stateDefaultsKey = "com.aurora.playbackState"
     private var hasRestored: Bool = false
@@ -85,8 +87,8 @@ class AudioEngine: NSObject, ObservableObject {
         }
 
         let item = DispatchWorkItem { [weak self] in
-            self?.playCurrentSong()
             self?.isChangingTrack = false
+            self?.playCurrentSong()
         }
         workItem = item
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1, execute: item)
@@ -94,7 +96,6 @@ class AudioEngine: NSObject, ObservableObject {
     }
 
     private func playCurrentSong() {
-        guard !isChangingTrack else { return }
         guard currentIndex >= 0 && currentIndex < playlist.count else {
             stop()
             return
@@ -140,9 +141,12 @@ class AudioEngine: NSObject, ObservableObject {
     }
 
     private func scheduleFile(_ file: AVAudioFile, from startFrame: AVAudioFramePosition) {
+        let clampedStartFrame = min(max(startFrame, 0), file.length)
+        playbackGeneration += 1
+        let generation = playbackGeneration
         playerNode.stop()
 
-        let framesToPlay = AVAudioFrameCount(file.length - startFrame)
+        let framesToPlay = AVAudioFrameCount(file.length - clampedStartFrame)
         guard framesToPlay > 0 else {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
                 self?.playNext()
@@ -152,11 +156,12 @@ class AudioEngine: NSObject, ObservableObject {
 
         playerNode.scheduleSegment(
             file,
-            startingFrame: startFrame,
+            startingFrame: clampedStartFrame,
             frameCount: framesToPlay,
             at: nil
         ) { [weak self] in
             DispatchQueue.main.async {
+                guard self?.playbackGeneration == generation else { return }
                 self?.handlePlaybackFinished()
             }
         }
@@ -178,6 +183,9 @@ class AudioEngine: NSObject, ObservableObject {
         let nextIndex = currentIndex + 1
         guard nextIndex < playlist.count else {
             stop()
+            currentSong = nil
+            updateNowPlayingInfo()
+            saveState()
             isChangingTrack = false
             return
         }
@@ -242,6 +250,7 @@ class AudioEngine: NSObject, ObservableObject {
     }
 
     func stop() {
+        playbackGeneration += 1
         playerNode.stop()
         audioFile = nil
         isPlaying = false
@@ -456,6 +465,7 @@ class AudioEngine: NSObject, ObservableObject {
 
         let state: [String: Any] = [
             "songID": song.id.uuidString,
+            "songURL": song.url.absoluteString,
             "currentTime": currentTime,
             "isPlaying": isPlaying,
             "duration": duration
@@ -466,9 +476,11 @@ class AudioEngine: NSObject, ObservableObject {
     func restoreState(with allSongs: [Song]) {
         guard !hasRestored else { return }
         guard let state = UserDefaults.standard.dictionary(forKey: stateDefaultsKey) else { return }
-        guard let songIDString = state["songID"] as? String,
-              let songID = UUID(uuidString: songIDString),
-              let song = allSongs.first(where: { $0.id == songID }) else {
+        let savedSongURL = state["songURL"] as? String
+        let savedSongID = (state["songID"] as? String).flatMap(UUID.init(uuidString:))
+        guard let song = allSongs.first(where: {
+            $0.url.absoluteString == savedSongURL || $0.id == savedSongID
+        }) else {
             UserDefaults.standard.removeObject(forKey: stateDefaultsKey)
             return
         }
@@ -477,7 +489,7 @@ class AudioEngine: NSObject, ObservableObject {
         let wasPlaying = state["isPlaying"] as? Bool ?? false
 
         self.playlist = allSongs
-        if let index = allSongs.firstIndex(where: { $0.id == songID }) {
+        if let index = allSongs.firstIndex(where: { $0.id == song.id }) {
             self.currentIndex = index
         } else {
             self.playlist.insert(song, at: 0)
@@ -497,12 +509,13 @@ class AudioEngine: NSObject, ObservableObject {
                 try engine.start()
             }
 
-            let startFrame = AVAudioFramePosition(savedTime * sampleRate)
+            let restoredTime = max(0, min(savedTime, duration))
+            let startFrame = AVAudioFramePosition(restoredTime * sampleRate)
             scheduleFile(file, from: startFrame)
 
             currentSong = song
-            seekOffset = savedTime
-            currentTime = savedTime
+            seekOffset = restoredTime
+            currentTime = restoredTime
 
             if wasPlaying {
                 playerNode.play()

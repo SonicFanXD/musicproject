@@ -12,7 +12,6 @@ targets:
       - path: AuroraPlayer
         excludes:
           - "Info.plist"
-          - "*.storyboard"
       - path: AuroraPlayerApp.swift   # ✅ Agregar esta línea
     settings:
       base:

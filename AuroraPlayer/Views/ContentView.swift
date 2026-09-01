@@ -81,7 +81,7 @@ struct ContentView: View {
 
     private func iconFor(_ song: Song) -> String {
         guard audioEngine.currentSong?.id == song.id else { return "music.note" }
-        return audioEngine.isPlaying ? "speaker.wave.2.fill" : "pause.fill"
+        return audioEngine.isPlaying ? "speaker.wave.2.fill" : "play.fill"
     }
 
     private func deleteFolders(at offsets: IndexSet) {
