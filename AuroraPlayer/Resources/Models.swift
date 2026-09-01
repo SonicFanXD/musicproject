@@ -65,6 +65,7 @@ struct Song: Identifiable, Equatable, Codable {
     let formatDescription: String
     let discNumber: Int?
     let trackNumber: Int
+    let releaseDate: Date?
 
     init(
         id: UUID = UUID(),
@@ -78,7 +79,8 @@ struct Song: Identifiable, Equatable, Codable {
         lyrics: String = "",
         formatDescription: String = "",
         discNumber: Int? = nil,
-        trackNumber: Int = 0
+        trackNumber: Int = 0,
+        releaseDate: Date? = nil
     ) {
         self.id = id
         self.url = url
@@ -94,6 +96,7 @@ struct Song: Identifiable, Equatable, Codable {
         self.formatDescription = formatDescription
         self.discNumber = discNumber.flatMap { $0 > 0 ? $0 : nil }
         self.trackNumber = max(0, trackNumber)
+        self.releaseDate = releaseDate
     }
 
     static func == (lhs: Song, rhs: Song) -> Bool {

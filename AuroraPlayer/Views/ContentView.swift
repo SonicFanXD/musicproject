@@ -95,9 +95,14 @@ struct ContentView: View {
         }
             .map { key, songs in
                 let sample = songs[0]
-                return AlbumGroup(id: key, title: sample.album.isEmpty ? sample.title : sample.album, artist: canonicalAlbumArtist(for: songs), songs: songs)
+                return AlbumGroup(id: key, title: sample.album.isEmpty ? sample.title : sample.album, artist: canonicalAlbumArtist(for: songs), songs: songs, releaseDate: songs.compactMap(\.releaseDate).min())
             }
-            .sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+            .sorted {
+                let left = $0.releaseDate ?? .distantPast
+                let right = $1.releaseDate ?? .distantPast
+                if left != right { return left > right }
+                return $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
+            }
     }
 
     // Si falta Album Artist, se usa el artista predominante del álbum completo,
@@ -157,6 +162,7 @@ private struct AlbumGroup: Identifiable {
     let title: String
     let artist: String
     let songs: [Song]
+    let releaseDate: Date?
 }
 
 private struct ArtistGroup: Identifiable {

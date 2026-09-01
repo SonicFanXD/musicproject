@@ -11,15 +11,18 @@ struct NowPlayingView: View {
             ZStack {
                 coverGradient.ignoresSafeArea()
                 GeometryReader { geometry in
+                    // El padding sobre una vista que ya ocupa todo el
+                    // GeometryReader la expandía y recortaba los extremos.
+                    let contentWidth = max(0, geometry.size.width - 48)
                     VStack(spacing: 20) {
-                        artwork(side: artworkSide(in: geometry.size))
+                        artwork(side: artworkSide(in: geometry.size, contentWidth: contentWidth))
                         songInformation
                         progress
                         controls
                         Spacer(minLength: 0)
                     }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                    .padding(.horizontal, 24).padding(.top, 12).padding(.bottom, 20)
+                    .frame(width: contentWidth, height: max(0, geometry.size.height - 32), alignment: .top)
+                    .position(x: geometry.size.width / 2, y: geometry.size.height / 2 + 4)
                 }
             }
             .navigationTitle("Ahora suena")
@@ -64,9 +67,9 @@ struct NowPlayingView: View {
         .shadow(radius: 18)
     }
 
-    private func artworkSide(in size: CGSize) -> CGFloat {
+    private func artworkSide(in size: CGSize, contentWidth: CGFloat) -> CGFloat {
         // Reserva espacio para datos, progreso y controles en pantallas compactas.
-        min(330, min(size.width - 48, max(230, size.height * 0.40)))
+        min(330, min(contentWidth, max(180, min(size.height * 0.40, size.height - 260))))
     }
 
     @ViewBuilder private var songInformation: some View {

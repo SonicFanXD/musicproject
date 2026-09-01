@@ -8,6 +8,8 @@ struct AlbumDetailView: View {
     @ObservedObject var audioEngine: AudioEngine
 
     var body: some View {
+        ZStack {
+            albumBackground
         List {
             Section {
                 HStack(spacing: 16) {
@@ -42,6 +44,9 @@ struct AlbumDetailView: View {
                 }
             }
         }
+        .scrollContentBackground(.hidden)
+        .listStyle(.insetGrouped)
+        }
         .navigationTitle(album)
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -59,6 +64,13 @@ struct AlbumDetailView: View {
         if let data = song?.artworkData, let image = UIImage(data: data) {
             Image(uiImage: image).resizable().scaledToFill()
         } else { Image(systemName: "music.note").foregroundStyle(.secondary) }
+    }
+
+    @ViewBuilder private var albumBackground: some View {
+        if let data = songs.first?.artworkData, let image = UIImage(data: data) {
+            Image(uiImage: image).resizable().scaledToFill().blur(radius: 32).scaleEffect(1.18).opacity(0.30).ignoresSafeArea()
+        } else { Color.black.ignoresSafeArea() }
+        LinearGradient(colors: [.black.opacity(0.35), .black.opacity(0.88)], startPoint: .top, endPoint: .bottom).ignoresSafeArea()
     }
 }
 
@@ -79,12 +91,12 @@ struct ArtistDetailView: View {
                 }.padding(.vertical, 6)
             }
             Section("Álbumes") {
-                ForEach(albumNames, id: \.self) { album in
-                    let albumSongs = songs.filter { ($0.album.isEmpty ? "Sin álbum" : $0.album) == album }
-                    NavigationLink { AlbumDetailView(album: album, albumArtist: artist, songs: albumSongs, audioEngine: audioEngine) } label: {
+                ForEach(artistAlbums) { album in
+                    let albumSongs = album.songs
+                    NavigationLink { AlbumDetailView(album: album.title, albumArtist: artist, songs: albumSongs, audioEngine: audioEngine) } label: {
                         HStack(spacing: 12) {
                             artwork(for: albumSongs.first).frame(width: 44, height: 44).clipShape(RoundedRectangle(cornerRadius: 6))
-                            VStack(alignment: .leading) { Text(album); Text("\(albumSongs.count) canciones").font(.caption).foregroundStyle(.secondary) }
+                            VStack(alignment: .leading) { Text(album.title); Text("\(albumSongs.count) canciones").font(.caption).foregroundStyle(.secondary) }
                         }
                     }
                 }
@@ -97,11 +109,32 @@ struct ArtistDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
     }
 
-    private var albumNames: [String] { Array(Set(songs.map { $0.album.isEmpty ? "Sin álbum" : $0.album })).sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending } }
+    private var artistAlbums: [ArtistAlbumGroup] {
+        Dictionary(grouping: songs) { song in
+            let title = song.album.isEmpty ? "Sin álbum" : song.album
+            return title.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+        }
+        .map { _, songs in
+            ArtistAlbumGroup(title: songs.first?.album.nilIfEmpty ?? "Sin álbum", songs: songs, releaseDate: songs.compactMap(\.releaseDate).min())
+        }
+        .sorted {
+            let left = $0.releaseDate ?? .distantPast
+            let right = $1.releaseDate ?? .distantPast
+            if left != right { return left > right }
+            return $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
+        }
+    }
     @ViewBuilder private func artwork(for song: Song?) -> some View {
         if let data = song?.artworkData, let image = UIImage(data: data) { Image(uiImage: image).resizable().scaledToFill() }
         else { Image(systemName: "music.note").frame(width: 44, height: 44).background(.quaternary, in: RoundedRectangle(cornerRadius: 6)) }
     }
+}
+
+private struct ArtistAlbumGroup: Identifiable {
+    let title: String
+    let songs: [Song]
+    let releaseDate: Date?
+    var id: String { title.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current) }
 }
 
 private struct DetailSongRow: View {

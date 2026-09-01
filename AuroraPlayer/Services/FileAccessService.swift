@@ -14,7 +14,7 @@ class FileAccessService: ObservableObject {
     private let defaultsKey = "com.aurora.musicFolders"
     private let filesDefaultsKey = "com.aurora.musicFiles"
     // Cambiar la versión fuerza una única reconstrucción al corregir el mapeo de tags.
-    private let libraryCacheFileName = "library-metadata-v3.json"
+    private let libraryCacheFileName = "library-metadata-v5.json"
     private var activeURLs: [UUID: URL] = [:]
     private var activeFileURLs: [UUID: URL] = [:]
     private var scanGeneration = 0
@@ -305,7 +305,7 @@ class FileAccessService: ObservableObject {
 
     private func makeSong(from url: URL) -> Song {
         let metadata = readMetadata(from: url)
-        return Song(url: url, title: metadata.title, artist: metadata.artist, albumArtist: metadata.albumArtist, album: metadata.album, artworkData: metadata.artworkData, duration: metadata.duration, lyrics: metadata.lyrics, formatDescription: metadata.formatDescription, discNumber: metadata.discNumber, trackNumber: metadata.trackNumber)
+        return Song(url: url, title: metadata.title, artist: metadata.artist, albumArtist: metadata.albumArtist, album: metadata.album, artworkData: metadata.artworkData, duration: metadata.duration, lyrics: metadata.lyrics, formatDescription: metadata.formatDescription, discNumber: metadata.discNumber, trackNumber: metadata.trackNumber, releaseDate: metadata.releaseDate)
     }
 
     private struct SongMetadata {
@@ -319,6 +319,7 @@ class FileAccessService: ObservableObject {
         let formatDescription: String
         let discNumber: Int?
         let trackNumber: Int
+        let releaseDate: Date?
     }
 
     private func readMetadata(from url: URL) -> SongMetadata {
@@ -331,6 +332,7 @@ class FileAccessService: ObservableObject {
         var lyrics = ""
         var discNumber: Int?
         var trackNumber = 0
+        var releaseDate: Date?
         let formatMetadata = asset.availableMetadataFormats.flatMap { asset.metadata(forFormat: $0) }
 
         for item in asset.commonMetadata {
@@ -351,6 +353,8 @@ class FileAccessService: ObservableObject {
                 discNumber = item.numberValue?.intValue
             case "trackNumber":
                 trackNumber = item.numberValue?.intValue ?? 0
+            case "creationDate":
+                releaseDate = item.dateValue
             default:
                 break
             }
@@ -358,22 +362,25 @@ class FileAccessService: ObservableObject {
 
         for item in formatMetadata {
             let identifier = normalizedMetadataIdentifier(item)
-            let key = ((item.key as? String) ?? "").lowercased()
+            let key = metadataKey(item)
 
             // iTunes/MP4 usa `aART`, `trkn` y `disk`; otros formatos suelen
             // exponer nombres descriptivos. Se soportan las dos variantes.
-            if (identifier.contains("albumartist") || key == "aart" || key == "album artist"),
+            if (identifier.contains("albumartist") || key == "aart" || key == "album artist" || key == "tpe2"),
                let value = metadataText(item).nilIfEmpty {
                 albumArtist = value
             }
-            if title == nil, (identifier.contains("title") || key == "©nam") { title = metadataText(item) }
-            if artist.isEmpty, (identifier.contains("artist") || key == "©art"), key != "aart" { artist = metadataText(item) }
-            if album.isEmpty, (identifier.contains("album") || key == "©alb"), key != "aart" { album = metadataText(item) }
-            if identifier.contains("discnumber") || identifier.contains("disknumber") || key == "disk" {
+            if title == nil, (identifier.contains("title") || key == "©nam" || key == "tit2") { title = metadataText(item) }
+            if artist.isEmpty, (identifier.contains("artist") || key == "©art" || key == "tpe1"), key != "aart" { artist = metadataText(item) }
+            if album.isEmpty, (identifier.contains("album") || key == "©alb" || key == "talb"), key != "aart" { album = metadataText(item) }
+            if identifier.contains("discnumber") || identifier.contains("disknumber") || key.contains("disk") || key.contains("tpos") {
                 discNumber = metadataNumber(item)
             }
-            if identifier.contains("tracknumber") || key == "trkn" {
+            if identifier.contains("tracknumber") || key.contains("trkn") || key.contains("trck") {
                 trackNumber = metadataNumber(item) ?? 0
+            }
+            if releaseDate == nil, identifier.contains("date") || identifier.contains("year") || key.contains("day") || key.contains("tdrc") {
+                releaseDate = metadataDate(item)
             }
         }
 
@@ -382,9 +389,22 @@ class FileAccessService: ObservableObject {
         if lyrics.isEmpty {
             lyrics = formatMetadata.first(where: { item in
                 let id = normalizedMetadataIdentifier(item)
-                let key = ((item.key as? String) ?? "").lowercased()
-                return item.commonKey?.rawValue == "lyrics" || id.contains("lyric") || key == "©lyr" || key.contains("lyric")
-            }).map { self.metadataText($0) } ?? ""
+                let key = metadataKey(item)
+                return item.commonKey?.rawValue == "lyrics" || id.contains("lyric") || key == "©lyr" || key.contains("lyric") || key == "uslt" || key == "sylt"
+            }).map { self.lyricsText($0) } ?? ""
+        }
+        // Algunos archivos devuelven primero un campo de letras vacío. Buscar
+        // todos los frames candidatos permite llegar a USLT/SYLT de ID3 y a
+        // las variantes MP4 que no se proyectan a commonMetadata.
+        if lyrics.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            lyrics = formatMetadata.lazy
+                .filter { item in
+                    let id = normalizedMetadataIdentifier(item)
+                    let key = metadataKey(item)
+                    return item.commonKey?.rawValue == "lyrics" || id.contains("lyric") || key.contains("lyr") || key == "uslt" || key == "sylt"
+                }
+                .map { self.lyricsText($0) }
+                .first(where: { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) ?? ""
         }
         let audioFile = try? AVAudioFile(forReading: url)
         let sampleRate = audioFile?.processingFormat.sampleRate ?? 0
@@ -403,7 +423,8 @@ class FileAccessService: ObservableObject {
             lyrics: lyrics,
             formatDescription: formatDescription,
             discNumber: discNumber,
-            trackNumber: trackNumber
+            trackNumber: trackNumber,
+            releaseDate: releaseDate
         )
     }
 
@@ -436,9 +457,73 @@ class FileAccessService: ObservableObject {
             ?? ""
     }
 
+    private func metadataKey(_ item: AVMetadataItem) -> String {
+        ((item.key as? String) ?? String(describing: item.key ?? "")).lowercased()
+    }
+
+    private func lyricsText(_ item: AVMetadataItem) -> String {
+        let key = metadataKey(item)
+        let identifier = normalizedMetadataIdentifier(item)
+        let isSynchronizedID3 = key == "sylt" || identifier.contains("sylt")
+        guard (key == "uslt" || isSynchronizedID3 || identifier.contains("uslt")), let data = item.dataValue else {
+            return metadataText(item)
+        }
+        if isSynchronizedID3, let parsed = synchronizedID3Lyrics(data), !parsed.isEmpty {
+            return parsed
+        }
+        // ID3 USLT: encoding byte, ISO-639 language, description terminator, text.
+        // Neutron lee este frame; AVFoundation normalmente no lo normaliza.
+        guard data.count > 4 else { return metadataText(item) }
+        let bytes = [UInt8](data)
+        let encoding = bytes[0]
+        let payload = Data(bytes.dropFirst(4))
+        if encoding == 0 || encoding == 3 {
+            let terminator = payload.firstIndex(of: 0).map { payload.index(after: $0) } ?? payload.startIndex
+            return String(data: payload[terminator...], encoding: encoding == 3 ? .utf8 : .isoLatin1)?.trimmingCharacters(in: .controlCharacters) ?? metadataText(item)
+        }
+        // UTF-16 description terminator occupies two bytes.
+        let values = [UInt8](payload)
+        if let end = values.indices.dropLast().first(where: { values[$0] == 0 && values[$0 + 1] == 0 }), end + 2 < values.count {
+            let text = Data(values[(end + 2)...])
+            return String(data: text, encoding: encoding == 1 ? .utf16 : .utf16BigEndian)?.trimmingCharacters(in: .controlCharacters) ?? metadataText(item)
+        }
+        return metadataText(item)
+    }
+
+    private func synchronizedID3Lyrics(_ data: Data) -> String? {
+        // ID3 SYLT: encoding, language, timestamp format, content type,
+        // description, then (text + UInt32 timestamp) pairs. Convertimos la
+        // forma más habitual (UTF-8/Latin-1 con milisegundos) a LRC, que la
+        // vista ya sincroniza de forma eficiente.
+        let bytes = [UInt8](data)
+        guard bytes.count > 7, (bytes[0] == 0 || bytes[0] == 3), bytes[4] == 2 else { return nil }
+        var index = 6
+        while index < bytes.count, bytes[index] != 0 { index += 1 }
+        guard index < bytes.count else { return nil }
+        index += 1
+        var lines: [String] = []
+        while index < bytes.count {
+            let textStart = index
+            while index < bytes.count, bytes[index] != 0 { index += 1 }
+            guard index < bytes.count, index + 4 < bytes.count else { break }
+            let text = String(data: Data(bytes[textStart..<index]), encoding: bytes[0] == 3 ? .utf8 : .isoLatin1)?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            index += 1
+            let milliseconds = (UInt32(bytes[index]) << 24) | (UInt32(bytes[index + 1]) << 16) | (UInt32(bytes[index + 2]) << 8) | UInt32(bytes[index + 3])
+            index += 4
+            guard !text.isEmpty else { continue }
+            let minutes = milliseconds / 60_000
+            let seconds = (milliseconds % 60_000) / 1_000
+            let hundredths = (milliseconds % 1_000) / 10
+            lines.append(String(format: "[%u:%02u.%02u]%@", minutes, seconds, hundredths, text))
+        }
+        return lines.isEmpty ? nil : lines.joined(separator: "\n")
+    }
+
     private func metadataNumber(_ item: AVMetadataItem) -> Int? {
         if let number = item.numberValue?.intValue, number > 0 { return number }
-        if let value = item.stringValue, let number = Int(value), number > 0 { return number }
+        if let value = item.stringValue,
+           let number = Int(value.split(separator: "/", maxSplits: 1).first ?? ""), number > 0 { return number }
         // `trkn` y `disk` de MP4 suelen guardar dos UInt16 tras 4 bytes de cabecera.
         if let data = item.dataValue, data.count >= 6 {
             let bytes = [UInt8](data)
@@ -446,6 +531,19 @@ class FileAccessService: ObservableObject {
             if number > 0 { return number }
         }
         return nil
+    }
+
+    private func metadataDate(_ item: AVMetadataItem) -> Date? {
+        if let date = item.dateValue { return date }
+        guard let text = metadataText(item).nilIfEmpty else { return nil }
+        let iso = ISO8601DateFormatter()
+        if let date = iso.date(from: text) { return date }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd"
+        if let date = formatter.date(from: text) { return date }
+        formatter.dateFormat = "yyyy"
+        return formatter.date(from: text)
     }
 
     private func saveFolders() {

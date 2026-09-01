@@ -242,10 +242,17 @@ final class AudioEngine: NSObject, ObservableObject {
         if !song.artist.isEmpty { info[MPMediaItemPropertyArtist] = song.artist }
         if !song.album.isEmpty { info[MPMediaItemPropertyAlbumTitle] = song.album }
         if let nowPlayingArtwork { info[MPMediaItemPropertyArtwork] = nowPlayingArtwork }
-        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
-        MPNowPlayingInfoCenter.default().playbackState = isPlaying ? .playing : .paused
+        let nowPlayingCenter = MPNowPlayingInfoCenter.default()
+        // Publicarlo antes y después de sustituir el diccionario evita que
+        // Control Center conserve el icono previo en algunas rutas Bluetooth.
+        nowPlayingCenter.playbackState = isPlaying ? .playing : .paused
+        nowPlayingCenter.nowPlayingInfo = info
+        nowPlayingCenter.playbackState = isPlaying ? .playing : .paused
+        let commands = MPRemoteCommandCenter.shared()
+        commands.playCommand.isEnabled = !isPlaying
+        commands.pauseCommand.isEnabled = isPlaying
         lastNowPlayingPositionUpdate = currentTime
-        AppLog.debug(.metadata, "Centro de control actualizado: \(song.title)")
+        AppLog.debug(.metadata, "Centro de control actualizado: \(song.title), estado=\(isPlaying ? "playing" : "paused"), rate=\(isPlaying ? "1" : "0")")
     }
 
     private func prepareNowPlayingArtwork(for song: Song) {
