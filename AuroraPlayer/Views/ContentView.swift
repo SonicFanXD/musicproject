@@ -7,6 +7,7 @@ struct ContentView: View {
     @State private var showFolderPicker = false
     @State private var showFilePicker = false
     @State private var showNowPlaying = false
+    @State private var showLogs = false
     @State private var hasRestored = false
 
     var body: some View {
@@ -56,6 +57,10 @@ struct ContentView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .navigationTitle("Aurora Player")
             .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button { showLogs = true } label: { Image(systemName: "text.alignleft") }
+                        .accessibilityLabel("Ver registros")
+                }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button {
                         fileAccessService.refreshAllFolders()
@@ -75,6 +80,7 @@ struct ContentView: View {
             .sheet(isPresented: $showNowPlaying) {
                 NowPlayingView(audioEngine: audioEngine)
             }
+            .sheet(isPresented: $showLogs) { LogsView() }
         }
         .onChange(of: fileAccessService.songs) { newSongs in
             guard !hasRestored, !newSongs.isEmpty else { return }
