@@ -14,7 +14,7 @@ class FileAccessService: ObservableObject {
     private let defaultsKey = "com.aurora.musicFolders"
     private let filesDefaultsKey = "com.aurora.musicFiles"
     // Cambiar la versión fuerza una única reconstrucción al corregir el mapeo de tags.
-    private let libraryCacheFileName = "library-metadata-v5.json"
+    private let libraryCacheFileName = "library-metadata-v7.json"
     private var activeURLs: [UUID: URL] = [:]
     private var activeFileURLs: [UUID: URL] = [:]
     private var scanGeneration = 0
@@ -384,6 +384,20 @@ class FileAccessService: ObservableObject {
             }
         }
 
+        // AVFoundation no siempre entrega los frames ID3 de MP3, aunque otras
+        // apps sí los lean. El fallback sólo lee la cabecera/tag (máx. 8 MB),
+        // nunca el audio completo, por lo que escala bien con bibliotecas grandes.
+        if let embedded = readID3Metadata(from: url) ?? readFLACMetadata(from: url) ?? readM4AMetadata(from: url) {
+            title = title ?? embedded.title
+            if artist.isEmpty { artist = embedded.artist ?? "" }
+            if albumArtist.isEmpty { albumArtist = embedded.albumArtist ?? "" }
+            if album.isEmpty { album = embedded.album ?? "" }
+            if trackNumber == 0 { trackNumber = embedded.trackNumber ?? 0 }
+            if discNumber == nil { discNumber = embedded.discNumber }
+            if releaseDate == nil { releaseDate = embedded.releaseDate }
+            if lyrics.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { lyrics = embedded.lyrics ?? "" }
+        }
+
         // Algunos contenedores no exponen la letra como metadata común; se revisan
         // los formatos disponibles sin cargar el archivo de audio completo.
         if lyrics.isEmpty {
@@ -545,6 +559,262 @@ class FileAccessService: ObservableObject {
         if let date = formatter.date(from: text) { return date }
         formatter.dateFormat = "yyyy"
         return formatter.date(from: text)
+    }
+
+    private struct ID3Metadata {
+        var title: String?
+        var artist: String?
+        var albumArtist: String?
+        var album: String?
+        var trackNumber: Int?
+        var discNumber: Int?
+        var releaseDate: Date?
+        var lyrics: String?
+    }
+
+    private func readID3Metadata(from url: URL) -> ID3Metadata? {
+        guard url.pathExtension.lowercased() == "mp3",
+              let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+        defer { try? handle.close() }
+        guard let header = try? handle.read(upToCount: 10), header.count == 10 else { return nil }
+        let h = [UInt8](header)
+        guard Array(h[0..<3]) == [73, 68, 51], (h[3] == 3 || h[3] == 4) else { return nil }
+        let tagSize = Int(h[6] & 0x7F) << 21 | Int(h[7] & 0x7F) << 14 | Int(h[8] & 0x7F) << 7 | Int(h[9] & 0x7F)
+        guard tagSize > 0, tagSize <= 8_000_000, let tagData = try? handle.read(upToCount: tagSize) else { return nil }
+        let bytes = [UInt8](tagData)
+        var index = 0
+        var metadata = ID3Metadata()
+        while index + 10 <= bytes.count {
+            let identifier = String(bytes: bytes[index..<(index + 4)], encoding: .ascii) ?? ""
+            guard !identifier.trimmingCharacters(in: CharacterSet(charactersIn: "\0")).isEmpty else { break }
+            let size: Int
+            if h[3] == 4 {
+                size = Int(bytes[index + 4] & 0x7F) << 21 | Int(bytes[index + 5] & 0x7F) << 14 | Int(bytes[index + 6] & 0x7F) << 7 | Int(bytes[index + 7] & 0x7F)
+            } else {
+                size = Int(bytes[index + 4]) << 24 | Int(bytes[index + 5]) << 16 | Int(bytes[index + 6]) << 8 | Int(bytes[index + 7])
+            }
+            index += 10
+            guard size > 0, index + size <= bytes.count else { break }
+            let payload = Data(bytes[index..<(index + size)])
+            index += size
+            switch identifier {
+            case "TIT2": metadata.title = id3Text(payload)
+            case "TPE1": metadata.artist = id3Text(payload)
+            case "TPE2": metadata.albumArtist = id3Text(payload)
+            case "TALB": metadata.album = id3Text(payload)
+            case "TRCK": metadata.trackNumber = id3Number(payload)
+            case "TPOS": metadata.discNumber = id3Number(payload)
+            case "TDRC", "TYER": metadata.releaseDate = metadata.releaseDate ?? date(from: id3Text(payload))
+            case "USLT": metadata.lyrics = id3UnsynchronizedLyrics(payload)
+            case "SYLT": metadata.lyrics = synchronizedID3Lyrics(payload)
+            default: break
+            }
+        }
+        return metadata
+    }
+
+    private func readFLACMetadata(from url: URL) -> ID3Metadata? {
+        guard url.pathExtension.lowercased() == "flac",
+              let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+        defer { try? handle.close() }
+        guard let signature = try? handle.read(upToCount: 4), signature == Data([0x66, 0x4C, 0x61, 0x43]) else { return nil }
+        var metadata = ID3Metadata()
+        var bytesRead = 4
+        var isLast = false
+        while !isLast, bytesRead < 8_000_000 {
+            guard let header = try? handle.read(upToCount: 4), header.count == 4 else { break }
+            bytesRead += 4
+            let h = [UInt8](header)
+            isLast = h[0] & 0x80 != 0
+            let type = h[0] & 0x7F
+            let size = Int(h[1]) << 16 | Int(h[2]) << 8 | Int(h[3])
+            guard size >= 0, bytesRead + size <= 8_000_000, let block = try? handle.read(upToCount: size), block.count == size else { break }
+            bytesRead += size
+            guard type == 4 else { continue }
+            let comments = flacComments(block)
+            metadata.title = comments["TITLE"]
+            metadata.artist = comments["ARTIST"]
+            metadata.albumArtist = comments["ALBUMARTIST"] ?? comments["ALBUM ARTIST"]
+            metadata.album = comments["ALBUM"]
+            metadata.trackNumber = comments["TRACKNUMBER"].flatMap(number(from:))
+            metadata.discNumber = (comments["DISCNUMBER"] ?? comments["DISC"]).flatMap(number(from:))
+            metadata.releaseDate = date(from: comments["DATE"] ?? comments["YEAR"])
+            metadata.lyrics = comments["SYNCEDLYRICS"] ?? comments["LYRICS"] ?? comments["UNSYNCEDLYRICS"]
+            return metadata
+        }
+        return nil
+    }
+
+    private func readM4AMetadata(from url: URL) -> ID3Metadata? {
+        guard ["m4a", "mp4", "alac"].contains(url.pathExtension.lowercased()),
+              let handle = try? FileHandle(forReadingFrom: url),
+              let values = try? url.resourceValues(forKeys: [.fileSizeKey]),
+              let fileSize = values.fileSize else { return nil }
+        defer { try? handle.close() }
+        var offset: UInt64 = 0
+        var moovData: Data?
+        while offset + 8 <= UInt64(fileSize) {
+            guard let header = try? handle.read(upToCount: 8), header.count == 8 else { break }
+            let bytes = [UInt8](header)
+            let atomSize = Int(bytes[0]) << 24 | Int(bytes[1]) << 16 | Int(bytes[2]) << 8 | Int(bytes[3])
+            let atomType = String(bytes: bytes[4..<8], encoding: .isoLatin1) ?? ""
+            guard atomSize >= 8 else { break }
+            if atomType == "moov" {
+                let payloadSize = atomSize - 8
+                guard payloadSize <= 8_000_000, let payload = try? handle.read(upToCount: payloadSize), payload.count == payloadSize else { return nil }
+                moovData = payload
+                break
+            }
+            offset += UInt64(atomSize)
+            guard offset <= UInt64(fileSize) else { break }
+            try? handle.seek(toOffset: offset)
+        }
+        guard let moovData, let ilst = m4aItemList(in: moovData) else { return nil }
+        var metadata = ID3Metadata()
+        for (name, payload) in ilst {
+            switch name {
+            case "©nam": metadata.title = m4aText(payload)
+            case "©ART": metadata.artist = m4aText(payload)
+            case "aART": metadata.albumArtist = m4aText(payload)
+            case "©alb": metadata.album = m4aText(payload)
+            case "trkn": metadata.trackNumber = m4aNumber(payload)
+            case "disk": metadata.discNumber = m4aNumber(payload)
+            case "©day": metadata.releaseDate = date(from: m4aText(payload))
+            case "©lyr": metadata.lyrics = m4aText(payload)
+            default: break
+            }
+        }
+        return metadata
+    }
+
+    private func m4aItemList(in data: Data) -> [(String, Data)]? {
+        let bytes = [UInt8](data)
+        func bigEndian(_ offset: Int) -> Int? {
+            guard offset + 4 <= bytes.count else { return nil }
+            return Int(bytes[offset]) << 24 | Int(bytes[offset + 1]) << 16 | Int(bytes[offset + 2]) << 8 | Int(bytes[offset + 3])
+        }
+        func atoms(in range: Range<Int>, meta: Bool = false) -> [(String, Range<Int>)] {
+            var result: [(String, Range<Int>)] = []
+            var index = range.lowerBound + (meta ? 4 : 0)
+            while index + 8 <= range.upperBound, let size = bigEndian(index), size >= 8, index + size <= range.upperBound {
+                let name = String(bytes: bytes[(index + 4)..<(index + 8)], encoding: .isoLatin1) ?? ""
+                result.append((name, (index + 8)..<(index + size)))
+                index += size
+            }
+            return result
+        }
+        func locateILST(in range: Range<Int>) -> Range<Int>? {
+            for (name, contents) in atoms(in: range) {
+                if name == "ilst" { return contents }
+                if ["moov", "udta", "meta"].contains(name) {
+                    let nested = (name == "meta" && contents.count >= 4) ? (contents.lowerBound + 4)..<contents.upperBound : contents
+                    if let found = locateILST(in: nested) { return found }
+                }
+            }
+            return nil
+        }
+        guard let range = locateILST(in: 0..<bytes.count) else { return nil }
+        var result: [(String, Data)] = []
+        for (name, contents) in atoms(in: range) {
+            for (childName, dataContents) in atoms(in: contents) where childName == "data" {
+                // data atom: 4 bytes type/flags + 4 locale bytes + value.
+                guard dataContents.count >= 8 else { continue }
+                result.append((name, Data(bytes[dataContents.dropFirst(8)])))
+            }
+        }
+        return result
+    }
+
+    private func m4aText(_ data: Data) -> String? {
+        String(data: data, encoding: .utf8)?.trimmingCharacters(in: .controlCharacters).nilIfEmpty
+            ?? String(data: data, encoding: .utf16)?.trimmingCharacters(in: .controlCharacters).nilIfEmpty
+    }
+
+    private func m4aNumber(_ data: Data) -> Int? {
+        let bytes = [UInt8](data)
+        guard bytes.count >= 4 else { return nil }
+        let number = Int(bytes[2]) << 8 | Int(bytes[3])
+        return number > 0 ? number : nil
+    }
+
+    private func flacComments(_ data: Data) -> [String: String] {
+        let bytes = [UInt8](data)
+        func littleEndianInt(_ offset: Int) -> Int? {
+            guard offset + 4 <= bytes.count else { return nil }
+            return Int(bytes[offset]) | Int(bytes[offset + 1]) << 8 | Int(bytes[offset + 2]) << 16 | Int(bytes[offset + 3]) << 24
+        }
+        guard let vendorLength = littleEndianInt(0) else { return [:] }
+        var offset = 4 + vendorLength
+        guard let count = littleEndianInt(offset) else { return [:] }
+        offset += 4
+        var result: [String: String] = [:]
+        for _ in 0..<count {
+            guard let length = littleEndianInt(offset), length >= 0, offset + 4 + length <= bytes.count else { break }
+            offset += 4
+            let entry = String(data: Data(bytes[offset..<(offset + length)]), encoding: .utf8) ?? ""
+            offset += length
+            guard let separator = entry.firstIndex(of: "=") else { continue }
+            let key = String(entry[..<separator]).uppercased()
+            let value = String(entry[entry.index(after: separator)...])
+            if !value.isEmpty, result[key] == nil { result[key] = value }
+        }
+        return result
+    }
+
+    private func id3Text(_ data: Data) -> String? {
+        let bytes = [UInt8](data)
+        guard let encoding = bytes.first, bytes.count > 1 else { return nil }
+        let text = Data(bytes.dropFirst())
+        let value: String?
+        switch encoding {
+        case 0: value = String(data: text, encoding: .isoLatin1)
+        case 1: value = String(data: text, encoding: .utf16)
+        case 2: value = String(data: text, encoding: .utf16BigEndian)
+        case 3: value = String(data: text, encoding: .utf8)
+        default: value = nil
+        }
+        return value?.trimmingCharacters(in: .controlCharacters).nilIfEmpty
+    }
+
+    private func id3Number(_ data: Data) -> Int? {
+        guard let text = id3Text(data) else { return nil }
+        return number(from: text)
+    }
+
+    private func number(from value: String) -> Int? {
+        Int(value.split(separator: "/", maxSplits: 1).first ?? "")
+    }
+
+    private func id3UnsynchronizedLyrics(_ data: Data) -> String? {
+        let bytes = [UInt8](data)
+        guard bytes.count > 4 else { return nil }
+        let encoding = bytes[0]
+        let payload = Array(bytes.dropFirst(4))
+        let textBytes: [UInt8]
+        if encoding == 0 || encoding == 3 {
+            guard let end = payload.firstIndex(of: 0), end + 1 < payload.count else { return nil }
+            textBytes = Array(payload[(end + 1)...])
+        } else {
+            guard let end = payload.indices.dropLast().first(where: { payload[$0] == 0 && payload[$0 + 1] == 0 }), end + 2 < payload.count else { return nil }
+            textBytes = Array(payload[(end + 2)...])
+        }
+        let value: String?
+        switch encoding {
+        case 0: value = String(data: Data(textBytes), encoding: .isoLatin1)
+        case 1: value = String(data: Data(textBytes), encoding: .utf16)
+        case 2: value = String(data: Data(textBytes), encoding: .utf16BigEndian)
+        case 3: value = String(data: Data(textBytes), encoding: .utf8)
+        default: value = nil
+        }
+        return value?.trimmingCharacters(in: .controlCharacters).nilIfEmpty
+    }
+
+    private func date(from value: String?) -> Date? {
+        guard let value = value?.nilIfEmpty else { return nil }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = value.count >= 10 ? "yyyy-MM-dd" : "yyyy"
+        return formatter.date(from: value)
     }
 
     private func saveFolders() {

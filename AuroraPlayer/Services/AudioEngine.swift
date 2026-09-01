@@ -248,9 +248,11 @@ final class AudioEngine: NSObject, ObservableObject {
         nowPlayingCenter.playbackState = isPlaying ? .playing : .paused
         nowPlayingCenter.nowPlayingInfo = info
         nowPlayingCenter.playbackState = isPlaying ? .playing : .paused
+        // iOS decide cuál icono mostrar con playbackState/rate. Desactivar el
+        // comando contrario puede dejar Control Center mostrando el icono viejo.
         let commands = MPRemoteCommandCenter.shared()
-        commands.playCommand.isEnabled = !isPlaying
-        commands.pauseCommand.isEnabled = isPlaying
+        commands.playCommand.isEnabled = true
+        commands.pauseCommand.isEnabled = true
         lastNowPlayingPositionUpdate = currentTime
         AppLog.debug(.metadata, "Centro de control actualizado: \(song.title), estado=\(isPlaying ? "playing" : "paused"), rate=\(isPlaying ? "1" : "0")")
     }

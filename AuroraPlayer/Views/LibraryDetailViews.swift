@@ -68,9 +68,9 @@ struct AlbumDetailView: View {
 
     @ViewBuilder private var albumBackground: some View {
         if let data = songs.first?.artworkData, let image = UIImage(data: data) {
-            Image(uiImage: image).resizable().scaledToFill().blur(radius: 32).scaleEffect(1.18).opacity(0.30).ignoresSafeArea()
-        } else { Color.black.ignoresSafeArea() }
-        LinearGradient(colors: [.black.opacity(0.35), .black.opacity(0.88)], startPoint: .top, endPoint: .bottom).ignoresSafeArea()
+            Image(uiImage: image).resizable().scaledToFill().blur(radius: 24).scaleEffect(1.12).opacity(0.32).ignoresSafeArea()
+        } else { Color(uiColor: .systemBackground).ignoresSafeArea() }
+        LinearGradient(colors: [.black.opacity(0.20), .black.opacity(0.72)], startPoint: .top, endPoint: .bottom).ignoresSafeArea()
     }
 }
 
