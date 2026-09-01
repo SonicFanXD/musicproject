@@ -43,6 +43,9 @@ final class AudioEngine: NSObject, ObservableObject {
         NotificationCenter.default.addObserver(self, selector: #selector(handleRouteChange), name: AVAudioSession.routeChangeNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleInterruption), name: AVAudioSession.interruptionNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(applicationWillResignActive), name: UIApplication.willResignActiveNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(applicationWillResignActive), name: UIApplication.didEnterBackgroundNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(applicationWillResignActive), name: UIApplication.willTerminateNotification, object: nil)
+        engine.prepare()
         updateRouteName()
         setupRemoteCommandCenter()
     }
@@ -73,7 +76,8 @@ final class AudioEngine: NSObject, ObservableObject {
             isPlaying = shouldPlay
             if shouldPlay { startDisplayTimer() }
             updateNowPlayingInfo(); saveState()
-            AppLog.info(.playback, "Reproduciendo \(song.title), \(Int(rate)) Hz, \(file.processingFormat.channelCount) canales")
+            let session = AVAudioSession.sharedInstance()
+            AppLog.info(.playback, "Reproduciendo \(song.title): fuente \(Int(rate)) Hz / \(file.processingFormat.channelCount) canales; salida \(Int(session.sampleRate)) Hz / \(session.outputNumberOfChannels) canales")
         } catch {
             AppLog.error(.playback, "No se pudo reproducir \(song.title): \(error.localizedDescription)")
             advanceAfterFailure()
@@ -123,6 +127,10 @@ final class AudioEngine: NSObject, ObservableObject {
         playerNode.pause()
         stopDisplayTimer()
         updateNowPlayingInfo()
+        DispatchQueue.main.async { [weak self] in
+            guard let self, !self.isPlaying else { return }
+            self.updateNowPlayingInfo()
+        }
         saveState()
         AppLog.debug(.playback, "Pausa")
     }
@@ -134,6 +142,10 @@ final class AudioEngine: NSObject, ObservableObject {
         playerNode.play()
         startDisplayTimer()
         updateNowPlayingInfo()
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.isPlaying else { return }
+            self.updateNowPlayingInfo()
+        }
         saveState()
     }
 
@@ -190,7 +202,8 @@ final class AudioEngine: NSObject, ObservableObject {
         case .builtInSpeaker: "Altavoz"
         default: output.portName
         }
-        AppLog.debug(.playback, "Ruta: \(currentRouteName)")
+        let session = AVAudioSession.sharedInstance()
+        AppLog.info(.playback, "Ruta: \(currentRouteName); salida \(Int(session.sampleRate)) Hz / \(session.outputNumberOfChannels) canales")
     }
 
     @objc private func handleInterruption(_ note: Notification) {
@@ -208,6 +221,9 @@ final class AudioEngine: NSObject, ObservableObject {
         center.nextTrackCommand.addTarget { [weak self] _ in self?.playNext(); return .success }
         center.previousTrackCommand.addTarget { [weak self] _ in self?.playPrevious(); return .success }
         center.changePlaybackPositionCommand.addTarget { [weak self] event in guard let event = event as? MPChangePlaybackPositionCommandEvent else { return .commandFailed }; self?.seek(to: event.positionTime); return .success }
+        center.playCommand.isEnabled = true
+        center.pauseCommand.isEnabled = true
+        center.togglePlayPauseCommand.isEnabled = true
     }
 
     private func updateNowPlayingInfo() {

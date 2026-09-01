@@ -13,11 +13,14 @@ class FileAccessService: ObservableObject {
 
     private let defaultsKey = "com.aurora.musicFolders"
     private let filesDefaultsKey = "com.aurora.musicFiles"
+    // Cambiar la versión fuerza una única reconstrucción al corregir el mapeo de tags.
+    private let libraryCacheFileName = "library-metadata-v2.json"
     private var activeURLs: [UUID: URL] = [:]
     private var activeFileURLs: [UUID: URL] = [:]
     private var scanGeneration = 0
     private var indexedSongURLs = Set<URL>()
     private var activeDiscoveries = 0
+    private var cacheSaveWorkItem: DispatchWorkItem?
     private let metadataQueue: OperationQueue = {
         let queue = OperationQueue()
         queue.name = "com.aurora.metadata"
@@ -35,6 +38,12 @@ class FileAccessService: ObservableObject {
     init() {
         loadFolders()
         loadFiles()
+        loadCachedSongs()
+        if songs.isEmpty && (!folders.isEmpty || !files.isEmpty) {
+            rescanAllFolders()
+        } else {
+            restoreSecurityScopedAccess()
+        }
     }
 
     func addFolder(url: URL) {
@@ -113,14 +122,27 @@ class FileAccessService: ObservableObject {
         }
 
         folders = savedFolders
-        rescanAllFolders()
     }
 
     private func loadFiles() {
         guard let data = UserDefaults.standard.data(forKey: filesDefaultsKey),
               let saved = try? JSONDecoder().decode([MusicFile].self, from: data) else { return }
         files = saved
-        for file in files { resolveAndScan(file) }
+    }
+
+    private func restoreSecurityScopedAccess() {
+        for folder in folders {
+            var stale = false
+            guard let url = try? URL(resolvingBookmarkData: folder.bookmarkData, bookmarkDataIsStale: &stale),
+                  url.startAccessingSecurityScopedResource() else { continue }
+            activeURLs[folder.id] = url
+        }
+        for file in files {
+            var stale = false
+            guard let url = try? URL(resolvingBookmarkData: file.bookmarkData, bookmarkDataIsStale: &stale),
+                  url.startAccessingSecurityScopedResource() else { continue }
+            activeFileURLs[file.id] = url
+        }
     }
 
     private func resolveAndScan(_ file: MusicFile) {
@@ -142,6 +164,10 @@ class FileAccessService: ObservableObject {
         scanProcessed = 0
         activeDiscoveries = 0
         isScanning = !folders.isEmpty || !files.isEmpty
+        guard !folders.isEmpty || !files.isEmpty else {
+            removeCachedSongs()
+            return
+        }
         for folder in folders {
             resolveAndScan(folder)
         }
@@ -254,6 +280,7 @@ class FileAccessService: ObservableObject {
                     self.songs.append(contentsOf: uniqueSongs)
                     self.songs.sort { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
                     AppLog.debug(.library, "Lote cargado: \(uniqueSongs.count); total: \(self.songs.count)")
+                    self.scheduleCacheSave()
                 }
                 self.updateScanningState()
             }
@@ -330,20 +357,23 @@ class FileAccessService: ObservableObject {
         }
 
         for item in formatMetadata {
-            let identifier = item.identifier?.rawValue.lowercased() ?? ""
-            if identifier.contains("albumartist") {
-                albumArtist = item.stringValue ?? ""
+            let identifier = normalizedMetadataIdentifier(item)
+            let key = ((item.key as? String) ?? "").lowercased()
+
+            // iTunes/MP4 usa `aART`, `trkn` y `disk`; otros formatos suelen
+            // exponer nombres descriptivos. Se soportan las dos variantes.
+            if (identifier.contains("albumartist") || key == "aart"),
+               let value = item.stringValue, !value.isEmpty {
+                albumArtist = value
             }
-            if title == nil, identifier.contains("title") { title = item.stringValue }
-            if artist.isEmpty, identifier.contains("artist"), !identifier.contains("albumartist") { artist = item.stringValue ?? "" }
-            if album.isEmpty, identifier.contains("album"), !identifier.contains("albumartist") { album = item.stringValue ?? "" }
-            if identifier.contains("discnumber"),
-               let number = item.numberValue?.intValue {
-                discNumber = number
+            if title == nil, (identifier.contains("title") || key == "©nam") { title = item.stringValue }
+            if artist.isEmpty, (identifier.contains("artist") || key == "©art"), key != "aart" { artist = item.stringValue ?? "" }
+            if album.isEmpty, (identifier.contains("album") || key == "©alb"), key != "aart" { album = item.stringValue ?? "" }
+            if identifier.contains("discnumber") || identifier.contains("disknumber") || key == "disk" {
+                discNumber = metadataNumber(item)
             }
-            if identifier.contains("tracknumber"),
-               let number = item.numberValue?.intValue {
-                trackNumber = number
+            if identifier.contains("tracknumber") || key == "trkn" {
+                trackNumber = metadataNumber(item) ?? 0
             }
         }
 
@@ -364,7 +394,7 @@ class FileAccessService: ObservableObject {
         return SongMetadata(
             title: title,
             artist: artist,
-            albumArtist: albumArtist.isEmpty ? artist : albumArtist,
+            albumArtist: albumArtist,
             album: album,
             artworkData: artworkData,
             duration: asset.duration.isNumeric ? max(0, asset.duration.seconds) : 0,
@@ -390,6 +420,23 @@ class FileAccessService: ObservableObject {
         return compressed
     }
 
+    private func normalizedMetadataIdentifier(_ item: AVMetadataItem) -> String {
+        let identifier = item.identifier?.rawValue ?? ""
+        return identifier.lowercased().unicodeScalars.filter { CharacterSet.alphanumerics.contains($0) }.map(String.init).joined()
+    }
+
+    private func metadataNumber(_ item: AVMetadataItem) -> Int? {
+        if let number = item.numberValue?.intValue, number > 0 { return number }
+        if let value = item.stringValue, let number = Int(value), number > 0 { return number }
+        // `trkn` y `disk` de MP4 suelen guardar dos UInt16 tras 4 bytes de cabecera.
+        if let data = item.dataValue, data.count >= 6 {
+            let bytes = [UInt8](data)
+            let number = Int(bytes[4]) << 8 | Int(bytes[5])
+            if number > 0 { return number }
+        }
+        return nil
+    }
+
     private func saveFolders() {
         guard let data = try? JSONEncoder().encode(folders) else { return }
         UserDefaults.standard.set(data, forKey: defaultsKey)
@@ -400,7 +447,47 @@ class FileAccessService: ObservableObject {
         UserDefaults.standard.set(data, forKey: filesDefaultsKey)
     }
 
+    private var libraryCacheURL: URL? {
+        guard let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else { return nil }
+        return directory.appendingPathComponent(libraryCacheFileName)
+    }
+
+    private func loadCachedSongs() {
+        guard let url = libraryCacheURL,
+              let data = try? Data(contentsOf: url),
+              let cachedSongs = try? JSONDecoder().decode([Song].self, from: data) else { return }
+        songs = cachedSongs
+        indexedSongURLs = Set(cachedSongs.map(\.url))
+        AppLog.info(.library, "Biblioteca recuperada de caché: \(cachedSongs.count) canciones")
+    }
+
+    private func scheduleCacheSave() {
+        cacheSaveWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in self?.saveCachedSongs() }
+        cacheSaveWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1, execute: workItem)
+    }
+
+    private func saveCachedSongs() {
+        guard let url = libraryCacheURL,
+              let data = try? JSONEncoder().encode(songs) else { return }
+        do {
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try data.write(to: url, options: .atomic)
+            AppLog.debug(.library, "Caché de biblioteca guardada: \(songs.count) canciones")
+        } catch {
+            AppLog.error(.library, "No se pudo guardar caché: \(error.localizedDescription)")
+        }
+    }
+
+    private func removeCachedSongs() {
+        cacheSaveWorkItem?.cancel()
+        guard let url = libraryCacheURL else { return }
+        try? FileManager.default.removeItem(at: url)
+    }
+
     deinit {
+        saveCachedSongs()
         for (_, url) in activeURLs {
             url.stopAccessingSecurityScopedResource()
         }

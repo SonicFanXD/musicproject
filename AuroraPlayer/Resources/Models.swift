@@ -45,7 +45,7 @@ enum RepeatMode: String, CaseIterable, Codable {
     }
 }
 
-struct Song: Identifiable, Equatable {
+struct Song: Identifiable, Equatable, Codable {
     let id: UUID
     let url: URL
     let title: String
@@ -79,7 +79,7 @@ struct Song: Identifiable, Equatable {
             ? title!
             : url.deletingPathExtension().lastPathComponent
         self.artist = artist
-        self.albumArtist = albumArtist.isEmpty ? artist : albumArtist
+        self.albumArtist = albumArtist
         self.album = album
         self.artworkData = artworkData
         self.duration = duration

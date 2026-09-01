@@ -3,62 +3,27 @@ import UIKit
 
 struct ContentView: View {
     @StateObject private var audioEngine = AudioEngine()
-    @StateObject private var fileAccessService = FileAccessService()
-    @State private var showFolderPicker = false
-    @State private var showFilePicker = false
-    @State private var showNowPlaying = false
-    @State private var showLogs = false
+    @StateObject private var library = FileAccessService()
+    @State private var showSettings = false
     @State private var hasRestored = false
     @State private var searchText = ""
-    @State private var libraryCategory = LibraryCategory.songs
+    @State private var category = LibraryCategory.songs
 
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
+                LibraryCategorySelector(selection: $category)
+                    .padding(.horizontal).padding(.top, 8)
                 List {
-                    Section("Carpetas") {
-                        ForEach(fileAccessService.folders) { folder in
-                            Label(folder.displayName, systemImage: "folder")
-                        }
-                        .onDelete(perform: deleteFolders)
-
-                        Button {
-                            showFolderPicker = true
-                        } label: {
-                            Label("Agregar carpeta", systemImage: "folder.badge.plus")
-                        }
-                    }
-
-                    Section("Archivos añadidos") {
-                        ForEach(fileAccessService.files) { file in
-                            Label(file.displayName, systemImage: "music.note")
-                        }
-                        .onDelete(perform: deleteFiles)
-                        Button { showFilePicker = true } label: {
-                            Label("Agregar canciones", systemImage: "music.note.list")
-                        }
-                    }
-
-                    if fileAccessService.isScanning {
+                    if library.isScanning {
                         Section("Cargando biblioteca") {
-                            ProgressView(value: Double(fileAccessService.scanProcessed), total: Double(max(fileAccessService.scanTotal, 1)))
-                            Text(progressDescription)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                            ProgressView(value: Double(library.scanProcessed), total: Double(max(library.scanTotal, 1)))
+                            Text(progressDescription).font(.caption).foregroundStyle(.secondary)
                         }
                     }
-
-                    Section {
-                        Picker("Biblioteca", selection: $libraryCategory) {
-                            ForEach(LibraryCategory.allCases) { Text($0.title).tag($0) }
-                        }
-                        .pickerStyle(.segmented)
-                    }
-
-                    Section(libraryCategory.title) {
+                    Section(category.title) {
                         if filteredSongs.isEmpty {
-                            Text("Agrega una carpeta para ver tus canciones aquí")
-                                .foregroundColor(.secondary)
+                            ContentUnavailableLibraryView(isScanning: library.isScanning)
                         } else {
                             libraryRows
                         }
@@ -67,66 +32,50 @@ struct ContentView: View {
                 .listStyle(.insetGrouped)
                 .searchable(text: $searchText, prompt: "Buscar canción, álbum o artista")
 
-                if let currentSong = audioEngine.currentSong {
-                    PlayerBar(audioEngine: audioEngine, song: currentSong)
-                }
+                if let song = audioEngine.currentSong { PlayerBar(audioEngine: audioEngine, song: song) }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .navigationTitle("Aurora Player")
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button { showLogs = true } label: { Image(systemName: "text.alignleft") }
-                        .accessibilityLabel("Ver registros")
-                }
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button {
-                        fileAccessService.refreshAllFolders()
-                    } label: {
-                        Image(systemName: "arrow.clockwise")
-                    }
+                    Button { showSettings = true } label: { Image(systemName: "ellipsis.circle") }
+                        .accessibilityLabel("Configuración")
                 }
             }
-            .sheet(isPresented: $showFolderPicker) {
-                FolderPickerView(isPresented: $showFolderPicker) { url in
-                    fileAccessService.addFolder(url: url)
-                }
-            }
-            .sheet(isPresented: $showFilePicker) {
-                MusicFilePickerView(isPresented: $showFilePicker) { urls in fileAccessService.addFiles(urls: urls) }
-            }
-            .sheet(isPresented: $showNowPlaying) {
-                NowPlayingView(audioEngine: audioEngine)
-            }
-            .sheet(isPresented: $showLogs) { LogsView() }
+            .sheet(isPresented: $showSettings) { SettingsView(library: library) }
         }
-        .onChange(of: fileAccessService.songs) { newSongs in
-            guard !hasRestored, !newSongs.isEmpty else { return }
-            audioEngine.restoreState(with: newSongs)
+        .onChange(of: library.songs) { songs in
+            guard !hasRestored, !songs.isEmpty else { return }
+            audioEngine.restoreState(with: songs)
             hasRestored = true
         }
     }
 
     @ViewBuilder private var libraryRows: some View {
-        switch libraryCategory {
+        switch category {
         case .songs:
-            ForEach(filteredSongs) { song in songRow(song) }
+            ForEach(filteredSongs) { song in songRow(song, queue: filteredSongs) }
         case .albums:
-            ForEach(albumNames, id: \.self) { album in
-                let songs = filteredSongs.filter { ($0.album.isEmpty ? "Sin álbum" : $0.album) == album }
-                NavigationLink { AlbumDetailView(album: album, songs: songs, audioEngine: audioEngine) } label: {
+            ForEach(albums) { album in
+                NavigationLink { AlbumDetailView(album: album.title, songs: album.songs, audioEngine: audioEngine) } label: {
                     HStack(spacing: 12) {
-                        artwork(for: songs.first).frame(width: 44, height: 44).clipShape(RoundedRectangle(cornerRadius: 6))
-                        VStack(alignment: .leading) { Text(album); Text(songs.first?.albumArtist ?? "Artista desconocido").font(.caption).foregroundStyle(.secondary) }
+                        artwork(for: album.songs.first).frame(width: 48, height: 48).clipShape(RoundedRectangle(cornerRadius: 7))
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(album.title).lineLimit(1)
+                            Text(album.artist).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                        }
                     }
                 }
             }
         case .artists:
             ForEach(albumArtists, id: \.self) { artist in
-                let songs = filteredSongs.filter { ($0.albumArtist.isEmpty ? "Artista desconocido" : $0.albumArtist) == artist }
-                NavigationLink { ArtistDetailView(artist: artist, songs: songs, audioEngine: audioEngine) } label: {
+                let artistSongs = filteredSongs.filter { $0.albumArtist == artist }
+                NavigationLink { ArtistDetailView(artist: artist, songs: artistSongs, audioEngine: audioEngine) } label: {
                     HStack(spacing: 12) {
-                        artwork(for: songs.first).frame(width: 44, height: 44).clipShape(RoundedRectangle(cornerRadius: 22))
-                        VStack(alignment: .leading) { Text(artist); Text("\(songs.count) canciones").font(.caption).foregroundStyle(.secondary) }
+                        artwork(for: artistSongs.first).frame(width: 48, height: 48).clipShape(Circle())
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(artist).lineLimit(1)
+                            Text("\(artistSongs.count) canciones").font(.caption).foregroundStyle(.secondary)
+                        }
                     }
                 }
             }
@@ -135,83 +84,87 @@ struct ContentView: View {
 
     private var filteredSongs: [Song] {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty else { return fileAccessService.songs }
-        return fileAccessService.songs.filter { [$0.title, $0.artist, $0.album, $0.albumArtist].contains { $0.localizedCaseInsensitiveContains(query) } }
+        guard !query.isEmpty else { return library.songs }
+        return library.songs.filter { [$0.title, $0.artist, $0.album, $0.albumArtist].contains { $0.localizedCaseInsensitiveContains(query) } }
+    }
+
+    private var albums: [AlbumGroup] {
+        Dictionary(grouping: filteredSongs) { "\($0.albumArtist)\u{001F}\($0.album.isEmpty ? "Sin álbum" : $0.album)" }
+            .map { key, songs in
+                let sample = songs[0]
+                return AlbumGroup(id: key, title: sample.album.isEmpty ? "Sin álbum" : sample.album, artist: sample.albumArtist.isEmpty ? "Artista de álbum no disponible" : sample.albumArtist, songs: songs)
+            }
+            .sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+    }
+
+    // Solo se agrupa por el tag Album Artist; las colaboraciones no crean artistas extra.
+    private var albumArtists: [String] {
+        Array(Set(filteredSongs.compactMap { $0.albumArtist.isEmpty ? nil : $0.albumArtist }))
+            .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
     }
 
     private var progressDescription: String {
-        let processed = fileAccessService.scanProcessed
-        let total = fileAccessService.scanTotal
-        if total == 0 { return "Buscando canciones…" }
-        return "\(processed) de \(total) canciones procesadas · faltan \(max(0, total - processed))"
+        library.scanTotal == 0 ? "Buscando canciones…" : "\(library.scanProcessed) de \(library.scanTotal) canciones procesadas · faltan \(max(0, library.scanTotal - library.scanProcessed))"
     }
 
-    private var albumNames: [String] {
-        Array(Set(filteredSongs.map { $0.album.isEmpty ? "Sin álbum" : $0.album })).sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
-    }
-
-    private var albumArtists: [String] {
-        Array(Set(filteredSongs.map { $0.albumArtist.isEmpty ? "Artista desconocido" : $0.albumArtist })).sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
-    }
-
-    private func songRow(_ song: Song) -> some View {
-        Button {
-            AppLog.debug(.interface, "Selección de canción: \(song.title)")
-            audioEngine.play(song: song, from: fileAccessService.songs)
-        } label: {
+    private func songRow(_ song: Song, queue: [Song]) -> some View {
+        Button { audioEngine.play(song: song, from: queue) } label: {
             HStack(spacing: 12) {
                 artwork(for: song)
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(song.title).foregroundColor(.primary).lineLimit(1)
-                    Text([song.artist, song.album].filter { !$0.isEmpty }.joined(separator: " · "))
-                        .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    Text(song.title).foregroundStyle(.primary).lineLimit(1)
+                    Text([song.artist, song.album].filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 }
                 Spacer()
-                if song.duration > 0 {
-                    Text(durationText(song.duration)).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-                }
-                Image(systemName: iconFor(song)).foregroundColor(audioEngine.currentSong?.id == song.id ? .accentColor : .secondary)
+                Text(durationText(song.duration)).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                Image(systemName: audioEngine.currentSong?.id == song.id && audioEngine.isPlaying ? "speaker.wave.2.fill" : "music.note").foregroundStyle(audioEngine.currentSong?.id == song.id ? Color.accentColor : .secondary)
             }
-        }
-        .buttonStyle(.plain)
-    }
-
-    private func iconFor(_ song: Song) -> String {
-        guard audioEngine.currentSong?.id == song.id else { return "music.note" }
-        return audioEngine.isPlaying ? "speaker.wave.2.fill" : "play.fill"
-    }
-
-    private func durationText(_ value: TimeInterval) -> String {
-        String(format: "%d:%02d", Int(value) / 60, Int(value) % 60)
+        }.buttonStyle(.plain)
     }
 
     @ViewBuilder private func artwork(for song: Song?) -> some View {
         if let data = song?.artworkData, let image = UIImage(data: data) {
-            Image(uiImage: image).resizable().scaledToFill().frame(width: 44, height: 44).clipShape(RoundedRectangle(cornerRadius: 6))
-        } else {
-            Image(systemName: "music.note").frame(width: 44, height: 44).background(.quaternary, in: RoundedRectangle(cornerRadius: 6))
-        }
+            Image(uiImage: image).resizable().scaledToFill().frame(width: 48, height: 48).clipped()
+        } else { Image(systemName: "music.note").frame(width: 48, height: 48).background(.quaternary, in: RoundedRectangle(cornerRadius: 7)) }
     }
 
-    private func deleteFolders(at offsets: IndexSet) {
-        for index in offsets {
-            fileAccessService.removeFolder(fileAccessService.folders[index])
-        }
-    }
+    private func durationText(_ value: TimeInterval) -> String { String(format: "%d:%02d", Int(value) / 60, Int(value) % 60) }
+}
 
-    private func deleteFiles(at offsets: IndexSet) {
-        for index in offsets { fileAccessService.removeFile(fileAccessService.files[index]) }
-    }
+private struct AlbumGroup: Identifiable {
+    let id: String
+    let title: String
+    let artist: String
+    let songs: [Song]
 }
 
 private enum LibraryCategory: String, CaseIterable, Identifiable {
     case songs, albums, artists
     var id: String { rawValue }
-    var title: String {
-        switch self { case .songs: return "Canciones"; case .albums: return "Álbumes"; case .artists: return "Artistas" }
+    var title: String { switch self { case .songs: return "Canciones"; case .albums: return "Álbumes"; case .artists: return "Artistas" } }
+}
+
+private struct LibraryCategorySelector: View {
+    @Binding var selection: LibraryCategory
+    var body: some View {
+        HStack(spacing: 5) {
+            ForEach(LibraryCategory.allCases) { item in
+                Button { withAnimation(.easeInOut(duration: 0.18)) { selection = item } } label: {
+                    Text(item.title).font(.subheadline.weight(.semibold)).frame(maxWidth: .infinity).padding(.vertical, 9)
+                        .foregroundStyle(selection == item ? .primary : .secondary)
+                        .background(selection == item ? Color.accentColor.opacity(0.16) : .clear, in: Capsule())
+                }.buttonStyle(.plain)
+            }
+        }.padding(4).background(.quaternary, in: Capsule())
     }
 }
 
-#Preview {
-    ContentView()
+private struct ContentUnavailableLibraryView: View {
+    let isScanning: Bool
+    var body: some View {
+        VStack(spacing: 8) {
+            Image(systemName: isScanning ? "music.note.list" : "music.note")
+            Text(isScanning ? "Preparando tu música" : "Agrega música desde Configuración")
+        }.foregroundStyle(.secondary).frame(maxWidth: .infinity).padding(.vertical, 36)
+    }
 }

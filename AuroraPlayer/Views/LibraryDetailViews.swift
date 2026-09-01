@@ -49,7 +49,9 @@ struct AlbumDetailView: View {
     private var hasDiscNumbers: Bool { !discs.isEmpty }
     private var songsWithoutDiscNumber: [Song] { songs.filter { $0.discNumber == nil } }
     private func trackOrder(_ lhs: Song, _ rhs: Song) -> Bool {
-        if lhs.trackNumber != rhs.trackNumber { return lhs.trackNumber < rhs.trackNumber }
+        let leftTrack = lhs.trackNumber > 0 ? lhs.trackNumber : .max
+        let rightTrack = rhs.trackNumber > 0 ? rhs.trackNumber : .max
+        if leftTrack != rightTrack { return leftTrack < rightTrack }
         return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
     }
     @ViewBuilder private func artwork(for song: Song?) -> some View {
@@ -109,6 +111,9 @@ private struct DetailSongRow: View {
     var body: some View {
         Button { audioEngine.play(song: song, from: queue) } label: {
             HStack {
+                if song.trackNumber > 0 {
+                    Text("\(song.trackNumber)").font(.subheadline.monospacedDigit()).foregroundStyle(.secondary).frame(width: 24, alignment: .trailing)
+                }
                 VStack(alignment: .leading, spacing: 3) {
                     Text(song.title).foregroundStyle(.primary).lineLimit(1)
                     Text(song.artist).font(.caption).foregroundStyle(.secondary).lineLimit(1)
