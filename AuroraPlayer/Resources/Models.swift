@@ -50,18 +50,28 @@ struct Song: Identifiable, Equatable {
     let url: URL
     let title: String
     let artist: String
+    let albumArtist: String
     let album: String
     let artworkData: Data?
     let duration: TimeInterval
+    let lyrics: String
+    let formatDescription: String
+    let discNumber: Int?
+    let trackNumber: Int
 
     init(
         id: UUID = UUID(),
         url: URL,
         title: String? = nil,
         artist: String = "",
+        albumArtist: String = "",
         album: String = "",
         artworkData: Data? = nil,
-        duration: TimeInterval = 0
+        duration: TimeInterval = 0,
+        lyrics: String = "",
+        formatDescription: String = "",
+        discNumber: Int? = nil,
+        trackNumber: Int = 0
     ) {
         self.id = id
         self.url = url
@@ -69,9 +79,14 @@ struct Song: Identifiable, Equatable {
             ? title!
             : url.deletingPathExtension().lastPathComponent
         self.artist = artist
+        self.albumArtist = albumArtist.isEmpty ? artist : albumArtist
         self.album = album
         self.artworkData = artworkData
         self.duration = duration
+        self.lyrics = lyrics
+        self.formatDescription = formatDescription
+        self.discNumber = discNumber.flatMap { $0 > 0 ? $0 : nil }
+        self.trackNumber = max(0, trackNumber)
     }
 
     static func == (lhs: Song, rhs: Song) -> Bool {

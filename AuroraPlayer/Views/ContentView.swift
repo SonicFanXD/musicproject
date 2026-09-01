@@ -9,6 +9,8 @@ struct ContentView: View {
     @State private var showNowPlaying = false
     @State private var showLogs = false
     @State private var hasRestored = false
+    @State private var searchText = ""
+    @State private var libraryCategory = LibraryCategory.songs
 
     var body: some View {
         NavigationStack {
@@ -37,18 +39,33 @@ struct ContentView: View {
                         }
                     }
 
-                    Section("Canciones (\(fileAccessService.songs.count))") {
-                        if fileAccessService.songs.isEmpty {
+                    if fileAccessService.isScanning {
+                        Section("Cargando biblioteca") {
+                            ProgressView(value: Double(fileAccessService.scanProcessed), total: Double(max(fileAccessService.scanTotal, 1)))
+                            Text(progressDescription)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+
+                    Section {
+                        Picker("Biblioteca", selection: $libraryCategory) {
+                            ForEach(LibraryCategory.allCases) { Text($0.title).tag($0) }
+                        }
+                        .pickerStyle(.segmented)
+                    }
+
+                    Section(libraryCategory.title) {
+                        if filteredSongs.isEmpty {
                             Text("Agrega una carpeta para ver tus canciones aquí")
                                 .foregroundColor(.secondary)
                         } else {
-                            ForEach(fileAccessService.songs) { song in
-                                songRow(song)
-                            }
+                            libraryRows
                         }
                     }
                 }
                 .listStyle(.insetGrouped)
+                .searchable(text: $searchText, prompt: "Buscar canción, álbum o artista")
 
                 if let currentSong = audioEngine.currentSong {
                     PlayerBar(audioEngine: audioEngine, song: currentSong)
@@ -89,6 +106,54 @@ struct ContentView: View {
         }
     }
 
+    @ViewBuilder private var libraryRows: some View {
+        switch libraryCategory {
+        case .songs:
+            ForEach(filteredSongs) { song in songRow(song) }
+        case .albums:
+            ForEach(albumNames, id: \.self) { album in
+                let songs = filteredSongs.filter { ($0.album.isEmpty ? "Sin álbum" : $0.album) == album }
+                NavigationLink { AlbumDetailView(album: album, songs: songs, audioEngine: audioEngine) } label: {
+                    HStack(spacing: 12) {
+                        artwork(for: songs.first).frame(width: 44, height: 44).clipShape(RoundedRectangle(cornerRadius: 6))
+                        VStack(alignment: .leading) { Text(album); Text(songs.first?.albumArtist ?? "Artista desconocido").font(.caption).foregroundStyle(.secondary) }
+                    }
+                }
+            }
+        case .artists:
+            ForEach(albumArtists, id: \.self) { artist in
+                let songs = filteredSongs.filter { ($0.albumArtist.isEmpty ? "Artista desconocido" : $0.albumArtist) == artist }
+                NavigationLink { ArtistDetailView(artist: artist, songs: songs, audioEngine: audioEngine) } label: {
+                    HStack(spacing: 12) {
+                        artwork(for: songs.first).frame(width: 44, height: 44).clipShape(RoundedRectangle(cornerRadius: 22))
+                        VStack(alignment: .leading) { Text(artist); Text("\(songs.count) canciones").font(.caption).foregroundStyle(.secondary) }
+                    }
+                }
+            }
+        }
+    }
+
+    private var filteredSongs: [Song] {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return fileAccessService.songs }
+        return fileAccessService.songs.filter { [$0.title, $0.artist, $0.album, $0.albumArtist].contains { $0.localizedCaseInsensitiveContains(query) } }
+    }
+
+    private var progressDescription: String {
+        let processed = fileAccessService.scanProcessed
+        let total = fileAccessService.scanTotal
+        if total == 0 { return "Buscando canciones…" }
+        return "\(processed) de \(total) canciones procesadas · faltan \(max(0, total - processed))"
+    }
+
+    private var albumNames: [String] {
+        Array(Set(filteredSongs.map { $0.album.isEmpty ? "Sin álbum" : $0.album })).sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+    }
+
+    private var albumArtists: [String] {
+        Array(Set(filteredSongs.map { $0.albumArtist.isEmpty ? "Artista desconocido" : $0.albumArtist })).sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+    }
+
     private func songRow(_ song: Song) -> some View {
         Button {
             AppLog.debug(.interface, "Selección de canción: \(song.title)")
@@ -120,8 +185,8 @@ struct ContentView: View {
         String(format: "%d:%02d", Int(value) / 60, Int(value) % 60)
     }
 
-    @ViewBuilder private func artwork(for song: Song) -> some View {
-        if let data = song.artworkData, let image = UIImage(data: data) {
+    @ViewBuilder private func artwork(for song: Song?) -> some View {
+        if let data = song?.artworkData, let image = UIImage(data: data) {
             Image(uiImage: image).resizable().scaledToFill().frame(width: 44, height: 44).clipShape(RoundedRectangle(cornerRadius: 6))
         } else {
             Image(systemName: "music.note").frame(width: 44, height: 44).background(.quaternary, in: RoundedRectangle(cornerRadius: 6))
@@ -136,6 +201,14 @@ struct ContentView: View {
 
     private func deleteFiles(at offsets: IndexSet) {
         for index in offsets { fileAccessService.removeFile(fileAccessService.files[index]) }
+    }
+}
+
+private enum LibraryCategory: String, CaseIterable, Identifiable {
+    case songs, albums, artists
+    var id: String { rawValue }
+    var title: String {
+        switch self { case .songs: return "Canciones"; case .albums: return "Álbumes"; case .artists: return "Artistas" }
     }
 }
 

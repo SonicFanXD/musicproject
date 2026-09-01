@@ -116,14 +116,25 @@ final class AudioEngine: NSObject, ObservableObject {
 
     func pause() {
         guard isPlaying else { return }
-        updateCurrentTime(); playerNode.pause(); isPlaying = false; stopDisplayTimer(); updateNowPlayingInfo(); saveState()
+        updateCurrentTime()
+        // Publicar primero el estado evita que Control Center conserve el botón de pausa
+        // durante el breve intervalo en que AVAudioPlayerNode procesa la pausa.
+        isPlaying = false
+        playerNode.pause()
+        stopDisplayTimer()
+        updateNowPlayingInfo()
+        saveState()
         AppLog.debug(.playback, "Pausa")
     }
 
     func resume() {
         configureIfNeeded(); guard audioFile != nil else { return }
         do { if !engine.isRunning { try engine.start() } } catch { AppLog.error(.playback, "Motor: \(error.localizedDescription)"); return }
-        playerNode.play(); isPlaying = true; startDisplayTimer(); updateNowPlayingInfo(); saveState()
+        isPlaying = true
+        playerNode.play()
+        startDisplayTimer()
+        updateNowPlayingInfo()
+        saveState()
     }
 
     func stop(clearSong: Bool = false) {
@@ -207,8 +218,8 @@ final class AudioEngine: NSObject, ObservableObject {
             MPMediaItemPropertyTitle: song.title,
             MPMediaItemPropertyPlaybackDuration: duration,
             MPNowPlayingInfoPropertyElapsedPlaybackTime: currentTime,
-            MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1.0 : 0.0,
-            MPNowPlayingInfoPropertyDefaultPlaybackRate: 1.0
+            MPNowPlayingInfoPropertyPlaybackRate: NSNumber(value: isPlaying ? 1.0 : 0.0),
+            MPNowPlayingInfoPropertyDefaultPlaybackRate: NSNumber(value: 1.0)
         ]
         if !song.artist.isEmpty { info[MPMediaItemPropertyArtist] = song.artist }
         if !song.album.isEmpty { info[MPMediaItemPropertyAlbumTitle] = song.album }
