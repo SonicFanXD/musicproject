@@ -11,15 +11,20 @@ struct NowPlayingView: View {
             ZStack {
                 coverGradient.ignoresSafeArea()
                 ScrollView(showsIndicators: false) {
-                    VStack(spacing: 20) {
-                        artwork(side: 280)
-                        songInformation
-                        progress
-                        controls
+                    GeometryReader { geometry in
+                        VStack(spacing: 20) {
+                            artwork(side: min(280, max(180, geometry.size.width - 40)))
+                            songInformation
+                            progress
+                            controls
+                        }
+                        // Un ancho concreto evita que ScrollView propague un
+                        // ancho ilimitado y desplace textos/controles fuera.
+                        .frame(width: max(0, geometry.size.width - 40), alignment: .top)
+                        .padding(.vertical, 16)
+                        .position(x: geometry.size.width / 2, y: geometry.size.height / 2)
                     }
-                    .frame(maxWidth: .infinity)
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 16)
+                    .frame(minHeight: 640)
                 }
             }
             .navigationTitle("Ahora suena")
@@ -43,9 +48,11 @@ struct NowPlayingView: View {
     private var coverGradient: some View {
         ZStack {
             if let data = audioEngine.currentSong?.artworkData, let image = UIImage(data: data) {
-                // La vista ya no depende de GeometryReader, así que este fondo
-                // queda contenido y sólo se recalcula al cambiar de canción.
-                Image(uiImage: image).resizable().scaledToFill().blur(radius: 26).scaleEffect(1.12).opacity(0.58)
+                // `scaledToFit` conserva la relación original de la portada.
+                // El frame y clip impiden que el blur expanda el layout.
+                Image(uiImage: image).resizable().scaledToFit()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .scaleEffect(1.12).blur(radius: 26).opacity(0.58).clipped()
             } else { Color(red: 0.06, green: 0.05, blue: 0.10) }
             LinearGradient(colors: [.indigo.opacity(0.45), .black.opacity(0.82)], startPoint: .top, endPoint: .bottom)
         }
@@ -87,11 +94,15 @@ struct NowPlayingView: View {
     }
 
     private var controls: some View {
-        HStack(spacing: 34) {
+        HStack(spacing: 0) {
             Button(action: audioEngine.toggleShuffle) { Image(systemName: "shuffle").foregroundStyle(audioEngine.isShuffleEnabled ? .white : .white.opacity(0.55)) }
+            Spacer(minLength: 12)
             Button(action: audioEngine.playPrevious) { Image(systemName: "backward.fill").font(.title2) }
+            Spacer(minLength: 12)
             Button { audioEngine.isPlaying ? audioEngine.pause() : audioEngine.resume() } label: { Image(systemName: audioEngine.isPlaying ? "pause.circle.fill" : "play.circle.fill").font(.system(size: 66)) }
+            Spacer(minLength: 12)
             Button(action: audioEngine.playNext) { Image(systemName: "forward.fill").font(.title2) }
+            Spacer(minLength: 12)
             Button(action: audioEngine.cycleRepeatMode) { Image(systemName: audioEngine.repeatMode.symbolName).foregroundStyle(audioEngine.repeatMode == .off ? .white.opacity(0.55) : .white) }
                 .accessibilityLabel(audioEngine.repeatMode.accessibilityLabel)
         }.foregroundStyle(.white)
@@ -109,10 +120,16 @@ private struct LyricsScreen: View {
         NavigationStack {
             ZStack {
                 if let data = song.artworkData, let image = UIImage(data: data) {
-                    Image(uiImage: image).resizable().scaledToFill().blur(radius: 38).scaleEffect(1.18).opacity(0.7).ignoresSafeArea()
+                    Image(uiImage: image).resizable().scaledToFit()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .scaleEffect(1.12).blur(radius: 30).opacity(0.68).clipped().ignoresSafeArea()
                 } else { Color.indigo.ignoresSafeArea() }
                 LinearGradient(colors: [.black.opacity(0.45), .black.opacity(0.88)], startPoint: .top, endPoint: .bottom).ignoresSafeArea()
-                LyricsView(lyrics: song.lyrics, currentTime: audioEngine.currentTime, expanded: true).padding(.horizontal, 28)
+                GeometryReader { geometry in
+                    LyricsView(lyrics: song.lyrics, currentTime: audioEngine.currentTime, expanded: true)
+                        .frame(width: max(0, geometry.size.width - 56), height: geometry.size.height, alignment: .top)
+                        .position(x: geometry.size.width / 2, y: geometry.size.height / 2)
+                }
             }
             .navigationTitle(song.title)
             .navigationBarTitleDisplayMode(.inline)
@@ -204,15 +221,25 @@ private struct TimedLyricText: View {
     let currentTime: TimeInterval
     let isActiveLine: Bool
 
+    private var activeWordCount: Int {
+        line.words.filter { $0.time <= currentTime }.count
+    }
+
     var body: some View {
         if line.words.isEmpty {
             Text(line.text).font(.title3.bold()).foregroundStyle(isActiveLine ? .white : .white.opacity(0.4))
+                .scaleEffect(isActiveLine ? 1 : 0.97)
+                .animation(.easeInOut(duration: 0.22), value: isActiveLine)
         } else {
             line.words.enumerated().reduce(Text("")) { result, word in
                 result + Text(word.element.text + (word.offset + 1 == line.words.count ? "" : " "))
                     .foregroundColor(isActiveLine && word.element.time <= currentTime ? .white : .white.opacity(0.4))
             }
             .font(.title3.bold())
+            .scaleEffect(isActiveLine ? 1 : 0.97)
+            // Una sola transición breve por cambio de palabra: no hay timers ni
+            // cálculos adicionales y el coste queda limitado a la línea visible.
+            .animation(.easeInOut(duration: 0.16), value: activeWordCount)
         }
     }
 }

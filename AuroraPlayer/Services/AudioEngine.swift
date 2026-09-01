@@ -126,10 +126,10 @@ final class AudioEngine: NSObject, ObservableObject {
         isPlaying = false
         playerNode.pause()
         stopDisplayTimer()
-        updateNowPlayingInfo()
+        updateNowPlayingInfo(playing: false)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
             guard let self, !self.isPlaying else { return }
-            self.updateNowPlayingInfo()
+            self.updateNowPlayingInfo(playing: false)
         }
         saveState()
         AppLog.debug(.playback, "Pausa")
@@ -141,10 +141,10 @@ final class AudioEngine: NSObject, ObservableObject {
         isPlaying = true
         playerNode.play()
         startDisplayTimer()
-        updateNowPlayingInfo()
+        updateNowPlayingInfo(playing: true)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
             guard let self, self.isPlaying else { return }
-            self.updateNowPlayingInfo()
+            self.updateNowPlayingInfo(playing: true)
         }
         saveState()
     }
@@ -226,17 +226,18 @@ final class AudioEngine: NSObject, ObservableObject {
         center.togglePlayPauseCommand.isEnabled = true
     }
 
-    private func updateNowPlayingInfo() {
+    private func updateNowPlayingInfo(playing explicitPlaybackState: Bool? = nil) {
         guard let song = currentSong else {
             MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
             MPNowPlayingInfoCenter.default().playbackState = .stopped
             return
         }
+        let playing = explicitPlaybackState ?? isPlaying
         var info: [String: Any] = [
             MPMediaItemPropertyTitle: song.title,
             MPMediaItemPropertyPlaybackDuration: duration,
             MPNowPlayingInfoPropertyElapsedPlaybackTime: currentTime,
-            MPNowPlayingInfoPropertyPlaybackRate: NSNumber(value: isPlaying ? 1.0 : 0.0),
+            MPNowPlayingInfoPropertyPlaybackRate: NSNumber(value: playing ? 1.0 : 0.0),
             MPNowPlayingInfoPropertyDefaultPlaybackRate: NSNumber(value: 1.0)
         ]
         if !song.artist.isEmpty { info[MPMediaItemPropertyArtist] = song.artist }
@@ -245,16 +246,16 @@ final class AudioEngine: NSObject, ObservableObject {
         let nowPlayingCenter = MPNowPlayingInfoCenter.default()
         // Publicarlo antes y después de sustituir el diccionario evita que
         // Control Center conserve el icono previo en algunas rutas Bluetooth.
-        nowPlayingCenter.playbackState = isPlaying ? .playing : .paused
+        nowPlayingCenter.playbackState = playing ? .playing : .paused
         nowPlayingCenter.nowPlayingInfo = info
-        nowPlayingCenter.playbackState = isPlaying ? .playing : .paused
+        nowPlayingCenter.playbackState = playing ? .playing : .paused
         // iOS decide cuál icono mostrar con playbackState/rate. Desactivar el
         // comando contrario puede dejar Control Center mostrando el icono viejo.
         let commands = MPRemoteCommandCenter.shared()
         commands.playCommand.isEnabled = true
         commands.pauseCommand.isEnabled = true
         lastNowPlayingPositionUpdate = currentTime
-        AppLog.debug(.metadata, "Centro de control actualizado: \(song.title), estado=\(isPlaying ? "playing" : "paused"), rate=\(isPlaying ? "1" : "0")")
+        AppLog.debug(.metadata, "Centro de control actualizado: \(song.title), estado=\(playing ? "playing" : "paused"), rate=\(playing ? "1" : "0")")
     }
 
     private func prepareNowPlayingArtwork(for song: Song) {

@@ -8,14 +8,12 @@ struct AlbumDetailView: View {
     @ObservedObject var audioEngine: AudioEngine
 
     var body: some View {
-        ZStack {
-            albumBackground
         List {
             Section {
                 HStack(spacing: 16) {
                     artwork(for: songs.first).frame(width: 100, height: 100).clipShape(RoundedRectangle(cornerRadius: 10))
                     VStack(alignment: .leading, spacing: 5) {
-                        Text(album).font(.title3.bold())
+                        Text(album).font(.title3.bold()).lineLimit(2)
                         Text(albumArtist).foregroundStyle(.secondary)
                         Text("\(songs.count) canciones").font(.caption).foregroundStyle(.secondary)
                     }
@@ -45,8 +43,8 @@ struct AlbumDetailView: View {
             }
         }
         .scrollContentBackground(.hidden)
+        .background(albumBackground)
         .listStyle(.insetGrouped)
-        }
         .navigationTitle(album)
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -68,7 +66,9 @@ struct AlbumDetailView: View {
 
     @ViewBuilder private var albumBackground: some View {
         if let data = songs.first?.artworkData, let image = UIImage(data: data) {
-            Image(uiImage: image).resizable().scaledToFill().blur(radius: 24).scaleEffect(1.12).opacity(0.32).ignoresSafeArea()
+            Image(uiImage: image).resizable().scaledToFit()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .scaleEffect(1.12).blur(radius: 24).opacity(0.32).clipped().ignoresSafeArea()
         } else { Color(uiColor: .systemBackground).ignoresSafeArea() }
         LinearGradient(colors: [.black.opacity(0.20), .black.opacity(0.72)], startPoint: .top, endPoint: .bottom).ignoresSafeArea()
     }
