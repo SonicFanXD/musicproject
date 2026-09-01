@@ -399,8 +399,8 @@ class FileAccessService: ObservableObject {
         if lyrics.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             lyrics = formatMetadata.lazy
                 .filter { item in
-                    let id = normalizedMetadataIdentifier(item)
-                    let key = metadataKey(item)
+                    let id = self.normalizedMetadataIdentifier(item)
+                    let key = self.metadataKey(item)
                     return item.commonKey?.rawValue == "lyrics" || id.contains("lyric") || key.contains("lyr") || key == "uslt" || key == "sylt"
                 }
                 .map { self.lyricsText($0) }
@@ -458,7 +458,8 @@ class FileAccessService: ObservableObject {
     }
 
     private func metadataKey(_ item: AVMetadataItem) -> String {
-        ((item.key as? String) ?? String(describing: item.key ?? "")).lowercased()
+        guard let key = item.key else { return "" }
+        return String(describing: key).lowercased()
     }
 
     private func lyricsText(_ item: AVMetadataItem) -> String {
