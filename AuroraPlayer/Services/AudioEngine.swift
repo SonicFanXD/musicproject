@@ -22,12 +22,19 @@ class AudioEngine: NSObject, ObservableObject {
     private var isChangingTrack: Bool = false
     private var workItem: DispatchWorkItem?
     private var playbackGeneration = 0
+    private var isConfigured = false
 
     private let stateDefaultsKey = "com.aurora.playbackState"
     private var hasRestored: Bool = false
 
     override init() {
         super.init()
+    }
+
+    private func configureIfNeeded() {
+        guard !isConfigured else { return }
+        isConfigured = true
+
         setupSession()
         setupEngine()
         observeRouteChanges()
@@ -70,6 +77,7 @@ class AudioEngine: NSObject, ObservableObject {
     // MARK: - Playback
 
     func play(song: Song, from playlist: [Song]? = nil) {
+        configureIfNeeded()
         workItem?.cancel()
         isChangingTrack = true
 
@@ -238,6 +246,7 @@ class AudioEngine: NSObject, ObservableObject {
     }
 
     func resume() {
+        configureIfNeeded()
         guard audioFile != nil else { return }
         if !engine.isRunning {
             try? engine.start()
@@ -487,6 +496,8 @@ class AudioEngine: NSObject, ObservableObject {
 
         let savedTime = state["currentTime"] as? TimeInterval ?? 0
         let wasPlaying = state["isPlaying"] as? Bool ?? false
+
+        configureIfNeeded()
 
         self.playlist = allSongs
         if let index = allSongs.firstIndex(where: { $0.id == song.id }) {
