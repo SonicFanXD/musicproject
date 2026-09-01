@@ -19,6 +19,18 @@ struct AlbumDetailView: View {
                     }
                 }.padding(.vertical, 6)
             }
+            Section {
+                HStack(spacing: 12) {
+                    if let first = songs.first {
+                        Button { audioEngine.play(song: first, from: songs) } label: {
+                            Label("Reproducir", systemImage: "play.fill").frame(maxWidth: .infinity)
+                        }
+                    }
+                    Button { audioEngine.playShuffled(from: songs) } label: {
+                        Label("Aleatorio", systemImage: "shuffle").frame(maxWidth: .infinity)
+                    }.disabled(songs.isEmpty)
+                }.buttonStyle(.borderedProminent)
+            }
             if hasDiscNumbers {
                 ForEach(discs, id: \.self) { disc in
                     Section("Disco \(disc)") {
@@ -68,9 +80,9 @@ struct AlbumDetailView: View {
         if let data = songs.first?.artworkData, let image = UIImage(data: data) {
             Image(uiImage: image).resizable().scaledToFit()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .scaleEffect(1.12).blur(radius: 24).opacity(0.32).clipped().ignoresSafeArea()
+                .scaleEffect(1.12).blur(radius: 24).opacity(0.42).clipped().ignoresSafeArea()
         } else { Color(uiColor: .systemBackground).ignoresSafeArea() }
-        LinearGradient(colors: [.black.opacity(0.20), .black.opacity(0.72)], startPoint: .top, endPoint: .bottom).ignoresSafeArea()
+        LinearGradient(colors: [.black.opacity(0.12), .black.opacity(0.62)], startPoint: .top, endPoint: .bottom).ignoresSafeArea()
     }
 }
 
@@ -90,6 +102,18 @@ struct ArtistDetailView: View {
                     }
                 }.padding(.vertical, 6)
             }
+            Section {
+                HStack(spacing: 12) {
+                    if let first = songs.first {
+                        Button { audioEngine.play(song: first, from: songs) } label: {
+                            Label("Reproducir todo", systemImage: "play.fill").frame(maxWidth: .infinity)
+                        }
+                    }
+                    Button { audioEngine.playShuffled(from: songs) } label: {
+                        Label("Aleatorio", systemImage: "shuffle").frame(maxWidth: .infinity)
+                    }.disabled(songs.isEmpty)
+                }.buttonStyle(.borderedProminent)
+            }
             Section("Álbumes") {
                 ForEach(artistAlbums) { album in
                     let albumSongs = album.songs
@@ -105,6 +129,8 @@ struct ArtistDetailView: View {
                 ForEach(songs) { song in DetailSongRow(song: song, audioEngine: audioEngine, queue: songs) }
             }
         }
+        .scrollContentBackground(.hidden)
+        .background(artistBackground)
         .navigationTitle(artist)
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -127,6 +153,14 @@ struct ArtistDetailView: View {
     @ViewBuilder private func artwork(for song: Song?) -> some View {
         if let data = song?.artworkData, let image = UIImage(data: data) { Image(uiImage: image).resizable().scaledToFill() }
         else { Image(systemName: "music.note").frame(width: 44, height: 44).background(.quaternary, in: RoundedRectangle(cornerRadius: 6)) }
+    }
+
+    @ViewBuilder private var artistBackground: some View {
+        if let data = songs.first?.artworkData, let image = UIImage(data: data) {
+            Image(uiImage: image).resizable().scaledToFit().frame(maxWidth: .infinity, maxHeight: .infinity)
+                .scaleEffect(1.12).blur(radius: 20).opacity(0.24).clipped().ignoresSafeArea()
+        }
+        LinearGradient(colors: [.black.opacity(0.08), .black.opacity(0.58)], startPoint: .top, endPoint: .bottom).ignoresSafeArea()
     }
 }
 

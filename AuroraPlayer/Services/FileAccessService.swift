@@ -39,11 +39,6 @@ class FileAccessService: ObservableObject {
         loadFolders()
         loadFiles()
         loadCachedSongs()
-        if songs.isEmpty && (!folders.isEmpty || !files.isEmpty) {
-            rescanAllFolders()
-        } else {
-            restoreSecurityScopedAccess()
-        }
     }
 
     func addFolder(url: URL) {
@@ -833,12 +828,29 @@ class FileAccessService: ObservableObject {
     }
 
     private func loadCachedSongs() {
-        guard let url = libraryCacheURL,
-              let data = try? Data(contentsOf: url),
-              let cachedSongs = try? JSONDecoder().decode([Song].self, from: data) else { return }
+        guard let url = libraryCacheURL else {
+            finishInitialLibraryLoad(with: [])
+            return
+        }
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let cachedSongs = (try? Data(contentsOf: url)).flatMap { try? JSONDecoder().decode([Song].self, from: $0) } ?? []
+            DispatchQueue.main.async {
+                self?.finishInitialLibraryLoad(with: cachedSongs)
+            }
+        }
+    }
+
+    private func finishInitialLibraryLoad(with cachedSongs: [Song]) {
         songs = cachedSongs
         indexedSongURLs = Set(cachedSongs.map(\.url))
-        AppLog.info(.library, "Biblioteca recuperada de caché: \(cachedSongs.count) canciones")
+        if cachedSongs.isEmpty && (!folders.isEmpty || !files.isEmpty) {
+            rescanAllFolders()
+        } else {
+            restoreSecurityScopedAccess()
+        }
+        if !cachedSongs.isEmpty {
+            AppLog.info(.library, "Biblioteca recuperada de caché: \(cachedSongs.count) canciones")
+        }
     }
 
     private func scheduleCacheSave() {

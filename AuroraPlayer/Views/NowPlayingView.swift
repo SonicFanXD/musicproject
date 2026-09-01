@@ -5,6 +5,7 @@ struct NowPlayingView: View {
     @ObservedObject var audioEngine: AudioEngine
     @Environment(\.dismiss) private var dismiss
     @State private var showLyrics = false
+    @State private var showQueue = false
 
     var body: some View {
         NavigationStack {
@@ -32,9 +33,13 @@ struct NowPlayingView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) { Button("Cerrar") { dismiss() }.foregroundStyle(.white) }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button { showLyrics = true } label: { Image(systemName: "quote.bubble") }
-                        .disabled(audioEngine.currentSong?.lyrics.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
-                        .accessibilityLabel("Ver letra")
+                    HStack(spacing: 16) {
+                        Button { showQueue = true } label: { Image(systemName: "list.bullet") }
+                            .accessibilityLabel("Ver cola de reproducción")
+                        Button { showLyrics = true } label: { Image(systemName: "quote.bubble") }
+                            .disabled(audioEngine.currentSong?.lyrics.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+                            .accessibilityLabel("Ver letra")
+                    }
                 }
             }
             .toolbarBackground(.hidden, for: .navigationBar)
@@ -42,6 +47,7 @@ struct NowPlayingView: View {
             .fullScreenCover(isPresented: $showLyrics) {
                 if let song = audioEngine.currentSong { LyricsScreen(song: song, audioEngine: audioEngine) }
             }
+            .sheet(isPresented: $showQueue) { PlaybackQueueView(audioEngine: audioEngine) }
         }
     }
 
@@ -54,7 +60,7 @@ struct NowPlayingView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .scaleEffect(1.12).blur(radius: 26).opacity(0.58).clipped()
             } else { Color(red: 0.06, green: 0.05, blue: 0.10) }
-            LinearGradient(colors: [.indigo.opacity(0.45), .black.opacity(0.82)], startPoint: .top, endPoint: .bottom)
+            LinearGradient(colors: [.black.opacity(0.12), .black.opacity(0.76)], startPoint: .top, endPoint: .bottom)
         }
     }
 
@@ -109,6 +115,37 @@ struct NowPlayingView: View {
     }
 
     private func time(_ value: TimeInterval) -> String { String(format: "%d:%02d", Int(value) / 60, Int(value) % 60) }
+}
+
+private struct PlaybackQueueView: View {
+    @ObservedObject var audioEngine: AudioEngine
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            List(audioEngine.playbackQueue) { song in
+                Button { audioEngine.play(song: song, from: audioEngine.playbackQueue) } label: {
+                    HStack(spacing: 12) {
+                        artwork(song)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(song.title).lineLimit(1)
+                            Text(song.artist).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                        }
+                        Spacer()
+                        if song.id == audioEngine.currentSong?.id { Image(systemName: "speaker.wave.2.fill").foregroundStyle(.tint) }
+                    }
+                }.buttonStyle(.plain)
+            }
+            .navigationTitle("En reproducción")
+            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Cerrar") { dismiss() } } }
+        }
+    }
+
+    @ViewBuilder private func artwork(_ song: Song) -> some View {
+        if let data = song.artworkData, let image = UIImage(data: data) {
+            Image(uiImage: image).resizable().scaledToFill().frame(width: 46, height: 46).clipShape(RoundedRectangle(cornerRadius: 7))
+        } else { Image(systemName: "music.note").frame(width: 46, height: 46).background(.quaternary, in: RoundedRectangle(cornerRadius: 7)) }
+    }
 }
 
 private struct LyricsScreen: View {

@@ -10,6 +10,7 @@ final class AudioEngine: NSObject, ObservableObject {
     @Published private(set) var duration: TimeInterval = 0
     @Published private(set) var currentSong: Song?
     @Published private(set) var currentRouteName = "Altavoz"
+    @Published private(set) var playbackQueue: [Song] = []
     @Published var isShuffleEnabled = false { didSet { saveState() } }
     @Published var repeatMode: RepeatMode = .off { didSet { saveState() } }
 
@@ -55,8 +56,15 @@ final class AudioEngine: NSObject, ObservableObject {
     func play(song: Song, from songs: [Song]? = nil) {
         configureIfNeeded()
         playlist = songs?.isEmpty == false ? songs! : [song]
+        playbackQueue = playlist
         currentIndex = playlist.firstIndex(where: { $0.id == song.id }) ?? 0
         playCurrentSong()
+    }
+
+    func playShuffled(from songs: [Song]) {
+        guard let song = songs.randomElement() else { return }
+        isShuffleEnabled = true
+        play(song: song, from: songs)
     }
 
     private func playCurrentSong(startAt time: TimeInterval = 0, shouldPlay: Bool = true) {
@@ -99,6 +107,11 @@ final class AudioEngine: NSObject, ObservableObject {
 
     func playNext() {
         guard !playlist.isEmpty else { return }
+        // La cola puede haberse recreado al navegar. Reanclar por URL impide
+        // avanzar desde un índice viejo y terminar en una canción aleatoria.
+        if let currentSong, let index = playlist.firstIndex(where: { $0.url == currentSong.url }) {
+            currentIndex = index
+        }
         if isShuffleEnabled, playlist.count > 1 {
             var next = currentIndex
             while next == currentIndex { next = Int.random(in: playlist.indices) }
@@ -126,10 +139,10 @@ final class AudioEngine: NSObject, ObservableObject {
         isPlaying = false
         playerNode.pause()
         stopDisplayTimer()
-        updateNowPlayingInfo(playing: false)
+        updateNowPlayingInfo(playing: false, forceSystemRefresh: true)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
             guard let self, !self.isPlaying else { return }
-            self.updateNowPlayingInfo(playing: false)
+            self.updateNowPlayingInfo(playing: false, forceSystemRefresh: true)
         }
         saveState()
         AppLog.debug(.playback, "Pausa")
@@ -215,21 +228,27 @@ final class AudioEngine: NSObject, ObservableObject {
 
     private func setupRemoteCommandCenter() {
         let center = MPRemoteCommandCenter.shared()
-        center.playCommand.addTarget { [weak self] _ in self?.resume(); return .success }
-        center.pauseCommand.addTarget { [weak self] _ in self?.pause(); return .success }
-        center.togglePlayPauseCommand.addTarget { [weak self] _ in guard let self else { return .commandFailed }; self.isPlaying ? self.pause() : self.resume(); return .success }
-        center.nextTrackCommand.addTarget { [weak self] _ in self?.playNext(); return .success }
-        center.previousTrackCommand.addTarget { [weak self] _ in self?.playPrevious(); return .success }
-        center.changePlaybackPositionCommand.addTarget { [weak self] event in guard let event = event as? MPChangePlaybackPositionCommandEvent else { return .commandFailed }; self?.seek(to: event.positionTime); return .success }
+        center.playCommand.addTarget { [weak self] _ in Task { @MainActor in self?.resume() }; return .success }
+        center.pauseCommand.addTarget { [weak self] _ in Task { @MainActor in self?.pause() }; return .success }
+        center.togglePlayPauseCommand.addTarget { [weak self] _ in
+            Task { @MainActor in guard let self else { return }; self.isPlaying ? self.pause() : self.resume() }
+            return .success
+        }
+        center.nextTrackCommand.addTarget { [weak self] _ in Task { @MainActor in self?.playNext() }; return .success }
+        center.previousTrackCommand.addTarget { [weak self] _ in Task { @MainActor in self?.playPrevious() }; return .success }
+        center.changePlaybackPositionCommand.addTarget { [weak self] event in
+            guard let event = event as? MPChangePlaybackPositionCommandEvent else { return .commandFailed }
+            Task { @MainActor in self?.seek(to: event.positionTime) }
+            return .success
+        }
         center.playCommand.isEnabled = true
         center.pauseCommand.isEnabled = true
         center.togglePlayPauseCommand.isEnabled = true
     }
 
-    private func updateNowPlayingInfo(playing explicitPlaybackState: Bool? = nil) {
+    private func updateNowPlayingInfo(playing explicitPlaybackState: Bool? = nil, forceSystemRefresh: Bool = false) {
         guard let song = currentSong else {
             MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
-            MPNowPlayingInfoCenter.default().playbackState = .stopped
             return
         }
         let playing = explicitPlaybackState ?? isPlaying
@@ -244,13 +263,13 @@ final class AudioEngine: NSObject, ObservableObject {
         if !song.album.isEmpty { info[MPMediaItemPropertyAlbumTitle] = song.album }
         if let nowPlayingArtwork { info[MPMediaItemPropertyArtwork] = nowPlayingArtwork }
         let nowPlayingCenter = MPNowPlayingInfoCenter.default()
-        // Publicarlo antes y después de sustituir el diccionario evita que
-        // Control Center conserve el icono previo en algunas rutas Bluetooth.
-        nowPlayingCenter.playbackState = playing ? .playing : .paused
+        // En iOS el icono se deriva de PlaybackRate (no de playbackState, que
+        // es un API de macOS). Al pausar se invalida una vez el diccionario
+        // anterior para que Lock Screen descarte su tasa interpolada de 1.0.
+        if forceSystemRefresh { nowPlayingCenter.nowPlayingInfo = nil }
         nowPlayingCenter.nowPlayingInfo = info
-        nowPlayingCenter.playbackState = playing ? .playing : .paused
-        // iOS decide cuál icono mostrar con playbackState/rate. Desactivar el
-        // comando contrario puede dejar Control Center mostrando el icono viejo.
+        // Mantener ambos comandos disponibles evita que Control Center conserve
+        // el botón anterior; el icono lo decide PlaybackRate en iOS.
         let commands = MPRemoteCommandCenter.shared()
         commands.playCommand.isEnabled = true
         commands.pauseCommand.isEnabled = true
@@ -272,7 +291,7 @@ final class AudioEngine: NSObject, ObservableObject {
     }
     func restoreState(with songs: [Song]) {
         guard !hasRestored, let state = UserDefaults.standard.dictionary(forKey: stateDefaultsKey), let url = state["songURL"] as? String, let song = songs.first(where: { $0.url.absoluteString == url }) else { return }
-        configureIfNeeded(); playlist = songs; currentIndex = songs.firstIndex(where: { $0.id == song.id }) ?? 0
+        configureIfNeeded(); playlist = songs; playbackQueue = songs; currentIndex = songs.firstIndex(where: { $0.id == song.id }) ?? 0
         isShuffleEnabled = state["shuffle"] as? Bool ?? false
         repeatMode = RepeatMode(rawValue: state["repeat"] as? String ?? "") ?? .off
         playCurrentSong(startAt: state["currentTime"] as? TimeInterval ?? 0, shouldPlay: state["isPlaying"] as? Bool ?? false); hasRestored = true
