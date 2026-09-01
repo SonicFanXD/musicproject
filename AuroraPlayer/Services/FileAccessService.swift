@@ -1,4 +1,5 @@
 import Foundation
+import AVFoundation
 
 class FileAccessService: ObservableObject {
     @Published var folders: [MusicFolder] = []
@@ -146,7 +147,16 @@ class FileAccessService: ObservableObject {
                     let ext = fileURL.pathExtension.lowercased()
                     guard self.supportedExtensions.contains(ext) else { continue }
 
-                    foundSongs.append(Song(url: fileURL))
+                    let metadata = readMetadata(from: fileURL)
+                    foundSongs.append(
+                        Song(
+                            url: fileURL,
+                            title: metadata.title,
+                            artist: metadata.artist,
+                            album: metadata.album,
+                            artworkData: metadata.artworkData
+                        )
+                    )
                 }
             }
 
@@ -157,6 +167,45 @@ class FileAccessService: ObservableObject {
                 self.songs.append(contentsOf: foundSongs.filter { !existingURLs.contains($0.url) })
             }
         }
+    }
+
+    private struct SongMetadata {
+        let title: String?
+        let artist: String
+        let album: String
+        let artworkData: Data?
+    }
+
+    private func readMetadata(from url: URL) -> SongMetadata {
+        let asset = AVAsset(url: url)
+        var title: String?
+        var artist = ""
+        var album = ""
+        var artworkData: Data?
+
+        for item in asset.commonMetadata {
+            switch item.commonKey?.rawValue {
+            case "title":
+                if let value = item.stringValue, !value.isEmpty {
+                    title = value
+                }
+            case "artist":
+                artist = item.stringValue ?? ""
+            case "albumName":
+                album = item.stringValue ?? ""
+            case "artwork":
+                artworkData = item.dataValue
+            default:
+                break
+            }
+        }
+
+        return SongMetadata(
+            title: title,
+            artist: artist,
+            album: album,
+            artworkData: artworkData
+        )
     }
 
     private func saveFolders() {

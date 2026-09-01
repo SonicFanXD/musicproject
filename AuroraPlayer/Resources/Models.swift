@@ -16,11 +16,26 @@ struct Song: Identifiable, Equatable {
     let id: UUID
     let url: URL
     let title: String
+    let artist: String
+    let album: String
+    let artworkData: Data?
 
-    init(id: UUID = UUID(), url: URL) {
+    init(
+        id: UUID = UUID(),
+        url: URL,
+        title: String? = nil,
+        artist: String = "",
+        album: String = "",
+        artworkData: Data? = nil
+    ) {
         self.id = id
         self.url = url
-        self.title = url.deletingPathExtension().lastPathComponent
+        self.title = title?.isEmpty == false
+            ? title!
+            : url.deletingPathExtension().lastPathComponent
+        self.artist = artist
+        self.album = album
+        self.artworkData = artworkData
     }
 
     static func == (lhs: Song, rhs: Song) -> Bool {

@@ -439,23 +439,26 @@ class AudioEngine: NSObject, ObservableObject {
             return
         }
 
-        let artist = song.url.deletingLastPathComponent().lastPathComponent
-        let album = song.url.deletingLastPathComponent().lastPathComponent
-
-        let artworkImage = UIImage(systemName: "music.note.list")?
-            .withTintColor(.systemPink, renderingMode: .alwaysOriginal)
-        let artwork = artworkImage.map { image in
+        let artwork = song.artworkData
+            .flatMap(UIImage.init(data:))
+            .map { image in
             MPMediaItemArtwork(boundsSize: image.size) { _ in image }
         }
 
         var info: [String: Any] = [
             MPMediaItemPropertyTitle: song.title,
-            MPMediaItemPropertyArtist: artist,
-            MPMediaItemPropertyAlbumTitle: album,
             MPMediaItemPropertyPlaybackDuration: duration,
             MPNowPlayingInfoPropertyElapsedPlaybackTime: currentTime,
             MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1.0 : 0.0
         ]
+
+        if !song.artist.isEmpty {
+            info[MPMediaItemPropertyArtist] = song.artist
+        }
+
+        if !song.album.isEmpty {
+            info[MPMediaItemPropertyAlbumTitle] = song.album
+        }
 
         if let artwork = artwork {
             info[MPMediaItemPropertyArtwork] = artwork
