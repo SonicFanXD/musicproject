@@ -32,7 +32,6 @@ struct ContentView: View {
                 .listStyle(.insetGrouped)
                 .searchable(text: $searchText, prompt: "Buscar canción, álbum o artista")
 
-                if let song = audioEngine.currentSong { PlayerBar(audioEngine: audioEngine, song: song) }
             }
             .navigationTitle("Aurora Player")
             .toolbar {
@@ -42,6 +41,9 @@ struct ContentView: View {
                 }
             }
             .sheet(isPresented: $showSettings) { SettingsView(library: library) }
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if let song = audioEngine.currentSong { PlayerBar(audioEngine: audioEngine, song: song) }
         }
         .onChange(of: library.songs) { songs in
             guard !hasRestored, !songs.isEmpty else { return }
@@ -56,7 +58,7 @@ struct ContentView: View {
             ForEach(filteredSongs) { song in songRow(song, queue: filteredSongs) }
         case .albums:
             ForEach(albums) { album in
-                NavigationLink { AlbumDetailView(album: album.title, songs: album.songs, audioEngine: audioEngine) } label: {
+                NavigationLink { AlbumDetailView(album: album.title, albumArtist: album.artist, songs: album.songs, audioEngine: audioEngine) } label: {
                     HStack(spacing: 12) {
                         artwork(for: album.songs.first).frame(width: 48, height: 48).clipShape(RoundedRectangle(cornerRadius: 7))
                         VStack(alignment: .leading, spacing: 3) {
@@ -67,14 +69,13 @@ struct ContentView: View {
                 }
             }
         case .artists:
-            ForEach(albumArtists, id: \.self) { artist in
-                let artistSongs = filteredSongs.filter { $0.albumArtist == artist }
-                NavigationLink { ArtistDetailView(artist: artist, songs: artistSongs, audioEngine: audioEngine) } label: {
+            ForEach(artists) { artist in
+                NavigationLink { ArtistDetailView(artist: artist.name, songs: artist.songs, audioEngine: audioEngine) } label: {
                     HStack(spacing: 12) {
-                        artwork(for: artistSongs.first).frame(width: 48, height: 48).clipShape(Circle())
+                        artwork(for: artist.songs.first).frame(width: 48, height: 48).clipShape(Circle())
                         VStack(alignment: .leading, spacing: 3) {
-                            Text(artist).lineLimit(1)
-                            Text("\(artistSongs.count) canciones").font(.caption).foregroundStyle(.secondary)
+                            Text(artist.name).lineLimit(1)
+                            Text("\(artist.songs.count) canciones · \(artist.albumCount) álbumes").font(.caption).foregroundStyle(.secondary)
                         }
                     }
                 }
@@ -89,18 +90,38 @@ struct ContentView: View {
     }
 
     private var albums: [AlbumGroup] {
-        Dictionary(grouping: filteredSongs) { "\($0.albumArtist)\u{001F}\($0.album.isEmpty ? "Sin álbum" : $0.album)" }
+        Dictionary(grouping: filteredSongs) { song in
+            song.album.isEmpty ? "\u{001F}\(song.url.absoluteString)" : song.album.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+        }
             .map { key, songs in
                 let sample = songs[0]
-                return AlbumGroup(id: key, title: sample.album.isEmpty ? "Sin álbum" : sample.album, artist: sample.albumArtist.isEmpty ? "Artista de álbum no disponible" : sample.albumArtist, songs: songs)
+                return AlbumGroup(id: key, title: sample.album.isEmpty ? sample.title : sample.album, artist: canonicalAlbumArtist(for: songs), songs: songs)
             }
             .sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
     }
 
-    // Solo se agrupa por el tag Album Artist; las colaboraciones no crean artistas extra.
-    private var albumArtists: [String] {
-        Array(Set(filteredSongs.compactMap { $0.albumArtist.isEmpty ? nil : $0.albumArtist }))
-            .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+    // Si falta Album Artist, se usa el artista predominante del álbum completo,
+    // nunca el de una pista de colaboración aislada.
+    private var artists: [ArtistGroup] {
+        Dictionary(grouping: albums, by: \.artist).map { name, albums in
+            ArtistGroup(id: name, name: name, songs: albums.flatMap(\.songs), albumCount: albums.count)
+        }.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    private func canonicalAlbumArtist(for songs: [Song]) -> String {
+        let explicit = songs.compactMap { $0.albumArtist.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0.albumArtist }
+        if let artist = mostFrequent(explicit) { return artist }
+        let inferred = songs.compactMap { song -> String? in
+            let name = song.artist.replacingOccurrences(of: "(?i)\\s*(feat\\.?|ft\\.?).*$", with: "", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines)
+            return name.isEmpty ? nil : name
+        }
+        return mostFrequent(inferred) ?? "Artista desconocido"
+    }
+
+    private func mostFrequent(_ values: [String]) -> String? {
+        guard !values.isEmpty else { return nil }
+        let counts = Dictionary(grouping: values, by: { $0 }).mapValues(\.count)
+        return values.max { counts[$0, default: 0] < counts[$1, default: 0] }
     }
 
     private var progressDescription: String {
@@ -136,6 +157,13 @@ private struct AlbumGroup: Identifiable {
     let title: String
     let artist: String
     let songs: [Song]
+}
+
+private struct ArtistGroup: Identifiable {
+    let id: String
+    let name: String
+    let songs: [Song]
+    let albumCount: Int
 }
 
 private enum LibraryCategory: String, CaseIterable, Identifiable {

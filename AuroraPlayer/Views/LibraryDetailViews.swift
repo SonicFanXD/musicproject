@@ -3,6 +3,7 @@ import UIKit
 
 struct AlbumDetailView: View {
     let album: String
+    let albumArtist: String
     let songs: [Song]
     @ObservedObject var audioEngine: AudioEngine
 
@@ -13,7 +14,7 @@ struct AlbumDetailView: View {
                     artwork(for: songs.first).frame(width: 100, height: 100).clipShape(RoundedRectangle(cornerRadius: 10))
                     VStack(alignment: .leading, spacing: 5) {
                         Text(album).font(.title3.bold())
-                        Text(songs.first?.albumArtist ?? "Artista desconocido").foregroundStyle(.secondary)
+                        Text(albumArtist).foregroundStyle(.secondary)
                         Text("\(songs.count) canciones").font(.caption).foregroundStyle(.secondary)
                     }
                 }.padding(.vertical, 6)
@@ -80,7 +81,7 @@ struct ArtistDetailView: View {
             Section("Álbumes") {
                 ForEach(albumNames, id: \.self) { album in
                     let albumSongs = songs.filter { ($0.album.isEmpty ? "Sin álbum" : $0.album) == album }
-                    NavigationLink { AlbumDetailView(album: album, songs: albumSongs, audioEngine: audioEngine) } label: {
+                    NavigationLink { AlbumDetailView(album: album, albumArtist: artist, songs: albumSongs, audioEngine: audioEngine) } label: {
                         HStack(spacing: 12) {
                             artwork(for: albumSongs.first).frame(width: 44, height: 44).clipShape(RoundedRectangle(cornerRadius: 6))
                             VStack(alignment: .leading) { Text(album); Text("\(albumSongs.count) canciones").font(.caption).foregroundStyle(.secondary) }

@@ -14,7 +14,7 @@ class FileAccessService: ObservableObject {
     private let defaultsKey = "com.aurora.musicFolders"
     private let filesDefaultsKey = "com.aurora.musicFiles"
     // Cambiar la versión fuerza una única reconstrucción al corregir el mapeo de tags.
-    private let libraryCacheFileName = "library-metadata-v2.json"
+    private let libraryCacheFileName = "library-metadata-v3.json"
     private var activeURLs: [UUID: URL] = [:]
     private var activeFileURLs: [UUID: URL] = [:]
     private var scanGeneration = 0
@@ -346,7 +346,7 @@ class FileAccessService: ObservableObject {
             case "artwork":
                 artworkData = item.dataValue.flatMap(thumbnailArtwork)
             case "lyrics":
-                lyrics = item.stringValue ?? ""
+                lyrics = metadataText(item)
             case "discNumber":
                 discNumber = item.numberValue?.intValue
             case "trackNumber":
@@ -362,13 +362,13 @@ class FileAccessService: ObservableObject {
 
             // iTunes/MP4 usa `aART`, `trkn` y `disk`; otros formatos suelen
             // exponer nombres descriptivos. Se soportan las dos variantes.
-            if (identifier.contains("albumartist") || key == "aart"),
-               let value = item.stringValue, !value.isEmpty {
+            if (identifier.contains("albumartist") || key == "aart" || key == "album artist"),
+               let value = metadataText(item).nilIfEmpty {
                 albumArtist = value
             }
-            if title == nil, (identifier.contains("title") || key == "©nam") { title = item.stringValue }
-            if artist.isEmpty, (identifier.contains("artist") || key == "©art"), key != "aart" { artist = item.stringValue ?? "" }
-            if album.isEmpty, (identifier.contains("album") || key == "©alb"), key != "aart" { album = item.stringValue ?? "" }
+            if title == nil, (identifier.contains("title") || key == "©nam") { title = metadataText(item) }
+            if artist.isEmpty, (identifier.contains("artist") || key == "©art"), key != "aart" { artist = metadataText(item) }
+            if album.isEmpty, (identifier.contains("album") || key == "©alb"), key != "aart" { album = metadataText(item) }
             if identifier.contains("discnumber") || identifier.contains("disknumber") || key == "disk" {
                 discNumber = metadataNumber(item)
             }
@@ -380,9 +380,11 @@ class FileAccessService: ObservableObject {
         // Algunos contenedores no exponen la letra como metadata común; se revisan
         // los formatos disponibles sin cargar el archivo de audio completo.
         if lyrics.isEmpty {
-            lyrics = formatMetadata
-                .first(where: { $0.commonKey?.rawValue == "lyrics" || $0.identifier?.rawValue.localizedCaseInsensitiveContains("lyrics") == true })?
-                .stringValue ?? ""
+            lyrics = formatMetadata.first(where: { item in
+                let id = normalizedMetadataIdentifier(item)
+                let key = ((item.key as? String) ?? "").lowercased()
+                return item.commonKey?.rawValue == "lyrics" || id.contains("lyric") || key == "©lyr" || key.contains("lyric")
+            }).map { self.metadataText($0) } ?? ""
         }
         let audioFile = try? AVAudioFile(forReading: url)
         let sampleRate = audioFile?.processingFormat.sampleRate ?? 0
@@ -423,6 +425,15 @@ class FileAccessService: ObservableObject {
     private func normalizedMetadataIdentifier(_ item: AVMetadataItem) -> String {
         let identifier = item.identifier?.rawValue ?? ""
         return identifier.lowercased().unicodeScalars.filter { CharacterSet.alphanumerics.contains($0) }.map(String.init).joined()
+    }
+
+    private func metadataText(_ item: AVMetadataItem) -> String {
+        if let value = item.stringValue { return value }
+        guard let data = item.dataValue else { return "" }
+        return String(data: data, encoding: .utf8)
+            ?? String(data: data, encoding: .utf16)
+            ?? String(data: data, encoding: .utf16LittleEndian)
+            ?? ""
     }
 
     private func metadataNumber(_ item: AVMetadataItem) -> Int? {

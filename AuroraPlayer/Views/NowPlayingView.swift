@@ -11,15 +11,15 @@ struct NowPlayingView: View {
             ZStack {
                 coverGradient.ignoresSafeArea()
                 GeometryReader { geometry in
-                    ScrollView {
-                        VStack(spacing: 22) {
-                            artwork(side: artworkSide(in: geometry.size))
-                            songInformation
-                            progress
-                            controls
-                        }
-                        .padding(.horizontal, 24).padding(.bottom, 36)
+                    VStack(spacing: 20) {
+                        artwork(side: artworkSide(in: geometry.size))
+                        songInformation
+                        progress
+                        controls
+                        Spacer(minLength: 0)
                     }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    .padding(.horizontal, 24).padding(.top, 12).padding(.bottom, 20)
                 }
             }
             .navigationTitle("Ahora suena")
@@ -66,13 +66,13 @@ struct NowPlayingView: View {
 
     private func artworkSide(in size: CGSize) -> CGFloat {
         // Reserva espacio para datos, progreso y controles en pantallas compactas.
-        min(340, min(size.width - 48, max(240, size.height * 0.42)))
+        min(330, min(size.width - 48, max(230, size.height * 0.40)))
     }
 
     @ViewBuilder private var songInformation: some View {
         if let song = audioEngine.currentSong {
             VStack(alignment: .leading, spacing: 6) {
-                Text(song.title).font(.title2.bold()).lineLimit(2).foregroundStyle(.white)
+                Text(song.title).font(.title2.bold()).lineLimit(2).fixedSize(horizontal: false, vertical: true).foregroundStyle(.white)
                 Text([song.artist, song.album].filter { !$0.isEmpty }.joined(separator: " · ")).foregroundStyle(.white.opacity(0.7)).lineLimit(1)
                 if !song.formatDescription.isEmpty {
                     Label(song.formatDescription, systemImage: "waveform").font(.caption).foregroundStyle(.white.opacity(0.85)).padding(.top, 2)

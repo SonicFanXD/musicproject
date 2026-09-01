@@ -127,7 +127,7 @@ final class AudioEngine: NSObject, ObservableObject {
         playerNode.pause()
         stopDisplayTimer()
         updateNowPlayingInfo()
-        DispatchQueue.main.async { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
             guard let self, !self.isPlaying else { return }
             self.updateNowPlayingInfo()
         }
@@ -142,7 +142,7 @@ final class AudioEngine: NSObject, ObservableObject {
         playerNode.play()
         startDisplayTimer()
         updateNowPlayingInfo()
-        DispatchQueue.main.async { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
             guard let self, self.isPlaying else { return }
             self.updateNowPlayingInfo()
         }
