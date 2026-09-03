@@ -1,6 +1,19 @@
 import SwiftUI
 import UIKit
 
+// Orden canónico de reproducción: disco, luego número de pista, y como
+// último recurso el título. Se usa tanto para lo que se muestra en pantalla
+// como para la cola que recibe el reproductor, para que nunca se desincronicen.
+private func songPlaybackOrder(_ lhs: Song, _ rhs: Song) -> Bool {
+    let leftDisc = lhs.discNumber ?? 1
+    let rightDisc = rhs.discNumber ?? 1
+    if leftDisc != rightDisc { return leftDisc < rightDisc }
+    let leftTrack = lhs.trackNumber > 0 ? lhs.trackNumber : .max
+    let rightTrack = rhs.trackNumber > 0 ? rhs.trackNumber : .max
+    if leftTrack != rightTrack { return leftTrack < rightTrack }
+    return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
+}
+
 struct AlbumDetailView: View {
     let album: String
     let albumArtist: String
@@ -21,12 +34,12 @@ struct AlbumDetailView: View {
             }
             Section {
                 HStack(spacing: 12) {
-                    if let first = songs.first {
-                        Button { audioEngine.play(song: first, from: songs) } label: {
+                    if let first = orderedSongs.first {
+                        Button { audioEngine.play(song: first, from: orderedSongs) } label: {
                             Label("Reproducir", systemImage: "play.fill").frame(maxWidth: .infinity)
                         }
                     }
-                    Button { audioEngine.playShuffled(from: songs) } label: {
+                    Button { audioEngine.playShuffled(from: orderedSongs) } label: {
                         Label("Aleatorio", systemImage: "shuffle").frame(maxWidth: .infinity)
                     }.disabled(songs.isEmpty)
                 }.buttonStyle(.borderedProminent)
@@ -34,22 +47,22 @@ struct AlbumDetailView: View {
             if hasDiscNumbers {
                 ForEach(discs, id: \.self) { disc in
                     Section("Disco \(disc)") {
-                        ForEach(songs.filter { $0.discNumber == disc }.sorted(by: trackOrder)) { song in
-                            DetailSongRow(song: song, audioEngine: audioEngine, queue: songs)
+                        ForEach(orderedSongs.filter { $0.discNumber == disc }) { song in
+                            DetailSongRow(song: song, audioEngine: audioEngine, queue: orderedSongs)
                         }
                     }
                 }
                 if !songsWithoutDiscNumber.isEmpty {
                     Section("Canciones") {
-                        ForEach(songsWithoutDiscNumber.sorted(by: trackOrder)) { song in
-                            DetailSongRow(song: song, audioEngine: audioEngine, queue: songs)
+                        ForEach(orderedSongs.filter { $0.discNumber == nil }) { song in
+                            DetailSongRow(song: song, audioEngine: audioEngine, queue: orderedSongs)
                         }
                     }
                 }
             } else {
                 Section("Canciones") {
-                    ForEach(songs.sorted(by: trackOrder)) { song in
-                        DetailSongRow(song: song, audioEngine: audioEngine, queue: songs)
+                    ForEach(orderedSongs) { song in
+                        DetailSongRow(song: song, audioEngine: audioEngine, queue: orderedSongs)
                     }
                 }
             }
@@ -61,15 +74,12 @@ struct AlbumDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
     }
 
+    // Única fuente de verdad para el orden: lo que se ve en pantalla es
+    // siempre exactamente la misma lista que recibe el reproductor como cola.
+    private var orderedSongs: [Song] { songs.sorted(by: songPlaybackOrder) }
     private var discs: [Int] { Array(Set(songs.compactMap(\.discNumber))).sorted() }
     private var hasDiscNumbers: Bool { !discs.isEmpty }
     private var songsWithoutDiscNumber: [Song] { songs.filter { $0.discNumber == nil } }
-    private func trackOrder(_ lhs: Song, _ rhs: Song) -> Bool {
-        let leftTrack = lhs.trackNumber > 0 ? lhs.trackNumber : .max
-        let rightTrack = rhs.trackNumber > 0 ? rhs.trackNumber : .max
-        if leftTrack != rightTrack { return leftTrack < rightTrack }
-        return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
-    }
     @ViewBuilder private func artwork(for song: Song?) -> some View {
         if let data = song?.artworkData, let image = UIImage(data: data) {
             Image(uiImage: image).resizable().scaledToFill()
@@ -104,12 +114,12 @@ struct ArtistDetailView: View {
             }
             Section {
                 HStack(spacing: 12) {
-                    if let first = songs.first {
-                        Button { audioEngine.play(song: first, from: songs) } label: {
+                    if let first = orderedSongs.first {
+                        Button { audioEngine.play(song: first, from: orderedSongs) } label: {
                             Label("Reproducir todo", systemImage: "play.fill").frame(maxWidth: .infinity)
                         }
                     }
-                    Button { audioEngine.playShuffled(from: songs) } label: {
+                    Button { audioEngine.playShuffled(from: orderedSongs) } label: {
                         Label("Aleatorio", systemImage: "shuffle").frame(maxWidth: .infinity)
                     }.disabled(songs.isEmpty)
                 }.buttonStyle(.borderedProminent)
@@ -126,7 +136,7 @@ struct ArtistDetailView: View {
                 }
             }
             Section("Todas las canciones") {
-                ForEach(songs) { song in DetailSongRow(song: song, audioEngine: audioEngine, queue: songs) }
+                ForEach(orderedSongs) { song in DetailSongRow(song: song, audioEngine: audioEngine, queue: orderedSongs) }
             }
         }
         .scrollContentBackground(.hidden)
@@ -134,6 +144,11 @@ struct ArtistDetailView: View {
         .navigationTitle(artist)
         .navigationBarTitleDisplayMode(.inline)
     }
+
+    // Recorre los álbumes en el mismo orden en que se listan arriba (por fecha
+    // de lanzamiento) y, dentro de cada uno, por disco/pista — así "siguiente"
+    // avanza álbum por álbum en vez de saltar según el orden interno de escaneo.
+    private var orderedSongs: [Song] { artistAlbums.flatMap { $0.songs.sorted(by: songPlaybackOrder) } }
 
     private var artistAlbums: [ArtistAlbumGroup] {
         Dictionary(grouping: songs) { song in
