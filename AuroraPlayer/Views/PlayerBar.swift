@@ -3,6 +3,7 @@ import SwiftUI
 struct PlayerBar: View {
     @ObservedObject var audioEngine: AudioEngine
     @State private var showingNowPlaying = false
+    @State private var artworkScale: CGFloat = 1.0
 
     private var progress: Double {
         guard audioEngine.duration > 0 else { return 0 }
@@ -13,13 +14,13 @@ struct PlayerBar: View {
         Group {
             if let song = audioEngine.currentSong {
                 VStack(spacing: 0) {
-                    HStack(spacing: 12) {
-                        // Artwork with animation
+                    HStack(spacing: 14) {
+                        // Artwork with subtle breathing animation
                         artwork(for: song)
-                            .scaleEffect(audioEngine.isPlaying ? 1.05 : 1.0)
-                            .animation(.easeInOut(duration: 0.3).repeatForever(autoreverses: true), value: audioEngine.isPlaying)
+                            .scaleEffect(artworkScale)
+                            .animation(.easeInOut(duration: 2.0).repeatForever(autoreverses: true), value: artworkScale)
 
-                        VStack(alignment: .leading, spacing: 2) {
+                        VStack(alignment: .leading, spacing: 4) {
                             Text(song.title)
                                 .font(.subheadline.weight(.semibold))
                                 .foregroundStyle(.primary)
@@ -32,15 +33,15 @@ struct PlayerBar: View {
                         }
                         .contentShape(Rectangle())
                         .onTapGesture {
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                            withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
                                 showingNowPlaying = true
                             }
                         }
 
                         Spacer()
 
-                        // Controls with better touch targets
-                        HStack(spacing: 12) {
+                        // Controls - simplified for performance
+                        HStack(spacing: 10) {
                             Button {
                                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
                                 audioEngine.playPrevious()
@@ -77,27 +78,35 @@ struct PlayerBar: View {
                         }
                     }
                     .padding(.horizontal, 16)
-                    .padding(.vertical, 10)
+                    .padding(.vertical, 12)
 
-                    // Progress bar with better styling
+                    // Simplified progress bar for performance
                     GeometryReader { geometry in
                         ZStack(alignment: .leading) {
                             // Background
-                            RoundedRectangle(cornerRadius: 2)
+                            RoundedRectangle(cornerRadius: 2, style: .continuous)
                                 .fill(Color.secondary.opacity(0.3))
                                 .frame(height: 4)
 
                             // Progress
-                            RoundedRectangle(cornerRadius: 2)
+                            RoundedRectangle(cornerRadius: 2, style: .continuous)
                                 .fill(Color.accentColor)
                                 .frame(width: geometry.size.width * progress, height: 4)
                         }
                     }
                     .frame(height: 4)
                     .padding(.horizontal, 16)
-                    .padding(.bottom, 8)
+                    .padding(.bottom, 10)
                 }
                 .background(.ultraThinMaterial)
+                .onAppear {
+                    artworkScale = audioEngine.isPlaying ? 1.03 : 1.0
+                }
+                .onChange(of: audioEngine.isPlaying) { isPlaying in
+                    withAnimation(.easeInOut(duration: 0.3)) {
+                        artworkScale = isPlaying ? 1.03 : 1.0
+                    }
+                }
                 .sheet(isPresented: $showingNowPlaying) {
                     NowPlayingView(audioEngine: audioEngine)
                 }

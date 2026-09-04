@@ -71,29 +71,39 @@ struct ContentView: View {
         }
     }
 
-    // MARK: - Category Picker
+    // MARK: - Category Picker (Enhanced with smooth animations)
 
     private var categoryPicker: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
+            HStack(spacing: 10) {
                 ForEach(LibraryCategory.allCases, id: \.self) { category in
                     Button {
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                        withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
                             selectedCategory = category
                         }
                     } label: {
                         Text(category.title)
-                            .font(.subheadline.weight(.medium))
+                            .font(.subheadline.weight(.semibold))
                             .foregroundStyle(selectedCategory == category ? .white : .secondary)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 8)
+                            .padding(.horizontal, 18)
+                            .padding(.vertical, 10)
                             .background {
                                 if selectedCategory == category {
-                                    RoundedRectangle(cornerRadius: 20, style: .continuous)
-                                        .fill(Color.accentColor)
+                                    RoundedRectangle(cornerRadius: 22, style: .continuous)
+                                        .fill(
+                                            LinearGradient(
+                                                colors: [
+                                                    Color.accentColor,
+                                                    Color.accentColor.opacity(0.8)
+                                                ],
+                                                startPoint: .topLeading,
+                                                endPoint: .bottomTrailing
+                                            )
+                                        )
+                                        .shadow(color: Color.accentColor.opacity(0.3), radius: 4, x: 0, y: 2)
                                 } else {
-                                    RoundedRectangle(cornerRadius: 20, style: .continuous)
-                                        .fill(Color.secondary.opacity(0.1))
+                                    RoundedRectangle(cornerRadius: 22, style: .continuous)
+                                        .fill(Color.secondary.opacity(0.12))
                                 }
                             }
                     }
@@ -102,7 +112,7 @@ struct ContentView: View {
             }
             .padding(.horizontal, 16)
         }
-        .padding(.vertical, 8)
+        .padding(.vertical, 10)
     }
 
     // MARK: - Library Content
@@ -205,7 +215,7 @@ struct ContentView: View {
         }
     }
 
-    // MARK: - Song Row
+    // MARK: - Song Row (Enhanced with better visual feedback)
 
     @ViewBuilder
     private func songRow(_ song: Song) -> some View {
@@ -255,15 +265,24 @@ struct ContentView: View {
                         .monospacedDigit()
                 }
             }
-            .padding(.vertical, 10)
-            .padding(.horizontal, 12)
-            .background(
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(isCurrent ? Color.accentColor.opacity(0.08) : Color.clear)
-            )
+            .padding(.vertical, 12)
+            .padding(.horizontal, 14)
+            .background {
+                if isCurrent {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(Color.accentColor.opacity(0.1))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .stroke(Color.accentColor.opacity(0.2), lineWidth: 1)
+                        )
+                } else {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(Color.secondary.opacity(0.05))
+                }
+            }
         }
         .buttonStyle(.plain)
-        .listRowInsets(EdgeInsets(top: 2, leading: 12, bottom: 2, trailing: 12))
+        .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12))
         .listRowBackground(Color.clear)
     }
 
@@ -387,18 +406,19 @@ enum LibraryCategory: String, CaseIterable {
     }
 }
 
-// MARK: - Album Row
+// MARK: - Album Row (Enhanced)
 struct AlbumLibraryRow: View {
     let album: Album
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 14) {
             if let artwork = album.artwork {
                 Image(uiImage: artwork)
                     .resizable()
                     .scaledToFill()
-                    .frame(width: 50, height: 50)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .frame(width: 52, height: 52)
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .shadow(color: .black.opacity(0.1), radius: 4, x: 0, y: 2)
             } else {
                 placeholderArtwork
             }
@@ -425,43 +445,68 @@ struct AlbumLibraryRow: View {
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.tertiary)
         }
+        .padding(.vertical, 8)
+        .padding(.horizontal, 12)
+        .background {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(Color.secondary.opacity(0.05))
+        }
     }
 
     private var placeholderArtwork: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 8)
-                .fill(Color.secondary.opacity(0.2))
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            Color.secondary.opacity(0.2),
+                            Color.secondary.opacity(0.1)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
 
             Image(systemName: "square.stack")
                 .font(.title2)
                 .foregroundStyle(.secondary)
         }
-        .frame(width: 50, height: 50)
+        .frame(width: 52, height: 52)
     }
 }
 
-// MARK: - Artist Row
+// MARK: - Artist Row (Enhanced)
 struct ArtistLibraryRow: View {
     let artist: Artist
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 14) {
             if let artwork = artist.artwork {
                 Image(uiImage: artwork)
                     .resizable()
                     .scaledToFill()
-                    .frame(width: 50, height: 50)
+                    .frame(width: 52, height: 52)
                     .clipShape(Circle())
+                    .shadow(color: .black.opacity(0.1), radius: 4, x: 0, y: 2)
             } else {
                 ZStack {
                     Circle()
-                        .fill(Color.secondary.opacity(0.2))
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    Color.secondary.opacity(0.2),
+                                    Color.secondary.opacity(0.1)
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
 
                     Image(systemName: "person.fill")
                         .font(.title2)
                         .foregroundStyle(.secondary)
                 }
-                .frame(width: 50, height: 50)
+                .frame(width: 52, height: 52)
             }
 
             VStack(alignment: .leading, spacing: 4) {
@@ -480,6 +525,12 @@ struct ArtistLibraryRow: View {
             Image(systemName: "chevron.right")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.tertiary)
+        }
+        .padding(.vertical, 8)
+        .padding(.horizontal, 12)
+        .background {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(Color.secondary.opacity(0.05))
         }
     }
 }

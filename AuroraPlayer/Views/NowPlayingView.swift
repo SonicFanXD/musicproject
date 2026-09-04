@@ -6,6 +6,7 @@ struct NowPlayingView: View {
 
     @State private var showLyrics = false
     @State private var showAudioInfo = false
+    @State private var artworkScale: CGFloat = 1.0
 
     private var progress: Double {
         guard audioEngine.duration > 0 else { return 0 }
@@ -15,164 +16,51 @@ struct NowPlayingView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                // Blurred background
-                if let artwork = audioEngine.currentSong?.artwork {
-                    GeometryReader { geometry in
-                        Image(uiImage: artwork)
-                            .resizable()
-                            .scaledToFill()
-                            .frame(width: geometry.size.width, height: geometry.size.height)
-                            .blur(radius: 80)
-                            .opacity(0.4)
-                            .clipped()
-                    }
-                    .ignoresSafeArea()
-                } else {
-                    Color(UIColor.systemBackground)
-                        .ignoresSafeArea()
-                }
+                // Optimized background with single layer blur
+                backgroundView
 
                 // Content
                 VStack(spacing: 0) {
                     Spacer()
 
-                    // Artwork
-                    if let artwork = audioEngine.currentSong?.artwork {
-                        Image(uiImage: artwork)
-                            .resizable()
-                            .scaledToFill()
-                            .frame(width: 280, height: 280)
-                            .clipShape(RoundedRectangle(cornerRadius: 16))
-                            .shadow(color: .black.opacity(0.3), radius: 20, x: 0, y: 10)
-                    } else {
-                        ZStack {
-                            RoundedRectangle(cornerRadius: 16)
-                                .fill(Color.secondary.opacity(0.2))
-                                .frame(width: 280, height: 280)
+                    // Artwork with subtle animation
+                    artworkView
+                        .scaleEffect(artworkScale)
+                        .animation(.spring(response: 0.6, dampingFraction: 0.8), value: audioEngine.isPlaying)
 
-                            Image(systemName: "music.note")
-                                .font(.system(size: 70))
-                                .foregroundStyle(.secondary)
-                        }
-                        .shadow(color: .black.opacity(0.2), radius: 15, x: 0, y: 8)
-                    }
-
-                    Spacer().frame(height: 30)
+                    Spacer().frame(height: 32)
 
                     // Song info
-                    VStack(spacing: 8) {
-                        Text(audioEngine.currentSong?.title ?? "Sin canción")
-                            .font(.title.bold())
-                            .multilineTextAlignment(.center)
-                            .foregroundStyle(.primary)
+                    songInfoView
 
-                        Text(audioEngine.currentSong?.artist ?? "—")
-                            .font(.title3)
-                            .foregroundStyle(.secondary)
-                    }
+                    Spacer().frame(height: 24)
 
-                    Spacer().frame(height: 20)
+                    // Progress bar with custom styling
+                    progressView
 
-                    // Progress
-                    VStack(spacing: 8) {
-                        ProgressView(value: progress)
-                            .progressViewStyle(LinearProgressViewStyle(tint: Color.accentColor))
-                            .tint(Color.accentColor)
-
-                        HStack {
-                            Text(formatTime(audioEngine.currentTime))
-                                .font(.caption.weight(.medium))
-                                .foregroundStyle(.secondary)
-                                .monospacedDigit()
-
-                            Spacer()
-
-                            Text(formatTime(audioEngine.duration))
-                                .font(.caption.weight(.medium))
-                                .foregroundStyle(.secondary)
-                                .monospacedDigit()
-                        }
-                    }
-                    .padding(.horizontal, 20)
-
-                    Spacer().frame(height: 30)
+                    Spacer().frame(height: 32)
 
                     // Controls
-                    HStack(spacing: 25) {
-                        Button {
-                            audioEngine.toggleShuffle()
-                        } label: {
-                            Image(systemName: audioEngine.isShuffleEnabled ? "shuffle.circle.fill" : "shuffle")
-                                .font(.title2)
-                                .foregroundStyle(audioEngine.isShuffleEnabled ? Color.accentColor : .secondary)
-                                .frame(width: 44, height: 44)
-                        }
+                    controlsView
 
-                        Button {
-                            audioEngine.playPrevious()
-                        } label: {
-                            Image(systemName: "backward.fill")
-                                .font(.title)
-                                .foregroundStyle(.primary)
-                                .frame(width: 44, height: 44)
-                        }
+                    Spacer().frame(height: 32)
 
-                        Button {
-                            if audioEngine.isPlaying {
-                                audioEngine.pause()
-                            } else {
-                                audioEngine.resume()
-                            }
-                        } label: {
-                            Image(systemName: audioEngine.isPlaying ? "pause.circle.fill" : "play.circle.fill")
-                                .font(.system(size: 64))
-                                .foregroundStyle(Color.accentColor)
-                                .frame(width: 64, height: 64)
-                        }
+                    // Audio quality indicator
+                    audioQualityButton
 
-                        Button {
-                            audioEngine.playNext()
-                        } label: {
-                            Image(systemName: "forward.fill")
-                                .font(.title)
-                                .foregroundStyle(.primary)
-                                .frame(width: 44, height: 44)
-                        }
-
-                        Button {
-                            audioEngine.cycleRepeatMode()
-                        } label: {
-                            Image(systemName: repeatIcon)
-                                .font(.title2)
-                                .foregroundStyle(audioEngine.repeatMode != .off ? Color.accentColor : .secondary)
-                                .frame(width: 44, height: 44)
-                        }
-                    }
-
-                    Spacer().frame(height: 30)
-
-                    // Audio info button
-                    Button {
-                        showAudioInfo = true
-                    } label: {
-                        HStack(spacing: 8) {
-                            Image(systemName: "waveform")
-                                .font(.caption)
-                            Text(audioQualityInfo)
-                                .font(.caption.weight(.medium))
-                                .foregroundStyle(.secondary)
-                        }
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 8)
-                        .background {
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .fill(.ultraThinMaterial)
-                        }
-                    }
-
-                    Spacer().frame(height: 20)
+                    Spacer().frame(height: 24)
                 }
-                .padding(.horizontal, 20)
+                .padding(.horizontal, 24)
+            }
+            .onAppear {
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
+                    artworkScale = 1.0
+                }
+            }
+            .onChange(of: audioEngine.isPlaying) { isPlaying in
+                withAnimation(.spring(response: 0.5, dampingFraction: 0.8)) {
+                    artworkScale = isPlaying ? 1.02 : 1.0
+                }
             }
             .navigationTitle("Reproduciendo")
             .navigationBarTitleDisplayMode(.inline)
@@ -184,6 +72,7 @@ struct NowPlayingView: View {
                         dismiss()
                     } label: {
                         Image(systemName: "chevron.down")
+                            .foregroundStyle(.primary)
                     }
                 }
 
@@ -192,15 +81,259 @@ struct NowPlayingView: View {
                         showLyrics = true
                     } label: {
                         Image(systemName: "quote.bubble")
+                            .foregroundStyle(.primary)
                     }
                     .disabled(audioEngine.currentSong?.lyrics.isEmpty ?? true)
                 }
             }
             .sheet(isPresented: $showLyrics) {
-                LyricsView(song: audioEngine.currentSong)
+                LyricsView(song: audioEngine.currentSong, audioEngine: audioEngine)
             }
             .sheet(isPresented: $showAudioInfo) {
                 AudioInfoView(audioEngine: audioEngine)
+            }
+        }
+    }
+
+    // MARK: - Background View (Optimized for iPhone 8 Plus performance)
+    private var backgroundView: some View {
+        Group {
+            if let artwork = audioEngine.currentSong?.artwork {
+                GeometryReader { geometry in
+                    ZStack {
+                        // Optimized blurred artwork - reduced blur radius for performance
+                        Image(uiImage: artwork)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: geometry.size.width, height: geometry.size.height)
+                            .blur(radius: 40) // Reduced from 50 for better performance
+                            .opacity(0.35)
+                            .clipped()
+                        
+                        // Simplified gradient overlay for depth
+                        LinearGradient(
+                            colors: [
+                                Color.black.opacity(0.15),
+                                Color.black.opacity(0.35)
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    }
+                }
+                .ignoresSafeArea()
+            } else {
+                // Simplified gradient background for no artwork
+                LinearGradient(
+                    colors: [
+                        Color(UIColor.systemBackground),
+                        Color(UIColor.secondarySystemBackground)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .ignoresSafeArea()
+            }
+        }
+    }
+
+    // MARK: - Artwork View (Optimized for iPhone 8 Plus performance)
+    private var artworkView: some View {
+        Group {
+            if let artwork = audioEngine.currentSong?.artwork {
+                // Simplified artwork view without glow effect for better performance
+                Image(uiImage: artwork)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 300, height: 300)
+                    .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+                    .shadow(color: .black.opacity(0.25), radius: 30, x: 0, y: 15) // Reduced shadow
+            } else {
+                ZStack {
+                    // Simplified placeholder without gradient
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        .fill(Color.secondary.opacity(0.15))
+                        .frame(width: 300, height: 300)
+                        .shadow(color: .black.opacity(0.12), radius: 20, x: 0, y: 10)
+
+                    Image(systemName: "music.note")
+                        .font(.system(size: 75))
+                        .foregroundStyle(.secondary.opacity(0.6))
+                }
+            }
+        }
+    }
+
+    // MARK: - Song Info View (Enhanced with better typography)
+    private var songInfoView: some View {
+        VStack(spacing: 12) {
+            Text(audioEngine.currentSong?.title ?? "Sin canción")
+                .font(.system(size: 26, weight: .bold))
+                .multilineTextAlignment(.center)
+                .foregroundStyle(.primary)
+                .lineLimit(2)
+                .shadow(color: .black.opacity(0.1), radius: 2, x: 0, y: 1)
+
+            Text(audioEngine.currentSong?.artist ?? "—")
+                .font(.system(size: 19, weight: .medium))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .padding(.horizontal, 20)
+
+            if !audioEngine.currentSong?.album.isEmpty ?? false {
+                HStack(spacing: 6) {
+                    Image(systemName: "opticaldisc")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.tertiary)
+                    
+                    Text(audioEngine.currentSong?.album ?? "")
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                }
+            }
+        }
+        .padding(.horizontal, 8)
+    }
+
+    // MARK: - Progress View (Optimized for performance)
+    private var progressView: some View {
+        VStack(spacing: 12) {
+            // Simplified progress bar for better performance
+            GeometryReader { geometry in
+                ZStack(alignment: .leading) {
+                    // Background track
+                    RoundedRectangle(cornerRadius: 3, style: .continuous)
+                        .fill(Color.secondary.opacity(0.25))
+                        .frame(height: 6)
+
+                    // Progress fill
+                    RoundedRectangle(cornerRadius: 3, style: .continuous)
+                        .fill(Color.accentColor)
+                        .frame(width: geometry.size.width * progress, height: 6)
+                }
+            }
+            .frame(height: 6)
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        handleScrub(value.location.x, in: value.bounds?.width ?? 0)
+                    }
+            )
+
+            // Time labels
+            HStack {
+                Text(formatTime(audioEngine.currentTime))
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+
+                Spacer()
+
+                Text(formatTime(audioEngine.duration))
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+            }
+        }
+    }
+    
+    // MARK: - Handle Scrubbing
+    private func handleScrub(_ location: CGFloat, in width: CGFloat) {
+        guard width > 0 else { return }
+        let percentage = max(0, min(1, location / width))
+        let newTime = audioEngine.duration * percentage
+        audioEngine.seek(to: newTime)
+    }
+
+    // MARK: - Controls View (Optimized for performance)
+    private var controlsView: some View {
+        HStack(spacing: 28) {
+            // Shuffle
+            Button {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                audioEngine.toggleShuffle()
+            } label: {
+                Image(systemName: audioEngine.isShuffleEnabled ? "shuffle.circle.fill" : "shuffle")
+                    .font(.system(size: 22))
+                    .foregroundStyle(audioEngine.isShuffleEnabled ? Color.accentColor : .secondary)
+                    .frame(width: 44, height: 44)
+            }
+
+            // Previous
+            Button {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                audioEngine.playPrevious()
+            } label: {
+                Image(systemName: "backward.fill")
+                    .font(.system(size: 26))
+                    .foregroundStyle(.primary)
+                    .frame(width: 48, height: 48)
+            }
+
+            // Play/Pause - simplified for performance
+            Button {
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                if audioEngine.isPlaying {
+                    audioEngine.pause()
+                } else {
+                    audioEngine.resume()
+                }
+            } label: {
+                Image(systemName: audioEngine.isPlaying ? "pause.circle.fill" : "play.circle.fill")
+                    .font(.system(size: 68))
+                    .foregroundStyle(Color.accentColor)
+                    .frame(width: 68, height: 68)
+            }
+
+            // Next
+            Button {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                audioEngine.playNext()
+            } label: {
+                Image(systemName: "forward.fill")
+                    .font(.system(size: 26))
+                    .foregroundStyle(.primary)
+                    .frame(width: 48, height: 48)
+            }
+
+            // Repeat
+            Button {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                audioEngine.cycleRepeatMode()
+            } label: {
+                Image(systemName: repeatIcon)
+                    .font(.system(size: 22))
+                    .foregroundStyle(audioEngine.repeatMode != .off ? Color.accentColor : .secondary)
+                    .frame(width: 44, height: 44)
+            }
+        }
+    }
+
+    // MARK: - Audio Quality Button (Enhanced)
+    private var audioQualityButton: some View {
+        Button {
+            showAudioInfo = true
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "waveform.path")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Color.accentColor)
+                
+                Text(audioQualityInfo)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .background {
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(.ultraThinMaterial)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .stroke(.white.opacity(0.1), lineWidth: 1)
+                    )
             }
         }
     }
@@ -231,60 +364,6 @@ struct NowPlayingView: View {
     }
 }
 
-// MARK: - Lyrics View
-struct LyricsView: View {
-    let song: Song?
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        NavigationStack {
-            ZStack {
-                AppBackground()
-
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 20) {
-                        if let lyrics = song?.lyrics, !lyrics.isEmpty {
-                            Text(lyrics)
-                                .font(.body)
-                                .foregroundStyle(.primary)
-                                .lineSpacing(8)
-                                .padding(20)
-                        } else {
-                            VStack(spacing: 12) {
-                                Image(systemName: "quote.bubble")
-                                    .font(.system(size: 40))
-                                    .foregroundStyle(.tertiary)
-
-                                Text("No hay letras disponibles")
-                                    .font(.subheadline.weight(.medium))
-                                    .foregroundStyle(.secondary)
-
-                                Text("Esta canción no tiene información de letras en su metadata.")
-                                    .font(.caption)
-                                    .foregroundStyle(.tertiary)
-                                    .multilineTextAlignment(.center)
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 40)
-                        }
-                    }
-                }
-            }
-            .navigationTitle("Letras")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
-            .toolbarBackground(.visible, for: .navigationBar)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Listo") {
-                        dismiss()
-                    }
-                }
-            }
-        }
-    }
-}
-
 // MARK: - Audio Info View
 struct AudioInfoView: View {
     @ObservedObject var audioEngine: AudioEngine
@@ -296,17 +375,17 @@ struct AudioInfoView: View {
                 AppBackground()
 
                 ScrollView {
-                    VStack(spacing: 20) {
+                    VStack(spacing: 24) {
                         headerSection
 
-                        VStack(spacing: 16) {
+                        VStack(spacing: 20) {
                             audioQualitySection
                             formatInfoSection
                             playbackInfoSection
                         }
                     }
-                    .padding(.horizontal, 20)
-                    .padding(.top, 10)
+                    .padding(.horizontal, 24)
+                    .padding(.top, 12)
                 }
                 .scrollIndicators(.hidden)
             }
@@ -319,44 +398,45 @@ struct AudioInfoView: View {
                     Button("Listo") {
                         dismiss()
                     }
+                    .foregroundStyle(Color.accentColor)
                 }
             }
         }
     }
 
     private var headerSection: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 14) {
             ZStack {
                 Circle()
-                    .fill(Color.accentColor.opacity(0.16))
-                    .frame(width: 70, height: 70)
+                    .fill(Color.accentColor.opacity(0.18))
+                    .frame(width: 75, height: 75)
 
                 Image(systemName: "waveform")
-                    .font(.system(size: 28, weight: .semibold))
+                    .font(.system(size: 30, weight: .semibold))
                     .foregroundStyle(Color.accentColor)
             }
 
             Text("Calidad de Audio")
-                .font(.system(size: 22, weight: .bold))
+                .font(.system(size: 24, weight: .bold))
 
             Text("Información técnica de la reproducción actual")
-                .font(.subheadline)
+                .font(.system(size: 15))
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 20)
-        .opaqueGlass(cornerRadius: 24, tint: .accentColor)
+        .padding(.vertical, 24)
+        .opaqueGlass(cornerRadius: 26, tint: .accentColor)
     }
 
     private var audioQualitySection: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 14) {
             HStack {
                 Image(systemName: "speaker.wave.2")
                     .foregroundStyle(Color.accentColor)
 
                 Text("Calidad de Salida")
-                    .font(.headline)
+                    .font(.system(size: 18, weight: .semibold))
             }
             .padding(.horizontal, 4)
 
@@ -368,24 +448,24 @@ struct AudioInfoView: View {
                 infoRow(title: "Sample Rate Fuente", value: "\(Int(audioEngine.sourceSampleRate / 1000)) kHz")
             }
             .background {
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
                     .fill(.ultraThinMaterial)
             }
             .overlay {
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .stroke(.white.opacity(0.1), lineWidth: 1)
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .stroke(.white.opacity(0.12), lineWidth: 1)
             }
         }
     }
 
     private var formatInfoSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 14) {
             HStack {
                 Image(systemName: "doc.text")
                     .foregroundStyle(Color.accentColor)
 
                 Text("Formato")
-                    .font(.headline)
+                    .font(.system(size: 18, weight: .semibold))
             }
             .padding(.horizontal, 4)
 
@@ -399,24 +479,24 @@ struct AudioInfoView: View {
                 }
             }
             .background {
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
                     .fill(.ultraThinMaterial)
             }
             .overlay {
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .stroke(.white.opacity(0.1), lineWidth: 1)
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .stroke(.white.opacity(0.12), lineWidth: 1)
             }
         }
     }
 
     private var playbackInfoSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 14) {
             HStack {
                 Image(systemName: "play.circle")
                     .foregroundStyle(Color.accentColor)
 
                 Text("Reproducción")
-                    .font(.headline)
+                    .font(.system(size: 18, weight: .semibold))
             }
             .padding(.horizontal, 4)
 
@@ -428,12 +508,12 @@ struct AudioInfoView: View {
                 infoRow(title: "Tiempo Total", value: formatTime(audioEngine.duration))
             }
             .background {
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
                     .fill(.ultraThinMaterial)
             }
             .overlay {
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .stroke(.white.opacity(0.1), lineWidth: 1)
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .stroke(.white.opacity(0.12), lineWidth: 1)
             }
         }
     }
@@ -441,23 +521,23 @@ struct AudioInfoView: View {
     private func infoRow(title: String, value: String) -> some View {
         HStack {
             Text(title)
-                .font(.subheadline.weight(.medium))
+                .font(.system(size: 15, weight: .medium))
                 .foregroundStyle(.secondary)
 
             Spacer()
 
             Text(value)
-                .font(.subheadline.weight(.semibold))
+                .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(.primary)
         }
-        .padding(.horizontal, 15)
-        .padding(.vertical, 13)
+        .padding(.horizontal, 18)
+        .padding(.vertical, 15)
     }
 
     private var divider: some View {
         Divider()
-            .opacity(0.12)
-            .padding(.leading, 66)
+            .opacity(0.14)
+            .padding(.leading, 72)
     }
 
     private func formatTime(_ seconds: TimeInterval) -> String {

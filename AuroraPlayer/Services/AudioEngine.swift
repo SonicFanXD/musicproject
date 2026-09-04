@@ -5,7 +5,14 @@ import UIKit
 
 class AudioEngine: NSObject, ObservableObject {
     // MARK: - Publicado para la UI
-    @Published var isPlaying: Bool = false
+    @Published var isPlaying: Bool = false {
+        didSet {
+            // Notificar cambios de estado para sincronizar con el centro de control
+            if oldValue != isPlaying {
+                NotificationCenter.default.post(name: NSNotification.Name("PlaybackStateChanged"), object: nil)
+            }
+        }
+    }
     @Published var currentTime: TimeInterval = 0
     @Published var duration: TimeInterval = 0
     @Published var currentSong: Song?
@@ -51,6 +58,7 @@ class AudioEngine: NSObject, ObservableObject {
         observeInterruptions()
         setupRemoteCommandCenter()
         setupBackgroundNotification()
+        setupPlaybackStateObserver()
         loadPlaybackState()
     }
 
@@ -59,10 +67,18 @@ class AudioEngine: NSObject, ObservableObject {
     private func setupSession() {
         let session = AVAudioSession.sharedInstance()
         do {
-            try session.setCategory(.playback, mode: .default, options: [.allowBluetoothHFP, .allowBluetoothA2DP])
+            // Configurar la sesión de audio con las opciones correctas para el centro de control
+            try session.setCategory(
+                .playback, 
+                mode: .default, 
+                options: [.allowBluetoothHFP, .allowBluetoothA2DP, .mixWithOthers]
+            )
             try session.setActive(true)
             updateRouteName()
             updateAudioQuality()
+            
+            // Activar el control remoto y la recepción de eventos de control
+            try session.setActive(true, options: .notifyOthersOnDeactivation)
         } catch {
             print("Error configurando AVAudioSession: \(error.localizedDescription)")
         }
@@ -84,6 +100,39 @@ class AudioEngine: NSObject, ObservableObject {
 
     @objc private func applicationWillResignActive() {
         saveState()
+    }
+    
+    // MARK: - Observer para estado de reproducción
+    private func setupPlaybackStateObserver() {
+        // Observar cambios en el estado de reproducción para sincronizar con el centro de control
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(playbackStateChanged),
+            name: NSNotification.Name("PlaybackStateChanged"),
+            object: nil
+        )
+        
+        // También observar cuando la app entra en primer plano para sincronizar estado
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(appDidBecomeActive),
+            name: UIApplication.didBecomeActiveNotification,
+            object: nil
+        )
+    }
+    
+    @objc private func playbackStateChanged() {
+        // Actualizar el estado en el centro de control cuando cambie el estado de reproducción
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            self.updateNowPlayingInfo()
+        }
+    }
+    
+    @objc private func appDidBecomeActive() {
+        // Sincronizar estado cuando la app vuelve a primer plano
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            self.updateNowPlayingInfo()
+        }
     }
 
     // MARK: - Reproducción
@@ -309,7 +358,16 @@ class AudioEngine: NSObject, ObservableObject {
         playerNode.pause()
         isPlaying = false
         stopDisplayTimer()
-        updateNowPlayingInfo()
+        
+        // Actualizar inmediatamente el estado en el centro de control y pantalla de bloqueo
+        DispatchQueue.main.async {
+            self.updateNowPlayingInfo()
+            // Forzar actualización del estado de reproducción
+            var currentInfo = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:]
+            currentInfo[MPNowPlayingInfoPropertyPlaybackRate] = 0.0
+            MPNowPlayingInfoCenter.default().nowPlayingInfo = currentInfo
+        }
+        
         saveState()
     }
 
@@ -321,7 +379,16 @@ class AudioEngine: NSObject, ObservableObject {
         playerNode.play()
         isPlaying = true
         startDisplayTimer()
-        updateNowPlayingInfo()
+        
+        // Actualizar inmediatamente el estado en el centro de control y pantalla de bloqueo
+        DispatchQueue.main.async {
+            self.updateNowPlayingInfo()
+            // Forzar actualización del estado de reproducción
+            var currentInfo = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:]
+            currentInfo[MPNowPlayingInfoPropertyPlaybackRate] = 1.0
+            MPNowPlayingInfoCenter.default().nowPlayingInfo = currentInfo
+        }
+        
         saveState()
     }
 
@@ -332,7 +399,11 @@ class AudioEngine: NSObject, ObservableObject {
         currentTime = 0
         seekOffset = 0
         stopDisplayTimer()
-        updateNowPlayingInfo()
+        
+        // Limpiar información de now playing al detener completamente
+        DispatchQueue.main.async {
+            MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+        }
     }
 
     func seek(to time: TimeInterval) {
@@ -348,7 +419,15 @@ class AudioEngine: NSObject, ObservableObject {
             playerNode.pause()
         }
 
-        updateNowPlayingInfo()
+        // Actualizar inmediatamente el estado en el centro de control
+        DispatchQueue.main.async {
+            self.updateNowPlayingInfo()
+            var currentInfo = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:]
+            currentInfo[MPNowPlayingInfoPropertyElapsedPlaybackTime] = clampedTime
+            currentInfo[MPNowPlayingInfoPropertyPlaybackRate] = self.isPlaying ? 1.0 : 0.0
+            MPNowPlayingInfoCenter.default().nowPlayingInfo = currentInfo
+        }
+        
         saveState()
     }
 
@@ -482,6 +561,7 @@ class AudioEngine: NSObject, ObservableObject {
     private func setupRemoteCommandCenter() {
         let commandCenter = MPRemoteCommandCenter.shared()
 
+        // Configurar comando de play
         commandCenter.playCommand.addTarget { [weak self] _ in
             guard let self = self, self.currentSong != nil else { return .noActionableNowPlayingItem }
             DispatchQueue.main.async {
@@ -489,7 +569,9 @@ class AudioEngine: NSObject, ObservableObject {
             }
             return .success
         }
+        commandCenter.playCommand.isEnabled = true
 
+        // Configurar comando de pause
         commandCenter.pauseCommand.addTarget { [weak self] _ in
             guard let self = self, self.currentSong != nil else { return .noActionableNowPlayingItem }
             DispatchQueue.main.async {
@@ -497,7 +579,9 @@ class AudioEngine: NSObject, ObservableObject {
             }
             return .success
         }
+        commandCenter.pauseCommand.isEnabled = true
 
+        // Configurar comando de toggle play/pause
         commandCenter.togglePlayPauseCommand.addTarget { [weak self] _ in
             guard let self = self, self.currentSong != nil else { return .noActionableNowPlayingItem }
             DispatchQueue.main.async {
@@ -509,7 +593,9 @@ class AudioEngine: NSObject, ObservableObject {
             }
             return .success
         }
+        commandCenter.togglePlayPauseCommand.isEnabled = true
 
+        // Configurar comando de siguiente pista
         commandCenter.nextTrackCommand.addTarget { [weak self] _ in
             guard let self = self else { return .commandFailed }
             DispatchQueue.main.async {
@@ -519,6 +605,7 @@ class AudioEngine: NSObject, ObservableObject {
         }
         commandCenter.nextTrackCommand.isEnabled = true
 
+        // Configurar comando de pista anterior
         commandCenter.previousTrackCommand.addTarget { [weak self] _ in
             guard let self = self else { return .commandFailed }
             DispatchQueue.main.async {
@@ -528,6 +615,7 @@ class AudioEngine: NSObject, ObservableObject {
         }
         commandCenter.previousTrackCommand.isEnabled = true
 
+        // Configurar comando de cambio de posición
         commandCenter.changePlaybackPositionCommand.addTarget { [weak self] event in
             guard let self = self,
                   let positionEvent = event as? MPChangePlaybackPositionCommandEvent else {
@@ -569,6 +657,20 @@ class AudioEngine: NSObject, ObservableObject {
         // Asegurar que la actualización se realice en el hilo principal
         DispatchQueue.main.async {
             MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+            
+            // Forzar actualización inmediata del estado de reproducción
+            // Esto asegura que el centro de control y pantalla de bloqueo se actualicen correctamente
+            DispatchQueue.main.async {
+                if self.isPlaying {
+                    var updatedInfo = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:]
+                    updatedInfo[MPNowPlayingInfoPropertyPlaybackRate] = 1.0
+                    MPNowPlayingInfoCenter.default().nowPlayingInfo = updatedInfo
+                } else {
+                    var updatedInfo = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:]
+                    updatedInfo[MPNowPlayingInfoPropertyPlaybackRate] = 0.0
+                    MPNowPlayingInfoCenter.default().nowPlayingInfo = updatedInfo
+                }
+            }
         }
     }
 
