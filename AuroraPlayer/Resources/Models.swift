@@ -229,10 +229,10 @@ struct Artist: Identifiable, Equatable {
 
 // MARK: - Extractor de color dominante (para teñir UI con la paleta del artwork)
 enum ColorExtractor {
-    /// Extrae el color más vibrante de un artwork, evitando blancos/negros puros.
-    /// Optimizado: downscalea a 24x24 y muestrea píxeles (cálculo < 1ms).
+    /// Extrae el color más representativo del artwork para teñir la UI.
+    /// Optimizado: downscalea a 32x32, agrupa por similitud y elige el grupo más grande.
     static func dominantColor(from image: UIImage) -> UIColor? {
-        let size = CGSize(width: 24, height: 24)
+        let size = CGSize(width: 32, height: 32)
         guard let resized = downscale(image: image, to: size) else { return nil }
 
         guard let cgImage = resized.cgImage,
@@ -243,45 +243,74 @@ enum ColorExtractor {
         let width = cgImage.width
         let height = cgImage.height
 
-        // Acumular colores vibrantes (saturados y con brillo medio)
-        var bestColor: UIColor?
-        var bestScore: CGFloat = -1
+        // Agrupar colores por similitud (bucket de 32 niveles por canal)
+        var colorBuckets: [Int: (count: Int, r: CGFloat, g: CGFloat, b: CGFloat)] = [:]
 
-        // Muestrear cada 4 píxeles para rapidez
-        for y in stride(from: 0, to: height, by: 4) {
-            for x in stride(from: 0, to: width, by: 4) {
+        for y in 0..<height {
+            for x in 0..<width {
                 let offset = (y * width + x) * bytesPerPixel
                 let r = CGFloat(bytes[offset]) / 255.0
                 let g = CGFloat(bytes[offset + 1]) / 255.0
                 let b = CGFloat(bytes[offset + 2]) / 255.0
                 let a = CGFloat(bytes[offset + 3]) / 255.0
 
-                guard a > 0.5 else { continue } // ignorar transparentes
+                guard a > 0.5 else { continue }
 
-                // Calcular saturación y brillo
                 let maxC = max(r, g, b)
                 let minC = min(r, g, b)
                 let brightness = maxC
                 let saturation = maxC == 0 ? 0 : (maxC - minC) / maxC
 
-                // Puntuación: favorecer colores saturados con brillo medio-alto
                 // Descartar casi-blancos y casi-negros
-                guard brightness > 0.25, brightness < 0.95, saturation > 0.3 else { continue }
+                guard brightness > 0.2, brightness < 0.95 else { continue }
 
-                let score = saturation * 0.7 + brightness * 0.3
-                if score > bestScore {
-                    bestScore = score
-                    bestColor = UIColor(red: r, green: g, blue: b, alpha: 1.0)
+                // Crear bucket key (agrupar colores similares)
+                let rBucket = Int(r * 4)
+                let gBucket = Int(g * 4)
+                let bBucket = Int(b * 4)
+                let key = rBucket * 16 + gBucket * 4 + bBucket
+
+                if var bucket = colorBuckets[key] {
+                    bucket.count += 1
+                    bucket.r += r
+                    bucket.g += g
+                    bucket.b += b
+                    colorBuckets[key] = bucket
+                } else {
+                    colorBuckets[key] = (1, r, g, b)
                 }
             }
         }
 
-        // Fallback: si no encontró color vibrante, usar el promedio de píxeles no extremos
-        if bestColor == nil {
-            return averageColor(from: bytes, width: width, height: height)
+        // Encontrar el bucket más poblado con buena saturación
+        var bestKey: Int?
+        var bestScore: CGFloat = -1
+
+        for (key, bucket) in colorBuckets {
+            let avgR = bucket.r / CGFloat(bucket.count)
+            let avgG = bucket.g / CGFloat(bucket.count)
+            let avgB = bucket.b / CGFloat(bucket.count)
+            let maxC = max(avgR, avgG, avgB)
+            let minC = min(avgR, avgG, avgB)
+            let saturation = maxC == 0 ? 0 : (maxC - minC) / maxC
+
+            // Puntuación: balance entre tamaño del bucket y saturación
+            let score = CGFloat(bucket.count) * (0.5 + saturation * 0.5)
+            if score > bestScore {
+                bestScore = score
+                bestKey = key
+            }
         }
 
-        return bestColor
+        if let key = bestKey, let bucket = colorBuckets[key] {
+            let avgR = bucket.r / CGFloat(bucket.count)
+            let avgG = bucket.g / CGFloat(bucket.count)
+            let avgB = bucket.b / CGFloat(bucket.count)
+            return UIColor(red: avgR, green: avgG, blue: avgB, alpha: 1.0)
+        }
+
+        // Fallback
+        return averageColor(from: bytes, width: width, height: height)
     }
 
     private static func downscale(image: UIImage, to size: CGSize) -> UIImage? {

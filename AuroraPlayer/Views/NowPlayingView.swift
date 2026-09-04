@@ -210,9 +210,9 @@ struct NowPlayingView: View {
         }
     }
 
-    // MARK: - Song Info View (clean typography)
+    // MARK: - Song Info View (con calidad de audio)
     private var songInfoView: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 8) {
             Text(audioEngine.currentSong?.displayName ?? "Sin canción")
                 .font(.system(size: 22, weight: .bold))
                 .multilineTextAlignment(.center)
@@ -224,6 +224,24 @@ struct NowPlayingView: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .padding(.horizontal, 16)
+
+            // Badge de calidad de audio (Hi-Res, sample rate, canales)
+            if !audioEngine.audioQualityInfo.isEmpty {
+                HStack(spacing: 5) {
+                    Image(systemName: "waveform.circle.fill")
+                        .font(.system(size: 10, weight: .semibold))
+
+                    Text(audioEngine.audioQualityInfo)
+                        .font(.system(size: 11, weight: .medium).monospacedDigit())
+                }
+                .foregroundStyle(Color.accentColor.opacity(0.85))
+                .padding(.horizontal, 12)
+                .padding(.vertical, 5)
+                .background {
+                    Capsule()
+                        .fill(Color.accentColor.opacity(0.12))
+                }
+            }
         }
         .padding(.horizontal, 6)
     }
