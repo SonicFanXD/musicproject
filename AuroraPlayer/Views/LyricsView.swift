@@ -145,8 +145,6 @@ struct LyricsView: View {
                             (index < lyrics.lines.count - 1 ? word.time < lyrics.lines[index + 1].time : true)
                         }
 
-                        let showKaraokeEffect = showKaraokeMode && currentLineIndex == index
-
                         wordByWordLineView(line: line, words: wordsInLine, isActive: currentLineIndex == index)
                             .id(index)
                             .background(
@@ -183,9 +181,8 @@ struct LyricsView: View {
     // MARK: - Word by Word Line View (karaoke fluido)
     private func wordByWordLineView(line: LyricLine, words: [LyricWord], isActive: Bool) -> some View {
         HStack(alignment: .center, spacing: 5) {
-            ForEach(Array(words.enumerated()), id: \.element.id) { index, word in
+            ForEach(Array(words.enumerated()), id: \.element.id) { _, word in
                 let isWordActive = isWordActive(word, at: audioEngine.currentTime)
-                let wordProgress = currentWordProgress[word.id] ?? 0.0
 
                 // Limpiar texto de residuos de timestamp
                 let cleanText = cleanWordText(word.text)
@@ -237,8 +234,8 @@ struct LyricsView: View {
             return
         }
 
-        var newActiveWordIds: Set<UUID> = []
-        var newProgress: [UUID: Double] = {}
+        var newActiveWordIds = Set<UUID>()
+        var newProgress = [UUID: Double]()
 
         // Binary search para encontrar palabras cercanas al tiempo actual
         let windowStart = time - 0.5
