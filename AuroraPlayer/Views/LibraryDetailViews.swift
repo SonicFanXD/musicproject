@@ -208,7 +208,7 @@ struct AlbumDetailView: View {
     private func modernSongRow(_ song: Song, index: Int) -> some View {
         let isCurrent = audioEngine.currentSong?.id == song.id
 
-        Button {
+        return Button {
             audioEngine.play(song: song, from: songs)
         } label: {
             HStack(spacing: 16) {
@@ -269,7 +269,6 @@ struct AlbumDetailView: View {
                 }
             }
         }
-        .buttonStyle(.plain)
     }
 
     private func formatDuration(_ seconds: TimeInterval) -> String {
@@ -579,7 +578,7 @@ struct ArtistDetailView: View {
     private func modernSongRow(_ song: Song, index: Int) -> some View {
         let isCurrent = audioEngine.currentSong?.id == song.id
 
-        Button {
+        return Button {
             audioEngine.play(song: song, from: songs)
         } label: {
             HStack(spacing: 16) {
@@ -640,7 +639,6 @@ struct ArtistDetailView: View {
                 }
             }
         }
-        .buttonStyle(.plain)
     }
 
     private func formatDuration(_ seconds: TimeInterval) -> String {
