@@ -590,10 +590,8 @@ struct QueueView: View {
                         audioEngine.playbackQueue
                     ) { song in
                         Button {
-                            audioEngine.play(
-                                song,
-                                from: audioEngine.playbackQueue
-                            )
+                            // ✅ CORREGIDO: ahora usa la etiqueta "song:"
+                            audioEngine.play(song: song, from: audioEngine.playbackQueue)
                         } label: {
                             HStack(spacing: 12) {
                                 artwork(for: song)
