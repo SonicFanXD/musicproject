@@ -88,7 +88,7 @@ class AudioEngine: NSObject, ObservableObject {
             // Configurar la sesión de audio con opciones de alta calidad
             try session.setCategory(
                 .playback,
-                mode: .musicPlayback,
+                mode: .default,
                 options: [.allowBluetoothHFP, .allowBluetoothA2DP, .allowAirPlay]
             )
 

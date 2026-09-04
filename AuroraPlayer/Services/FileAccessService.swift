@@ -440,7 +440,7 @@ class FileAccessService: ObservableObject {
                     let id = normalizedMetadataIdentifier(item)
                     let key = metadataKey(item)
                     return item.commonKey?.rawValue == "lyrics" || id.contains("lyric") || key == "©lyr" || key.contains("lyric") || key == "uslt" || key == "sylt"
-                }).map { await self.lyricsText($0) } ?? ""
+                }).map { self.lyricsTextSync($0) } ?? ""
             }
             if lyrics.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 lyrics = formatMetadata.lazy
@@ -449,7 +449,7 @@ class FileAccessService: ObservableObject {
                         let key = self.metadataKey(item)
                         return item.commonKey?.rawValue == "lyrics" || id.contains("lyric") || key.contains("lyr") || key == "uslt" || key == "sylt"
                     }
-                    .map { await self.lyricsText($0) }
+                    .map { self.lyricsTextSync($0) }
                     .first(where: { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) ?? ""
             }
 
@@ -531,23 +531,23 @@ class FileAccessService: ObservableObject {
             let key = metadataKey(item)
 
             if (identifier.contains("albumartist") || key == "aart" || key == "album artist" || key == "tpe2"),
-               let value = metadataText(item), !value.isEmpty {
+               let value = metadataTextSync(item), !value.isEmpty {
                 albumArtist = value
             }
             if title == nil, (identifier.contains("title") || key == "©nam" || key == "tit2") {
-                title = metadataText(item)
+                title = metadataTextSync(item)
             }
             if artist.isEmpty, (identifier.contains("artist") || key == "©art" || key == "tpe1"), key != "aart" {
-                artist = metadataText(item) ?? ""
+                artist = metadataTextSync(item) ?? ""
             }
             if album.isEmpty, (identifier.contains("album") || key == "©alb" || key == "talb"), key != "aart" {
-                album = metadataText(item) ?? ""
+                album = metadataTextSync(item) ?? ""
             }
             if identifier.contains("discnumber") || identifier.contains("disknumber") || key.contains("disk") || key.contains("tpos") {
-                discNumber = metadataNumber(item)
+                discNumber = metadataNumberSync(item)
             }
             if identifier.contains("tracknumber") || key.contains("trkn") || key.contains("trck") {
-                trackNumber = metadataNumber(item) ?? 0
+                trackNumber = metadataNumberSync(item) ?? 0
             }
             if releaseDate == nil, identifier.contains("date") || identifier.contains("year") || key.contains("day") || key.contains("tdrc") {
                 releaseDate = metadataDate(item)
@@ -621,35 +621,72 @@ class FileAccessService: ObservableObject {
             ?? String(data: data, encoding: .utf16LittleEndian)
     }
 
+    // Non-async version for backwards compatibility
+    private func metadataText(_ item: AVMetadataItem) -> String? {
+        // Use deprecated properties for non-async context
+        if let value = item.stringValue { return value }
+        guard let data = item.dataValue else { return nil }
+        return String(data: data, encoding: .utf8)
+            ?? String(data: data, encoding: .utf16)
+            ?? String(data: data, encoding: .utf16LittleEndian)
+    }
+
     private func metadataKey(_ item: AVMetadataItem) -> String {
         guard let key = item.key else { return "" }
         return String(describing: key).lowercased()
     }
 
-    private func lyricsText(_ item: AVMetadataItem) -> String {
+    private func lyricsText(_ item: AVMetadataItem) async -> String {
         let key = metadataKey(item)
         let identifier = normalizedMetadataIdentifier(item)
         let isSynchronizedID3 = key == "sylt" || identifier.contains("sylt")
         guard (key == "uslt" || isSynchronizedID3 || identifier.contains("uslt")), let data = item.dataValue else {
-            return metadataText(item) ?? ""
+            return await metadataText(item) ?? ""
         }
         if isSynchronizedID3, let parsed = synchronizedID3Lyrics(data), !parsed.isEmpty {
             return parsed
         }
-        guard data.count > 4 else { return metadataText(item) ?? "" }
+        guard data.count > 4 else { return await metadataText(item) ?? "" }
         let bytes = [UInt8](data)
         let encoding = bytes[0]
         let payload = Data(bytes.dropFirst(4))
         if encoding == 0 || encoding == 3 {
             let terminator = payload.firstIndex(of: 0).map { payload.index(after: $0) } ?? payload.startIndex
-            return String(data: payload[terminator...], encoding: encoding == 3 ? .utf8 : .isoLatin1)?.trimmingCharacters(in: .controlCharacters) ?? metadataText(item) ?? ""
+            return String(data: payload[terminator...], encoding: encoding == 3 ? .utf8 : .isoLatin1)?.trimmingCharacters(in: .controlCharacters) ?? await metadataText(item) ?? ""
         }
         let values = [UInt8](payload)
         if let end = values.indices.dropLast().first(where: { values[$0] == 0 && values[$0 + 1] == 0 }), end + 2 < values.count {
             let text = Data(values[(end + 2)...])
-            return String(data: text, encoding: encoding == 1 ? .utf16 : .utf16BigEndian)?.trimmingCharacters(in: .controlCharacters) ?? metadataText(item) ?? ""
+            return String(data: text, encoding: encoding == 1 ? .utf16 : .utf16BigEndian)?.trimmingCharacters(in: .controlCharacters) ?? await metadataText(item) ?? ""
         }
-        return metadataText(item) ?? ""
+        return await metadataText(item) ?? ""
+    }
+
+    // Non-async version for backwards compatibility
+    private func lyricsTextSync(_ item: AVMetadataItem) -> String {
+        let key = metadataKey(item)
+        let identifier = normalizedMetadataIdentifier(item)
+        let isSynchronizedID3 = key == "sylt" || identifier.contains("sylt")
+        guard (key == "uslt" || isSynchronizedID3 || identifier.contains("uslt")), let data = item.dataValue else {
+            return metadataTextSync(item) ?? ""
+        }
+        if isSynchronizedID3, let parsed = synchronizedID3Lyrics(data), !parsed.isEmpty {
+            return parsed
+        }
+        guard data.count > 4 else { return metadataTextSync(item) ?? "" }
+        let bytes = [UInt8](data)
+        let encoding = bytes[0]
+        let payload = Data(bytes.dropFirst(4))
+        if encoding == 0 || encoding == 3 {
+            let terminator = payload.firstIndex(of: 0).map { payload.index(after: $0) } ?? payload.startIndex
+            return String(data: payload[terminator...], encoding: encoding == 3 ? .utf8 : .isoLatin1)?.trimmingCharacters(in: .controlCharacters) ?? metadataTextSync(item) ?? ""
+        }
+        let values = [UInt8](payload)
+        if let end = values.indices.dropLast().first(where: { values[$0] == 0 && values[$0 + 1] == 0 }), end + 2 < values.count {
+            let text = Data(values[(end + 2)...])
+            return String(data: text, encoding: encoding == 1 ? .utf16 : .utf16BigEndian)?.trimmingCharacters(in: .controlCharacters) ?? metadataTextSync(item) ?? ""
+        }
+        return metadataTextSync(item) ?? ""
     }
 
     private func synchronizedID3Lyrics(_ data: Data) -> String? {
@@ -690,10 +727,15 @@ class FileAccessService: ObservableObject {
         return nil
     }
 
+    // Non-async version for backwards compatibility
+    private func metadataNumberSync(_ item: AVMetadataItem) -> Int? {
+        return metadataNumber(item)
+    }
+
     // ✅ CORREGIDO: optional chaining en nilIfEmpty
     private func metadataDate(_ item: AVMetadataItem) -> Date? {
         if let date = item.dateValue { return date }
-        guard let text = metadataText(item)?.nilIfEmpty else { return nil }
+        guard let text = metadataTextSync(item)?.nilIfEmpty else { return nil }
         let iso = ISO8601DateFormatter()
         if let date = iso.date(from: text) { return date }
         let formatter = DateFormatter()
@@ -702,6 +744,11 @@ class FileAccessService: ObservableObject {
         if let date = formatter.date(from: text) { return date }
         formatter.dateFormat = "yyyy"
         return formatter.date(from: text)
+    }
+
+    // Non-async version for backwards compatibility
+    private func metadataTextSync(_ item: AVMetadataItem) -> String? {
+        return metadataText(item)
     }
 
     // Versiones asíncronas para iOS 16+
