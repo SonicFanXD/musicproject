@@ -550,9 +550,10 @@ class FileAccessService: ObservableObject {
         return nil
     }
 
+    // ✅ CORREGIDO: optional chaining en nilIfEmpty
     private func metadataDate(_ item: AVMetadataItem) -> Date? {
         if let date = item.dateValue { return date }
-        guard let text = metadataText(item).nilIfEmpty else { return nil }
+        guard let text = metadataText(item)?.nilIfEmpty else { return nil }
         let iso = ISO8601DateFormatter()
         if let date = iso.date(from: text) { return date }
         let formatter = DateFormatter()
@@ -891,7 +892,7 @@ class FileAccessService: ObservableObject {
             let artistName = song.albumArtist.isEmpty ? (song.artist.isEmpty ? "Artista desconocido" : song.artist) : song.albumArtist
             return AlbumKey(album: albumName, artist: artistName)
         }
-        
+
         return grouped.map { (key, songs) in
             Album(
                 name: key.album,
@@ -900,12 +901,12 @@ class FileAccessService: ObservableObject {
             )
         }.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
-    
+
     var artists: [Artist] {
         let grouped = Dictionary(grouping: songs) { song in
             song.artist.isEmpty ? "Artista desconocido" : song.artist
         }
-        
+
         return grouped.map { (artistName, songs) in
             Artist(
                 name: artistName,
