@@ -908,7 +908,9 @@ class FileAccessService: ObservableObject {
 
     var artists: [Artist] {
         let grouped = Dictionary(grouping: songs) { song in
-            song.artist.isEmpty ? "Artista desconocido" : song.artist
+            // Usar albumArtist para agrupar por el artista del álbum, no de la canción
+            let artistName = song.albumArtist.isEmpty ? (song.artist.isEmpty ? "Artista desconocido" : song.artist) : song.albumArtist
+            return artistName
         }
 
         return grouped.map { (artistName, songs) in
