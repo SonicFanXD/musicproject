@@ -36,6 +36,7 @@ struct ContentView: View {
                     .listStyle(.insetGrouped)
                     .scrollContentBackground(.hidden)
                     .background(Color.clear)
+                    .environment(\.defaultMinListRowHeight, 0) // Reduce altura mínima para mejor rendimiento
                     .searchable(
                         text: $searchText,
                         placement: .navigationBarDrawer(displayMode: .automatic),
@@ -300,6 +301,7 @@ struct ContentView: View {
         .listRowInsets(EdgeInsets(top: 5, leading: 12, bottom: 5, trailing: 12))
         .listRowBackground(Color.clear)
         .listRowSeparator(.hidden)
+        .drawingGroup() // Optimización para filas complejas
     }
 
     // MARK: - Artwork
@@ -406,7 +408,7 @@ struct GlassPressStyle: ButtonStyle {
         configuration.label
             .scaleEffect(configuration.isPressed ? 0.97 : 1.0)
             .opacity(configuration.isPressed ? 0.92 : 1.0)
-            .animation(.spring(response: 0.3, dampingFraction: 0.65), value: configuration.isPressed)
+            .animation(.spring(response: 0.3, dampingFraction: 0.65))
     }
 }
 

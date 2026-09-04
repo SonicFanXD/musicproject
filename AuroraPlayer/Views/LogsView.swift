@@ -22,6 +22,9 @@ struct LogsView: View {
                         tipsSection
                             .rowAppear(index: 3)
 
+                        recentLogsSection
+                            .rowAppear(index: 4)
+
                         Spacer(minLength: 30)
                     }
                     .padding(.horizontal, 18)
@@ -81,6 +84,8 @@ struct LogsView: View {
                 statusRow(icon: "waveform", title: "Motor de audio", value: "Activo")
                 divider
                 statusRow(icon: "folder.fill", title: "Acceso a archivos", value: "Gestionado por el sistema")
+                divider
+                statusRow(icon: "doc.text", title: "Logs en memoria", value: "\(AppLog.entries.count) entradas")
             }
         }
     }
@@ -118,6 +123,76 @@ struct LogsView: View {
                     description: "Vuelve a seleccionar tus carpetas de música para actualizar el contenido.")
             }
         }
+    }
+
+    // MARK: - Recent Logs
+
+    private var recentLogsSection: some View {
+        logSection(title: "Logs recientes", icon: "clock.fill") {
+            VStack(spacing: 0) {
+                if AppLog.entries.isEmpty {
+                    Text("No hay logs disponibles")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 20)
+                } else {
+                    ForEach(Array(AppLog.entries.suffix(10).enumerated()), id: \.element.id) { index, entry in
+                        logEntryRow(entry: entry)
+                        if index < min(AppLog.entries.count, 10) - 1 {
+                            divider
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func logEntryRow(entry: InAppLogEntry) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(entry.level)
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(levelColor(for: entry.level))
+                    .frame(width: 40, alignment: .leading)
+
+                Text(entry.category.rawValue.uppercased())
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(entry.message)
+                    .font(.caption)
+                    .foregroundStyle(.primary)
+                    .lineLimit(3)
+
+                Text(formatDate(entry.date))
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+
+            Spacer()
+        }
+        .padding(.horizontal, 15)
+        .padding(.vertical, 10)
+    }
+
+    private func levelColor(for level: String) -> Color {
+        switch level {
+        case "ERROR": return .red
+        case "WARN": return .orange
+        case "INFO": return .blue
+        case "DEBUG": return .gray
+        default: return .primary
+        }
+    }
+
+    private func formatDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .none
+        formatter.timeStyle = .medium
+        return formatter.string(from: date)
     }
 
     // MARK: - Section

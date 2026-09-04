@@ -58,10 +58,18 @@ class FileAccessService: ObservableObject {
                 bookmarkData: bookmarkData
             )
 
+            // Verificar que no sea duplicado
+            if folders.contains(where: { $0.displayName == folder.displayName }) {
+                AppLog.error(.library, "La carpeta ya existe: \(folder.displayName)")
+                url.stopAccessingSecurityScopedResource()
+                return
+            }
+
             folders.append(folder)
             activeURLs[folder.id] = url
             saveFolders()
             scanFolder(url)
+            AppLog.info(.library, "Carpeta añadida: \(folder.displayName)")
         } catch {
             AppLog.error(.library, "Error al crear bookmark: \(error.localizedDescription)")
             url.stopAccessingSecurityScopedResource()

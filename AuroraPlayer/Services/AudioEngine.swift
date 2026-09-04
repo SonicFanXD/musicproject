@@ -23,6 +23,7 @@ class AudioEngine: NSObject, ObservableObject {
 
     // MARK: - Cola de reproducción interna
     private var playlist: [Song] = []
+    private var originalPlaylist: [Song] = [] // Para restaurar orden original
     private(set) var currentIndex: Int = 0
 
     // MARK: - Motor de audio
@@ -247,9 +248,26 @@ class AudioEngine: NSObject, ObservableObject {
     func toggleShuffle() {
         isShuffleEnabled.toggle()
         if isShuffleEnabled {
+            // Guardar el orden original antes de shuffle
+            if originalPlaylist.isEmpty {
+                originalPlaylist = playlist
+            }
             playlist.shuffle()
+            // Intentar mantener la canción actual en su posición
+            if let currentSong = currentSong,
+               let newIndex = playlist.firstIndex(where: { $0.id == currentSong.id }) {
+                currentIndex = newIndex
+            }
         } else {
-            // Restaurar orden original si es posible (no implementado por simplicidad)
+            // Restaurar orden original
+            if !originalPlaylist.isEmpty {
+                playlist = originalPlaylist
+                if let currentSong = currentSong,
+                   let newIndex = playlist.firstIndex(where: { $0.id == currentSong.id }) {
+                    currentIndex = newIndex
+                }
+                originalPlaylist = []
+            }
         }
         updatePlaybackQueue()
         AppLog.info(.playback, "Shuffle: \(isShuffleEnabled ? "activado" : "desactivado")")
@@ -266,6 +284,18 @@ class AudioEngine: NSObject, ObservableObject {
             repeatMode = .off
         }
         AppLog.info(.playback, "Repeat: \(repeatMode.rawValue)")
+    }
+
+    // MARK: - Repeat handling mejorado
+    private func shouldRepeatNext() -> Bool {
+        switch repeatMode {
+        case .all:
+            return true
+        case .one:
+            return false
+        case .off:
+            return false
+        }
     }
 
     private func updatePlaybackQueue() {

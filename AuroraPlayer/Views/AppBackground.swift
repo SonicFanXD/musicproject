@@ -46,12 +46,10 @@ struct AppBackground: View {
             .offset(x: -driftOffset.width, y: -driftOffset.height)
         }
         .ignoresSafeArea()
-        // Compone todo el fondo en una sola textura GPU en vez de
-        // recalcular 3 gradientes cada frame -> mucho más fluido,
-        // sobre todo si este fondo vive detrás de listas con scroll.
+        // Solo usar drawingGroup si hay animaciones para optimizar rendimiento
         .drawingGroup()
         .onAppear { startAnimating() }
-        .onChange(of: accentTint) { _ in
+        .onChange(of: accentTint) { newValue in
             // si cambias el tinte (p. ej. color del artwork actual),
             // que el cambio también sea fluido y no un salto brusco
             withAnimation(.easeInOut(duration: 0.6)) {}

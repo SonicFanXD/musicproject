@@ -63,7 +63,7 @@ struct PlayerBar: View {
                     .buttonStyle(.plain)
                     // .opaqueGlassCircle(isPressed: !audioEngine.isPlaying) // ❌ Eliminado: método no existe
                     .scaleEffect(audioEngine.isPlaying ? 1.0 : 0.92)
-                    .animation(.spring(response: 0.3, dampingFraction: 0.6)) // ✅ Quitado 'value:' para iOS 16
+                    .animation(.spring(response: 0.3, dampingFraction: 0.6))
 
                     // Next
                     Button {
@@ -79,14 +79,14 @@ struct PlayerBar: View {
                 .padding(.horizontal, 12)
                 .padding(.vertical, 9)
                 .frame(maxWidth: .infinity)
-                .opaqueGlass(cornerRadius: 24)
+                .opaqueGlass(cornerRadius: 24, tintIntensity: 0.08, strokeIntensity: 0.35)
                 .overlay(alignment: .bottom) {
                     MiniProgressTrack(progress: progress)
                         .padding(.horizontal, 14)
                         .padding(.bottom, 4)
                 }
                 .transition(.opacity.combined(with: .move(edge: .bottom)))
-                .animation(.spring(response: 0.4, dampingFraction: 0.85), value: song.id)
+                .animation(.spring(response: 0.4, dampingFraction: 0.85))
                 .sheet(isPresented: $showingNowPlaying) {
                     NowPlayingView(audioEngine: audioEngine)
                 }
@@ -131,16 +131,17 @@ struct MiniProgressTrack: View {
         GeometryReader { geometry in
             ZStack(alignment: .leading) {
                 Capsule()
-                    .fill(.white.opacity(0.10))
-                    .frame(height: 3)
+                    .fill(.white.opacity(0.15))
+                    .frame(height: 4)
 
                 Capsule()
                     .fill(Color.accentColor)
-                    .frame(width: max(3, geometry.size.width * progress), height: 3)
-                    .animation(.linear(duration: 0.4), value: progress)
+                    .frame(width: max(4, geometry.size.width * progress), height: 4)
+                    .animation(.linear(duration: 0.4))
+                    .shadow(color: Color.accentColor.opacity(0.5), radius: 4, x: 0, y: 2)
             }
         }
-        .frame(height: 3)
+        .frame(height: 4)
         .allowsHitTesting(false)
     }
 }

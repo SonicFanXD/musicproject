@@ -96,16 +96,17 @@ struct FolderPickerView: View {
         VStack(spacing: 12) {
             ZStack {
                 Circle()
-                    .fill(Color.accentColor.opacity(0.16))
-                    .frame(width: 76, height: 76)
+                    .fill(Color.accentColor.opacity(0.18))
+                    .frame(width: 80, height: 80)
+                    .shadow(color: Color.accentColor.opacity(0.25), radius: 10, y: 5)
 
                 Image(systemName: "folder.badge.plus")
-                    .font(.system(size: 32, weight: .semibold))
+                    .font(.system(size: 34, weight: .semibold))
                     .foregroundStyle(Color.accentColor)
             }
 
             Text("Tu biblioteca musical")
-                .font(.system(size: 24, weight: .bold))
+                .font(.system(size: 25, weight: .bold))
 
             Text("Añade carpetas o archivos de música para que aparezcan en Aurora Player.")
                 .font(.subheadline)
@@ -113,9 +114,9 @@ struct FolderPickerView: View {
                 .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 22)
+        .padding(.vertical, 24)
         .padding(.horizontal, 18)
-        .opaqueGlass(cornerRadius: 25, tint: .accentColor)
+        .opaqueGlass(cornerRadius: 25, tint: .accentColor, tintIntensity: 0.08, strokeIntensity: 0.35)
     }
 
     // MARK: - Actions
@@ -205,8 +206,7 @@ struct FolderPickerView: View {
                         .animation(
                             fileAccessService.isScanning
                                 ? .linear(duration: 1).repeatForever(autoreverses: false)
-                                : .default,
-                            value: fileAccessService.isScanning
+                                : .default
                         )
 
                     Text(fileAccessService.isScanning ? "Escaneando…" : "Actualizar biblioteca")
@@ -462,7 +462,15 @@ struct FolderPickerView: View {
     private func handleFolderResult(_ result: Result<[URL], Error>) {
         switch result {
         case .success(let urls):
-            guard let url = urls.first else { return }
+            guard let url = urls.first else {
+                AppLog.error(.library, "No se seleccionó ninguna carpeta")
+                return
+            }
+            // Asegurar que tenemos acceso de seguridad
+            guard url.startAccessingSecurityScopedResource() else {
+                AppLog.error(.library, "No se pudo acceder a la carpeta: \(url.lastPathComponent)")
+                return
+            }
             withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
                 fileAccessService.addFolder(url: url)
             }
@@ -475,6 +483,10 @@ struct FolderPickerView: View {
     private func handleFileResult(_ result: Result<[URL], Error>) {
         switch result {
         case .success(let urls):
+            guard !urls.isEmpty else {
+                AppLog.error(.library, "No se seleccionaron archivos")
+                return
+            }
             withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
                 fileAccessService.addFiles(urls: urls)
             }

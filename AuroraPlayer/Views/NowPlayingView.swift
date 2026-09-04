@@ -84,7 +84,7 @@ struct NowPlayingView: View {
             }
             .id(audioEngine.currentSong?.id)
             .transition(.opacity)
-            .animation(.easeInOut(duration: 0.5), value: audioEngine.currentSong?.id)
+            .animation(.easeInOut(duration: 0.5))
         } else {
             LinearGradient(
                 colors: [
@@ -106,14 +106,14 @@ struct NowPlayingView: View {
                 dismiss()
             } label: {
                 Image(systemName: "chevron.down")
-                    .font(.system(size: 17, weight: .bold))
+                    .font(.system(size: 18, weight: .bold))
                     .foregroundStyle(.white)
-                    .frame(width: 40, height: 40)
+                    .frame(width: 44, height: 44)
                     .background {
-                        Circle().fill(.white.opacity(0.10))
+                        Circle().fill(.white.opacity(0.12))
                     }
                     .overlay {
-                        Circle().stroke(.white.opacity(0.18), lineWidth: 1)
+                        Circle().stroke(.white.opacity(0.20), lineWidth: 1)
                     }
             }
             .buttonStyle(GlassPressButtonStyle())
@@ -123,17 +123,17 @@ struct NowPlayingView: View {
             VStack(spacing: 2) {
                 Text("REPRODUCIENDO")
                     .font(.caption2.weight(.bold))
-                    .tracking(1.6)
-                    .foregroundStyle(.white.opacity(0.65))
+                    .tracking(1.8)
+                    .foregroundStyle(.white.opacity(0.70))
 
                 if !audioEngine.currentRouteName.isEmpty {
                     Text(audioEngine.currentRouteName)
                         .font(.caption2)
-                        .foregroundStyle(.white.opacity(0.42))
+                        .foregroundStyle(.white.opacity(0.45))
                         .transition(.opacity)
                 }
             }
-            .animation(.easeInOut(duration: 0.2), value: audioEngine.currentRouteName)
+            .animation(.easeInOut(duration: 0.2))
 
             Spacer()
 
@@ -151,19 +151,19 @@ struct NowPlayingView: View {
                 }
             } label: {
                 Image(systemName: "ellipsis")
-                    .font(.system(size: 17, weight: .bold))
+                    .font(.system(size: 18, weight: .bold))
                     .foregroundStyle(.white)
-                    .frame(width: 40, height: 40)
+                    .frame(width: 44, height: 44)
                     .background {
-                        Circle().fill(.white.opacity(0.10))
+                        Circle().fill(.white.opacity(0.12))
                     }
                     .overlay {
-                        Circle().stroke(.white.opacity(0.18), lineWidth: 1)
+                        Circle().stroke(.white.opacity(0.20), lineWidth: 1)
                     }
             }
             .buttonStyle(GlassPressButtonStyle())
         }
-        .padding(.top, 10)
+        .padding(.top, 12)
     }
 
     // MARK: - Artwork
@@ -200,7 +200,7 @@ struct NowPlayingView: View {
         .frame(maxWidth: .infinity)
         .id(audioEngine.currentSong?.id)
         .transition(.opacity.combined(with: .scale(scale: 0.96)))
-        .animation(.spring(response: 0.42, dampingFraction: 0.85), value: audioEngine.currentSong?.id)
+        .animation(.spring(response: 0.42, dampingFraction: 0.85))
     }
 
     // MARK: - Song Information
@@ -227,38 +227,39 @@ struct NowPlayingView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .id(audioEngine.currentSong?.id)
         .transition(.opacity.combined(with: .move(edge: .bottom)))
-        .animation(.easeOut(duration: 0.3), value: audioEngine.currentSong?.id)
+        .animation(.easeOut(duration: 0.3))
     }
 
     // MARK: - Progress
 
     private var progressSection: some View {
-        VStack(spacing: 7) {
+        VStack(spacing: 8) {
             GeometryReader { geometry in
                 ZStack(alignment: .leading) {
                     Capsule()
-                        .fill(.white.opacity(0.16))
-                        .frame(height: 5)
+                        .fill(.white.opacity(0.18))
+                        .frame(height: 6)
 
                     Capsule()
                         .fill(.white)
-                        .frame(width: max(4, geometry.size.width * progress), height: 5)
-                        .animation(.linear(duration: 0.4), value: progress)
+                        .frame(width: max(6, geometry.size.width * progress), height: 6)
+                        .animation(.linear(duration: 0.4))
+                        .shadow(color: .white.opacity(0.4), radius: 6, y: 2)
                 }
             }
-            .frame(height: 5)
+            .frame(height: 6)
 
             HStack {
                 Text(formatTime(audioEngine.currentTime))
                     .font(.caption)
-                    .foregroundStyle(.white.opacity(0.62))
+                    .foregroundStyle(.white.opacity(0.68))
                     .monospacedDigit()
 
                 Spacer()
 
                 Text(formatTime(audioEngine.duration))
                     .font(.caption)
-                    .foregroundStyle(.white.opacity(0.62))
+                    .foregroundStyle(.white.opacity(0.68))
                     .monospacedDigit()
             }
         }
@@ -286,7 +287,7 @@ struct NowPlayingView: View {
 
             Spacer(minLength: 0)
         }
-        .animation(.easeInOut(duration: 0.2), value: isBitPerfect)
+        .animation(.easeInOut(duration: 0.2))
         .transition(.opacity)
     }
 
@@ -299,14 +300,15 @@ struct NowPlayingView: View {
                 .lineLimit(1)
         }
         .foregroundStyle(tint == .white ? .white.opacity(0.82) : tint)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 7)
         .background {
-            Capsule().fill(.white.opacity(0.09))
+            Capsule().fill(.white.opacity(0.12))
         }
         .overlay {
-            Capsule().stroke(.white.opacity(0.15), lineWidth: 1)
+            Capsule().stroke(.white.opacity(0.18), lineWidth: 1)
         }
+        .shadow(color: .black.opacity(0.15), radius: 4, y: 2)
         .transition(.opacity.combined(with: .scale(scale: 0.9)))
     }
 
@@ -318,9 +320,12 @@ struct NowPlayingView: View {
                 audioEngine.playPrevious()
             } label: {
                 Image(systemName: "backward.fill")
-                    .font(.system(size: 22, weight: .semibold))
+                    .font(.system(size: 24, weight: .semibold))
                     .foregroundStyle(.white)
-                    .frame(width: 56, height: 56)
+                    .frame(width: 60, height: 60)
+                    .background {
+                        Circle().fill(.white.opacity(0.15))
+                    }
             }
             .buttonStyle(GlassPressButtonStyle())
 
@@ -334,17 +339,17 @@ struct NowPlayingView: View {
                 }
             } label: {
                 Image(systemName: audioEngine.isPlaying ? "pause.fill" : "play.fill")
-                    .font(.system(size: 28, weight: .bold))
+                    .font(.system(size: 30, weight: .bold))
                     .foregroundStyle(.black)
-                    .frame(width: 72, height: 72)
+                    .frame(width: 78, height: 78)
                     .background {
                         Circle().fill(.white)
                     }
-                    .shadow(color: .black.opacity(0.28), radius: 14, y: 7)
+                    .shadow(color: .black.opacity(0.35), radius: 18, y: 8)
             }
             .buttonStyle(.plain)
             .scaleEffect(audioEngine.isPlaying ? 1.0 : 0.94)
-            .animation(.spring(response: 0.3, dampingFraction: 0.6), value: audioEngine.isPlaying)
+            .animation(.spring(response: 0.3, dampingFraction: 0.6))
 
             Spacer()
 
@@ -352,9 +357,12 @@ struct NowPlayingView: View {
                 audioEngine.playNext()
             } label: {
                 Image(systemName: "forward.fill")
-                    .font(.system(size: 22, weight: .semibold))
+                    .font(.system(size: 24, weight: .semibold))
                     .foregroundStyle(.white)
-                    .frame(width: 56, height: 56)
+                    .frame(width: 60, height: 60)
+                    .background {
+                        Circle().fill(.white.opacity(0.15))
+                    }
             }
             .buttonStyle(GlassPressButtonStyle())
         }
@@ -410,23 +418,24 @@ struct NowPlayingView: View {
         Button(action: action) {
             VStack(spacing: 6) {
                 Image(systemName: icon)
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(.system(size: 17, weight: .semibold))
 
                 Text(title)
                     .font(.caption2.weight(.medium))
             }
             .foregroundStyle(active ? Color.accentColor : .white)
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 10)
+            .padding(.vertical, 11)
             .background {
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(active ? Color.accentColor.opacity(0.16) : .white.opacity(0.07))
+                    .fill(active ? Color.accentColor.opacity(0.18) : .white.opacity(0.08))
             }
             .overlay {
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(.white.opacity(0.14), lineWidth: 1)
+                    .stroke(.white.opacity(0.16), lineWidth: 1)
             }
-            .animation(.easeInOut(duration: 0.2), value: active)
+            .shadow(color: .black.opacity(0.1), radius: 6, y: 3)
+            .animation(.easeInOut(duration: 0.2))
         }
         .buttonStyle(GlassPressButtonStyle())
     }
@@ -484,7 +493,7 @@ struct QueueView: View {
                             .padding(.vertical, 8)
                             .padding(.horizontal, 8)
                             .opaqueGlass(cornerRadius: 14, tint: .white)
-                            .animation(.easeInOut(duration: 0.2), value: audioEngine.currentSong?.id)
+                            .animation(.easeInOut(duration: 0.2))
                         }
                         .buttonStyle(RowPressButtonStyle())
                         .listRowBackground(Color.clear)
@@ -606,7 +615,7 @@ struct LyricsView: View {
                                 .lineSpacing(9)
                                 .padding(.horizontal, 12)
                                 .padding(.top, 20)
-                                .animation(.easeOut(duration: 0.12), value: displayedLyrics)
+                                .animation(.easeOut(duration: 0.12))
                                 .onAppear {
                                     fullLyrics = lyrics
                                     words = lyrics.components(separatedBy: " ")

@@ -13,7 +13,7 @@ struct GlassPressButtonStyle: ButtonStyle {
         configuration.label
             .scaleEffect(configuration.isPressed ? pressedScale : 1)
             .opacity(configuration.isPressed ? 0.85 : 1)
-            .animation(.spring(response: 0.28, dampingFraction: 0.65), value: configuration.isPressed)
+            .animation(.spring(response: 0.28, dampingFraction: 0.65))
     }
 }
 
@@ -23,7 +23,7 @@ struct RowPressButtonStyle: ButtonStyle {
         configuration.label
             .scaleEffect(configuration.isPressed ? 0.985 : 1)
             .opacity(configuration.isPressed ? 0.9 : 1)
-            .animation(.easeOut(duration: 0.18), value: configuration.isPressed)
+            .animation(.easeOut(duration: 0.18))
     }
 }
 
@@ -217,7 +217,7 @@ struct AlbumDetailView: View {
             }
         }
         .transition(.opacity.combined(with: .scale(scale: 0.96)))
-        .animation(.easeOut(duration: 0.25), value: album.id)
+        .animation(.easeOut(duration: 0.25))
     }
 
     // MARK: - Empty
@@ -514,8 +514,7 @@ struct DetailSongRow: View {
 
                 statusIcon
                     .frame(width: 20)
-                    .animation(.easeInOut(duration: 0.2), value: isCurrent)
-                    .animation(.easeInOut(duration: 0.2), value: isPlaying)
+                    .animation(.easeInOut(duration: 0.2))
             }
             .padding(.vertical, 8)
             .padding(.horizontal, 8)

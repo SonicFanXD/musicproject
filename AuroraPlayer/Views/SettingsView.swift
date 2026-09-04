@@ -47,24 +47,25 @@ struct SettingsView: View {
         VStack(spacing: 10) {
             ZStack {
                 Circle()
-                    .fill(Color.accentColor.opacity(0.18))
-                    .frame(width: 78, height: 78)
+                    .fill(Color.accentColor.opacity(0.20))
+                    .frame(width: 85, height: 85)
+                    .shadow(color: Color.accentColor.opacity(0.3), radius: 12, y: 6)
 
                 Image(systemName: "gearshape.fill")
-                    .font(.system(size: 34, weight: .semibold))
+                    .font(.system(size: 36, weight: .semibold))
                     .foregroundStyle(Color.accentColor)
             }
 
             Text("Aurora Player")
-                .font(.system(size: 25, weight: .bold))
+                .font(.system(size: 26, weight: .bold))
 
             Text("Personaliza tu experiencia musical")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 22)
-        .opaqueGlass(cornerRadius: 26, tint: .accentColor)
+        .padding(.vertical, 24)
+        .opaqueGlass(cornerRadius: 26, tint: .accentColor, tintIntensity: 0.08, strokeIntensity: 0.35)
     }
 
     // MARK: - Playback
@@ -92,7 +93,7 @@ struct SettingsView: View {
                     )
                     .labelsHidden()
                     .tint(.accentColor)
-                    .animation(.spring(response: 0.3, dampingFraction: 0.7), value: audioEngine.isShuffleEnabled)
+                    .animation(.spring(response: 0.3, dampingFraction: 0.7))
                 }
 
                 Divider()
@@ -112,7 +113,7 @@ struct SettingsView: View {
                             .foregroundStyle(Color.accentColor)
                     }
                     .buttonStyle(.plain)
-                    .animation(.spring(response: 0.3, dampingFraction: 0.7), value: audioEngine.repeatMode)
+                    .animation(.spring(response: 0.3, dampingFraction: 0.7))
                 }
 
                 Divider()

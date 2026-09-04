@@ -60,8 +60,8 @@ struct OpaqueGlass<S: Shape>: ViewModifier {
                 y: isPressed ? 2 : 4
             )
             .scaleEffect(isPressed ? 0.97 : 1.0)
-            .animation(.spring(response: 0.3, dampingFraction: 0.6), value: isPressed)
-            .animation(.spring(response: 0.35, dampingFraction: 0.75), value: tint)
+            .animation(.spring(response: 0.3, dampingFraction: 0.6))
+            .animation(.spring(response: 0.35, dampingFraction: 0.75))
     }
 }
 
