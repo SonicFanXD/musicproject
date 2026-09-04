@@ -23,11 +23,11 @@ class FileAccessService: ObservableObject {
     private let metadataQueue: OperationQueue = {
         let queue = OperationQueue()
         queue.name = "com.aurora.metadata"
-        queue.qualityOfService = .userInitiated
-        queue.maxConcurrentOperationCount = 2
+        queue.qualityOfService = .utility
+        queue.maxConcurrentOperationCount = 1
         return queue
     }()
-    private let metadataBatchSize = 24
+    private let metadataBatchSize = 10
 
     private let supportedExtensions: Set<String> = [
         "mp3", "m4a", "aac", "wav", "wave", "aiff", "aif", "flac"
@@ -230,7 +230,7 @@ class FileAccessService: ObservableObject {
         let generation = scanGeneration
         activeDiscoveries += 1
         isScanning = true
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+        DispatchQueue.global(qos: .utility).async { [weak self] in
             guard let self = self else { return }
 
             let coordinator = NSFileCoordinator()
@@ -241,7 +241,7 @@ class FileAccessService: ObservableObject {
                 options: [],
                 error: &coordinationError
             ) { coordinatedURL in
-                let keys: [URLResourceKey] = [.isDirectoryKey, .isUbiquitousItemKey]
+                let keys: [URLResourceKey] = [.isDirectoryKey]
                 guard let enumerator = FileManager.default.enumerator(
                     at: coordinatedURL,
                     includingPropertiesForKeys: keys,
@@ -254,10 +254,6 @@ class FileAccessService: ObservableObject {
                     if values?.isDirectory == true { continue }
                     guard self.supportedExtensions.contains(fileURL.pathExtension.lowercased()) else { continue }
 
-                    if values?.isUbiquitousItem == true {
-                        try? FileManager.default.startDownloadingUbiquitousItem(at: fileURL)
-                    }
-
                     batch.append(fileURL)
                     if batch.count == self.metadataBatchSize {
                         self.registerMetadataBatch(batch, generation: generation)
@@ -268,7 +264,7 @@ class FileAccessService: ObservableObject {
             }
 
             if let coordinationError {
-                AppLog.error(.library, "No se pudo leer la carpeta de forma coordinada: \(coordinationError.localizedDescription)")
+                AppLog.error(.library, "No se pudo leer la carpeta: \(coordinationError.localizedDescription)")
             }
 
             DispatchQueue.main.async { self.finishDiscovery(generation: generation) }
@@ -464,15 +460,15 @@ class FileAccessService: ObservableObject {
     }
 
     private func thumbnailArtwork(_ data: Data) -> Data {
-        guard data.count > 350_000,
+        guard data.count > 100_000,
               let source = CGImageSourceCreateWithData(data as CFData, nil) else { return data }
         let options: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
-            kCGImageSourceThumbnailMaxPixelSize: 600,
+            kCGImageSourceThumbnailMaxPixelSize: 300,
             kCGImageSourceCreateThumbnailWithTransform: true
         ]
         guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary),
-              let compressed = UIImage(cgImage: image).jpegData(compressionQuality: 0.82) else { return data }
+              let compressed = UIImage(cgImage: image).jpegData(compressionQuality: 0.7) else { return data }
         return compressed
     }
 
