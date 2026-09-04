@@ -172,16 +172,22 @@ struct ContentView: View {
             .listRowSeparator(.hidden)
             .listRowBackground(Color.clear)
         } else {
-            ForEach(albums) { album in
-                NavigationLink {
-                    AlbumDetailView(album: album, audioEngine: audioEngine)
-                } label: {
-                    AlbumLibraryRow(album: album)
+            // Grid layout for albums
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 16) {
+                    ForEach(albums) { album in
+                        NavigationLink {
+                            AlbumDetailView(album: album, audioEngine: audioEngine)
+                        } label: {
+                            AlbumLibraryRow(album: album)
+                        }
+                    }
                 }
-                .listRowInsets(EdgeInsets(top: 2, leading: 12, bottom: 2, trailing: 12))
-                .listRowSeparator(.hidden)
-                .listRowBackground(Color.clear)
+                .padding(.horizontal, 20)
             }
+            .listRowSeparator(.hidden)
+            .listRowBackground(Color.clear)
+            .listRowInsets(EdgeInsets(top: 16, leading: 0, bottom: 16, trailing: 0))
         }
     }
 
@@ -202,21 +208,26 @@ struct ContentView: View {
             .listRowSeparator(.hidden)
             .listRowBackground(Color.clear)
         } else {
-            ForEach(artists) { artist in
-                NavigationLink {
-                    ArtistDetailView(artist: artist, audioEngine: audioEngine)
-                } label: {
-                    ArtistLibraryRow(artist: artist)
+            // Grid layout for artists
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 16) {
+                    ForEach(artists) { artist in
+                        NavigationLink {
+                            ArtistDetailView(artist: artist, audioEngine: audioEngine)
+                        } label: {
+                            ArtistLibraryRow(artist: artist)
+                        }
+                    }
                 }
-                .listRowInsets(EdgeInsets(top: 2, leading: 12, bottom: 2, trailing: 12))
-                .listRowSeparator(.hidden)
-                .listRowBackground(Color.clear)
+                .padding(.horizontal, 20)
             }
+            .listRowSeparator(.hidden)
+            .listRowBackground(Color.clear)
+            .listRowInsets(EdgeInsets(top: 16, leading: 0, bottom: 16, trailing: 0))
         }
     }
 
-    // MARK: - Song Row (Enhanced with better visual feedback)
-
+    // MARK: - Song Row (Modern Design)
     @ViewBuilder
     private func songRow(_ song: Song) -> some View {
         let isCurrent = audioEngine.currentSong?.id == song.id
@@ -224,60 +235,63 @@ struct ContentView: View {
         Button {
             playSong(song)
         } label: {
-            HStack(spacing: 14) {
+            HStack(spacing: 16) {
+                // Modern artwork
                 artworkView(for: song)
 
-                VStack(alignment: .leading, spacing: 4) {
+                // Song info with better typography
+                VStack(alignment: .leading, spacing: 6) {
                     Text(song.title)
-                        .font(.body.weight(.medium))
+                        .font(.system(size: 17, weight: isCurrent ? .semibold : .regular))
                         .foregroundStyle(isCurrent ? Color.accentColor : .primary)
                         .lineLimit(1)
 
                     Text(song.artist)
-                        .font(.subheadline)
+                        .font(.system(size: 15))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
 
                     if !song.album.isEmpty {
                         Text(song.album)
-                            .font(.caption)
+                            .font(.system(size: 13))
                             .foregroundStyle(.tertiary)
                             .lineLimit(1)
                     }
                 }
 
-                Spacer(minLength: 8)
+                Spacer(minLength: 12)
 
+                // Playing indicator or duration
                 if isCurrent {
-                    HStack(spacing: 3) {
+                    HStack(spacing: 4) {
                         ForEach(0..<3) { _ in
                             RoundedRectangle(cornerRadius: 2)
                                 .fill(Color.accentColor)
-                                .frame(width: 3, height: 12)
-                                .offset(y: isCurrent ? CGFloat.random(in: -2...2) : 0)
+                                .frame(width: 3, height: 16)
+                                .offset(y: CGFloat.random(in: -3...3))
                                 .animation(.easeInOut(duration: 0.4).repeatForever(autoreverses: true), value: isCurrent)
                         }
                     }
                 } else {
                     Text(formatDuration(song.duration))
-                        .font(.caption.weight(.medium))
+                        .font(.system(size: 14, weight: .medium))
                         .foregroundStyle(.tertiary)
                         .monospacedDigit()
                 }
             }
-            .padding(.vertical, 12)
-            .padding(.horizontal, 14)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 16)
             .background {
                 if isCurrent {
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
                         .fill(Color.accentColor.opacity(0.1))
                         .overlay(
-                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            RoundedRectangle(cornerRadius: 16, style: .continuous)
                                 .stroke(Color.accentColor.opacity(0.2), lineWidth: 1)
                         )
                 } else {
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(Color.secondary.opacity(0.05))
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(.ultraThinMaterial)
                 }
             }
         }
@@ -294,26 +308,47 @@ struct ContentView: View {
         return String(format: "%d:%02d", minutes, remainingSeconds)
     }
 
-    // MARK: - Artwork
-
+    // MARK: - Artwork (Modern Design)
     @ViewBuilder
     private func artworkView(for song: Song) -> some View {
         if let artwork = song.artwork {
-            Image(uiImage: artwork)
-                .resizable()
-                .scaledToFill()
-                .frame(width: 50, height: 50)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
+            ZStack {
+                // Glow effect
+                Image(uiImage: artwork)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 56, height: 56)
+                    .blur(radius: 10)
+                    .opacity(0.4)
+                
+                // Main artwork
+                Image(uiImage: artwork)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 56, height: 56)
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .shadow(color: .black.opacity(0.15), radius: 8, x: 0, y: 4)
+            }
         } else {
             ZStack {
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(Color.secondary.opacity(0.2))
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color.secondary.opacity(0.25),
+                                Color.secondary.opacity(0.15)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .frame(width: 56, height: 56)
+                    .shadow(color: .black.opacity(0.1), radius: 6, x: 0, y: 3)
 
                 Image(systemName: "music.note")
-                    .font(.title2)
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 20))
+                    .foregroundStyle(.secondary.opacity(0.7))
             }
-            .frame(width: 50, height: 50)
         }
     }
 
@@ -406,72 +441,63 @@ enum LibraryCategory: String, CaseIterable {
     }
 }
 
-// MARK: - Album Row (Enhanced)
+// MARK: - Album Row (Modern Design)
 struct AlbumLibraryRow: View {
     let album: Album
 
     var body: some View {
-        HStack(spacing: 14) {
-            if let artwork = album.artwork {
-                Image(uiImage: artwork)
-                    .resizable()
-                    .scaledToFill()
-                    .frame(width: 52, height: 52)
-                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                    .shadow(color: .black.opacity(0.1), radius: 4, x: 0, y: 2)
-            } else {
-                placeholderArtwork
+        VStack(alignment: .leading, spacing: 12) {
+            // Album artwork with modern design
+            Group {
+                if let artwork = album.artwork {
+                    Image(uiImage: artwork)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: 140, height: 140)
+                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .shadow(color: .black.opacity(0.2), radius: 12, x: 0, y: 6)
+                } else {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .fill(
+                                LinearGradient(
+                                    colors: [
+                                        Color.secondary.opacity(0.25),
+                                        Color.secondary.opacity(0.15)
+                                    ],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .frame(width: 140, height: 140)
+                            .shadow(color: .black.opacity(0.15), radius: 10, x: 0, y: 5)
+
+                        Image(systemName: "square.stack")
+                            .font(.system(size: 35))
+                            .foregroundStyle(.secondary.opacity(0.7))
+                    }
+                }
             }
 
+            // Album info
             VStack(alignment: .leading, spacing: 4) {
                 Text(album.name)
-                    .font(.body.weight(.semibold))
+                    .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
 
                 Text(album.artist)
-                    .font(.subheadline)
+                    .font(.system(size: 14))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
 
                 Text("\(album.songs.count) canciones")
-                    .font(.caption)
+                    .font(.system(size: 13))
                     .foregroundStyle(.tertiary)
             }
-
-            Spacer()
-
-            Image(systemName: "chevron.right")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.tertiary)
         }
+        .frame(width: 140)
         .padding(.vertical, 8)
-        .padding(.horizontal, 12)
-        .background {
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color.secondary.opacity(0.05))
-        }
-    }
-
-    private var placeholderArtwork: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            Color.secondary.opacity(0.2),
-                            Color.secondary.opacity(0.1)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-
-            Image(systemName: "square.stack")
-                .font(.title2)
-                .foregroundStyle(.secondary)
-        }
-        .frame(width: 52, height: 52)
     }
 }
 
@@ -480,58 +506,53 @@ struct ArtistLibraryRow: View {
     let artist: Artist
 
     var body: some View {
-        HStack(spacing: 14) {
-            if let artwork = artist.artwork {
-                Image(uiImage: artwork)
-                    .resizable()
-                    .scaledToFill()
-                    .frame(width: 52, height: 52)
-                    .clipShape(Circle())
-                    .shadow(color: .black.opacity(0.1), radius: 4, x: 0, y: 2)
-            } else {
-                ZStack {
-                    Circle()
-                        .fill(
-                            LinearGradient(
-                                colors: [
-                                    Color.secondary.opacity(0.2),
-                                    Color.secondary.opacity(0.1)
-                                ],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
+        VStack(alignment: .leading, spacing: 12) {
+            // Artist artwork with circular design
+            Group {
+                if let artwork = artist.artwork {
+                    Image(uiImage: artwork)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: 140, height: 140)
+                        .clipShape(Circle())
+                        .shadow(color: .black.opacity(0.2), radius: 12, x: 0, y: 6)
+                } else {
+                    ZStack {
+                        Circle()
+                            .fill(
+                                LinearGradient(
+                                    colors: [
+                                        Color.secondary.opacity(0.25),
+                                        Color.secondary.opacity(0.15)
+                                    ],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
                             )
-                        )
+                            .frame(width: 140, height: 140)
+                            .shadow(color: .black.opacity(0.15), radius: 10, x: 0, y: 5)
 
-                    Image(systemName: "person.fill")
-                        .font(.title2)
-                        .foregroundStyle(.secondary)
+                        Image(systemName: "person.fill")
+                            .font(.system(size: 35))
+                            .foregroundStyle(.secondary.opacity(0.7))
+                    }
                 }
-                .frame(width: 52, height: 52)
             }
 
+            // Artist info
             VStack(alignment: .leading, spacing: 4) {
                 Text(artist.name)
-                    .font(.body.weight(.semibold))
+                    .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
 
                 Text("\(artist.songs.count) canciones")
-                    .font(.subheadline)
+                    .font(.system(size: 14))
                     .foregroundStyle(.secondary)
             }
-
-            Spacer()
-
-            Image(systemName: "chevron.right")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.tertiary)
         }
+        .frame(width: 140)
         .padding(.vertical, 8)
-        .padding(.horizontal, 12)
-        .background {
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color.secondary.opacity(0.05))
-        }
     }
 }
 

@@ -96,70 +96,144 @@ struct NowPlayingView: View {
         }
     }
 
-    // MARK: - Background View (Optimized for iPhone 8 Plus performance)
+    // MARK: - Background View (Modern mesh gradient)
     private var backgroundView: some View {
         Group {
             if let artwork = audioEngine.currentSong?.artwork {
                 GeometryReader { geometry in
                     ZStack {
-                        // Optimized blurred artwork - reduced blur radius for performance
+                        // Base blurred artwork with modern gradient
                         Image(uiImage: artwork)
                             .resizable()
                             .scaledToFill()
                             .frame(width: geometry.size.width, height: geometry.size.height)
-                            .blur(radius: 40) // Reduced from 50 for better performance
-                            .opacity(0.35)
+                            .blur(radius: 45)
+                            .opacity(0.5)
                             .clipped()
                         
-                        // Simplified gradient overlay for depth
+                        // Gradient overlay for depth
                         LinearGradient(
                             colors: [
-                                Color.black.opacity(0.15),
-                                Color.black.opacity(0.35)
+                                Color.black.opacity(0.2),
+                                Color.black.opacity(0.4),
+                                Color.black.opacity(0.6)
                             ],
                             startPoint: .top,
                             endPoint: .bottom
+                        )
+                        
+                        // Accent color mesh gradient
+                        RadialGradient(
+                            colors: [
+                                Color.accentColor.opacity(0.15),
+                                Color.clear
+                            ],
+                            center: .bottomLeading,
+                            startRadius: 0,
+                            endRadius: 400
                         )
                     }
                 }
                 .ignoresSafeArea()
             } else {
-                // Simplified gradient background for no artwork
-                LinearGradient(
-                    colors: [
-                        Color(UIColor.systemBackground),
-                        Color(UIColor.secondarySystemBackground)
-                    ],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
+                // Modern gradient background for no artwork
+                ZStack {
+                    LinearGradient(
+                        colors: [
+                            Color(UIColor.systemBackground),
+                            Color(UIColor.secondarySystemBackground)
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                    
+                    RadialGradient(
+                        colors: [
+                            Color.accentColor.opacity(0.1),
+                            Color.clear
+                        ],
+                        center: .center,
+                        startRadius: 0,
+                        endRadius: 300
+                    )
+                }
                 .ignoresSafeArea()
             }
         }
     }
 
-    // MARK: - Artwork View (Optimized for iPhone 8 Plus performance)
+    // MARK: - Artwork View (Modern with glow and glass effect)
     private var artworkView: some View {
         Group {
             if let artwork = audioEngine.currentSong?.artwork {
-                // Simplified artwork view without glow effect for better performance
-                Image(uiImage: artwork)
-                    .resizable()
-                    .scaledToFill()
-                    .frame(width: 300, height: 300)
-                    .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-                    .shadow(color: .black.opacity(0.25), radius: 30, x: 0, y: 15) // Reduced shadow
+                ZStack {
+                    // Glow effect layers
+                    Image(uiImage: artwork)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: 320, height: 320)
+                        .blur(radius: 25)
+                        .opacity(0.4)
+                    
+                    Image(uiImage: artwork)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: 320, height: 320)
+                        .blur(radius: 15)
+                        .opacity(0.6)
+                    
+                    // Main artwork with glass effect
+                    Image(uiImage: artwork)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: 320, height: 320)
+                        .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+                        .shadow(color: .black.opacity(0.4), radius: 40, x: 0, y: 20)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                                .stroke(.white.opacity(0.15), lineWidth: 1)
+                        )
+                }
             } else {
                 ZStack {
-                    // Simplified placeholder without gradient
-                    RoundedRectangle(cornerRadius: 24, style: .continuous)
-                        .fill(Color.secondary.opacity(0.15))
-                        .frame(width: 300, height: 300)
-                        .shadow(color: .black.opacity(0.12), radius: 20, x: 0, y: 10)
+                    // Glow effect for placeholder
+                    RoundedRectangle(cornerRadius: 28, style: .continuous)
+                        .fill(Color.secondary.opacity(0.2))
+                        .frame(width: 320, height: 320)
+                        .blur(radius: 20)
+                        .opacity(0.5)
+                    
+                    // Main placeholder with gradient
+                    RoundedRectangle(cornerRadius: 28, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    Color.secondary.opacity(0.3),
+                                    Color.secondary.opacity(0.15)
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .frame(width: 320, height: 320)
+                        .shadow(color: .black.opacity(0.25), radius: 30, x: 0, y: 15)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                                .stroke(.white.opacity(0.1), lineWidth: 1)
+                        )
 
                     Image(systemName: "music.note")
-                        .font(.system(size: 75))
-                        .foregroundStyle(.secondary.opacity(0.6))
+                        .font(.system(size: 80))
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: [
+                                    Color.secondary.opacity(0.8),
+                                    Color.secondary.opacity(0.5)
+                                ],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
                 }
             }
         }
