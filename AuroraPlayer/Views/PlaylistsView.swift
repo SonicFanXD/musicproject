@@ -333,6 +333,7 @@ struct PlaylistDetailView: View {
     @State private var showEditPlaylist = false
     @State private var editedName = ""
     @State private var editedDescription = ""
+    @State private var showDeleteConfirmation = false
 
     private var songs: [Song] {
         fileAccessService.songsInPlaylist(playlist)
@@ -372,25 +373,61 @@ struct PlaylistDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Button {
+                        editedName = playlist.name
+                        editedDescription = playlist.description
+                        showEditPlaylist = true
+                    } label: {
+                        Label("Editar lista", systemImage: "pencil")
+                    }
+
+                    Button(role: .destructive) {
+                        showDeleteConfirmation = true
+                    } label: {
+                        Label("Eliminar lista", systemImage: "trash")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                        .foregroundStyle(.primary)
+                }
+            }
+        }
         .sheet(isPresented: $showEditPlaylist) {
             editPlaylistSheet
+        }
+        .alert("¿Eliminar \"\(playlist.name)\"?", isPresented: $showDeleteConfirmation) {
+            Button("Cancelar", role: .cancel) {}
+            Button("Eliminar", role: .destructive) {
+                fileAccessService.deletePlaylist(playlist)
+                dismiss()
+            }
+        } message: {
+            Text("Las canciones no se eliminarán de tu biblioteca.")
         }
     }
 
     private var playlistHeroSection: some View {
-        VStack(spacing: 24) {
-            // Playlist artwork
+        VStack(spacing: 18) {
+            // Artwork con marco sutil
             ZStack {
                 if let artwork = playlist.artwork {
                     Image(uiImage: artwork)
                         .resizable()
+                        .interpolation(.high)
                         .scaledToFill()
-                        .frame(width: 200, height: 200)
-                        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-                        .shadow(color: .black.opacity(0.3), radius: 20, x: 0, y: 10)
+                        .frame(width: 220, height: 220)
+                        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                                .strokeBorder(.white.opacity(0.12), lineWidth: 1)
+                        }
+                        .shadow(color: .black.opacity(0.3), radius: 22, x: 0, y: 12)
                 } else {
                     ZStack {
-                        RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        RoundedRectangle(cornerRadius: 20, style: .continuous)
                             .fill(
                                 LinearGradient(
                                     colors: [
@@ -401,159 +438,219 @@ struct PlaylistDetailView: View {
                                     endPoint: .bottomTrailing
                                 )
                             )
-                            .frame(width: 200, height: 200)
-                            .shadow(color: .black.opacity(0.25), radius: 18, x: 0, y: 9)
+                            .frame(width: 220, height: 220)
 
                         Image(systemName: "music.note.list")
-                            .font(.system(size: 48))
+                            .font(.system(size: 52))
                             .foregroundStyle(.white.opacity(0.8))
                     }
+                    .shadow(color: .black.opacity(0.2), radius: 18, x: 0, y: 9)
                 }
             }
-            .padding(.top, 20)
+            .padding(.top, 16)
 
             // Playlist info
-            VStack(spacing: 12) {
+            VStack(spacing: 6) {
                 Text(playlist.name)
-                    .font(.title)
+                    .font(.system(size: 24, weight: .bold))
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.primary)
+                    .lineLimit(2)
 
                 if !playlist.description.isEmpty {
                     Text(playlist.description)
-                        .font(.subheadline)
+                        .font(.system(size: 15))
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
+                        .lineLimit(2)
                 }
 
-                HStack(spacing: 12) {
-                    Text("\(songs.count) canciones")
-                        .font(.subheadline)
-                        .foregroundStyle(.tertiary)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background {
-                            Capsule()
-                                .fill(.regularMaterial)
-                        }
+                HStack(spacing: 10) {
+                    statPill(icon: "music.note", text: "\(songs.count) canciones")
+
+                    let totalDuration = songs.reduce(0) { $0 + $1.duration }
+                    if totalDuration > 60 {
+                        statPill(icon: "clock", text: formatLongDuration(totalDuration))
+                    }
                 }
             }
             .padding(.horizontal, 20)
 
-            // Play button
+            // Botones: Reproducir + Aleatorio
             if !songs.isEmpty {
-                Button {
-                    if let firstSong = songs.first {
-                        audioEngine.play(song: firstSong, from: songs)
-                    }
-                } label: {
-                    HStack(spacing: 14) {
-                        ZStack {
-                            Circle()
-                                .fill(.white.opacity(0.2))
-                                .frame(width: 36, height: 36)
-
-                        Image(systemName: "play.fill")
-                            .font(.system(size: 18, weight: .semibold))
-                            .foregroundStyle(.white)
+                HStack(spacing: 12) {
+                    Button {
+                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                        if let firstSong = songs.first {
+                            audioEngine.play(song: firstSong, from: songs)
                         }
-
-                        Text("Reproducir todo")
-                            .font(.system(size: 17, weight: .semibold))
-                            .foregroundStyle(.white)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 18)
-                    .background {
-                        ZStack {
-                            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: "play.fill")
+                                .font(.system(size: 16, weight: .semibold))
+                            Text("Reproducir")
+                                .font(.system(size: 16, weight: .semibold))
+                        }
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 15)
+                        .background {
+                            RoundedRectangle(cornerRadius: 16, style: .continuous)
                                 .fill(Color.accentColor)
-
-                            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                                .fill(
-                                    LinearGradient(
-                                        colors: [
-                                            .white.opacity(0.15),
-                                            .white.opacity(0.05),
-                                            .clear
-                                        ],
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
-                                    )
-                                )
                         }
+                        .shadow(color: Color.accentColor.opacity(0.35), radius: 10, x: 0, y: 5)
                     }
-                    .shadow(color: Color.accentColor.opacity(0.5), radius: 16, x: 0, y: 8)
+
+                    Button {
+                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                        if !audioEngine.isShuffleEnabled {
+                            audioEngine.toggleShuffle()
+                        }
+                        if let randomSong = songs.randomElement() {
+                            audioEngine.play(song: randomSong, from: songs)
+                        }
+                    } label: {
+                        Image(systemName: "shuffle")
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundStyle(Color.accentColor)
+                            .frame(width: 52, height: 52)
+                            .background {
+                                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                    .fill(Color.accentColor.opacity(0.14))
+                            }
+                    }
                 }
                 .padding(.horizontal, 20)
             }
         }
-        .padding(.bottom, 24)
+        .frame(maxWidth: .infinity)
+        .padding(.bottom, 4)
+        .background(alignment: .top) {
+            // Fondo desenfocado del artwork de la lista
+            GeometryReader { geometry in
+                Group {
+                    if let artwork = playlist.artwork {
+                        Image(uiImage: artwork)
+                            .resizable()
+                            .scaledToFill()
+                            .blur(radius: 44)
+                            .opacity(0.35)
+                            .overlay(Color(UIColor.systemBackground).opacity(0.45))
+                    } else {
+                        LinearGradient(
+                            colors: [Color.accentColor.opacity(0.18), Color(UIColor.systemBackground)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    }
+                }
+                .frame(width: geometry.size.width, height: geometry.size.height + 80)
+                .clipped()
+                .ignoresSafeArea(edges: .top)
+            }
+        }
+    }
+
+    private func statPill(icon: String, text: String) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: icon)
+                .font(.system(size: 11, weight: .semibold))
+            Text(text)
+                .font(.system(size: 13, weight: .medium).monospacedDigit())
+        }
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background {
+            Capsule().fill(.regularMaterial)
+        }
+    }
+
+    private func formatLongDuration(_ seconds: TimeInterval) -> String {
+        let minutes = Int(seconds) / 60
+        if minutes >= 60 {
+            let hours = minutes / 60
+            let rem = minutes % 60
+            return rem > 0 ? "\(hours) h \(rem) min" : "\(hours) h"
+        }
+        return "\(minutes) min"
     }
 
     private func playlistSongRow(_ song: Song, index: Int) -> some View {
         let isCurrent = audioEngine.currentSong?.id == song.id
 
-        return Button {
-            audioEngine.play(song: song, from: songs)
-        } label: {
-            HStack(spacing: 16) {
-                Text("\(index + 1)")
-                    .font(.body)
-                    .foregroundStyle(isCurrent ? Color.accentColor : Color.secondary.opacity(0.6))
-                    .frame(width: 30, alignment: .center)
-
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(song.displayName)
-                        .font(.body)
-                        .foregroundStyle(isCurrent ? Color.accentColor : .primary)
-                        .lineLimit(1)
-
-                    Text(song.displaySubtitle)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-
-                Spacer()
-
-                // Duration or playing indicator
-                if isCurrent {
-                    HStack(spacing: 4) {
-                        ForEach(0..<3) { _ in
-                            RoundedRectangle(cornerRadius: 2)
-                                .fill(Color.accentColor)
-                                .frame(width: 3, height: 14)
-                                .offset(y: CGFloat.random(in: -3...3))
-                                .animation(.easeInOut(duration: 0.4).repeatForever(autoreverses: true), value: isCurrent)
+        return HStack(spacing: 14) {
+            // Botón principal: reproducir
+            Button {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                audioEngine.play(song: song, from: songs)
+            } label: {
+                HStack(spacing: 14) {
+                    // Número o ecualizador animado
+                    if isCurrent {
+                        HStack(spacing: 3) {
+                            ForEach(0..<3, id: \.self) { bar in
+                                RoundedRectangle(cornerRadius: 1.5)
+                                    .fill(Color.accentColor)
+                                    .frame(width: 3, height: bar % 2 == 0 ? 14 : 9)
+                                    .animation(
+                                        .easeInOut(duration: 0.45 + Double(bar) * 0.12)
+                                            .repeatForever(autoreverses: true),
+                                        value: isCurrent
+                                    )
+                            }
                         }
+                        .frame(width: 26)
+                    } else {
+                        Text("\(index + 1)")
+                            .font(.system(size: 15, weight: .medium).monospacedDigit())
+                            .foregroundStyle(Color.secondary.opacity(0.6))
+                            .frame(width: 26)
                     }
-                } else {
-                    Text(formatDuration(song.duration))
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
-                        .monospacedDigit()
-                }
 
-                // Remove button
-                Button {
-                    fileAccessService.removeSongFromPlaylist(song, playlist: playlist)
-                } label: {
-                    Image(systemName: "trash.fill")
-                        .font(.caption)
-                        .foregroundStyle(.red)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(song.title)
+                            .font(.system(size: 16, weight: isCurrent ? .semibold : .medium))
+                            .foregroundStyle(isCurrent ? Color.accentColor : .primary)
+                            .lineLimit(1)
+
+                        Text(song.displaySubtitle)
+                            .font(.system(size: 13))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+
+                    Spacer()
+
+                    Text(formatDuration(song.duration))
+                        .font(.system(size: 13).monospacedDigit())
+                        .foregroundStyle(.tertiary)
                 }
             }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 16)
-            .background {
-                if isCurrent {
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(Color.accentColor.opacity(0.1))
-                } else {
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(Color.secondary.opacity(0.05))
-                }
+            .buttonStyle(.plain)
+
+            // Botón de quitar (fuera del botón principal, área táctil amplia)
+            Button {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                fileAccessService.removeSongFromPlaylist(song, playlist: playlist)
+            } label: {
+                Image(systemName: "minus.circle.fill")
+                    .font(.system(size: 20))
+                    .foregroundStyle(.red.opacity(0.7))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Quitar de la lista")
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(isCurrent ? Color.accentColor.opacity(0.1) : Color.secondary.opacity(0.05))
+        }
+        .overlay {
+            if isCurrent {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .strokeBorder(Color.accentColor.opacity(0.25), lineWidth: 1)
             }
         }
     }

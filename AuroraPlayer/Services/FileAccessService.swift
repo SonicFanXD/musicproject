@@ -501,7 +501,9 @@ class FileAccessService: ObservableObject {
             }
 
             // Fallback binario SOLO si faltan campos esenciales (evita doble lectura de archivo)
-            if title == nil || artist.isEmpty || album.isEmpty {
+            // Incluye lyrics: AVFoundation a menudo NO mapea USLT/SYLT/©lyr/LYRICS
+            // (ID3, FLAC vorbis) a commonKey, y sin esto las letras jamás se extraían.
+            if title == nil || artist.isEmpty || album.isEmpty || lyrics.isEmpty {
                 if let embedded = readID3Metadata(from: url) ?? readFLACMetadata(from: url) ?? readM4AMetadata(from: url) {
                     title = title ?? embedded.title
                     if artist.isEmpty { artist = embedded.artist ?? "" }

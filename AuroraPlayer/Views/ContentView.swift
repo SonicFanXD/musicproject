@@ -80,6 +80,16 @@ struct ContentView: View {
                     restoreLibraryIfNeeded()
                 }
             }
+            .overlay {
+                if fileAccessService.isScanning {
+                    IndexingOverlay(
+                        processed: fileAccessService.scanProcessed,
+                        total: max(fileAccessService.scanTotal, 1)
+                    )
+                    .transition(.opacity)
+                }
+            }
+            .animation(.easeInOut(duration: 0.35), value: fileAccessService.isScanning)
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             PlayerBar(audioEngine: audioEngine)
@@ -489,6 +499,121 @@ struct ContentView: View {
         guard !hasRestored else { return }
         hasRestored = true
         audioEngine.restoreState(with: fileAccessService.songs)
+    }
+}
+
+// MARK: - Indexing Overlay (animación de indexado con progreso)
+struct IndexingOverlay: View {
+    let processed: Int
+    let total: Int
+
+    @State private var isPulsing = false
+    @State private var noteOffsets: [CGFloat] = (0..<6).map { _ in CGFloat.random(in: -24...24) }
+    @State private var noteOpacity: [Double] = (0..<6).map { _ in Double.random(in: 0.15...0.4) }
+    @State private var wavePhase = false
+
+    private var progress: Double {
+        guard total > 0 else { return 0 }
+        return min(1.0, Double(processed) / Double(total))
+    }
+
+    var body: some View {
+        ZStack {
+            // Fondo semitransparente que permite ver la biblioteca llenándose
+            Color(UIColor.systemBackground).opacity(0.72)
+                .ignoresSafeArea()
+                .background(.ultraThinMaterial)
+
+            VStack(spacing: 22) {
+                ZStack {
+                    // Anillo de progreso
+                    Circle()
+                        .stroke(Color.accentColor.opacity(0.15), lineWidth: 10)
+                        .frame(width: 110, height: 110)
+
+                    Circle()
+                        .trim(from: 0, to: progress)
+                        .stroke(
+                            Color.accentColor,
+                            style: StrokeStyle(lineWidth: 10, lineCap: .round)
+                        )
+                        .frame(width: 110, height: 110)
+                        .rotationEffect(.degrees(-90))
+                        .animation(.easeInOut(duration: 0.4), value: progress)
+
+                    // Nota musical pulsante al centro
+                    Image(systemName: "music.note")
+                        .font(.system(size: 38, weight: .semibold))
+                        .foregroundStyle(Color.accentColor)
+                        .scaleEffect(isPulsing ? 1.18 : 0.95)
+                        .animation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true), value: isPulsing)
+                }
+
+                // Notas flotantes decorativas
+                ZStack {
+                    ForEach(0..<6, id: \.self) { index in
+                        Image(systemName: index.isMultiple(of: 2) ? "music.note" : "music.quarternote.3")
+                            .font(.system(size: index.isMultiple(of: 2) ? 16 : 12))
+                            .foregroundStyle(Color.accentColor.opacity(noteOpacity[index]))
+                            .offset(x: noteOffsets[index], y: isPulsing ? -38 - CGFloat(index) * 9 : 12)
+                            .animation(
+                                .easeInOut(duration: Double(1.1 + Double(index) * 0.17))
+                                    .repeatForever(autoreverses: true),
+                                value: isPulsing
+                            )
+                    }
+                }
+                .frame(height: 60)
+
+                VStack(spacing: 8) {
+                    Text("Indexando tu música")
+                        .font(.system(size: 19, weight: .bold))
+                        .foregroundStyle(.primary)
+
+                    Text("\(processed) de \(total) canciones")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                }
+
+                // Barra de progreso lineal con onda animada
+                GeometryReader { geometry in
+                    ZStack(alignment: .leading) {
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            .fill(Color.secondary.opacity(0.2))
+
+                        HStack(spacing: 3) {
+                            ForEach(0..<Int(max(2, geometry.size.width / 6)), id: \.self) { _ in
+                                RoundedRectangle(cornerRadius: 1.5)
+                                    .fill(Color.accentColor)
+                                    .frame(height: wavePhase ? 6 : 12)
+                            }
+                        }
+                        .frame(width: max(8, geometry.size.width * progress))
+                        .animation(.easeInOut(duration: 0.55).repeatForever(autoreverses: true), value: wavePhase)
+                        .animation(.easeInOut(duration: 0.4), value: progress)
+                    }
+                }
+                .frame(height: 12)
+                .frame(maxWidth: 240)
+                .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+
+                Text("Las canciones aparecerán al terminar")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(28)
+            .background {
+                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                    .fill(.ultraThinMaterial)
+                    .shadow(color: .black.opacity(0.15), radius: 24, x: 0, y: 10)
+            }
+            .padding(.horizontal, 40)
+        }
+        .onAppear {
+            isPulsing = true
+            wavePhase = true
+        }
     }
 }
 

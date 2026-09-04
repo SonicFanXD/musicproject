@@ -55,35 +55,120 @@ struct QueueView: View {
     }
 
     private var tabSelector: some View {
-        HStack(spacing: 0) {
+        HStack(spacing: 6) {
             ForEach(QueueTab.allCases, id: \.self) { tab in
                 Button {
                     withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                         selectedTab = tab
                     }
                 } label: {
-                    Text(tab.rawValue)
-                        .font(.subheadline.weight(selectedTab == tab ? .semibold : .regular))
-                        .foregroundStyle(selectedTab == tab ? Color.accentColor : .secondary)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 14)
-                        .background {
-                            if selectedTab == tab {
-                                RoundedRectangle(cornerRadius: 0, style: .continuous)
-                                    .fill(Color.accentColor.opacity(0.1))
-                            }
+                    HStack(spacing: 6) {
+                        Image(systemName: tab == .nextUp ? "list.number" : "clock.arrow.circlepath")
+                            .font(.system(size: 12, weight: .semibold))
+                        Text(tab.rawValue)
+                            .font(.subheadline.weight(selectedTab == tab ? .semibold : .regular))
+                    }
+                    .foregroundStyle(selectedTab == tab ? .white : .secondary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 10)
+                    .background {
+                        if selectedTab == tab {
+                            Capsule()
+                                .fill(Color.accentColor)
+                                .shadow(color: Color.accentColor.opacity(0.3), radius: 6, x: 0, y: 3)
+                        } else {
+                            Capsule()
+                                .fill(Color.secondary.opacity(0.1))
                         }
+                    }
                 }
                 .buttonStyle(.plain)
             }
         }
-        .background {
-            Color.secondary.opacity(0.05)
-        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
     }
 
     @ViewBuilder
     private var nextUpContent: some View {
+        // Canción actual destacada
+        if let current = audioEngine.currentSong {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Reproduciendo ahora")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 4)
+
+                HStack(spacing: 12) {
+                    // Miniatura con ecualizador animado
+                    ZStack {
+                        if let artwork = current.artwork {
+                            Image(uiImage: artwork)
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: 48, height: 48)
+                                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        } else {
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .fill(Color.accentColor.opacity(0.15))
+                                .frame(width: 48, height: 48)
+
+                            Image(systemName: "music.note")
+                                .font(.system(size: 18))
+                                .foregroundStyle(Color.accentColor)
+                        }
+
+                        if audioEngine.isPlaying {
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .fill(Color.black.opacity(0.35))
+                                .frame(width: 48, height: 48)
+
+                            Image(systemName: audioEngine.isPlaying ? "pause.fill" : "play.fill")
+                                .font(.system(size: 14))
+                                .foregroundStyle(.white)
+                        }
+                    }
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(current.title)
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(Color.accentColor)
+                            .lineLimit(1)
+
+                        Text(current.displaySubtitle)
+                            .font(.system(size: 13))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+
+                    Spacer()
+
+                    // Indicador animado
+                    HStack(spacing: 2.5) {
+                        ForEach(0..<3, id: \.self) { bar in
+                            RoundedRectangle(cornerRadius: 1.5)
+                                .fill(Color.accentColor)
+                                .frame(width: 3, height: audioEngine.isPlaying ? (bar % 2 == 0 ? 14 : 9) : 6)
+                                .animation(
+                                    .easeInOut(duration: 0.45 + Double(bar) * 0.12)
+                                        .repeatForever(autoreverses: true),
+                                    value: audioEngine.isPlaying
+                                )
+                        }
+                    }
+                }
+                .padding(12)
+                .background {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(Color.accentColor.opacity(0.1))
+                }
+                .overlay {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .strokeBorder(Color.accentColor.opacity(0.25), lineWidth: 1)
+                }
+            }
+        }
+
         if audioEngine.nextUpQueue.isEmpty {
             emptyState(
                 icon: "music.note.list",
@@ -92,7 +177,7 @@ struct QueueView: View {
             )
         } else {
             VStack(alignment: .leading, spacing: 8) {
-                Text("Próximas \(audioEngine.nextUpQueue.count) canciones")
+                Text("A continuación")
                     .font(.system(size: 14, weight: .medium))
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 4)
@@ -101,6 +186,7 @@ struct QueueView: View {
                     queueSongRow(song, index: index + 1)
                 }
             }
+            .padding(.top, 8)
         }
     }
 
@@ -128,19 +214,33 @@ struct QueueView: View {
 
     private func queueSongRow(_ song: Song, index: Int) -> some View {
         HStack(spacing: 12) {
-            Text("\(index)")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .frame(width: 24, alignment: .center)
+            // Miniatura de artwork
+            ZStack {
+                if let artwork = song.artwork {
+                    Image(uiImage: artwork)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: 44, height: 44)
+                        .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+                } else {
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .fill(Color.secondary.opacity(0.15))
+                        .frame(width: 44, height: 44)
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text(song.displayName)
-                    .font(.body.weight(.medium))
+                    Image(systemName: "music.note")
+                        .font(.system(size: 15))
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(song.title)
+                    .font(.system(size: 15, weight: .medium))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
 
                 Text(song.displaySubtitle)
-                    .font(.caption)
+                    .font(.system(size: 12))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
@@ -148,12 +248,10 @@ struct QueueView: View {
             Spacer()
 
             Text(formatDuration(song.duration))
-                .font(.caption)
+                .font(.system(size: 12).monospacedDigit())
                 .foregroundStyle(.tertiary)
-                .monospacedDigit()
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(10)
         .background {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(.regularMaterial)
@@ -161,40 +259,64 @@ struct QueueView: View {
     }
 
     private func historySongRow(_ song: Song, index: Int) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: "clock")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .frame(width: 24, alignment: .center)
+        Button {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            audioEngine.playFromHistory(song)
+        } label: {
+            HStack(spacing: 12) {
+                // Miniatura con ícono de replay
+                ZStack(alignment: .bottomTrailing) {
+                    if let artwork = song.artwork {
+                        Image(uiImage: artwork)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: 44, height: 44)
+                            .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+                    } else {
+                        RoundedRectangle(cornerRadius: 9, style: .continuous)
+                            .fill(Color.secondary.opacity(0.15))
+                            .frame(width: 44, height: 44)
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text(song.displayName)
-                    .font(.body.weight(.medium))
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
+                        Image(systemName: "music.note")
+                            .font(.system(size: 15))
+                            .foregroundStyle(.secondary)
+                    }
 
-                Text(song.displaySubtitle)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
+                    Image(systemName: "arrow.counterclockwise")
+                        .font(.system(size: 8, weight: .bold))
+                        .foregroundStyle(.white)
+                        .padding(4)
+                        .background {
+                            Circle().fill(Color.accentColor)
+                        }
+                        .offset(x: 4, y: 4)
+                }
 
-            Spacer()
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(song.title)
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
 
-            Button {
-                audioEngine.playFromHistory(song)
-            } label: {
+                    Text(song.displaySubtitle)
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+
+                Spacer()
+
                 Image(systemName: "play.circle.fill")
-                    .font(.title3)
+                    .font(.system(size: 26))
                     .foregroundStyle(Color.accentColor)
             }
+            .padding(10)
+            .background {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(.regularMaterial)
+            }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-        .background {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(.regularMaterial)
-        }
+        .buttonStyle(.plain)
     }
 
     private func emptyState(icon: String, title: String, message: String) -> some View {

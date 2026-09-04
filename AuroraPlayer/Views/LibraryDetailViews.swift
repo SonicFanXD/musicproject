@@ -1,6 +1,6 @@
 import SwiftUI
 
-// MARK: - Album Detail
+// MARK: - Album Detail (diseño inmersivo premium)
 struct AlbumDetailView: View {
     let album: Album
     @ObservedObject var audioEngine: AudioEngine
@@ -10,239 +10,297 @@ struct AlbumDetailView: View {
         album.songs
     }
 
+    private var totalDuration: TimeInterval {
+        songs.reduce(0) { $0 + $1.duration }
+    }
+
     var body: some View {
-        ZStack {
-            // iOS 16 native background
-            LinearGradient(
-                colors: [
-                    Color(UIColor.systemBackground),
-                    Color(UIColor.secondarySystemBackground)
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .ignoresSafeArea()
+        ScrollView {
+            VStack(spacing: 0) {
+                // Hero inmersivo con artwork desenfocado
+                heroSection
 
-            ScrollView {
-                VStack(spacing: 0) {
-                    // Hero Section
-                    heroSection
-
-                    // Songs list with native design
-                    VStack(spacing: 12) {
-                        ForEach(Array(songs.enumerated()), id: \.element.id) { index, song in
-                            modernSongRow(song, index: index)
-                        }
-                    }
+                // Botones de acción
+                actionButtons
                     .padding(.horizontal, 20)
-                    .padding(.top, 8)
-                    .padding(.bottom, 30)
+                    .padding(.top, 20)
+
+                // Canciones
+                VStack(spacing: 10) {
+                    sectionHeader(icon: "music.note.list", title: "Canciones")
+
+                    ForEach(Array(songs.enumerated()), id: \.element.id) { index, song in
+                        songRow(song, index: index)
+                    }
                 }
+                .padding(.horizontal, 20)
+                .padding(.top, 28)
+                .padding(.bottom, 30)
             }
         }
+        .background(
+            // Fondo continuo debajo del scroll
+            Color(UIColor.systemBackground).ignoresSafeArea()
+        )
         .navigationTitle(album.name)
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
     }
 
+    // MARK: - Hero (artwork grande sobre fondo desenfocado)
     private var heroSection: some View {
-        VStack(spacing: 24) {
-            // Large artwork with enhanced native design
+        VStack(spacing: 18) {
+            // Artwork con marco sutil
             Group {
                 if let artwork = album.artwork {
-                    ZStack {
-                        Image(uiImage: artwork)
-                            .resizable()
-                            .scaledToFill()
-                            .frame(width: 280, height: 280)
-                            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-
-                        // Subtle gradient overlay
-                        RoundedRectangle(cornerRadius: 24, style: .continuous)
-                            .fill(
-                                LinearGradient(
-                                    colors: [
-                                        .clear,
-                                        .black.opacity(0.08),
-                                        .black.opacity(0.15)
-                                    ],
-                                    startPoint: .top,
-                                    endPoint: .bottom
-                                )
-                            )
-                    }
-                    .shadow(color: .black.opacity(0.3), radius: 24, x: 0, y: 12)
+                    Image(uiImage: artwork)
+                        .resizable()
+                        .interpolation(.high)
+                        .scaledToFill()
+                        .frame(width: 240, height: 240)
+                        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                                .strokeBorder(.white.opacity(0.12), lineWidth: 1)
+                        }
+                        .shadow(color: .black.opacity(0.3), radius: 24, x: 0, y: 14)
                 } else {
                     ZStack {
-                        RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        RoundedRectangle(cornerRadius: 20, style: .continuous)
                             .fill(
                                 LinearGradient(
-                                    colors: [
-                                        Color.secondary.opacity(0.3),
-                                        Color.secondary.opacity(0.2)
-                                    ],
+                                    colors: [Color.accentColor.opacity(0.25), Color.secondary.opacity(0.2)],
                                     startPoint: .topLeading,
                                     endPoint: .bottomTrailing
                                 )
                             )
-                            .frame(width: 280, height: 280)
-                            .shadow(color: .black.opacity(0.25), radius: 22, x: 0, y: 12)
+                            .frame(width: 240, height: 240)
 
                         Image(systemName: "square.stack")
-                            .font(.system(size: 64))
+                            .font(.system(size: 60))
                             .foregroundStyle(.secondary.opacity(0.8))
                     }
+                    .shadow(color: .black.opacity(0.2), radius: 20, x: 0, y: 10)
                 }
             }
-            .padding(.top, 20)
+            .padding(.top, 16)
 
-            // Album info with native typography
-            VStack(spacing: 12) {
+            VStack(spacing: 6) {
                 Text(album.name)
-                    .font(.title)
+                    .font(.system(size: 24, weight: .bold))
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.primary)
+                    .lineLimit(2)
 
                 Text(album.artist)
-                    .font(.title3)
+                    .font(.system(size: 17, weight: .medium))
                     .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 24)
 
-                HStack(spacing: 8) {
-                    Text("\(songs.count) canciones")
-                        .font(.subheadline)
-                        .foregroundStyle(.tertiary)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background {
-                            Capsule()
-                                .fill(.regularMaterial)
-                        }
+            // Estadísticas
+            HStack(spacing: 10) {
+                statPill(icon: "music.note", text: "\(songs.count) canciones")
+
+                if totalDuration > 60 {
+                    statPill(icon: "clock", text: formatLongDuration(totalDuration))
                 }
             }
-            .padding(.horizontal, 20)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.bottom, 4)
+        .background(alignment: .top) {
+            // Fondo desenfocado del artwork que se difumina hacia el fondo
+            GeometryReader { geometry in
+                Group {
+                    if let artwork = album.artwork {
+                        Image(uiImage: artwork)
+                            .resizable()
+                            .scaledToFill()
+                            .blur(radius: 44)
+                            .opacity(0.35)
+                            .overlay(Color(UIColor.systemBackground).opacity(0.45))
+                    } else {
+                        LinearGradient(
+                            colors: [Color.accentColor.opacity(0.18), Color(UIColor.systemBackground)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    }
+                }
+                .frame(width: geometry.size.width, height: geometry.size.height + 80)
+                .clipped()
+                .ignoresSafeArea(edges: .top)
+            }
+        }
+    }
 
-            // Enhanced native play button
+    // MARK: - Botones de acción (Reproducir + Aleatorio)
+    private var actionButtons: some View {
+        HStack(spacing: 12) {
+            // Reproducir todo
             Button {
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                 if let firstSong = songs.first {
                     audioEngine.play(song: firstSong, from: songs)
                 }
             } label: {
-                HStack(spacing: 14) {
-                    ZStack {
-                        Circle()
-                            .fill(.white.opacity(0.2))
-                            .frame(width: 36, height: 36)
-
-                        Image(systemName: "play.fill")
-                            .font(.system(size: 18, weight: .semibold))
-                            .foregroundStyle(.white)
-                    }
-
-                    Text("Reproducir todo")
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(.white)
+                HStack(spacing: 10) {
+                    Image(systemName: "play.fill")
+                        .font(.system(size: 16, weight: .semibold))
+                    Text("Reproducir")
+                        .font(.system(size: 16, weight: .semibold))
                 }
+                .foregroundStyle(.white)
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 16)
+                .padding(.vertical, 15)
                 .background {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 18, style: .continuous)
-                            .fill(Color.accentColor)
-
-                        RoundedRectangle(cornerRadius: 18, style: .continuous)
-                            .fill(
-                                LinearGradient(
-                                    colors: [
-                                        .white.opacity(0.15),
-                                        .white.opacity(0.05),
-                                        .clear
-                                    ],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                            )
-                    }
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(Color.accentColor)
                 }
-                .shadow(color: Color.accentColor.opacity(0.35), radius: 12, x: 0, y: 6)
+                .shadow(color: Color.accentColor.opacity(0.35), radius: 10, x: 0, y: 5)
             }
-            .padding(.horizontal, 20)
+
+            // Aleatorio
+            Button {
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                if !audioEngine.isShuffleEnabled {
+                    audioEngine.toggleShuffle()
+                }
+                if let randomSong = songs.randomElement() {
+                    audioEngine.play(song: randomSong, from: songs)
+                }
+            } label: {
+                Image(systemName: "shuffle")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(Color.accentColor)
+                    .frame(width: 52, height: 52)
+                    .background {
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .fill(Color.accentColor.opacity(0.14))
+                    }
+            }
         }
-        .padding(.bottom, 24)
     }
 
-    private func modernSongRow(_ song: Song, index: Int) -> some View {
+    // MARK: - Fila de canción
+    private func songRow(_ song: Song, index: Int) -> some View {
         let isCurrent = audioEngine.currentSong?.id == song.id
 
         return Button {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
             audioEngine.play(song: song, from: songs)
         } label: {
-            HStack(spacing: 16) {
-                // Track number with native design
-                Text("\(index + 1)")
-                    .font(.body)
-                    .foregroundStyle(isCurrent ? Color.accentColor : Color.secondary.opacity(0.6))
-                    .frame(width: 30, alignment: .center)
+            HStack(spacing: 14) {
+                // Número de pista o ecualizador animado si es la actual
+                if isCurrent {
+                    HStack(spacing: 3) {
+                        ForEach(0..<3, id: \.self) { bar in
+                            RoundedRectangle(cornerRadius: 1.5)
+                                .fill(Color.accentColor)
+                                .frame(width: 3, height: bar % 2 == 0 ? 14 : 9)
+                                .animation(
+                                    .easeInOut(duration: 0.45 + Double(bar) * 0.12)
+                                        .repeatForever(autoreverses: true),
+                                    value: isCurrent
+                                )
+                        }
+                    }
+                    .frame(width: 26)
+                } else {
+                    Text("\(index + 1)")
+                        .font(.system(size: 15, weight: .medium).monospacedDigit())
+                        .foregroundStyle(Color.secondary.opacity(0.6))
+                        .frame(width: 26)
+                }
 
-                // Song info with enhanced typography (no blue accent for album songs)
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(song.displayName)
-                        .font(.body.weight(.medium))
-                        .foregroundStyle(.primary)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(song.title)
+                        .font(.system(size: 16, weight: isCurrent ? .semibold : .medium))
+                        .foregroundStyle(isCurrent ? Color.accentColor : .primary)
                         .lineLimit(1)
 
                     Text(song.displaySubtitle)
-                        .font(.caption)
+                        .font(.system(size: 13))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
 
                 Spacer()
 
-                // Duration or playing indicator
-                if isCurrent {
-                    HStack(spacing: 4) {
-                        ForEach(0..<3) { _ in
-                            RoundedRectangle(cornerRadius: 2)
-                                .fill(Color.accentColor)
-                                .frame(width: 3, height: 14)
-                                .offset(y: CGFloat.random(in: -3...3))
-                                .animation(.easeInOut(duration: 0.4).repeatForever(autoreverses: true), value: isCurrent)
-                        }
-                    }
-                } else {
-                    Text(formatDuration(song.duration))
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
-                        .monospacedDigit()
-                }
+                Text(formatDuration(song.duration))
+                    .font(.system(size: 13).monospacedDigit())
+                    .foregroundStyle(.tertiary)
             }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 16)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
             .background {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(isCurrent ? Color.accentColor.opacity(0.1) : Color.secondary.opacity(0.05))
+            }
+            .overlay {
                 if isCurrent {
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(Color.accentColor.opacity(0.1))
-                } else {
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(Color.secondary.opacity(0.05))
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .strokeBorder(Color.accentColor.opacity(0.25), lineWidth: 1)
                 }
             }
         }
         .buttonStyle(.plain)
     }
 
+    // MARK: - Componentes compartidos
+
+    private func statPill(icon: String, text: String) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: icon)
+                .font(.system(size: 11, weight: .semibold))
+            Text(text)
+                .font(.system(size: 13, weight: .medium).monospacedDigit())
+        }
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background {
+            Capsule().fill(.regularMaterial)
+        }
+    }
+
     private func formatDuration(_ seconds: TimeInterval) -> String {
         guard seconds.isFinite, seconds >= 0 else { return "0:00" }
         let totalSeconds = Int(seconds)
-        let minutes = totalSeconds / 60
-        let remainingSeconds = totalSeconds % 60
-        return String(format: "%d:%02d", minutes, remainingSeconds)
+        return String(format: "%d:%02d", totalSeconds / 60, totalSeconds % 60)
+    }
+
+    private func formatLongDuration(_ seconds: TimeInterval) -> String {
+        let minutes = Int(seconds) / 60
+        if minutes >= 60 {
+            let hours = minutes / 60
+            let rem = minutes % 60
+            return rem > 0 ? "\(hours) h \(rem) min" : "\(hours) h"
+        }
+        return "\(minutes) min"
     }
 }
 
-// MARK: - Artist Detail
+// MARK: - Header de sección reutilizable
+private func sectionHeader(icon: String, title: String) -> some View {
+    HStack(spacing: 8) {
+        Image(systemName: icon)
+            .font(.system(size: 14, weight: .semibold))
+            .foregroundStyle(Color.accentColor)
+
+        Text(title)
+            .font(.system(size: 20, weight: .bold))
+            .foregroundStyle(.primary)
+
+        Spacer()
+    }
+    .padding(.top, 4)
+}
+
+// MARK: - Artist Detail (perfil inmersivo premium)
 struct ArtistDetailView: View {
     let artist: Artist
     @ObservedObject var audioEngine: AudioEngine
@@ -256,364 +314,338 @@ struct ArtistDetailView: View {
         artist.albums
     }
 
+    private var totalDuration: TimeInterval {
+        songs.reduce(0) { $0 + $1.duration }
+    }
+
     var body: some View {
-        ZStack {
-            // iOS 16 native background
-            LinearGradient(
-                colors: [
-                    Color(UIColor.systemBackground),
-                    Color(UIColor.secondarySystemBackground)
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .ignoresSafeArea()
+        ScrollView {
+            VStack(spacing: 0) {
+                // Hero inmersivo del artista
+                artistHeroSection
 
-            ScrollView {
-                VStack(spacing: 0) {
-                    // Hero Section
-                    artistHeroSection
+                // Botones de acción
+                artistActionButtons
+                    .padding(.horizontal, 20)
+                    .padding(.top, 18)
 
-                    // Albums section (vertical list for consistency with songs)
-                    if !albums.isEmpty {
-                        VStack(alignment: .leading, spacing: 16) {
-                            Text("Álbumes")
-                                .font(.title2)
-                                .foregroundStyle(.primary)
-                                .padding(.horizontal, 20)
+                // Álbumes en carrusel horizontal
+                if !albums.isEmpty {
+                    VStack(alignment: .leading, spacing: 14) {
+                        sectionHeader(icon: "square.stack", title: "Álbumes")
 
-                            VStack(spacing: 12) {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 14) {
                                 ForEach(albums) { album in
                                     NavigationLink {
                                         AlbumDetailView(album: album, audioEngine: audioEngine)
                                     } label: {
-                                        HStack(spacing: 16) {
-                                            // Album artwork
-                                            Group {
-                                                if let artwork = album.artwork {
-                                                    Image(uiImage: artwork)
-                                                        .resizable()
-                                                        .scaledToFill()
-                                                        .frame(width: 56, height: 56)
-                                                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                                                } else {
-                                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                                        .fill(Color.secondary.opacity(0.2))
-                                                        .frame(width: 56, height: 56)
-                                                        .overlay {
-                                                            Image(systemName: "square.stack")
-                                                                .font(.system(size: 20))
-                                                                .foregroundStyle(.secondary)
-                                                        }
-                                                }
-                                            }
-
-                                            // Album info
-                                            VStack(alignment: .leading, spacing: 4) {
-                                                Text(album.name)
-                                                    .font(.body.weight(.medium))
-                                                    .foregroundStyle(.primary)
-                                                    .lineLimit(1)
-
-                                                Text("\(album.songs.count) canciones")
-                                                    .font(.caption)
-                                                    .foregroundStyle(.secondary)
-                                            }
-
-                                            Spacer()
-
-                                            Image(systemName: "chevron.right")
-                                                .font(.caption)
-                                                .foregroundStyle(.tertiary)
-                                        }
-                                        .padding(.horizontal, 16)
-                                        .padding(.vertical, 12)
-                                        .background {
-                                            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                                .fill(Color.secondary.opacity(0.05))
-                                        }
+                                        albumCard(album)
                                     }
                                     .buttonStyle(.plain)
                                 }
                             }
                             .padding(.horizontal, 20)
+                            .padding(.vertical, 4)
                         }
-                        .padding(.top, 32)
                     }
-
-                    // Songs section
-                    VStack(alignment: .leading, spacing: 16) {
-                        Text("Canciones")
-                            .font(.title2)
-                            .foregroundStyle(.primary)
-                            .padding(.horizontal, 20)
-
-                        VStack(spacing: 12) {
-                            ForEach(Array(songs.enumerated()), id: \.element.id) { index, song in
-                                modernSongRow(song, index: index)
-                            }
-                        }
-                        .padding(.horizontal, 20)
-                    }
-                    .padding(.top, 32)
-                    .padding(.bottom, 30)
+                    .padding(.top, 28)
                 }
+
+                // Canciones
+                VStack(spacing: 10) {
+                    sectionHeader(icon: "music.note.list", title: "Canciones")
+
+                    ForEach(Array(songs.enumerated()), id: \.element.id) { index, song in
+                        songRow(song, index: index)
+                    }
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 28)
+                .padding(.bottom, 30)
             }
         }
+        .background(
+            Color(UIColor.systemBackground).ignoresSafeArea()
+        )
         .navigationTitle(artist.name)
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
     }
 
+    // MARK: - Hero del artista (avatar grande sobre fondo desenfocado)
     private var artistHeroSection: some View {
-        VStack(spacing: 20) {
-            // Artist artwork with enhanced circular design (reduced size)
+        VStack(spacing: 16) {
+            // Avatar con anillo de acento
             Group {
                 if let artwork = artist.artwork {
-                    ZStack {
-                        Image(uiImage: artwork)
-                            .resizable()
-                            .scaledToFill()
-                            .frame(width: 100, height: 100)
-                            .clipShape(Circle())
-
-                        // Subtle gradient overlay
-                        Circle()
-                            .fill(
-                                LinearGradient(
-                                    colors: [
-                                        .clear,
-                                        .black.opacity(0.1),
-                                        .black.opacity(0.18)
-                                    ],
-                                    startPoint: .top,
-                                    endPoint: .bottom
-                                )
-                            )
-                    }
-                    .shadow(color: .black.opacity(0.2), radius: 12, x: 0, y: 6)
+                    Image(uiImage: artwork)
+                        .resizable()
+                        .interpolation(.high)
+                        .scaledToFill()
+                        .frame(width: 150, height: 150)
+                        .clipShape(Circle())
+                        .overlay {
+                            Circle()
+                                .strokeBorder(Color.accentColor.opacity(0.4), lineWidth: 3)
+                        }
+                        .shadow(color: Color.accentColor.opacity(0.25), radius: 18, x: 0, y: 8)
                 } else {
                     ZStack {
                         Circle()
                             .fill(
                                 LinearGradient(
-                                    colors: [
-                                        Color.secondary.opacity(0.3),
-                                        Color.secondary.opacity(0.2)
-                                    ],
+                                    colors: [Color.accentColor.opacity(0.3), Color.secondary.opacity(0.2)],
                                     startPoint: .topLeading,
                                     endPoint: .bottomTrailing
                                 )
                             )
-                            .frame(width: 100, height: 100)
-                            .shadow(color: .black.opacity(0.15), radius: 10, x: 0, y: 5)
+                            .frame(width: 150, height: 150)
 
                         Image(systemName: "person.fill")
-                            .font(.system(size: 30))
+                            .font(.system(size: 48))
                             .foregroundStyle(.secondary.opacity(0.8))
                     }
                 }
             }
-            .padding(.top, 12)
+            .padding(.top, 20)
 
-            // Artist info with native typography
-            VStack(spacing: 12) {
+            VStack(spacing: 6) {
                 Text(artist.name)
-                    .font(.title)
+                    .font(.system(size: 26, weight: .bold))
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.primary)
+                    .lineLimit(2)
 
-                HStack(spacing: 12) {
-                    Text("\(songs.count) canciones")
-                        .font(.subheadline)
-                        .foregroundStyle(.tertiary)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background {
-                            Capsule()
-                                .fill(.regularMaterial)
-                        }
-
+                HStack(spacing: 8) {
+                    statPill(icon: "music.note", text: "\(songs.count) canciones")
                     if !albums.isEmpty {
-                        Text("\(albums.count) álbumes")
-                            .font(.subheadline)
-                            .foregroundStyle(.tertiary)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .background {
-                                Capsule()
-                                    .fill(.regularMaterial)
-                            }
+                        statPill(icon: "square.stack", text: "\(albums.count) álbumes")
+                    }
+                    if totalDuration > 60 {
+                        statPill(icon: "clock", text: formatLongDuration(totalDuration))
                     }
                 }
             }
-            .padding(.horizontal, 20)
-
-            // Enhanced native play button
-            if let firstSong = songs.first {
-                Button {
-                    audioEngine.play(song: firstSong, from: songs)
-                } label: {
-                    HStack(spacing: 14) {
-                        ZStack {
-                            Circle()
-                                .fill(.white.opacity(0.2))
-                                .frame(width: 36, height: 36)
-
-                            Image(systemName: "play.fill")
-                                .font(.system(size: 18, weight: .semibold))
-                                .foregroundStyle(.white)
-                        }
-
-                        Text("Reproducir")
-                            .font(.system(size: 17, weight: .semibold))
-                            .foregroundStyle(.white)
+            .padding(.horizontal, 24)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.bottom, 4)
+        .background(alignment: .top) {
+            // Fondo desenfocado del artwork del artista
+            GeometryReader { geometry in
+                Group {
+                    if let artwork = artist.artwork {
+                        Image(uiImage: artwork)
+                            .resizable()
+                            .scaledToFill()
+                            .blur(radius: 46)
+                            .opacity(0.35)
+                            .overlay(Color(UIColor.systemBackground).opacity(0.45))
+                    } else {
+                        LinearGradient(
+                            colors: [Color.accentColor.opacity(0.18), Color(UIColor.systemBackground)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
                     }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 18)
-                    .background {
-                        ZStack {
-                            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                                .fill(Color.accentColor)
-
-                            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                                .fill(
-                                    LinearGradient(
-                                        colors: [
-                                            .white.opacity(0.15),
-                                            .white.opacity(0.05),
-                                            .clear
-                                        ],
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
-                                    )
-                                )
-                        }
-                    }
-                    .shadow(color: Color.accentColor.opacity(0.4), radius: 12, x: 0, y: 6)
                 }
-                .padding(.horizontal, 20)
+                .frame(width: geometry.size.width, height: geometry.size.height + 80)
+                .clipped()
+                .ignoresSafeArea(edges: .top)
             }
         }
-        .padding(.bottom, 24)
     }
 
-    private func modernAlbumCard(_ album: Album) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            // Album artwork
+    // MARK: - Botones de acción del artista
+    private var artistActionButtons: some View {
+        HStack(spacing: 12) {
+            Button {
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                if let firstSong = songs.first {
+                    audioEngine.play(song: firstSong, from: songs)
+                }
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "play.fill")
+                        .font(.system(size: 16, weight: .semibold))
+                    Text("Reproducir")
+                        .font(.system(size: 16, weight: .semibold))
+                }
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 15)
+                .background {
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(Color.accentColor)
+                }
+                .shadow(color: Color.accentColor.opacity(0.35), radius: 10, x: 0, y: 5)
+            }
+
+            Button {
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                if !audioEngine.isShuffleEnabled {
+                    audioEngine.toggleShuffle()
+                }
+                if let randomSong = songs.randomElement() {
+                    audioEngine.play(song: randomSong, from: songs)
+                }
+            } label: {
+                Image(systemName: "shuffle")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(Color.accentColor)
+                    .frame(width: 52, height: 52)
+                    .background {
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .fill(Color.accentColor.opacity(0.14))
+                    }
+            }
+        }
+    }
+
+    // MARK: - Tarjeta de álbum (carrusel)
+    private func albumCard(_ album: Album) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
             Group {
                 if let artwork = album.artwork {
                     Image(uiImage: artwork)
                         .resizable()
                         .scaledToFill()
-                        .frame(width: 140, height: 140)
+                        .frame(width: 150, height: 150)
                         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                        .shadow(color: .black.opacity(0.2), radius: 12, x: 0, y: 6)
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                .strokeBorder(.white.opacity(0.1), lineWidth: 1)
+                        }
+                        .shadow(color: .black.opacity(0.22), radius: 12, x: 0, y: 6)
                 } else {
                     ZStack {
                         RoundedRectangle(cornerRadius: 16, style: .continuous)
                             .fill(
                                 LinearGradient(
-                                    colors: [
-                                        Color.secondary.opacity(0.25),
-                                        Color.secondary.opacity(0.15)
-                                    ],
+                                    colors: [Color.accentColor.opacity(0.22), Color.secondary.opacity(0.15)],
                                     startPoint: .topLeading,
                                     endPoint: .bottomTrailing
                                 )
                             )
-                            .frame(width: 140, height: 140)
-                            .shadow(color: .black.opacity(0.15), radius: 10, x: 0, y: 5)
+                            .frame(width: 150, height: 150)
 
                         Image(systemName: "square.stack")
-                            .font(.system(size: 35))
+                            .font(.system(size: 34))
                             .foregroundStyle(.secondary.opacity(0.7))
                     }
                 }
             }
 
-            // Album info with native typography
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 3) {
                 Text(album.name)
-                    .font(.subheadline.weight(.semibold))
+                    .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
 
                 Text("\(album.songs.count) canciones")
-                    .font(.caption)
+                    .font(.system(size: 12))
                     .foregroundStyle(.secondary)
             }
         }
-        .frame(width: 140)
+        .frame(width: 150)
     }
 
-    private func modernSongRow(_ song: Song, index: Int) -> some View {
+    // MARK: - Fila de canción
+    private func songRow(_ song: Song, index: Int) -> some View {
         let isCurrent = audioEngine.currentSong?.id == song.id
 
         return Button {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
             audioEngine.play(song: song, from: songs)
         } label: {
-            HStack(spacing: 16) {
-                // Track number with native design
-                Text("\(index + 1)")
-                    .font(.body)
-                    .foregroundStyle(isCurrent ? Color.accentColor : Color.secondary.opacity(0.6))
-                    .frame(width: 30, alignment: .center)
+            HStack(spacing: 14) {
+                if isCurrent {
+                    HStack(spacing: 3) {
+                        ForEach(0..<3, id: \.self) { bar in
+                            RoundedRectangle(cornerRadius: 1.5)
+                                .fill(Color.accentColor)
+                                .frame(width: 3, height: bar % 2 == 0 ? 14 : 9)
+                                .animation(
+                                    .easeInOut(duration: 0.45 + Double(bar) * 0.12)
+                                        .repeatForever(autoreverses: true),
+                                    value: isCurrent
+                                )
+                        }
+                    }
+                    .frame(width: 26)
+                } else {
+                    Text("\(index + 1)")
+                        .font(.system(size: 15, weight: .medium).monospacedDigit())
+                        .foregroundStyle(Color.secondary.opacity(0.6))
+                        .frame(width: 26)
+                }
 
-                // Song info with enhanced typography (no blue accent for album songs)
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(song.displayName)
-                        .font(.body.weight(.medium))
-                        .foregroundStyle(.primary)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(song.title)
+                        .font(.system(size: 16, weight: isCurrent ? .semibold : .medium))
+                        .foregroundStyle(isCurrent ? Color.accentColor : .primary)
                         .lineLimit(1)
 
-                    Text(song.displaySubtitle)
-                        .font(.caption)
+                    Text(song.album.isEmpty ? song.displaySubtitle : song.album)
+                        .font(.system(size: 13))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
 
                 Spacer()
 
-                // Duration or playing indicator
-                if isCurrent {
-                    HStack(spacing: 4) {
-                        ForEach(0..<3) { _ in
-                            RoundedRectangle(cornerRadius: 2)
-                                .fill(Color.accentColor)
-                                .frame(width: 3, height: 14)
-                                .offset(y: CGFloat.random(in: -3...3))
-                                .animation(.easeInOut(duration: 0.4).repeatForever(autoreverses: true), value: isCurrent)
-                        }
-                    }
-                } else {
-                    Text(formatDuration(song.duration))
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
-                        .monospacedDigit()
-                }
+                Text(formatDuration(song.duration))
+                    .font(.system(size: 13).monospacedDigit())
+                    .foregroundStyle(.tertiary)
             }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 16)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
             .background {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(isCurrent ? Color.accentColor.opacity(0.1) : Color.secondary.opacity(0.05))
+            }
+            .overlay {
                 if isCurrent {
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(Color.accentColor.opacity(0.1))
-                } else {
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(Color.secondary.opacity(0.05))
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .strokeBorder(Color.accentColor.opacity(0.25), lineWidth: 1)
                 }
             }
         }
         .buttonStyle(.plain)
     }
 
+    // MARK: - Componentes compartidos
+
+    private func statPill(icon: String, text: String) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: icon)
+                .font(.system(size: 11, weight: .semibold))
+            Text(text)
+                .font(.system(size: 13, weight: .medium).monospacedDigit())
+        }
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background {
+            Capsule().fill(.regularMaterial)
+        }
+    }
+
     private func formatDuration(_ seconds: TimeInterval) -> String {
         guard seconds.isFinite, seconds >= 0 else { return "0:00" }
         let totalSeconds = Int(seconds)
-        let minutes = totalSeconds / 60
-        let remainingSeconds = totalSeconds % 60
-        return String(format: "%d:%02d", minutes, remainingSeconds)
+        return String(format: "%d:%02d", totalSeconds / 60, totalSeconds % 60)
+    }
+
+    private func formatLongDuration(_ seconds: TimeInterval) -> String {
+        let minutes = Int(seconds) / 60
+        if minutes >= 60 {
+            let hours = minutes / 60
+            let rem = minutes % 60
+            return rem > 0 ? "\(hours) h \(rem) min" : "\(hours) h"
+        }
+        return "\(minutes) min"
     }
 }

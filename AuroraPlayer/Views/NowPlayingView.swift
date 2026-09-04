@@ -119,10 +119,10 @@ struct NowPlayingView: View {
                         Button {
                             showLyrics = true
                         } label: {
-                            Image(systemName: "quote.bubble")
+                            Image(systemName: audioEngine.currentSong?.lyrics.isEmpty == false ? "quote.bubble.fill" : "quote.bubble")
                                 .foregroundStyle(.primary)
                         }
-                        .disabled(audioEngine.currentSong?.lyrics.isEmpty ?? true)
+                        // Siempre habilitado: si no hay letras, la vista muestra un mensaje claro
                     }
                 }
             }

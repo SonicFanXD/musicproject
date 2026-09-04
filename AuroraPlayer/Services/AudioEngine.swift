@@ -278,6 +278,12 @@ class AudioEngine: NSObject, ObservableObject {
         AppLog.info(.playback, "Reproduciendo: \(song.displayName) [\(song.formatDescription)]")
 
         // Limpieza manual sin activar isStopping (evita interferencia con scheduleFile)
+        // CRÍTICO: invalidar de inmediato cualquier completion pendiente del track
+        // anterior. Si el nuevo track se reproduce por la vía AVPlayer (respaldo),
+        // scheduleFile nunca se llama y el completion anterior seguiría vigente:
+        // al dispararse vería isPlaying==true y pondría la app en "pausa"
+        // mientras la música suena (bug de skip → estado en pausa).
+        scheduleGeneration += 1
         stopFallbackPlayback()
         isUsingFallback = false
         if playerNode.isPlaying {
@@ -407,6 +413,9 @@ class AudioEngine: NSObject, ObservableObject {
     }
 
     private func startFallbackPlayback(song: Song) {
+        // Invalidar completions pendientes del motor: el track anterior se
+        // reproducía por AVAudioEngine y su completion sigue en cola.
+        scheduleGeneration += 1
         stopFallbackPlayback()
         if playerNode.isPlaying {
             playerNode.stop()
