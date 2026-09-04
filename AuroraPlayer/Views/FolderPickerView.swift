@@ -81,7 +81,7 @@ struct FolderPickerView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 20)
-        .opaqueGlass(cornerRadius: 24, tint: .accentColor)
+        .nativeGlass(cornerRadius: 24)
     }
 
     // MARK: - Action Buttons

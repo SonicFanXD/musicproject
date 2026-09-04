@@ -66,7 +66,7 @@ struct LogsView: View {
         .frame(maxWidth: .infinity)
         .padding(.vertical, 22)
         .padding(.horizontal, 18)
-        .opaqueGlass(cornerRadius: 25, tint: .accentColor)
+        .nativeGlass(cornerRadius: 25)
     }
 
     // MARK: - Status

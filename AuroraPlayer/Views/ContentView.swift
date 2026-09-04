@@ -71,7 +71,7 @@ struct ContentView: View {
         }
     }
 
-    // MARK: - Category Picker (Enhanced with smooth animations)
+    // MARK: - Category Picker (iOS 16 native picker)
 
     private var categoryPicker: some View {
         ScrollView(.horizontal, showsIndicators: false) {
@@ -90,17 +90,7 @@ struct ContentView: View {
                             .background {
                                 if selectedCategory == category {
                                     RoundedRectangle(cornerRadius: 22, style: .continuous)
-                                        .fill(
-                                            LinearGradient(
-                                                colors: [
-                                                    Color.accentColor,
-                                                    Color.accentColor.opacity(0.8)
-                                                ],
-                                                startPoint: .topLeading,
-                                                endPoint: .bottomTrailing
-                                            )
-                                        )
-                                        .shadow(color: Color.accentColor.opacity(0.3), radius: 4, x: 0, y: 2)
+                                        .fill(Color.accentColor)
                                 } else {
                                     RoundedRectangle(cornerRadius: 22, style: .continuous)
                                         .fill(Color.secondary.opacity(0.12))
@@ -227,7 +217,7 @@ struct ContentView: View {
         }
     }
 
-    // MARK: - Song Row (Modern Design)
+    // MARK: - Song Row (iOS 16 native design)
     @ViewBuilder
     private func songRow(_ song: Song) -> some View {
         let isCurrent = audioEngine.currentSong?.id == song.id
@@ -236,24 +226,24 @@ struct ContentView: View {
             playSong(song)
         } label: {
             HStack(spacing: 16) {
-                // Modern artwork
+                // Artwork
                 artworkView(for: song)
 
-                // Song info with better typography
+                // Song info with native typography
                 VStack(alignment: .leading, spacing: 6) {
                     Text(song.title)
-                        .font(.system(size: 17, weight: isCurrent ? .semibold : .regular))
+                        .font(.body)
                         .foregroundStyle(isCurrent ? Color.accentColor : .primary)
                         .lineLimit(1)
 
                     Text(song.artist)
-                        .font(.system(size: 15))
+                        .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
 
                     if !song.album.isEmpty {
                         Text(song.album)
-                            .font(.system(size: 13))
+                            .font(.caption2)
                             .foregroundStyle(.tertiary)
                             .lineLimit(1)
                     }
@@ -274,24 +264,20 @@ struct ContentView: View {
                     }
                 } else {
                     Text(formatDuration(song.duration))
-                        .font(.system(size: 14, weight: .medium))
+                        .font(.caption)
                         .foregroundStyle(.tertiary)
                         .monospacedDigit()
                 }
             }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 16)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
             .background {
                 if isCurrent {
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
                         .fill(Color.accentColor.opacity(0.1))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                .stroke(Color.accentColor.opacity(0.2), lineWidth: 1)
-                        )
                 } else {
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(.ultraThinMaterial)
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(Color.secondary.opacity(0.05))
                 }
             }
         }
@@ -308,47 +294,24 @@ struct ContentView: View {
         return String(format: "%d:%02d", minutes, remainingSeconds)
     }
 
-    // MARK: - Artwork (Modern Design)
+    // MARK: - Artwork (iOS 16 native design)
     @ViewBuilder
     private func artworkView(for song: Song) -> some View {
         if let artwork = song.artwork {
-            ZStack {
-                // Glow effect
-                Image(uiImage: artwork)
-                    .resizable()
-                    .scaledToFill()
-                    .frame(width: 56, height: 56)
-                    .blur(radius: 10)
-                    .opacity(0.4)
-                
-                // Main artwork
-                Image(uiImage: artwork)
-                    .resizable()
-                    .scaledToFill()
-                    .frame(width: 56, height: 56)
-                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                    .shadow(color: .black.opacity(0.15), radius: 8, x: 0, y: 4)
-            }
+            Image(uiImage: artwork)
+                .resizable()
+                .scaledToFill()
+                .frame(width: 56, height: 56)
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         } else {
-            ZStack {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: [
-                                Color.secondary.opacity(0.25),
-                                Color.secondary.opacity(0.15)
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .frame(width: 56, height: 56)
-                    .shadow(color: .black.opacity(0.1), radius: 6, x: 0, y: 3)
-
-                Image(systemName: "music.note")
-                    .font(.system(size: 20))
-                    .foregroundStyle(.secondary.opacity(0.7))
-            }
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(Color.secondary.opacity(0.2))
+                .frame(width: 56, height: 56)
+                .overlay {
+                    Image(systemName: "music.note")
+                        .font(.system(size: 20))
+                        .foregroundStyle(.secondary)
+                }
         }
     }
 
@@ -441,13 +404,13 @@ enum LibraryCategory: String, CaseIterable {
     }
 }
 
-// MARK: - Album Row (Modern Design)
+// MARK: - Album Row (iOS 16 native design)
 struct AlbumLibraryRow: View {
     let album: Album
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            // Album artwork with modern design
+            // Album artwork with native design
             Group {
                 if let artwork = album.artwork {
                     Image(uiImage: artwork)
@@ -455,44 +418,32 @@ struct AlbumLibraryRow: View {
                         .scaledToFill()
                         .frame(width: 140, height: 140)
                         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                        .shadow(color: .black.opacity(0.2), radius: 12, x: 0, y: 6)
                 } else {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .fill(
-                                LinearGradient(
-                                    colors: [
-                                        Color.secondary.opacity(0.25),
-                                        Color.secondary.opacity(0.15)
-                                    ],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                            )
-                            .frame(width: 140, height: 140)
-                            .shadow(color: .black.opacity(0.15), radius: 10, x: 0, y: 5)
-
-                        Image(systemName: "square.stack")
-                            .font(.system(size: 35))
-                            .foregroundStyle(.secondary.opacity(0.7))
-                    }
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(Color.secondary.opacity(0.2))
+                        .frame(width: 140, height: 140)
+                        .overlay {
+                            Image(systemName: "square.stack")
+                                .font(.system(size: 35))
+                                .foregroundStyle(.secondary)
+                        }
                 }
             }
 
-            // Album info
+            // Album info with native typography
             VStack(alignment: .leading, spacing: 4) {
                 Text(album.name)
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
 
                 Text(album.artist)
-                    .font(.system(size: 14))
+                    .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
 
                 Text("\(album.songs.count) canciones")
-                    .font(.system(size: 13))
+                    .font(.caption2)
                     .foregroundStyle(.tertiary)
             }
         }
@@ -501,13 +452,13 @@ struct AlbumLibraryRow: View {
     }
 }
 
-// MARK: - Artist Row (Enhanced)
+// MARK: - Artist Row (iOS 16 native design)
 struct ArtistLibraryRow: View {
     let artist: Artist
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            // Artist artwork with circular design
+            // Artist artwork with native circular design
             Group {
                 if let artwork = artist.artwork {
                     Image(uiImage: artwork)
@@ -515,39 +466,27 @@ struct ArtistLibraryRow: View {
                         .scaledToFill()
                         .frame(width: 140, height: 140)
                         .clipShape(Circle())
-                        .shadow(color: .black.opacity(0.2), radius: 12, x: 0, y: 6)
                 } else {
-                    ZStack {
-                        Circle()
-                            .fill(
-                                LinearGradient(
-                                    colors: [
-                                        Color.secondary.opacity(0.25),
-                                        Color.secondary.opacity(0.15)
-                                    ],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                            )
-                            .frame(width: 140, height: 140)
-                            .shadow(color: .black.opacity(0.15), radius: 10, x: 0, y: 5)
-
-                        Image(systemName: "person.fill")
-                            .font(.system(size: 35))
-                            .foregroundStyle(.secondary.opacity(0.7))
-                    }
+                    Circle()
+                        .fill(Color.secondary.opacity(0.2))
+                        .frame(width: 140, height: 140)
+                        .overlay {
+                            Image(systemName: "person.fill")
+                                .font(.system(size: 35))
+                                .foregroundStyle(.secondary)
+                        }
                 }
             }
 
-            // Artist info
+            // Artist info with native typography
             VStack(alignment: .leading, spacing: 4) {
                 Text(artist.name)
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
 
                 Text("\(artist.songs.count) canciones")
-                    .font(.system(size: 14))
+                    .font(.caption)
                     .foregroundStyle(.secondary)
             }
         }
@@ -580,6 +519,6 @@ struct ContentUnavailableLibraryView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 28)
-        .opaqueGlass(cornerRadius: 20, tint: .white)
+        .nativeGlass(cornerRadius: 20)
     }
 }

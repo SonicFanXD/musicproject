@@ -80,7 +80,7 @@ struct EqualizerView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 24)
-        .opaqueGlass(cornerRadius: 26, tint: .accentColor)
+        .nativeGlass(cornerRadius: 26)
     }
 
     private var presetSelector: some View {

@@ -123,47 +123,36 @@ struct NowPlayingView: View {
         }
     }
 
-    // MARK: - Background View (Modern mesh gradient)
+    // MARK: - Background View (iOS 16 native design)
     private var backgroundView: some View {
         Group {
             if let artwork = audioEngine.currentSong?.artwork {
                 GeometryReader { geometry in
                     ZStack {
-                        // Base blurred artwork with modern gradient
+                        // Base blurred artwork
                         Image(uiImage: artwork)
                             .resizable()
                             .scaledToFill()
                             .frame(width: geometry.size.width, height: geometry.size.height)
-                            .blur(radius: 45)
-                            .opacity(0.5)
+                            .blur(radius: 60)
+                            .opacity(0.6)
                             .clipped()
-                        
+
                         // Gradient overlay for depth
                         LinearGradient(
                             colors: [
-                                Color.black.opacity(0.2),
-                                Color.black.opacity(0.4),
-                                Color.black.opacity(0.6)
+                                Color.black.opacity(0.3),
+                                Color.black.opacity(0.5),
+                                Color.black.opacity(0.7)
                             ],
                             startPoint: .top,
                             endPoint: .bottom
-                        )
-                        
-                        // Accent color mesh gradient
-                        RadialGradient(
-                            colors: [
-                                Color.accentColor.opacity(0.15),
-                                Color.clear
-                            ],
-                            center: .bottomLeading,
-                            startRadius: 0,
-                            endRadius: 400
                         )
                     }
                 }
                 .ignoresSafeArea()
             } else {
-                // Modern gradient background for no artwork
+                // Native gradient background for no artwork
                 ZStack {
                     LinearGradient(
                         colors: [
@@ -173,111 +162,47 @@ struct NowPlayingView: View {
                         startPoint: .top,
                         endPoint: .bottom
                     )
-                    
-                    RadialGradient(
-                        colors: [
-                            Color.accentColor.opacity(0.1),
-                            Color.clear
-                        ],
-                        center: .center,
-                        startRadius: 0,
-                        endRadius: 300
-                    )
                 }
                 .ignoresSafeArea()
             }
         }
     }
 
-    // MARK: - Artwork View (Modern with glow and glass effect)
+    // MARK: - Artwork View (iOS 16 native design)
     private var artworkView: some View {
         Group {
             if let artwork = audioEngine.currentSong?.artwork {
-                ZStack {
-                    // Glow effect layers
-                    Image(uiImage: artwork)
-                        .resizable()
-                        .scaledToFill()
-                        .frame(width: 320, height: 320)
-                        .blur(radius: 25)
-                        .opacity(0.4)
-                    
-                    Image(uiImage: artwork)
-                        .resizable()
-                        .scaledToFill()
-                        .frame(width: 320, height: 320)
-                        .blur(radius: 15)
-                        .opacity(0.6)
-                    
-                    // Main artwork with glass effect
-                    Image(uiImage: artwork)
-                        .resizable()
-                        .scaledToFill()
-                        .frame(width: 320, height: 320)
-                        .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
-                        .shadow(color: .black.opacity(0.4), radius: 40, x: 0, y: 20)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 28, style: .continuous)
-                                .stroke(.white.opacity(0.15), lineWidth: 1)
-                        )
-                }
+                Image(uiImage: artwork)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 320, height: 320)
+                    .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+                    .shadow(color: .black.opacity(0.3), radius: 20, x: 0, y: 10)
             } else {
-                ZStack {
-                    // Glow effect for placeholder
-                    RoundedRectangle(cornerRadius: 28, style: .continuous)
-                        .fill(Color.secondary.opacity(0.2))
-                        .frame(width: 320, height: 320)
-                        .blur(radius: 20)
-                        .opacity(0.5)
-                    
-                    // Main placeholder with gradient
-                    RoundedRectangle(cornerRadius: 28, style: .continuous)
-                        .fill(
-                            LinearGradient(
-                                colors: [
-                                    Color.secondary.opacity(0.3),
-                                    Color.secondary.opacity(0.15)
-                                ],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                        .frame(width: 320, height: 320)
-                        .shadow(color: .black.opacity(0.25), radius: 30, x: 0, y: 15)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 28, style: .continuous)
-                                .stroke(.white.opacity(0.1), lineWidth: 1)
-                        )
-
-                    Image(systemName: "music.note")
-                        .font(.system(size: 80))
-                        .foregroundStyle(
-                            LinearGradient(
-                                colors: [
-                                    Color.secondary.opacity(0.8),
-                                    Color.secondary.opacity(0.5)
-                                ],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
-                        )
-                }
+                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                    .fill(Color.secondary.opacity(0.2))
+                    .frame(width: 320, height: 320)
+                    .shadow(color: .black.opacity(0.2), radius: 15, x: 0, y: 8)
+                    .overlay {
+                        Image(systemName: "music.note")
+                            .font(.system(size: 80))
+                            .foregroundStyle(.secondary)
+                    }
             }
         }
     }
 
-    // MARK: - Song Info View (Enhanced with better typography)
+    // MARK: - Song Info View (iOS 16 native typography)
     private var songInfoView: some View {
         VStack(spacing: 12) {
             Text(audioEngine.currentSong?.title ?? "Sin canción")
-                .font(.system(size: 26, weight: .bold))
+                .font(.title)
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.primary)
                 .lineLimit(2)
-                .shadow(color: .black.opacity(0.1), radius: 2, x: 0, y: 1)
 
             Text(audioEngine.currentSong?.artist ?? "—")
-                .font(.system(size: 19, weight: .medium))
+                .font(.title3)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .padding(.horizontal, 20)
@@ -285,11 +210,11 @@ struct NowPlayingView: View {
             if let album = audioEngine.currentSong?.album, !album.isEmpty {
                 HStack(spacing: 6) {
                     Image(systemName: "opticaldisc")
-                        .font(.system(size: 12))
+                        .font(.caption)
                         .foregroundStyle(.tertiary)
-                    
+
                     Text(album)
-                        .font(.system(size: 15, weight: .medium))
+                        .font(.subheadline)
                         .foregroundStyle(.tertiary)
                         .lineLimit(1)
                 }
@@ -298,15 +223,15 @@ struct NowPlayingView: View {
         .padding(.horizontal, 8)
     }
 
-    // MARK: - Progress View (Optimized for performance)
+    // MARK: - Progress View (iOS 16 native design)
     private var progressView: some View {
         VStack(spacing: 12) {
-            // Simplified progress bar for better performance
+            // Native progress bar
             GeometryReader { geometry in
                 ZStack(alignment: .leading) {
                     // Background track
                     RoundedRectangle(cornerRadius: 3, style: .continuous)
-                        .fill(Color.secondary.opacity(0.25))
+                        .fill(Color.secondary.opacity(0.2))
                         .frame(height: 6)
 
                     // Progress fill
@@ -330,17 +255,17 @@ struct NowPlayingView: View {
                     }
             )
 
-            // Time labels
+            // Time labels with native typography
             HStack {
                 Text(formatTime(audioEngine.currentTime))
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.caption)
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
 
                 Spacer()
 
                 Text(formatTime(audioEngine.duration))
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.caption)
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
             }
@@ -355,7 +280,7 @@ struct NowPlayingView: View {
         audioEngine.seek(to: newTime)
     }
 
-    // MARK: - Controls View (Optimized for performance)
+    // MARK: - Controls View (iOS 16 native design)
     private var controlsView: some View {
         HStack(spacing: 28) {
             // Shuffle
@@ -364,7 +289,7 @@ struct NowPlayingView: View {
                 audioEngine.toggleShuffle()
             } label: {
                 Image(systemName: audioEngine.isShuffleEnabled ? "shuffle.circle.fill" : "shuffle")
-                    .font(.system(size: 22))
+                    .font(.title3)
                     .foregroundStyle(audioEngine.isShuffleEnabled ? Color.accentColor : .secondary)
                     .frame(width: 44, height: 44)
             }
@@ -375,12 +300,12 @@ struct NowPlayingView: View {
                 audioEngine.playPrevious()
             } label: {
                 Image(systemName: "backward.fill")
-                    .font(.system(size: 26))
+                    .font(.title2)
                     .foregroundStyle(.primary)
                     .frame(width: 48, height: 48)
             }
 
-            // Play/Pause - simplified for performance
+            // Play/Pause
             Button {
                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                 if audioEngine.isPlaying {
@@ -401,7 +326,7 @@ struct NowPlayingView: View {
                 audioEngine.playNext()
             } label: {
                 Image(systemName: "forward.fill")
-                    .font(.system(size: 26))
+                    .font(.title2)
                     .foregroundStyle(.primary)
                     .frame(width: 48, height: 48)
             }
@@ -412,64 +337,50 @@ struct NowPlayingView: View {
                 audioEngine.cycleRepeatMode()
             } label: {
                 Image(systemName: repeatIcon)
-                    .font(.system(size: 22))
+                    .font(.title3)
                     .foregroundStyle(audioEngine.repeatMode != .off ? Color.accentColor : .secondary)
                     .frame(width: 44, height: 44)
             }
         }
     }
 
-    // MARK: - Audio Quality Button (Enhanced)
+    // MARK: - Audio Quality Button (iOS 16 native design)
     private var audioQualityButton: some View {
         Button {
             showAudioInfo = true
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: "waveform.path")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.caption.weight(.semibold))
                     .foregroundStyle(Color.accentColor)
 
                 Text(audioQualityInfo)
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
-            .background {
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(.ultraThinMaterial)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .stroke(.white.opacity(0.1), lineWidth: 1)
-                    )
-            }
+            .nativeThinGlass(cornerRadius: 16)
         }
     }
 
-    // MARK: - Queue Button
+    // MARK: - Queue Button (iOS 16 native design)
     private var queueButton: some View {
         Button {
             showQueue = true
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: "list.bullet")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.caption.weight(.semibold))
                     .foregroundStyle(Color.accentColor)
 
                 Text("Cola: \(audioEngine.nextUpQueue.count)")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
-            .background {
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(.ultraThinMaterial)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .stroke(.white.opacity(0.1), lineWidth: 1)
-                    )
-            }
+            .nativeThinGlass(cornerRadius: 16)
         }
     }
 
@@ -559,7 +470,7 @@ struct AudioInfoView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 24)
-        .opaqueGlass(cornerRadius: 26, tint: .accentColor)
+        .nativeGlass(cornerRadius: 26)
     }
 
     private var audioQualitySection: some View {

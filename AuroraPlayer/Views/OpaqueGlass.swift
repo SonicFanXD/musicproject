@@ -1,29 +1,32 @@
 import SwiftUI
 
-// Simplificado para máxima compatibilidad con iOS 16 y rendimiento
+// iOS 16 native materials using system framework
 extension View {
-    func opaqueGlass(
-        cornerRadius: CGFloat = 20,
-        tint: Color = .white,
-        tintIntensity: Double = 0.05,
-        strokeIntensity: Double = 0.30,
-        isPressed: Bool = false
-    ) -> some View {
-        self.background(
-            RoundedRectangle(cornerRadius: cornerRadius)
-                .fill(Color.secondary.opacity(0.1))
-        )
+    func nativeGlass(cornerRadius: CGFloat = 12) -> some View {
+        self.background {
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .fill(.regularMaterial)
+        }
     }
 
-    func opaqueGlassCapsule(
-        tint: Color = .white,
-        tintIntensity: Double = 0.05,
-        strokeIntensity: Double = 0.30,
-        isPressed: Bool = false
-    ) -> some View {
-        self.background(
+    func nativeGlassCapsule() -> some View {
+        self.background {
             Capsule()
-                .fill(Color.secondary.opacity(0.1))
-        )
+                .fill(.regularMaterial)
+        }
+    }
+
+    func nativeThinGlass(cornerRadius: CGFloat = 12) -> some View {
+        self.background {
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .fill(.thinMaterial)
+        }
+    }
+
+    func nativeUltraThinGlass(cornerRadius: CGFloat = 12) -> some View {
+        self.background {
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .fill(.ultraThinMaterial)
+        }
     }
 }

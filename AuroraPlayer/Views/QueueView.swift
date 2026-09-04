@@ -63,7 +63,7 @@ struct QueueView: View {
                     }
                 } label: {
                     Text(tab.rawValue)
-                        .font(.system(size: 15, weight: selectedTab == tab ? .semibold : .regular))
+                        .font(.subheadline.weight(selectedTab == tab ? .semibold : .regular))
                         .foregroundStyle(selectedTab == tab ? Color.accentColor : .secondary)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 14)
@@ -129,18 +129,18 @@ struct QueueView: View {
     private func queueSongRow(_ song: Song, index: Int) -> some View {
         HStack(spacing: 12) {
             Text("\(index)")
-                .font(.system(size: 14, weight: .medium))
+                .font(.caption)
                 .foregroundStyle(.secondary)
                 .frame(width: 24, alignment: .center)
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(song.title)
-                    .font(.system(size: 16, weight: .medium))
+                    .font(.body)
                     .foregroundStyle(.primary)
                     .lineLimit(1)
 
                 Text(song.artist)
-                    .font(.system(size: 14))
+                    .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
@@ -148,7 +148,7 @@ struct QueueView: View {
             Spacer()
 
             Text(formatDuration(song.duration))
-                .font(.system(size: 13, weight: .medium))
+                .font(.caption)
                 .foregroundStyle(.tertiary)
                 .monospacedDigit()
         }
@@ -156,25 +156,25 @@ struct QueueView: View {
         .padding(.vertical, 12)
         .background {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(.ultraThinMaterial)
+                .fill(.regularMaterial)
         }
     }
 
     private func historySongRow(_ song: Song, index: Int) -> some View {
         HStack(spacing: 12) {
             Image(systemName: "clock")
-                .font(.system(size: 14))
+                .font(.caption)
                 .foregroundStyle(.secondary)
                 .frame(width: 24, alignment: .center)
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(song.title)
-                    .font(.system(size: 16, weight: .medium))
+                    .font(.body)
                     .foregroundStyle(.primary)
                     .lineLimit(1)
 
                 Text(song.artist)
-                    .font(.system(size: 14))
+                    .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
@@ -185,7 +185,7 @@ struct QueueView: View {
                 audioEngine.playFromHistory(song)
             } label: {
                 Image(systemName: "play.circle.fill")
-                    .font(.system(size: 24))
+                    .font(.title3)
                     .foregroundStyle(Color.accentColor)
             }
         }
@@ -193,7 +193,7 @@ struct QueueView: View {
         .padding(.vertical, 12)
         .background {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(.ultraThinMaterial)
+                .fill(.regularMaterial)
         }
     }
 

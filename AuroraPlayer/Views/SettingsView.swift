@@ -103,6 +103,7 @@ struct SettingsView: View {
                 }
             }
             .navigationTitle("Ajustes")
+            .navigationBarTitleDisplayMode(.inline)
             .sheet(isPresented: $showFolderPicker) {
                 FolderPickerView(fileAccessService: fileAccessService)
             }
