@@ -215,7 +215,7 @@ struct AlbumDetailView: View {
                 // Track number with design
                 Text("\(index + 1)")
                     .font(.system(size: 16, weight: .medium))
-                    .foregroundStyle(isCurrent ? Color.accentColor : .tertiary)
+                    .foregroundStyle(isCurrent ? Color.accentColor : Color.secondary.opacity(0.6))
                     .frame(width: 30, alignment: .center)
 
                 // Song info
@@ -586,7 +586,7 @@ struct ArtistDetailView: View {
                 // Track number
                 Text("\(index + 1)")
                     .font(.system(size: 16, weight: .medium))
-                    .foregroundStyle(isCurrent ? Color.accentColor : .tertiary)
+                    .foregroundStyle(isCurrent ? Color.accentColor : Color.secondary.opacity(0.6))
                     .frame(width: 30, alignment: .center)
 
                 // Song info
