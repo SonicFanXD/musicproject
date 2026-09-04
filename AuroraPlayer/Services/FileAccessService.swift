@@ -628,15 +628,17 @@ class FileAccessService: ObservableObject {
     }
 
     private func thumbnailArtwork(_ data: Data) -> Data {
-        guard data.count > 100_000,
+        // Aumentar resolución a 1024px para carátulas más nítidas (usado en NowPlaying en grande)
+        guard data.count > 150_000,
               let source = CGImageSourceCreateWithData(data as CFData, nil) else { return data }
         let options: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
-            kCGImageSourceThumbnailMaxPixelSize: 300,
-            kCGImageSourceCreateThumbnailWithTransform: true
+            kCGImageSourceThumbnailMaxPixelSize: 1024,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCacheImmediately: true
         ]
         guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary),
-              let compressed = UIImage(cgImage: image).jpegData(compressionQuality: 0.7) else { return data }
+              let compressed = UIImage(cgImage: image).jpegData(compressionQuality: 0.85) else { return data }
         return compressed
     }
 
@@ -1196,6 +1198,13 @@ class FileAccessService: ObservableObject {
             rescanAllFolders()
         } else {
             restoreSecurityScopedAccess()
+            // Verificar que las URLs de las canciones cacheadas sean accesibles
+            // Si no lo son, re-escanear para regenerar las URLs con acceso
+            let accessibleCount = cachedSongs.filter { FileManager.default.fileExists(atPath: $0.url.path) }.count
+            if accessibleCount < cachedSongs.count {
+                AppLog.warning(.library, "\(cachedSongs.count - accessibleCount) canciones inaccesibles, re-escaneando")
+                rescanAllFolders()
+            }
         }
         if !cachedSongs.isEmpty {
             AppLog.info(.library, "Biblioteca recuperada de caché: \(cachedSongs.count) canciones")

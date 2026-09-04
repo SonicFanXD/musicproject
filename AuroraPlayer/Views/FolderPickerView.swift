@@ -125,10 +125,6 @@ struct FolderPickerView: View {
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
                         .fill(.ultraThinMaterial)
                 }
-                .overlay {
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .stroke(.white.opacity(0.1), lineWidth: 1)
-                }
             }
             .buttonStyle(.plain)
 
@@ -169,10 +165,6 @@ struct FolderPickerView: View {
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
                         .fill(.ultraThinMaterial)
                 }
-                .overlay {
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .stroke(.white.opacity(0.1), lineWidth: 1)
-                }
             }
             .buttonStyle(.plain)
 
@@ -211,10 +203,6 @@ struct FolderPickerView: View {
                 .background {
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
                         .fill(.ultraThinMaterial)
-                }
-                .overlay {
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .stroke(.white.opacity(0.1), lineWidth: 1)
                 }
             }
             .buttonStyle(.plain)
@@ -304,10 +292,6 @@ struct FolderPickerView: View {
                         RoundedRectangle(cornerRadius: 18, style: .continuous)
                             .fill(.ultraThinMaterial)
                     }
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 18, style: .continuous)
-                            .stroke(.white.opacity(0.1), lineWidth: 1)
-                    }
                 }
             }
 
@@ -366,10 +350,6 @@ struct FolderPickerView: View {
                     .background {
                         RoundedRectangle(cornerRadius: 18, style: .continuous)
                             .fill(.ultraThinMaterial)
-                    }
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 18, style: .continuous)
-                            .stroke(.white.opacity(0.1), lineWidth: 1)
                     }
                 }
             }

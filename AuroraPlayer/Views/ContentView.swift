@@ -268,11 +268,16 @@ struct ContentView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 16) {
                     ForEach(playlists) { playlist in
-                        Button {
-                            // Navigate to playlist detail
+                        NavigationLink {
+                            PlaylistDetailView(
+                                playlist: playlist,
+                                fileAccessService: fileAccessService,
+                                audioEngine: audioEngine
+                            )
                         } label: {
                             playlistLibraryCard(playlist: playlist)
                         }
+                        .buttonStyle(.plain)
                     }
                 }
                 .padding(.horizontal, 20)
@@ -339,6 +344,25 @@ struct ContentView: View {
                         .font(.caption)
                         .foregroundStyle(.tertiary)
                         .monospacedDigit()
+                }
+
+                // Add to playlist button
+                Menu {
+                    if fileAccessService.playlists.isEmpty {
+                        Text("No hay listas disponibles")
+                    } else {
+                        ForEach(fileAccessService.playlists) { playlist in
+                            Button {
+                                fileAccessService.addSongToPlaylist(song, playlist: playlist)
+                            } label: {
+                                Label(playlist.name, systemImage: "music.note.list")
+                            }
+                        }
+                    }
+                } label: {
+                    Image(systemName: "plus.circle")
+                        .font(.system(size: 16))
+                        .foregroundStyle(.tertiary)
                 }
             }
             .padding(.horizontal, 16)

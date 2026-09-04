@@ -40,53 +40,14 @@ struct AlbumDetailView: View {
                 }
             }
         }
-        .navigationTitle("")
+        .navigationTitle(album.name)
         .navigationBarTitleDisplayMode(.inline)
-        .navigationBarHidden(true)
+        .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
     }
 
     private var heroSection: some View {
         VStack(spacing: 24) {
-            // Navigation bar with native materials
-            HStack {
-                Button {
-                    dismiss()
-                } label: {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 20, weight: .semibold))
-                        .foregroundStyle(.primary)
-                        .frame(width: 44, height: 44)
-                        .background {
-                            Circle()
-                                .fill(.regularMaterial)
-                        }
-                }
-
-                Spacer()
-
-                Text("Álbum")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(.primary)
-
-                Spacer()
-
-                // More options button (placeholder)
-                Button {
-
-                } label: {
-                    Image(systemName: "ellipsis")
-                        .font(.system(size: 20, weight: .semibold))
-                        .foregroundStyle(.primary)
-                        .frame(width: 44, height: 44)
-                        .background {
-                            Circle()
-                                .fill(.regularMaterial)
-                        }
-                }
-            }
-            .padding(.horizontal, 20)
-            .padding(.top, 10)
-
             // Large artwork with enhanced native design
             Group {
                 if let artwork = album.artwork {
@@ -111,11 +72,7 @@ struct AlbumDetailView: View {
                                 )
                             )
                     }
-                    .shadow(color: .black.opacity(0.35), radius: 28, x: 0, y: 14)
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 24, style: .continuous)
-                            .stroke(.white.opacity(0.2), lineWidth: 1.5)
-                    }
+                    .shadow(color: .black.opacity(0.3), radius: 24, x: 0, y: 12)
                 } else {
                     ZStack {
                         RoundedRectangle(cornerRadius: 24, style: .continuous)
@@ -135,10 +92,6 @@ struct AlbumDetailView: View {
                         Image(systemName: "square.stack")
                             .font(.system(size: 64))
                             .foregroundStyle(.secondary.opacity(0.8))
-                    }
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 24, style: .continuous)
-                            .stroke(.white.opacity(0.15), lineWidth: 1.5)
                     }
                 }
             }
@@ -192,7 +145,7 @@ struct AlbumDetailView: View {
                         .foregroundStyle(.white)
                 }
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 18)
+                .padding(.vertical, 16)
                 .background {
                     ZStack {
                         RoundedRectangle(cornerRadius: 18, style: .continuous)
@@ -212,7 +165,7 @@ struct AlbumDetailView: View {
                             )
                     }
                 }
-                .shadow(color: Color.accentColor.opacity(0.5), radius: 16, x: 0, y: 8)
+                .shadow(color: Color.accentColor.opacity(0.35), radius: 12, x: 0, y: 6)
             }
             .padding(.horizontal, 20)
         }
@@ -293,6 +246,7 @@ struct AlbumDetailView: View {
 struct ArtistDetailView: View {
     let artist: Artist
     @ObservedObject var audioEngine: AudioEngine
+    @Environment(\.dismiss) private var dismiss
 
     private var songs: [Song] {
         artist.songs
@@ -406,60 +360,22 @@ struct ArtistDetailView: View {
                 }
             }
         }
-        .navigationTitle("")
+        .navigationTitle(artist.name)
         .navigationBarTitleDisplayMode(.inline)
-        .navigationBarHidden(true)
+        .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
     }
 
     private var artistHeroSection: some View {
-        VStack(spacing: 24) {
-            // Navigation bar with native materials
-            HStack {
-                Button {
-
-                } label: {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 20, weight: .semibold))
-                        .foregroundStyle(.primary)
-                        .frame(width: 44, height: 44)
-                        .background {
-                            Circle()
-                                .fill(.regularMaterial)
-                        }
-                }
-
-                Spacer()
-
-                Text("Artista")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(.primary)
-
-                Spacer()
-
-                Button {
-
-                } label: {
-                    Image(systemName: "ellipsis")
-                        .font(.system(size: 20, weight: .semibold))
-                        .foregroundStyle(.primary)
-                        .frame(width: 44, height: 44)
-                        .background {
-                            Circle()
-                                .fill(.regularMaterial)
-                        }
-                }
-            }
-            .padding(.horizontal, 20)
-            .padding(.top, 10)
-
-            // Artist artwork with enhanced circular design
+        VStack(spacing: 20) {
+            // Artist artwork with enhanced circular design (reduced size)
             Group {
                 if let artwork = artist.artwork {
                     ZStack {
                         Image(uiImage: artwork)
                             .resizable()
                             .scaledToFill()
-                            .frame(width: 200, height: 200)
+                            .frame(width: 100, height: 100)
                             .clipShape(Circle())
 
                         // Subtle gradient overlay
@@ -476,11 +392,7 @@ struct ArtistDetailView: View {
                                 )
                             )
                     }
-                    .shadow(color: .black.opacity(0.3), radius: 20, x: 0, y: 10)
-                    .overlay {
-                        Circle()
-                            .stroke(.white.opacity(0.2), lineWidth: 2)
-                    }
+                    .shadow(color: .black.opacity(0.2), radius: 12, x: 0, y: 6)
                 } else {
                     ZStack {
                         Circle()
@@ -494,20 +406,16 @@ struct ArtistDetailView: View {
                                     endPoint: .bottomTrailing
                                 )
                             )
-                            .frame(width: 200, height: 200)
-                            .shadow(color: .black.opacity(0.25), radius: 18, x: 0, y: 9)
+                            .frame(width: 100, height: 100)
+                            .shadow(color: .black.opacity(0.15), radius: 10, x: 0, y: 5)
 
                         Image(systemName: "person.fill")
-                            .font(.system(size: 56))
+                            .font(.system(size: 30))
                             .foregroundStyle(.secondary.opacity(0.8))
-                    }
-                    .overlay {
-                        Circle()
-                            .stroke(.white.opacity(0.15), lineWidth: 2)
                     }
                 }
             }
-            .padding(.top, 20)
+            .padding(.top, 12)
 
             // Artist info with native typography
             VStack(spacing: 12) {
@@ -583,7 +491,7 @@ struct ArtistDetailView: View {
                                 )
                         }
                     }
-                    .shadow(color: Color.accentColor.opacity(0.5), radius: 16, x: 0, y: 8)
+                    .shadow(color: Color.accentColor.opacity(0.4), radius: 12, x: 0, y: 6)
                 }
                 .padding(.horizontal, 20)
             }

@@ -211,7 +211,9 @@ class AudioEngine: NSObject, ObservableObject {
         let song = playlist[currentIndex]
 
         // Limpieza manual sin activar isStopping (evita interferencia con scheduleFile)
-        playerNode.stop()
+        if playerNode.isPlaying {
+            playerNode.stop()
+        }
         audioFile = nil
         isPlaying = false
         currentTime = 0
@@ -239,14 +241,27 @@ class AudioEngine: NSObject, ObservableObject {
             }
 
             // Reconectar nodos con el formato correcto (protegido contra desconexión doble)
-            if engine.outputConnectionPoints(for: playerNode, outputBus: 0).isEmpty {
-                if let eq = equalizerNode {
-                    engine.connect(playerNode, to: eq, format: file.processingFormat)
+            do {
+                if engine.outputConnectionPoints(for: playerNode, outputBus: 0).isEmpty {
+                    if let eq = equalizerNode {
+                        engine.connect(playerNode, to: eq, format: file.processingFormat)
+                    } else {
+                        engine.connect(playerNode, to: engine.mainMixerNode, format: file.processingFormat)
+                    }
                 } else {
-                    engine.connect(playerNode, to: engine.mainMixerNode, format: file.processingFormat)
+                    engine.disconnectNodeInput(playerNode)
+                    if let eq = equalizerNode {
+                        engine.connect(playerNode, to: eq, format: file.processingFormat)
+                    } else {
+                        engine.connect(playerNode, to: engine.mainMixerNode, format: file.processingFormat)
+                    }
                 }
-            } else {
-                engine.disconnectNodeInput(playerNode)
+            } catch {
+                AppLog.error(.playback, "Error reconectando nodos: \(error.localizedDescription)")
+                // Intentar reiniciar el motor
+                cleanupAudioResources()
+                setupEngine()
+                setupEqualizer()
                 if let eq = equalizerNode {
                     engine.connect(playerNode, to: eq, format: file.processingFormat)
                 } else {
@@ -258,12 +273,14 @@ class AudioEngine: NSObject, ObservableObject {
                 try engine.start()
             }
 
-            scheduleFile(file, from: 0)
-
+            // Establecer estado ANTES de programar el archivo para que el completion handler funcione
             currentSong = song
             seekOffset = 0
             isPlaying = true
             playbackErrorCount = 0
+
+            scheduleFile(file, from: 0)
+
             startDisplayTimer()
             updateNowPlayingInfo()
             updateAudioQuality()
@@ -290,11 +307,20 @@ class AudioEngine: NSObject, ObservableObject {
 
         // Resetear isChangingTrack para permitir que playNext() avance
         isChangingTrack = false
-        playNext()
+        isPlaying = false
+
+        // Avanzar a la siguiente canción después de un breve delay
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+            guard let self = self else { return }
+            self.isChangingTrack = false
+            self.playNext()
+        }
     }
 
     private func scheduleFile(_ file: AVAudioFile, from startFrame: AVAudioFramePosition) {
-        playerNode.stop()
+        if playerNode.isPlaying {
+            playerNode.stop()
+        }
 
         // Proteger contra startFrame negativo o mayor que la duración del archivo
         let safeStartFrame = max(0, min(startFrame, file.length))
@@ -1024,6 +1050,8 @@ class AudioEngine: NSObject, ObservableObject {
 
     func restoreState(with allSongs: [Song]) {
         guard !hasRestored else { return }
+        hasRestored = true // Marcar como restaurado para evitar reintentos
+
         guard let state = UserDefaults.standard.dictionary(forKey: stateDefaultsKey) else { return }
         guard let songIDString = state["songID"] as? String,
               let songID = UUID(uuidString: songIDString),
@@ -1081,7 +1109,6 @@ class AudioEngine: NSObject, ObservableObject {
 
             updateNowPlayingInfo()
             updateAudioQuality()
-            hasRestored = true
         } catch {
             print("Error al restaurar estado: \(error.localizedDescription)")
             UserDefaults.standard.removeObject(forKey: stateDefaultsKey)

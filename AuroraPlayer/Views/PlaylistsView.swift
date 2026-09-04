@@ -8,7 +8,6 @@ struct PlaylistsView: View {
     @State private var showCreatePlaylist = false
     @State private var newPlaylistName = ""
     @State private var newPlaylistDescription = ""
-    @State private var selectedPlaylist: Playlist?
 
     var body: some View {
         NavigationStack {
@@ -55,13 +54,6 @@ struct PlaylistsView: View {
             }
             .sheet(isPresented: $showCreatePlaylist) {
                 createPlaylistSheet
-            }
-            .sheet(item: $selectedPlaylist) { playlist in
-                PlaylistDetailView(
-                    playlist: playlist,
-                    fileAccessService: fileAccessService,
-                    audioEngine: audioEngine
-                )
             }
         }
     }
@@ -119,8 +111,12 @@ struct PlaylistsView: View {
             GridItem(.flexible(), spacing: 16)
         ], spacing: 20) {
             ForEach(fileAccessService.playlists) { playlist in
-                Button {
-                    selectedPlaylist = playlist
+                NavigationLink {
+                    PlaylistDetailView(
+                        playlist: playlist,
+                        fileAccessService: fileAccessService,
+                        audioEngine: audioEngine
+                    )
                 } label: {
                     playlistCard(playlist)
                 }
@@ -305,7 +301,7 @@ struct PlaylistsView: View {
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Cancelar") {
-                        dismiss()
+                        showCreatePlaylist = false
                     }
                     .foregroundStyle(.secondary)
                 }
@@ -372,9 +368,10 @@ struct PlaylistDetailView: View {
                 }
             }
         }
-        .navigationTitle("")
+        .navigationTitle(playlist.name)
         .navigationBarTitleDisplayMode(.inline)
-        .navigationBarHidden(true)
+        .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
         .sheet(isPresented: $showEditPlaylist) {
             editPlaylistSheet
         }
@@ -382,47 +379,6 @@ struct PlaylistDetailView: View {
 
     private var playlistHeroSection: some View {
         VStack(spacing: 24) {
-            // Navigation bar
-            HStack {
-                Button {
-                    dismiss()
-                } label: {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 20, weight: .semibold))
-                        .foregroundStyle(.primary)
-                        .frame(width: 44, height: 44)
-                        .background {
-                            Circle()
-                                .fill(.regularMaterial)
-                        }
-                }
-
-                Spacer()
-
-                Text("Lista")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(.primary)
-
-                Spacer()
-
-                Button {
-                    editedName = playlist.name
-                    editedDescription = playlist.description
-                    showEditPlaylist = true
-                } label: {
-                    Image(systemName: "pencil")
-                        .font(.system(size: 20, weight: .semibold))
-                        .foregroundStyle(.primary)
-                        .frame(width: 44, height: 44)
-                        .background {
-                            Circle()
-                                .fill(.regularMaterial)
-                        }
-                }
-            }
-            .padding(.horizontal, 20)
-            .padding(.top, 10)
-
             // Playlist artwork
             ZStack {
                 if let artwork = playlist.artwork {

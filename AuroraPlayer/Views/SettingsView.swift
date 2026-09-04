@@ -44,10 +44,6 @@ struct SettingsView: View {
                                 RoundedRectangle(cornerRadius: 20, style: .continuous)
                                     .fill(.ultraThinMaterial)
                             }
-                            .overlay {
-                                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                                    .stroke(.white.opacity(0.12), lineWidth: 1)
-                            }
                         }
 
                         // Library Section
@@ -80,10 +76,6 @@ struct SettingsView: View {
                                 RoundedRectangle(cornerRadius: 20, style: .continuous)
                                     .fill(.ultraThinMaterial)
                             }
-                            .overlay {
-                                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                                    .stroke(.white.opacity(0.12), lineWidth: 1)
-                            }
                         }
 
                         // Library Stats Section
@@ -107,10 +99,6 @@ struct SettingsView: View {
                             .background {
                                 RoundedRectangle(cornerRadius: 20, style: .continuous)
                                     .fill(.ultraThinMaterial)
-                            }
-                            .overlay {
-                                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                                    .stroke(.white.opacity(0.12), lineWidth: 1)
                             }
                         }
 
@@ -137,10 +125,6 @@ struct SettingsView: View {
                             .background {
                                 RoundedRectangle(cornerRadius: 20, style: .continuous)
                                     .fill(.ultraThinMaterial)
-                            }
-                            .overlay {
-                                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                                    .stroke(.white.opacity(0.12), lineWidth: 1)
                             }
                         }
                     }

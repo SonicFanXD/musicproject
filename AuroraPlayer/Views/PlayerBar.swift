@@ -112,29 +112,10 @@ struct PlayerBar: View {
                     .padding(.bottom, 12)
                 }
                 .background {
-                    // Enhanced native system material with subtle gradient
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 20, style: .continuous)
-                            .fill(.regularMaterial)
-
-                        RoundedRectangle(cornerRadius: 20, style: .continuous)
-                            .fill(
-                                LinearGradient(
-                                    colors: [
-                                        .white.opacity(0.08),
-                                        .white.opacity(0.04),
-                                        .clear
-                                    ],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                            )
-                    }
-                    .shadow(color: .black.opacity(0.12), radius: 20, x: 0, y: 8)
-                }
-                .overlay {
+                    // Clean liquid glass material - no glowing borders
                     RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .stroke(.white.opacity(0.18), lineWidth: 1.5)
+                        .fill(.ultraThinMaterial)
+                        .shadow(color: .black.opacity(0.1), radius: 16, x: 0, y: 6)
                 }
                 .onAppear {
                     artworkScale = audioEngine.isPlaying ? 1.04 : 1.0

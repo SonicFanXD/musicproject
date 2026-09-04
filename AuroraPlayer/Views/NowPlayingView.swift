@@ -141,84 +141,55 @@ struct NowPlayingView: View {
         }
     }
 
-    // MARK: - Background View (iOS 16 native design)
+    // MARK: - Background View (optimized blurred artwork, performance-friendly)
     private var backgroundView: some View {
         Group {
             if let artwork = audioEngine.currentSong?.artwork {
                 GeometryReader { geometry in
                     ZStack {
-                        // Base blurred artwork (reduced blur radius for performance)
+                        // Base blurred artwork - use smaller blur radius for better performance
                         Image(uiImage: artwork)
                             .resizable()
                             .scaledToFill()
                             .frame(width: geometry.size.width, height: geometry.size.height)
                             .blur(radius: 30)
-                            .opacity(0.5)
+                            .opacity(0.6)
                             .clipped()
 
-                        // Gradient overlay for depth
-                        LinearGradient(
-                            colors: [
-                                Color.black.opacity(0.3),
-                                Color.black.opacity(0.5),
-                                Color.black.opacity(0.7)
-                            ],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
+                        // Subtle dark overlay for text readability
+                        Color.black.opacity(0.2)
                     }
                 }
                 .ignoresSafeArea()
             } else {
                 // Native gradient background for no artwork
-                ZStack {
-                    LinearGradient(
-                        colors: [
-                            Color(UIColor.systemBackground),
-                            Color(UIColor.secondarySystemBackground)
-                        ],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                }
+                LinearGradient(
+                    colors: [
+                        Color(UIColor.systemBackground),
+                        Color(UIColor.secondarySystemBackground)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
                 .ignoresSafeArea()
             }
         }
     }
 
-    // MARK: - Artwork View (Enhanced iOS 16 native design)
+    // MARK: - Artwork View (clean, no glowing borders, sharper image)
     private var artworkView: some View {
         Group {
             if let artwork = audioEngine.currentSong?.artwork {
-                ZStack {
-                    Image(uiImage: artwork)
-                        .resizable()
-                        .scaledToFill()
-                        .frame(width: artworkSize, height: artworkSize)
-                        .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
-
-                    // Subtle gradient overlay for depth
-                    RoundedRectangle(cornerRadius: 28, style: .continuous)
-                        .fill(
-                            LinearGradient(
-                                colors: [
-                                    .clear,
-                                    .black.opacity(0.05),
-                                    .black.opacity(0.1)
-                                ],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
-                        )
-                }
-                .shadow(color: .black.opacity(0.35), radius: 24, x: 0, y: 12)
-                .overlay {
-                    RoundedRectangle(cornerRadius: 28, style: .continuous)
-                        .stroke(.white.opacity(0.2), lineWidth: 1)
-                }
+                Image(uiImage: artwork)
+                    .resizable()
+                    .interpolation(.high)
+                    .scaledToFill()
+                    .frame(width: artworkSize, height: artworkSize)
+                    .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+                    .shadow(color: .black.opacity(0.25), radius: 16, x: 0, y: 8)
             } else {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 28, style: .continuous)
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
                         .fill(
                             LinearGradient(
                                 colors: [
@@ -230,59 +201,34 @@ struct NowPlayingView: View {
                             )
                         )
                         .frame(width: artworkSize, height: artworkSize)
-                        .shadow(color: .black.opacity(0.25), radius: 18, x: 0, y: 10)
 
                     Image(systemName: "music.note")
                         .font(.system(size: 80))
                         .foregroundStyle(.secondary.opacity(0.8))
                 }
-                .overlay {
-                    RoundedRectangle(cornerRadius: 28, style: .continuous)
-                        .stroke(.white.opacity(0.15), lineWidth: 1)
-                }
             }
         }
     }
 
-    // MARK: - Song Info View (Enhanced audiophile typography - iPhone 8 Plus optimized)
+    // MARK: - Song Info View (clean typography)
     private var songInfoView: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 10) {
             Text(audioEngine.currentSong?.displayName ?? "Sin canción")
                 .font(.system(size: 22, weight: .bold))
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.primary)
                 .lineLimit(2)
-                .shadow(color: .black.opacity(0.15), radius: 1.5, x: 0, y: 0.5)
 
             Text(audioEngine.currentSong?.displaySubtitle ?? "—")
                 .font(.system(size: 16, weight: .medium))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .padding(.horizontal, 16)
-
-            if let album = audioEngine.currentSong?.album, !album.isEmpty {
-                HStack(spacing: 6) {
-                    ZStack {
-                        Circle()
-                            .fill(Color.accentColor.opacity(0.12))
-                            .frame(width: 18, height: 18)
-
-                        Image(systemName: "opticaldisc")
-                            .font(.system(size: 9, weight: .semibold))
-                            .foregroundStyle(Color.accentColor)
-                    }
-
-                    Text(album)
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundStyle(.tertiary)
-                        .lineLimit(1)
-                }
-            }
         }
         .padding(.horizontal, 6)
     }
 
-    // MARK: - Progress View (iOS 16 native design)
+    // MARK: - Progress View (clean native design)
     private var progressView: some View {
         VStack(spacing: 12) {
             // Native progress bar
@@ -339,9 +285,9 @@ struct NowPlayingView: View {
         audioEngine.seek(to: newTime)
     }
 
-    // MARK: - Controls View (Enhanced iOS 16 native design)
+    // MARK: - Controls View (clean, less blue)
     private var controlsView: some View {
-        HStack(spacing: 32) {
+        HStack(spacing: 28) {
             // Shuffle
             Button {
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
@@ -350,10 +296,10 @@ struct NowPlayingView: View {
                 ZStack {
                     Circle()
                         .fill(audioEngine.isShuffleEnabled ? Color.accentColor.opacity(0.15) : Color.secondary.opacity(0.08))
-                        .frame(width: 50, height: 50)
+                        .frame(width: 48, height: 48)
 
                     Image(systemName: audioEngine.isShuffleEnabled ? "shuffle.circle.fill" : "shuffle")
-                        .font(.system(size: 22, weight: .semibold))
+                        .font(.system(size: 20, weight: .semibold))
                         .foregroundStyle(audioEngine.isShuffleEnabled ? Color.accentColor : .secondary)
                 }
             }
@@ -365,14 +311,13 @@ struct NowPlayingView: View {
             } label: {
                 ZStack {
                     Circle()
-                        .fill(.regularMaterial)
-                        .frame(width: 56, height: 56)
+                        .fill(.ultraThinMaterial)
+                        .frame(width: 54, height: 54)
 
                     Image(systemName: "backward.fill")
-                        .font(.system(size: 24, weight: .semibold))
+                        .font(.system(size: 22, weight: .semibold))
                         .foregroundStyle(.primary)
                 }
-                .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 4)
             }
 
             // Play/Pause
@@ -387,13 +332,13 @@ struct NowPlayingView: View {
                 ZStack {
                     Circle()
                         .fill(Color.accentColor)
-                        .frame(width: 76, height: 76)
+                        .frame(width: 72, height: 72)
 
                     Image(systemName: audioEngine.isPlaying ? "pause.circle.fill" : "play.circle.fill")
-                        .font(.system(size: 36, weight: .semibold))
+                        .font(.system(size: 34, weight: .semibold))
                         .foregroundStyle(.white)
                 }
-                .shadow(color: Color.accentColor.opacity(0.5), radius: 16, x: 0, y: 8)
+                .shadow(color: Color.accentColor.opacity(0.3), radius: 12, x: 0, y: 5)
             }
 
             // Next
@@ -403,14 +348,13 @@ struct NowPlayingView: View {
             } label: {
                 ZStack {
                     Circle()
-                        .fill(.regularMaterial)
-                        .frame(width: 56, height: 56)
+                        .fill(.ultraThinMaterial)
+                        .frame(width: 54, height: 54)
 
                     Image(systemName: "forward.fill")
-                        .font(.system(size: 24, weight: .semibold))
+                        .font(.system(size: 22, weight: .semibold))
                         .foregroundStyle(.primary)
                 }
-                .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 4)
             }
 
             // Repeat
@@ -421,125 +365,17 @@ struct NowPlayingView: View {
                 ZStack {
                     Circle()
                         .fill(audioEngine.repeatMode != .off ? Color.accentColor.opacity(0.15) : Color.secondary.opacity(0.08))
-                        .frame(width: 50, height: 50)
+                        .frame(width: 48, height: 48)
 
                     Image(systemName: repeatIcon)
-                        .font(.system(size: 22, weight: .semibold))
+                        .font(.system(size: 20, weight: .semibold))
                         .foregroundStyle(audioEngine.repeatMode != .off ? Color.accentColor : .secondary)
                 }
             }
         }
     }
 
-    // MARK: - Audiophile Quality Section (Enhanced audio file details)
-    private var audiophileQualitySection: some View {
-        VStack(spacing: 12) {
-            HStack(spacing: 16) {
-                // Format badge
-                HStack(spacing: 6) {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .fill(Color.accentColor.opacity(0.15))
-                            .frame(width: 32, height: 32)
-
-                        Image(systemName: "waveform")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(Color.accentColor)
-                    }
-
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Formato")
-                            .font(.caption2)
-                            .foregroundStyle(.tertiary)
-
-                        Text(audioEngine.currentSong?.formatDescription.isEmpty == false ?
-                             audioEngine.currentSong!.formatDescription : "Desconocido")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(.primary)
-                    }
-                }
-
-                Spacer()
-
-                // Sample rate badge
-                HStack(spacing: 6) {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .fill(Color.orange.opacity(0.15))
-                            .frame(width: 32, height: 32)
-
-                        Image(systemName: "hertz")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(Color.orange)
-                    }
-
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Sample Rate")
-                            .font(.caption2)
-                            .foregroundStyle(.tertiary)
-
-                        Text("\(Int(audioEngine.sourceSampleRate / 1000)) kHz")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(.primary)
-                    }
-                }
-
-                Spacer()
-
-                // Channels badge
-                HStack(spacing: 6) {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .fill(Color.green.opacity(0.15))
-                            .frame(width: 32, height: 32)
-
-                        Image(systemName: "speaker.wave.2")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(Color.green)
-                    }
-
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Canales")
-                            .font(.caption2)
-                            .foregroundStyle(.tertiary)
-
-                        Text("\(audioEngine.outputChannelCount)ch")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(.primary)
-                    }
-                }
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
-            .enhancedGlass(cornerRadius: 16)
-
-            // Detailed technical info button
-            Button {
-                showAudioInfo = true
-            } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: "info.circle.fill")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(Color.accentColor)
-
-                    Text("Detalles técnicos completos")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(.secondary)
-
-                    Spacer()
-
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(.tertiary)
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
-                .nativeThinGlass(cornerRadius: 14)
-            }
-        }
-    }
-
-    // MARK: - Queue Button (Enhanced iOS 16 native design)
+    // MARK: - Queue Button (clean)
     private var queueButton: some View {
         Button {
             showQueue = true
@@ -561,7 +397,10 @@ struct NowPlayingView: View {
             }
             .padding(.horizontal, 18)
             .padding(.vertical, 10)
-            .enhancedGlass(cornerRadius: 18)
+            .background {
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(.regularMaterial)
+            }
         }
     }
 
@@ -574,10 +413,6 @@ struct NowPlayingView: View {
         case .one:
             return "repeat.1.circle.fill"
         }
-    }
-
-    private var audioQualityInfo: String {
-        audioEngine.audioQualityInfo.isEmpty ? "\(Int(audioEngine.sourceSampleRate / 1000))kHz · \(audioEngine.outputChannelCount)ch" : audioEngine.audioQualityInfo
     }
 
     private func formatTime(_ seconds: TimeInterval) -> String {
@@ -676,10 +511,6 @@ struct AudioInfoView: View {
                 RoundedRectangle(cornerRadius: 20, style: .continuous)
                     .fill(.ultraThinMaterial)
             }
-            .overlay {
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .stroke(.white.opacity(0.12), lineWidth: 1)
-            }
         }
     }
 
@@ -707,10 +538,6 @@ struct AudioInfoView: View {
                 RoundedRectangle(cornerRadius: 20, style: .continuous)
                     .fill(.ultraThinMaterial)
             }
-            .overlay {
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .stroke(.white.opacity(0.12), lineWidth: 1)
-            }
         }
     }
 
@@ -735,10 +562,6 @@ struct AudioInfoView: View {
             .background {
                 RoundedRectangle(cornerRadius: 20, style: .continuous)
                     .fill(.ultraThinMaterial)
-            }
-            .overlay {
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .stroke(.white.opacity(0.12), lineWidth: 1)
             }
         }
     }
