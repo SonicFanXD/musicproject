@@ -346,28 +346,37 @@ class FileAccessService: ObservableObject {
         var discNumber: Int?
         var trackNumber = 0
         var releaseDate: Date?
-        let formatMetadata = asset.availableMetadataFormats.flatMap { asset.metadata(forFormat: $0) }
+        
+        // Usamos las APIs modernas de AVFoundation
+        let metadata = try? await asset.load(.commonMetadata)
+        let availableFormats = try? await asset.load(.availableMetadataFormats)
+        var formatMetadata: [AVMetadataItem] = []
+        for format in availableFormats ?? [] {
+            if let items = try? await asset.loadMetadata(for: format) {
+                formatMetadata.append(contentsOf: items)
+            }
+        }
 
-        for item in asset.commonMetadata {
+        for item in metadata ?? [] {
             switch item.commonKey?.rawValue {
             case "title":
-                if let value = item.stringValue, !value.isEmpty {
+                if let value = try? await item.load(.stringValue), !value.isEmpty {
                     title = value
                 }
             case "artist":
-                artist = item.stringValue ?? ""
+                artist = try? await item.load(.stringValue) ?? ""
             case "albumName":
-                album = item.stringValue ?? ""
+                album = try? await item.load(.stringValue) ?? ""
             case "artwork":
-                artworkData = item.dataValue.flatMap(thumbnailArtwork)
+                artworkData = (try? await item.load(.dataValue)).flatMap(thumbnailArtwork)
             case "lyrics":
-                lyrics = metadataText(item)
+                lyrics = try? await item.load(.stringValue) ?? ""
             case "discNumber":
-                discNumber = item.numberValue?.intValue
+                discNumber = (try? await item.load(.numberValue))?.intValue
             case "trackNumber":
-                trackNumber = item.numberValue?.intValue ?? 0
+                trackNumber = (try? await item.load(.numberValue))?.intValue ?? 0
             case "creationDate":
-                releaseDate = item.dateValue
+                releaseDate = try? await item.load(.dateValue)
             default:
                 break
             }
@@ -378,20 +387,26 @@ class FileAccessService: ObservableObject {
             let key = metadataKey(item)
 
             if (identifier.contains("albumartist") || key == "aart" || key == "album artist" || key == "tpe2"),
-               let value = metadataText(item).nilIfEmpty {
+               let value = try? await item.load(.stringValue), !value.isEmpty {
                 albumArtist = value
             }
-            if title == nil, (identifier.contains("title") || key == "©nam" || key == "tit2") { title = metadataText(item) }
-            if artist.isEmpty, (identifier.contains("artist") || key == "©art" || key == "tpe1"), key != "aart" { artist = metadataText(item) }
-            if album.isEmpty, (identifier.contains("album") || key == "©alb" || key == "talb"), key != "aart" { album = metadataText(item) }
+            if title == nil, (identifier.contains("title") || key == "©nam" || key == "tit2") {
+                title = try? await item.load(.stringValue)
+            }
+            if artist.isEmpty, (identifier.contains("artist") || key == "©art" || key == "tpe1"), key != "aart" {
+                artist = try? await item.load(.stringValue) ?? ""
+            }
+            if album.isEmpty, (identifier.contains("album") || key == "©alb" || key == "talb"), key != "aart" {
+                album = try? await item.load(.stringValue) ?? ""
+            }
             if identifier.contains("discnumber") || identifier.contains("disknumber") || key.contains("disk") || key.contains("tpos") {
-                discNumber = metadataNumber(item)
+                discNumber = (try? await item.load(.numberValue))?.intValue
             }
             if identifier.contains("tracknumber") || key.contains("trkn") || key.contains("trck") {
-                trackNumber = metadataNumber(item) ?? 0
+                trackNumber = (try? await item.load(.numberValue))?.intValue ?? 0
             }
             if releaseDate == nil, identifier.contains("date") || identifier.contains("year") || key.contains("day") || key.contains("tdrc") {
-                releaseDate = metadataDate(item)
+                releaseDate = try? await item.load(.dateValue)
             }
         }
 
@@ -436,7 +451,7 @@ class FileAccessService: ObservableObject {
             albumArtist: albumArtist,
             album: album,
             artworkData: artworkData,
-            duration: asset.duration.isNumeric ? max(0, asset.duration.seconds) : 0,
+            duration: try? await asset.load(.duration).seconds ?? 0,
             lyrics: lyrics,
             formatDescription: formatDescription,
             discNumber: discNumber,
@@ -464,8 +479,8 @@ class FileAccessService: ObservableObject {
     }
 
     private func metadataText(_ item: AVMetadataItem) -> String {
-        if let value = item.stringValue { return value }
-        guard let data = item.dataValue else { return "" }
+        if let value = try? await item.load(.stringValue) { return value }
+        guard let data = try? await item.load(.dataValue) else { return "" }
         return String(data: data, encoding: .utf8)
             ?? String(data: data, encoding: .utf16)
             ?? String(data: data, encoding: .utf16LittleEndian)
@@ -481,7 +496,7 @@ class FileAccessService: ObservableObject {
         let key = metadataKey(item)
         let identifier = normalizedMetadataIdentifier(item)
         let isSynchronizedID3 = key == "sylt" || identifier.contains("sylt")
-        guard (key == "uslt" || isSynchronizedID3 || identifier.contains("uslt")), let data = item.dataValue else {
+        guard (key == "uslt" || isSynchronizedID3 || identifier.contains("uslt")), let data = try? await item.load(.dataValue) else {
             return metadataText(item)
         }
         if isSynchronizedID3, let parsed = synchronizedID3Lyrics(data), !parsed.isEmpty {
@@ -530,10 +545,10 @@ class FileAccessService: ObservableObject {
     }
 
     private func metadataNumber(_ item: AVMetadataItem) -> Int? {
-        if let number = item.numberValue?.intValue, number > 0 { return number }
-        if let value = item.stringValue,
+        if let number = try? await item.load(.numberValue)?.intValue, number > 0 { return number }
+        if let value = try? await item.load(.stringValue),
            let number = Int(value.split(separator: "/", maxSplits: 1).first ?? ""), number > 0 { return number }
-        if let data = item.dataValue, data.count >= 6 {
+        if let data = try? await item.load(.dataValue), data.count >= 6 {
             let bytes = [UInt8](data)
             let number = Int(bytes[4]) << 8 | Int(bytes[5])
             if number > 0 { return number }
@@ -542,7 +557,7 @@ class FileAccessService: ObservableObject {
     }
 
     private func metadataDate(_ item: AVMetadataItem) -> Date? {
-        if let date = item.dateValue { return date }
+        if let date = try? await item.load(.dateValue) { return date }
         guard let text = metadataText(item).nilIfEmpty else { return nil }
         let iso = ISO8601DateFormatter()
         if let date = iso.date(from: text) { return date }
@@ -875,46 +890,42 @@ class FileAccessService: ObservableObject {
         try? FileManager.default.removeItem(at: url)
     }
 
-    deinit {
-        saveCachedSongs()
-        for (_, url) in activeURLs {
-            url.stopAccessingSecurityScopedResource()
-        }
-        for (_, url) in activeFileURLs { url.stopAccessingSecurityScopedResource() }
-    }
-}
-
-// MARK: - Extensión para álbumes y artistas
-extension FileAccessService {
+    // MARK: - Albums y Artists (CORREGIDO)
     var albums: [Album] {
         let grouped = Dictionary(grouping: songs) { song in
             let albumName = song.album.isEmpty ? "Álbum desconocido" : song.album
             let artistName = song.albumArtist.isEmpty ? (song.artist.isEmpty ? "Artista desconocido" : song.artist) : song.albumArtist
             return AlbumKey(album: albumName, artist: artistName)
         }
-
+        
         return grouped.map { (key, songs) in
             Album(
-                id: UUID(),
                 name: key.album,
                 artist: key.artist,
                 songs: songs.sorted { $0.trackNumber < $1.trackNumber }
             )
         }.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
-
+    
     var artists: [Artist] {
         let grouped = Dictionary(grouping: songs) { song in
             song.artist.isEmpty ? "Artista desconocido" : song.artist
         }
-
+        
         return grouped.map { (artistName, songs) in
             Artist(
-                id: UUID(),
                 name: artistName,
                 songs: songs
             )
         }.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    deinit {
+        saveCachedSongs()
+        for (_, url) in activeURLs {
+            url.stopAccessingSecurityScopedResource()
+        }
+        for (_, url) in activeFileURLs { url.stopAccessingSecurityScopedResource() }
     }
 }
 
