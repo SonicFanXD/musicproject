@@ -72,7 +72,8 @@ struct LyricsView: View {
     // MARK: - Animation Timer
     private func startAnimationTimer() {
         animationTimer?.invalidate()
-        animationTimer = Timer.scheduledTimer(withTimeInterval: 0.08, repeats: true) { _ in
+        // Optimized timer frequency for better performance
+        animationTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { _ in
             updateWordProgress()
             updateReadingCursor()
         }
@@ -89,12 +90,18 @@ struct LyricsView: View {
 
         let currentTime = audioEngine.currentTime
 
-        // Actualizar progreso de cada palabra activa
+        // Optimized progress update - only process words near current time
         for word in syncLyrics.words {
             if let duration = word.duration {
-                let progress = min(1.0, max(0.0, (currentTime - word.time) / duration))
-                if progress > 0 && progress < 1 {
-                    currentWordProgress[word.id] = progress
+                // Only process words that are likely to be active
+                let timeDiff = currentTime - word.time
+                if timeDiff >= -0.5 && timeDiff <= duration + 0.5 {
+                    let progress = min(1.0, max(0.0, timeDiff / duration))
+                    if progress > 0 && progress < 1 {
+                        currentWordProgress[word.id] = progress
+                    } else {
+                        currentWordProgress.removeValue(forKey: word.id)
+                    }
                 } else {
                     currentWordProgress.removeValue(forKey: word.id)
                 }
@@ -117,17 +124,17 @@ struct LyricsView: View {
             Image(systemName: "quote.bubble")
                 .font(.system(size: 45))
                 .foregroundStyle(.tertiary)
-            
+
             Text("No hay letras disponibles")
                 .font(.system(size: 17, weight: .semibold))
                 .foregroundStyle(.secondary)
-            
+
             Text("Esta canción no tiene información de letras en su metadata.")
                 .font(.system(size: 15))
                 .foregroundStyle(.tertiary)
                 .multilineTextAlignment(.center)
         }
-        .frame(maxWidth: .infinity)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(.vertical, 48)
     }
     
@@ -139,6 +146,7 @@ struct LyricsView: View {
                 .foregroundStyle(.primary)
                 .lineSpacing(12)
                 .padding(24)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
     
@@ -150,6 +158,13 @@ struct LyricsView: View {
                     ForEach(Array(lyrics.lines.enumerated()), id: \.element.id) { index, line in
                         lyricLineView(line: line, isActive: currentLineIndex == index)
                             .id(index)
+                            .background(
+                                // Subtle background for active line
+                                currentLineIndex == index ?
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .fill(Color.accentColor.opacity(0.08))
+                                    .blur(radius: 10) : nil
+                            )
                     }
                 }
                 .padding(.horizontal, 24)
@@ -172,12 +187,28 @@ struct LyricsView: View {
                 VStack(alignment: .leading, spacing: 20) {
                     ForEach(Array(lyrics.lines.enumerated()), id: \.element.id) { index, line in
                         let wordsInLine = lyrics.words.filter { word in
-                            word.time >= line.time && 
+                            word.time >= line.time &&
                             (index < lyrics.lines.count - 1 ? word.time < lyrics.lines[index + 1].time : true)
                         }
-                        
+
+                        // Karaoke mode effect wrapper
+                        let showKaraokeEffect = showKaraokeMode && currentLineIndex == index
+
                         wordByWordLineView(line: line, words: wordsInLine, isActive: currentLineIndex == index)
                             .id(index)
+                            .overlay(
+                                // Karaoke mode background effect
+                                showKaraokeEffect ?
+                                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                    .fill(Color.accentColor.opacity(0.1))
+                                    .blur(radius: 20) : nil
+                            )
+                            .background(
+                                // Active line indicator
+                                currentLineIndex == index ?
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .stroke(Color.accentColor.opacity(0.3), lineWidth: 1) : nil
+                            )
                     }
                 }
                 .padding(.horizontal, 24)
@@ -200,59 +231,7 @@ struct LyricsView: View {
             isActive: isActive
         )
     }
-}
 
-// MARK: - Animated Line View (Beautiful synchronized line animations)
-struct AnimatedLineView: View {
-    let text: String
-    let isActive: Bool
-
-    @State private var scale: CGFloat = 1.0
-    @State private var opacity: Double = 0.5
-    @State private var yOffset: CGFloat = 0.0
-    @State private var glowIntensity: Double = 0.0
-
-    var body: some View {
-        Text(text)
-            .font(.system(size: isActive ? 24 : 20, weight: isActive ? .bold : .regular))
-            .foregroundStyle(isActive ? .primary : .secondary)
-            .scaleEffect(scale)
-            .opacity(opacity)
-            .offset(y: yOffset)
-            .overlay(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(Color.accentColor.opacity(glowIntensity * 0.2))
-                    .blur(radius: 12)
-            )
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.vertical, 12)
-            .animation(.spring(response: 0.5, dampingFraction: 0.7), value: isActive)
-            .onAppear {
-                updateAnimationState()
-            }
-            .onChange(of: isActive) { _ in
-                updateAnimationState()
-            }
-    }
-
-    private func updateAnimationState() {
-        if isActive {
-            withAnimation(.spring(response: 0.5, dampingFraction: 0.7)) {
-                scale = 1.08
-                opacity = 1.0
-                yOffset = -2.0
-                glowIntensity = 1.0
-            }
-        } else {
-            withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
-                scale = 1.0
-                opacity = 0.5
-                yOffset = 0.0
-                glowIntensity = 0.0
-            }
-        }
-    }
-    
     // MARK: - Word by Word Line View (Optimized for performance)
     private func wordByWordLineView(line: LyricLine, words: [LyricWord], isActive: Bool) -> some View {
         HStack(alignment: .center, spacing: 6) {
@@ -271,7 +250,7 @@ struct AnimatedLineView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 10)
     }
-    
+
     // MARK: - Check if word is active
     private func isWordActive(_ word: LyricWord, at time: TimeInterval) -> Bool {
         let wordStartTime = word.time
@@ -294,25 +273,29 @@ struct AnimatedLineView: View {
 
         var newActiveWordIds: Set<UUID> = []
 
+        // Only check words within a reasonable time window for performance
         for word in syncLyrics.words {
-            if isWordActive(word, at: time) {
-                newActiveWordIds.insert(word.id)
+            let timeDiff = time - word.time
+            if timeDiff >= -0.5 && timeDiff <= (word.duration ?? 2.0) + 0.5 {
+                if isWordActive(word, at: time) {
+                    newActiveWordIds.insert(word.id)
+                }
             }
         }
 
         activeWordIds = newActiveWordIds
     }
-    
+
     // MARK: - Parse Lyrics
     private func parseLyrics() {
         guard let lyrics = song?.lyrics, !lyrics.isEmpty else {
             parsedLyrics = .none
             return
         }
-        
+
         parsedLyrics = LyricsParser.parse(lyrics)
     }
-    
+
     // MARK: - Update Current Line (Optimized for performance)
     private func updateCurrentLine(for time: TimeInterval) {
         switch parsedLyrics {
@@ -330,6 +313,59 @@ struct AnimatedLineView: View {
     }
 }
 
+// MARK: - Animated Line View (Beautiful synchronized line animations)
+struct AnimatedLineView: View {
+    let text: String
+    let isActive: Bool
+
+    @State private var scale: CGFloat = 1.0
+    @State private var opacity: Double = 0.5
+    @State private var yOffset: CGFloat = 0.0
+    @State private var glowIntensity: Double = 0.0
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: isActive ? 24 : 20, weight: isActive ? .bold : .regular))
+            .foregroundStyle(isActive ? .primary : .secondary)
+            .scaleEffect(scale)
+            .opacity(opacity)
+            .offset(y: yOffset)
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color.accentColor.opacity(glowIntensity * 0.25))
+                    .blur(radius: 15)
+            )
+            .shadow(color: Color.accentColor.opacity(glowIntensity * 0.2), radius: 12, x: 0, y: 4)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.vertical, 12)
+            .animation(.spring(response: 0.5, dampingFraction: 0.7), value: isActive)
+            .onAppear {
+                updateAnimationState()
+            }
+            .onChange(of: isActive) { _ in
+                updateAnimationState()
+            }
+    }
+
+    private func updateAnimationState() {
+        if isActive {
+            withAnimation(.spring(response: 0.5, dampingFraction: 0.7)) {
+                scale = 1.10
+                opacity = 1.0
+                yOffset = -3.0
+                glowIntensity = 1.0
+            }
+        } else {
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                scale = 1.0
+                opacity = 0.5
+                yOffset = 0.0
+                glowIntensity = 0.0
+            }
+        }
+    }
+}
+
 // MARK: - Animated Word View (Beautiful word-by-word animations)
 struct AnimatedWordView: View {
     let word: String
@@ -340,6 +376,7 @@ struct AnimatedWordView: View {
     @State private var scale: CGFloat = 1.0
     @State private var opacity: Double = 0.5
     @State private var glowIntensity: Double = 0.0
+    @State private var yOffset: CGFloat = 0.0
 
     var body: some View {
         Text(word)
@@ -347,14 +384,16 @@ struct AnimatedWordView: View {
             .foregroundStyle(wordColor)
             .scaleEffect(scale)
             .opacity(opacity)
+            .offset(y: yOffset)
             .overlay(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(wordColor.opacity(glowIntensity * 0.3))
-                    .blur(radius: 8)
+                    .fill(wordColor.opacity(glowIntensity * 0.4))
+                    .blur(radius: 10)
             )
+            .shadow(color: wordColor.opacity(glowIntensity * 0.3), radius: 8, x: 0, y: 2)
             .animation(.spring(response: 0.4, dampingFraction: 0.7), value: isActive)
             .animation(.spring(response: 0.3, dampingFraction: 0.8), value: isLineActive)
-            .animation(.easeOut(duration: 0.2), value: progress)
+            .animation(.easeOut(duration: 0.15), value: progress)
             .onAppear {
                 updateAnimationState()
             }
@@ -382,34 +421,39 @@ struct AnimatedWordView: View {
     private func updateAnimationState() {
         if isActive {
             withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
-                scale = 1.15
+                scale = 1.18
                 opacity = 1.0
                 glowIntensity = 1.0
+                yOffset = -3.0
             }
         } else if isLineActive {
             withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                 scale = 1.0
-                opacity = 0.7
+                opacity = 0.75
                 glowIntensity = 0.0
+                yOffset = 0.0
             }
         } else {
             withAnimation(.easeOut(duration: 0.3)) {
                 scale = 0.95
                 opacity = 0.4
                 glowIntensity = 0.0
+                yOffset = 0.0
             }
         }
     }
 
     private func updateProgressAnimation() {
         if isActive && progress > 0 {
-            // Animación suave basada en el progreso de la palabra
-            let scaleVariation = 1.15 + (sin(progress * .pi) * 0.05)
-            let glowVariation = 1.0 - (progress * 0.3)
+            // Enhanced progress animation with more dynamic effects
+            let scaleVariation = 1.18 + (sin(progress * .pi * 2) * 0.06)
+            let glowVariation = 1.0 - (progress * 0.4)
+            let yOffsetVariation = -3.0 + (sin(progress * .pi) * 2.0)
 
-            withAnimation(.easeInOut(duration: 0.1)) {
+            withAnimation(.easeInOut(duration: 0.08)) {
                 scale = scaleVariation
                 glowIntensity = glowVariation
+                yOffset = yOffsetVariation
             }
         }
     }
