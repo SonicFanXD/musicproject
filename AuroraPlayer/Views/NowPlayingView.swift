@@ -6,6 +6,8 @@ struct NowPlayingView: View {
 
     @State private var showLyrics = false
     @State private var showAudioInfo = false
+    @State private var showEqualizer = false
+    @State private var showQueue = false
     @State private var artworkScale: CGFloat = 1.0
     @State private var progressBarWidth: CGFloat = 0
 
@@ -29,6 +31,13 @@ struct NowPlayingView: View {
                         .scaleEffect(artworkScale)
                         .animation(.spring(response: 0.6, dampingFraction: 0.8), value: audioEngine.isPlaying)
 
+                    // Audio visualizer
+                    if audioEngine.isPlaying {
+                        AudioVisualizer(audioEngine: audioEngine)
+                            .frame(height: 40)
+                            .padding(.horizontal, 20)
+                    }
+
                     Spacer().frame(height: 32)
 
                     // Song info
@@ -48,6 +57,9 @@ struct NowPlayingView: View {
 
                     // Audio quality indicator
                     audioQualityButton
+
+                    // Queue button
+                    queueButton
 
                     Spacer().frame(height: 24)
                 }
@@ -78,13 +90,22 @@ struct NowPlayingView: View {
                 }
 
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button {
-                        showLyrics = true
-                    } label: {
-                        Image(systemName: "quote.bubble")
-                            .foregroundStyle(.primary)
+                    HStack(spacing: 16) {
+                        Button {
+                            showEqualizer = true
+                        } label: {
+                            Image(systemName: "slider.horizontal.3")
+                                .foregroundStyle(.primary)
+                        }
+
+                        Button {
+                            showLyrics = true
+                        } label: {
+                            Image(systemName: "quote.bubble")
+                                .foregroundStyle(.primary)
+                        }
+                        .disabled(audioEngine.currentSong?.lyrics.isEmpty ?? true)
                     }
-                    .disabled(audioEngine.currentSong?.lyrics.isEmpty ?? true)
                 }
             }
             .sheet(isPresented: $showLyrics) {
@@ -92,6 +113,12 @@ struct NowPlayingView: View {
             }
             .sheet(isPresented: $showAudioInfo) {
                 AudioInfoView(audioEngine: audioEngine)
+            }
+            .sheet(isPresented: $showEqualizer) {
+                EqualizerView(audioEngine: audioEngine)
+            }
+            .sheet(isPresented: $showQueue) {
+                QueueView(audioEngine: audioEngine)
             }
         }
     }
@@ -401,8 +428,35 @@ struct NowPlayingView: View {
                 Image(systemName: "waveform.path")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(Color.accentColor)
-                
+
                 Text(audioQualityInfo)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .background {
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(.ultraThinMaterial)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .stroke(.white.opacity(0.1), lineWidth: 1)
+                    )
+            }
+        }
+    }
+
+    // MARK: - Queue Button
+    private var queueButton: some View {
+        Button {
+            showQueue = true
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "list.bullet")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Color.accentColor)
+
+                Text("Cola: \(audioEngine.nextUpQueue.count)")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(.secondary)
             }
@@ -431,9 +485,7 @@ struct NowPlayingView: View {
     }
 
     private var audioQualityInfo: String {
-        let sampleRate = Int(audioEngine.sourceSampleRate / 1000)
-        let channels = audioEngine.outputChannelCount
-        return "\(sampleRate)kHz · \(channels)ch"
+        audioEngine.audioQualityInfo.isEmpty ? "\(Int(audioEngine.sourceSampleRate / 1000))kHz · \(audioEngine.outputChannelCount)ch" : audioEngine.audioQualityInfo
     }
 
     private func formatTime(_ seconds: TimeInterval) -> String {

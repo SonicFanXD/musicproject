@@ -38,6 +38,55 @@ enum RepeatMode: String, CaseIterable, Codable {
     case one
 }
 
+enum EQPreset: String, CaseIterable, Codable {
+    case flat
+    case bass
+    case treble
+    case vocal
+    case classical
+    case electronic
+    case pop
+    case rock
+    case jazz
+
+    var displayName: String {
+        switch self {
+        case .flat: return "Plano"
+        case .bass: return "Graves"
+        case .treble: return "Agudos"
+        case .vocal: return "Vocales"
+        case .classical: return "Clásica"
+        case .electronic: return "Electrónica"
+        case .pop: return "Pop"
+        case .rock: return "Rock"
+        case .jazz: return "Jazz"
+        }
+    }
+
+    var gains: [Float] {
+        switch self {
+        case .flat:
+            return [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        case .bass:
+            return [8, 7, 5, 3, 0, 0, 0, 0, 0, 0]
+        case .treble:
+            return [0, 0, 0, 0, 0, 0, 3, 5, 7, 8]
+        case .vocal:
+            return [2, 4, 5, 4, 2, 0, 0, 0, 0, 0]
+        case .classical:
+            return [5, 4, 3, 2, 0, 0, 2, 3, 4, 5]
+        case .electronic:
+            return [6, 5, 3, 0, -2, -2, 0, 3, 5, 6]
+        case .pop:
+            return [3, 4, 3, 1, 0, 0, 1, 3, 4, 3]
+        case .rock:
+            return [6, 5, 4, 2, 0, 0, 2, 4, 5, 6]
+        case .jazz:
+            return [4, 3, 2, 2, 0, 0, 2, 3, 4, 4]
+        }
+    }
+}
+
 struct Song: Identifiable, Equatable, Codable {
     let id: UUID
     let url: URL
