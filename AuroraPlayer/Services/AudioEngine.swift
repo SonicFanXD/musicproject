@@ -1067,7 +1067,12 @@ class AudioEngine: NSObject, ObservableObject {
         guard let songIDString = state["songID"] as? String,
               let songID = UUID(uuidString: songIDString),
               let song = allSongs.first(where: { $0.id == songID }) else {
-            UserDefaults.standard.removeObject(forKey: stateDefaultsKey)
+            // Si la biblioteca aún está cargando (vacía), NO borrar el estado:
+            // ContentView reintentará cuando termine de cargar la caché.
+            if !allSongs.isEmpty {
+                UserDefaults.standard.removeObject(forKey: stateDefaultsKey)
+            }
+            hasRestored = false
             return
         }
 

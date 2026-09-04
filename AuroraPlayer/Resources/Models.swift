@@ -138,9 +138,22 @@ struct Song: Identifiable, Equatable, Codable {
 }
 
 extension Song {
+    // Caché de imágenes decodificadas: evita re-decodificar el JPEG en cada
+    // render de cada fila (gran optimización con bibliotecas grandes).
+    private static let artworkCache: NSCache<NSUUID, UIImage> = {
+        let cache = NSCache<NSUUID, UIImage>()
+        cache.countLimit = 300
+        return cache
+    }()
+
     var artwork: UIImage? {
         guard let data = artworkData else { return nil }
-        return UIImage(data: data)
+        if let cached = Song.artworkCache.object(forKey: id as NSUUID) {
+            return cached
+        }
+        guard let image = UIImage(data: data) else { return nil }
+        Song.artworkCache.setObject(image, forKey: id as NSUUID)
+        return image
     }
 
     // Display formatted title with artist if album is unknown
@@ -161,18 +174,20 @@ extension Song {
 }
 
 struct Album: Identifiable, Equatable {
-    let id = UUID()
+    // Identidad estable (nombre+artista): un UUID nuevo por render hacía que
+    // SwiftUI recreara todas las filas y perdiera animaciones/estado.
+    var id: String { "\(artist)|\(name)" }
     let name: String
     let artist: String
     let songs: [Song]
 
     var artwork: UIImage? {
-        songs.first(where: { $0.artworkData != nil }).flatMap { UIImage(data: $0.artworkData!) }
+        songs.first(where: { $0.artworkData != nil })?.artwork
     }
 }
 
 struct Artist: Identifiable, Equatable {
-    let id = UUID()
+    var id: String { name }
     let name: String
     let songs: [Song]
 
@@ -188,7 +203,7 @@ struct Artist: Identifiable, Equatable {
     }
 
     var artwork: UIImage? {
-        songs.first(where: { $0.artworkData != nil }).flatMap { UIImage(data: $0.artworkData!) }
+        songs.first(where: { $0.artworkData != nil })?.artwork
     }
 }
 

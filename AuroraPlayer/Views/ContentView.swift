@@ -73,6 +73,13 @@ struct ContentView: View {
             .onAppear {
                 restoreLibraryIfNeeded()
             }
+            .onChange(of: fileAccessService.songs.isEmpty) { songsEmpty in
+                // Reintentar restauración cuando la biblioteca termine de cargar del caché
+                if !songsEmpty {
+                    hasRestored = false
+                    restoreLibraryIfNeeded()
+                }
+            }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             PlayerBar(audioEngine: audioEngine)

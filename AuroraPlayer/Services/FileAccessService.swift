@@ -6,7 +6,9 @@ import UIKit
 class FileAccessService: ObservableObject {
     @Published var folders: [MusicFolder] = []
     @Published var files: [MusicFile] = []
-    @Published var songs: [Song] = []
+    @Published var songs: [Song] = [] {
+        didSet { rebuildDerivedCollections() }
+    }
     @Published var playlists: [Playlist] = []
     @Published private(set) var scanTotal = 0
     @Published private(set) var scanProcessed = 0
@@ -22,14 +24,19 @@ class FileAccessService: ObservableObject {
     private var indexedSongURLs = Set<URL>()
     private var activeDiscoveries = 0
     private var cacheSaveWorkItem: DispatchWorkItem?
-    private let metadataQueue: OperationQueue = {
-        let queue = OperationQueue()
-        queue.name = "com.aurora.metadata"
-        queue.qualityOfService = .utility
-        queue.maxConcurrentOperationCount = 2
-        return queue
-    }()
+
+    // Cola de lotes con concurrencia limitada: antes se lanzaba un Task sin
+    // límite por lote, saturando memoria/CPU con bibliotecas grandes
+    // (causa principal del crash durante la indexación).
+    private var queuedBatches: [(urls: [URL], generation: Int)] = []
+    private var inFlightBatches = 0
+    private let maxInFlightBatches = 2
     private let metadataBatchSize = 20
+
+    // Colecciones derivadas cacheadas: se recalculan solo cuando cambia `songs`,
+    // no en cada render de la UI.
+    private var cachedAlbums: [Album] = []
+    private var cachedArtists: [Artist] = []
     private var pendingSongs: [Song] = []
     private var isSortScheduled = false
 
@@ -163,7 +170,8 @@ class FileAccessService: ObservableObject {
 
     private func rescanAllFolders() {
         scanGeneration += 1
-        metadataQueue.cancelAllOperations()
+        queuedBatches.removeAll(keepingCapacity: true)
+        inFlightBatches = 0
         songs = []
         pendingSongs = []
         isSortScheduled = false
@@ -293,24 +301,40 @@ class FileAccessService: ObservableObject {
     }
 
     private func enqueueMetadataBatch(_ urls: [URL], generation: Int) {
+        queuedBatches.append((urls, generation))
+        processNextMetadataBatchIfNeeded()
+    }
+
+    private func processNextMetadataBatchIfNeeded() {
+        guard inFlightBatches < maxInFlightBatches, !queuedBatches.isEmpty else { return }
+        let batch = queuedBatches.removeFirst()
+        let generation = batch.generation
+
+        inFlightBatches += 1
         Task { @MainActor in
-            guard generation == self.scanGeneration else { return }
+            defer { self.inFlightBatches -= 1 }
 
             var foundSongs: [Song] = []
-            for url in urls {
+            for url in batch.urls {
                 let song = await makeSong(from: url)
                 foundSongs.append(song)
             }
 
-            self.scanProcessed += urls.count
+            guard generation == self.scanGeneration else {
+                self.processNextMetadataBatchIfNeeded()
+                return
+            }
+
+            self.scanProcessed += batch.urls.count
             let uniqueSongs = foundSongs.filter { self.indexedSongURLs.insert($0.url).inserted }
             if !uniqueSongs.isEmpty {
-                // Accumulate without sorting on every batch (O(n log n) per batch is too heavy for 1254+ songs)
+                // Acumular sin ordenar en cada lote (O(n log n) por lote es demasiado para 1254+ canciones)
                 self.pendingSongs.append(contentsOf: uniqueSongs)
                 self.scheduleSortAndCache()
                 AppLog.debug(.library, "Lote cargado: \(uniqueSongs.count); total: \(self.pendingSongs.count)")
             }
             self.updateScanningState()
+            self.processNextMetadataBatchIfNeeded()
         }
     }
 
@@ -628,12 +652,13 @@ class FileAccessService: ObservableObject {
     }
 
     private func thumbnailArtwork(_ data: Data) -> Data {
-        // Aumentar resolución a 1024px para carátulas más nítidas (usado en NowPlaying en grande)
+        // 640px es suficiente para NowPlaying a pantalla completa en @2x/@3x
+        // y reduce drásticamente la memoria del caché (antes 1024px por canción).
         guard data.count > 150_000,
               let source = CGImageSourceCreateWithData(data as CFData, nil) else { return data }
         let options: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
-            kCGImageSourceThumbnailMaxPixelSize: 1024,
+            kCGImageSourceThumbnailMaxPixelSize: 640,
             kCGImageSourceCreateThumbnailWithTransform: true,
             kCGImageSourceShouldCacheImmediately: true
         ]
@@ -1168,9 +1193,9 @@ class FileAccessService: ObservableObject {
     }
 
     func songsInPlaylist(_ playlist: Playlist) -> [Song] {
-        playlist.songIDs.compactMap { songID in
-            songs.first { $0.id == songID }
-        }
+        // Diccionario para búsqueda O(1) en lugar de O(n) por canción
+        let songsByID = Dictionary(uniqueKeysWithValues: songs.map { ($0.id, $0) })
+        return playlist.songIDs.compactMap { songsByID[$0] }
     }
 
     private var libraryCacheURL: URL? {
@@ -1198,12 +1223,16 @@ class FileAccessService: ObservableObject {
             rescanAllFolders()
         } else {
             restoreSecurityScopedAccess()
-            // Verificar que las URLs de las canciones cacheadas sean accesibles
-            // Si no lo son, re-escanear para regenerar las URLs con acceso
-            let accessibleCount = cachedSongs.filter { FileManager.default.fileExists(atPath: $0.url.path) }.count
-            if accessibleCount < cachedSongs.count {
-                AppLog.warning(.library, "\(cachedSongs.count - accessibleCount) canciones inaccesibles, re-escaneando")
-                rescanAllFolders()
+            // Verificar accesibilidad en un hilo de fondo: con 1000+ canciones,
+            // hacer fileExists en el hilo principal congela la app al iniciar.
+            let urls = cachedSongs.map(\.url)
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                let inaccessibleCount = urls.filter { !FileManager.default.fileExists(atPath: $0.path) }.count
+                DispatchQueue.main.async {
+                    guard inaccessibleCount > 0 else { return }
+                    AppLog.warning(.library, "\(inaccessibleCount) canciones inaccesibles, re-escaneando")
+                    self?.rescanAllFolders()
+                }
             }
         }
         if !cachedSongs.isEmpty {
@@ -1236,34 +1265,35 @@ class FileAccessService: ObservableObject {
         try? FileManager.default.removeItem(at: url)
     }
 
-    // MARK: - Albums y Artists (CORREGIDO)
-    var albums: [Album] {
-        let grouped = Dictionary(grouping: songs) { song in
+    // MARK: - Albums y Artists (cacheados: se recalculan solo cuando cambia `songs`)
+
+    var albums: [Album] { cachedAlbums }
+    var artists: [Artist] { cachedArtists }
+
+    private func rebuildDerivedCollections() {
+        let groupedAlbums = Dictionary(grouping: songs) { song -> AlbumKey in
             let albumName = song.album.isEmpty ? "Álbum desconocido" : song.album
             let artistName = song.albumArtist.isEmpty ? (song.artist.isEmpty ? "Artista desconocido" : song.artist) : song.albumArtist
             return AlbumKey(album: albumName, artist: artistName)
         }
 
-        return grouped.map { (key, songs) in
+        cachedAlbums = groupedAlbums.map { (key, albumSongs) in
             Album(
                 name: key.album,
                 artist: key.artist,
-                songs: songs.sorted { $0.trackNumber < $1.trackNumber }
+                songs: albumSongs.sorted { $0.trackNumber < $1.trackNumber }
             )
         }.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-    }
 
-    var artists: [Artist] {
-        let grouped = Dictionary(grouping: songs) { song in
+        let groupedArtists = Dictionary(grouping: songs) { song -> String in
             // Usar albumArtist para agrupar por el artista del álbum, no de la canción
-            let artistName = song.albumArtist.isEmpty ? (song.artist.isEmpty ? "Artista desconocido" : song.artist) : song.albumArtist
-            return artistName
+            song.albumArtist.isEmpty ? (song.artist.isEmpty ? "Artista desconocido" : song.artist) : song.albumArtist
         }
 
-        return grouped.map { (artistName, songs) in
+        cachedArtists = groupedArtists.map { (artistName, artistSongs) in
             Artist(
                 name: artistName,
-                songs: songs
+                songs: artistSongs
             )
         }.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
