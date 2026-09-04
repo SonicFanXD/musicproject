@@ -36,6 +36,9 @@ final class AudioEngine: NSObject, ObservableObject {
         let session = AVAudioSession.sharedInstance()
         do {
             try session.setCategory(.playback, mode: .default, options: [.allowBluetoothA2DP, .allowAirPlay])
+            // Buffer corto: reduce la latencia y el riesgo de underrun sin afectar
+            // la fidelidad, ya que solo cambia el tamaño de bloque, no el formato.
+            try? session.setPreferredIOBufferDuration(0.005)
             try session.setActive(true)
         } catch { AppLog.error(.playback, "Sesión de audio: \(error.localizedDescription)") }
         engine.attach(playerNode)
@@ -43,6 +46,10 @@ final class AudioEngine: NSObject, ObservableObject {
         engine.connect(playerNode, to: engine.mainMixerNode, format: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleRouteChange), name: AVAudioSession.routeChangeNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleInterruption), name: AVAudioSession.interruptionNotification, object: nil)
+        // Sin este observador, un cambio de frecuencia de muestreo (el nuestro,
+        // vía setPreferredSampleRate, o uno externo por cambio de ruta) invalida
+        // el grafo del motor y la reproducción puede quedarse en silencio.
+        NotificationCenter.default.addObserver(self, selector: #selector(handleEngineConfigurationChange), name: .AVAudioEngineConfigurationChange, object: engine)
         NotificationCenter.default.addObserver(self, selector: #selector(applicationWillResignActive), name: UIApplication.willResignActiveNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(applicationWillResignActive), name: UIApplication.didEnterBackgroundNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(applicationWillResignActive), name: UIApplication.willTerminateNotification, object: nil)
@@ -76,6 +83,12 @@ final class AudioEngine: NSObject, ObservableObject {
             let rate = file.processingFormat.sampleRate
             guard rate > 0, file.length > 0 else { throw PlaybackError.invalidAudioFile }
             audioFile = file; sampleRate = rate; duration = Double(file.length) / rate; currentSong = song
+            // Pide al hardware la frecuencia nativa del archivo. Si el dispositivo
+            // la soporta (DAC Lightning/USB-C, muchos receptores AirPlay), evita
+            // el remuestreo silencioso que degrada la fidelidad en pistas Hi-Res.
+            // El grafo se reconstruye en handleEngineConfigurationChange cuando
+            // el cambio se hace efectivo.
+            adaptSessionSampleRate(toMatch: rate)
             prepareNowPlayingArtwork(for: song)
             let position = min(max(0, time), duration)
             seekOffset = position; currentTime = position
@@ -90,6 +103,53 @@ final class AudioEngine: NSObject, ObservableObject {
             AppLog.error(.playback, "No se pudo reproducir \(song.title): \(error.localizedDescription)")
             advanceAfterFailure()
         }
+    }
+
+    /// Solicita a la sesión de audio la frecuencia de muestreo nativa de la pista
+    /// actual. Es solo una preferencia: el sistema puede ignorarla según la ruta
+    /// (el altavoz interno suele fijarse en 48 kHz pase lo que pase), pero en
+    /// salidas que sí soportan múltiples frecuencias nativas evita el remuestreo.
+    private func adaptSessionSampleRate(toMatch fileRate: Double) {
+        let session = AVAudioSession.sharedInstance()
+        guard abs(session.sampleRate - fileRate) > 1 else { return }
+        do {
+            try session.setPreferredSampleRate(fileRate)
+        } catch {
+            AppLog.error(.playback, "No se pudo solicitar \(Int(fileRate)) Hz nativos: \(error.localizedDescription)")
+        }
+    }
+
+    /// Reconstruye el grafo del motor tras un AVAudioEngineConfigurationChange
+    /// (cambio de frecuencia de muestreo o de formato de hardware) y retoma la
+    /// reproducción exactamente donde iba, en vez de dejarla en silencio.
+    @objc private func handleEngineConfigurationChange(_ note: Notification) {
+        Task { @MainActor in
+            guard self.isConfigured else { return }
+            AppLog.info(.playback, "Formato de salida reconfigurado; reconstruyendo el grafo de audio")
+            self.rebuildAudioGraph()
+        }
+    }
+
+    private func rebuildAudioGraph() {
+        let wasPlaying = isPlaying
+        let resumeTime = currentTime
+        engine.disconnectNodeOutput(playerNode)
+        engine.connect(playerNode, to: engine.mainMixerNode, format: nil)
+        engine.prepare()
+        updateRouteName()
+        guard let file = audioFile else { return }
+        do {
+            if !engine.isRunning { try engine.start() }
+        } catch {
+            AppLog.error(.playback, "No se pudo reiniciar el motor tras el cambio de formato: \(error.localizedDescription)")
+            return
+        }
+        scheduleFile(file, from: AVAudioFramePosition(resumeTime * sampleRate), shouldPlay: wasPlaying)
+        isPlaying = wasPlaying
+        if wasPlaying { startDisplayTimer() }
+        let session = AVAudioSession.sharedInstance()
+        AppLog.info(.playback, "Grafo reconstruido: salida \(Int(session.sampleRate)) Hz / \(session.outputNumberOfChannels) canales")
+        updateNowPlayingInfo()
     }
 
     private func scheduleFile(_ file: AVAudioFile, from startFrame: AVAudioFramePosition, shouldPlay: Bool) {

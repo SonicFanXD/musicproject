@@ -12,7 +12,8 @@ targets:
       - path: AuroraPlayer
         excludes:
           - "Info.plist"
-      - path: AuroraPlayerApp.swift   # ✅ Agregar esta línea
+      - path: AuroraPlayerApp.swift
+      - path: Assets.xcassets   # ✅ Así, sin guión extra
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.aurora.player

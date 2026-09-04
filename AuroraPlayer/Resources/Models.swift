@@ -1,4 +1,5 @@
 import Foundation
+import UIKit // Necesario para UIImage y el manejo de portadas
 
 extension String {
     var nilIfEmpty: String? {
@@ -102,4 +103,98 @@ struct Song: Identifiable, Equatable, Codable {
     static func == (lhs: Song, rhs: Song) -> Bool {
         lhs.id == rhs.id
     }
+}
+
+// MARK: - Extensiones de Compatibilidad para Song
+extension Song {
+    /// Convierte dinámicamente los datos de portada crudos en un UIImage consumible por las vistas
+    var artwork: UIImage? {
+        if let data = artworkData {
+            return UIImage(data: data)
+        }
+        return nil
+    }
+}
+
+// MARK: - Modelos de Biblioteca (Album y Artist)
+struct Album: Identifiable, Equatable {
+    let id: UUID
+    let name: String
+    let artist: String
+    let songs: [Song]
+    
+    var artwork: UIImage? {
+        if let songWithArtwork = songs.first(where: { $0.artworkData != nil }),
+           let data = songWithArtwork.artworkData {
+            return UIImage(data: data)
+        }
+        return nil
+    }
+}
+
+struct Artist: Identifiable, Equatable {
+    let id: UUID
+    let name: String
+    let songs: [Song]
+    
+    var albums: [Album] {
+        let grouped = Dictionary(grouping: songs) { $0.album }
+        return grouped.map { (albumName, songs) in
+            Album(
+                id: UUID(),
+                name: albumName.isEmpty ? "Álbum desconocido" : albumName,
+                artist: name,
+                songs: songs.sorted { $0.trackNumber < $1.trackNumber }
+            )
+        }.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+    
+    var artwork: UIImage? {
+        if let songWithArtwork = songs.first(where: { $0.artworkData != nil }),
+           let data = songWithArtwork.artworkData {
+            return UIImage(data: data)
+        }
+        return nil
+    }
+}
+
+// MARK: - Agrupación automática para FileAccessService
+extension FileAccessService {
+    /// Genera la lista de Álbumes agrupando las canciones leídas dinámicamente
+    var albums: [Album] {
+        let grouped = Dictionary(grouping: songs) { song in
+            let albumName = song.album.isEmpty ? "Álbum desconocido" : song.album
+            let artistName = song.albumArtist.isEmpty ? (song.artist.isEmpty ? "Artista desconocido" : song.artist) : song.albumArtist
+            return AlbumKey(album: albumName, artist: artistName)
+        }
+        
+        return grouped.map { (key, songs) in
+            Album(
+                id: UUID(),
+                name: key.album,
+                artist: key.artist,
+                songs: songs.sorted { $0.trackNumber < $1.trackNumber }
+            )
+        }.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+    
+    /// Genera la lista de Artistas agrupando las canciones leídas dinámicamente
+    var artists: [Artist] {
+        let grouped = Dictionary(grouping: songs) { song in
+            song.artist.isEmpty ? "Artista desconocido" : song.artist
+        }
+        
+        return grouped.map { (artistName, songs) in
+            Artist(
+                id: UUID(),
+                name: artistName,
+                songs: songs
+            )
+        }.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+}
+
+private struct AlbumKey: Hashable {
+    let album: String
+    let artist: String
 }
