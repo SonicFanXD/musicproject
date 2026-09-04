@@ -1,6 +1,6 @@
 import SwiftUI
 
-// MARK: - Album Detail (diseño inmersivo premium)
+// MARK: - Album Detail (diseño inmersivo premium con color de carátula)
 struct AlbumDetailView: View {
     let album: Album
     @ObservedObject var audioEngine: AudioEngine
@@ -14,6 +14,21 @@ struct AlbumDetailView: View {
         songs.reduce(0) { $0 + $1.duration }
     }
 
+    // Agrupar canciones por disco (solo relevante si hay discNumber)
+    private var hasMultipleDiscs: Bool {
+        Set(songs.compactMap { $0.discNumber }).count > 1
+    }
+
+    private var songsByDisc: [(disc: Int, songs: [Song])] {
+        let grouped = Dictionary(grouping: songs) { $0.discNumber ?? 1 }
+        return grouped.keys.sorted().map { ($0, grouped[$0]!.sorted { $0.trackNumber < $1.trackNumber }) }
+    }
+
+    // Color dominante del artwork para teñir la UI
+    private var tintColor: Color {
+        Color(album.dominantColor ?? UIColor.systemPurple)
+    }
+
     var body: some View {
         ScrollView {
             VStack(spacing: 0) {
@@ -25,12 +40,18 @@ struct AlbumDetailView: View {
                     .padding(.horizontal, 20)
                     .padding(.top, 20)
 
-                // Canciones
+                // Canciones (con separador de discos si aplica)
                 VStack(spacing: 10) {
                     sectionHeader(icon: "music.note.list", title: "Canciones")
 
-                    ForEach(Array(songs.enumerated()), id: \.element.id) { index, song in
-                        songRow(song, index: index)
+                    if hasMultipleDiscs {
+                        ForEach(songsByDisc, id: \.disc) { discGroup in
+                            discSection(disc: discGroup.disc, songs: discGroup.songs)
+                        }
+                    } else {
+                        ForEach(Array(songs.enumerated()), id: \.element.id) { index, song in
+                            songRow(song, index: index)
+                        }
                     }
                 }
                 .padding(.horizontal, 20)
@@ -39,7 +60,6 @@ struct AlbumDetailView: View {
             }
         }
         .background(
-            // Fondo continuo debajo del scroll
             Color(UIColor.systemBackground).ignoresSafeArea()
         )
         .navigationTitle(album.name)
@@ -48,7 +68,7 @@ struct AlbumDetailView: View {
         .toolbarBackground(.visible, for: .navigationBar)
     }
 
-    // MARK: - Hero (artwork grande sobre fondo desenfocado)
+    // MARK: - Hero (artwork grande sobre fondo desenfocado con tinte del color dominante)
     private var heroSection: some View {
         VStack(spacing: 18) {
             // Artwork con marco sutil
@@ -70,7 +90,7 @@ struct AlbumDetailView: View {
                         RoundedRectangle(cornerRadius: 20, style: .continuous)
                             .fill(
                                 LinearGradient(
-                                    colors: [Color.accentColor.opacity(0.25), Color.secondary.opacity(0.2)],
+                                    colors: [tintColor.opacity(0.25), Color.secondary.opacity(0.2)],
                                     startPoint: .topLeading,
                                     endPoint: .bottomTrailing
                                 )
@@ -112,7 +132,7 @@ struct AlbumDetailView: View {
         .frame(maxWidth: .infinity)
         .padding(.bottom, 4)
         .background(alignment: .top) {
-            // Fondo desenfocado del artwork que se difumina hacia el fondo
+            // Fondo desenfocado del artwork con tinte del color dominante
             GeometryReader { geometry in
                 Group {
                     if let artwork = album.artwork {
@@ -120,11 +140,20 @@ struct AlbumDetailView: View {
                             .resizable()
                             .scaledToFill()
                             .blur(radius: 44)
-                            .opacity(0.35)
-                            .overlay(Color(UIColor.systemBackground).opacity(0.45))
+                            .opacity(0.4)
+                            .overlay(
+                                LinearGradient(
+                                    colors: [
+                                        tintColor.opacity(0.25),
+                                        Color(UIColor.systemBackground).opacity(0.55)
+                                    ],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                )
+                            )
                     } else {
                         LinearGradient(
-                            colors: [Color.accentColor.opacity(0.18), Color(UIColor.systemBackground)],
+                            colors: [tintColor.opacity(0.18), Color(UIColor.systemBackground)],
                             startPoint: .top,
                             endPoint: .bottom
                         )
@@ -137,7 +166,7 @@ struct AlbumDetailView: View {
         }
     }
 
-    // MARK: - Botones de acción (Reproducir + Aleatorio)
+    // MARK: - Botones de acción (Reproducir + Aleatorio) — color basado en carátula
     private var actionButtons: some View {
         HStack(spacing: 12) {
             // Reproducir todo
@@ -158,9 +187,9 @@ struct AlbumDetailView: View {
                 .padding(.vertical, 15)
                 .background {
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(Color.accentColor)
+                        .fill(tintColor)
                 }
-                .shadow(color: Color.accentColor.opacity(0.35), radius: 10, x: 0, y: 5)
+                .shadow(color: tintColor.opacity(0.4), radius: 10, x: 0, y: 5)
             }
 
             // Aleatorio
@@ -175,12 +204,33 @@ struct AlbumDetailView: View {
             } label: {
                 Image(systemName: "shuffle")
                     .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(Color.accentColor)
+                    .foregroundStyle(tintColor)
                     .frame(width: 52, height: 52)
                     .background {
                         RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .fill(Color.accentColor.opacity(0.14))
+                            .fill(tintColor.opacity(0.14))
                     }
+            }
+        }
+    }
+
+    // MARK: - Sección de disco (separador visual para álbumes multi-disco)
+    private func discSection(disc: Int, songs: [Song]) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Image(systemName: "opticaldisc")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(tintColor.opacity(0.8))
+
+                Text("Disco \(disc)")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 4)
+            .padding(.top, 6)
+
+            ForEach(Array(songs.enumerated()), id: \.element.id) { index, song in
+                songRow(song, index: index)
             }
         }
     }
@@ -199,7 +249,7 @@ struct AlbumDetailView: View {
                     HStack(spacing: 3) {
                         ForEach(0..<3, id: \.self) { bar in
                             RoundedRectangle(cornerRadius: 1.5)
-                                .fill(Color.accentColor)
+                                .fill(tintColor)
                                 .frame(width: 3, height: bar % 2 == 0 ? 14 : 9)
                                 .animation(
                                     .easeInOut(duration: 0.45 + Double(bar) * 0.12)
@@ -219,7 +269,7 @@ struct AlbumDetailView: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(song.title)
                         .font(.system(size: 16, weight: isCurrent ? .semibold : .medium))
-                        .foregroundStyle(isCurrent ? Color.accentColor : .primary)
+                        .foregroundStyle(isCurrent ? tintColor : .primary)
                         .lineLimit(1)
 
                     Text(song.displaySubtitle)
@@ -238,12 +288,12 @@ struct AlbumDetailView: View {
             .padding(.vertical, 12)
             .background {
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(isCurrent ? Color.accentColor.opacity(0.1) : Color.secondary.opacity(0.05))
+                    .fill(isCurrent ? tintColor.opacity(0.1) : Color.secondary.opacity(0.05))
             }
             .overlay {
                 if isCurrent {
                     RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .strokeBorder(Color.accentColor.opacity(0.25), lineWidth: 1)
+                        .strokeBorder(tintColor.opacity(0.25), lineWidth: 1)
                 }
             }
         }

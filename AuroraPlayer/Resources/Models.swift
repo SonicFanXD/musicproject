@@ -184,6 +184,26 @@ struct Album: Identifiable, Equatable {
     var artwork: UIImage? {
         songs.first(where: { $0.artworkData != nil })?.artwork
     }
+
+    // Color dominante extraído del artwork (cálculo único durante indexación).
+    // Se usa para teñir botones y fondos con la paleta del álbum.
+    private static let colorCache: NSCache<NSString, UIColor> = {
+        let cache = NSCache<NSString, UIColor>()
+        cache.countLimit = 200
+        return cache
+    }()
+
+    var dominantColor: UIColor? {
+        guard let artwork = artwork else { return nil }
+        if let cached = Album.colorCache.object(forKey: id as NSString) {
+            return cached
+        }
+        let color = ColorExtractor.dominantColor(from: artwork)
+        if let color = color {
+            Album.colorCache.setObject(color, forKey: id as NSString)
+        }
+        return color
+    }
 }
 
 struct Artist: Identifiable, Equatable {
@@ -204,6 +224,90 @@ struct Artist: Identifiable, Equatable {
 
     var artwork: UIImage? {
         songs.first(where: { $0.artworkData != nil })?.artwork
+    }
+}
+
+// MARK: - Extractor de color dominante (para teñir UI con la paleta del artwork)
+enum ColorExtractor {
+    /// Extrae el color más vibrante de un artwork, evitando blancos/negros puros.
+    /// Optimizado: downscalea a 24x24 y muestrea píxeles (cálculo < 1ms).
+    static func dominantColor(from image: UIImage) -> UIColor? {
+        let size = CGSize(width: 24, height: 24)
+        guard let resized = downscale(image: image, to: size) else { return nil }
+
+        guard let cgImage = resized.cgImage,
+              let data = cgImage.dataProvider?.data,
+              let bytes = CFDataGetBytePtr(data) else { return nil }
+
+        let bytesPerPixel = 4
+        let width = cgImage.width
+        let height = cgImage.height
+
+        // Acumular colores vibrantes (saturados y con brillo medio)
+        var bestColor: UIColor?
+        var bestScore: CGFloat = -1
+
+        // Muestrear cada 4 píxeles para rapidez
+        for y in stride(from: 0, to: height, by: 4) {
+            for x in stride(from: 0, to: width, by: 4) {
+                let offset = (y * width + x) * bytesPerPixel
+                let r = CGFloat(bytes[offset]) / 255.0
+                let g = CGFloat(bytes[offset + 1]) / 255.0
+                let b = CGFloat(bytes[offset + 2]) / 255.0
+                let a = CGFloat(bytes[offset + 3]) / 255.0
+
+                guard a > 0.5 else { continue } // ignorar transparentes
+
+                // Calcular saturación y brillo
+                let maxC = max(r, g, b)
+                let minC = min(r, g, b)
+                let brightness = maxC
+                let saturation = maxC == 0 ? 0 : (maxC - minC) / maxC
+
+                // Puntuación: favorecer colores saturados con brillo medio-alto
+                // Descartar casi-blancos y casi-negros
+                guard brightness > 0.25, brightness < 0.95, saturation > 0.3 else { continue }
+
+                let score = saturation * 0.7 + brightness * 0.3
+                if score > bestScore {
+                    bestScore = score
+                    bestColor = UIColor(red: r, green: g, blue: b, alpha: 1.0)
+                }
+            }
+        }
+
+        // Fallback: si no encontró color vibrante, usar el promedio de píxeles no extremos
+        if bestColor == nil {
+            return averageColor(from: bytes, width: width, height: height)
+        }
+
+        return bestColor
+    }
+
+    private static func downscale(image: UIImage, to size: CGSize) -> UIImage? {
+        UIGraphicsBeginImageContextWithOptions(size, true, 1.0)
+        defer { UIGraphicsEndImageContext() }
+        image.draw(in: CGRect(origin: .zero, size: size))
+        return UIGraphicsGetImageFromCurrentImageContext()
+    }
+
+    private static func averageColor(from bytes: UnsafePointer<UInt8>, width: Int, height: Int) -> UIColor? {
+        var totalR: CGFloat = 0, totalG: CGFloat = 0, totalB: CGFloat = 0
+        var count = 0
+        for y in stride(from: 0, to: height, by: 6) {
+            for x in stride(from: 0, to: width, by: 6) {
+                let offset = (y * width + x) * 4
+                let r = CGFloat(bytes[offset]) / 255.0
+                let g = CGFloat(bytes[offset + 1]) / 255.0
+                let b = CGFloat(bytes[offset + 2]) / 255.0
+                let brightness = max(r, g, b)
+                if brightness > 0.2, brightness < 0.9 {
+                    totalR += r; totalG += g; totalB += b; count += 1
+                }
+            }
+        }
+        guard count > 0 else { return UIColor.systemPurple }
+        return UIColor(red: totalR / CGFloat(count), green: totalG / CGFloat(count), blue: totalB / CGFloat(count), alpha: 1.0)
     }
 }
 
