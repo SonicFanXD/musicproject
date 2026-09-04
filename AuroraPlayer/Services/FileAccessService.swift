@@ -220,23 +220,45 @@ class FileAccessService: ObservableObject {
         }
     }
 
+    /// Enumera el contenido de una carpeta de forma COORDINADA con NSFileCoordinator.
+    /// Este es el fix del bug de "no aparecen canciones al añadir una carpeta": al leer
+    /// sin coordinar, carpetas que vienen de proveedores externos (iCloud Drive, otras
+    /// apps de archivos) pueden devolver 0 elementos o fallar en silencio, mientras que
+    /// los archivos sueltos (con su propio bookmark de seguridad) sí funcionaban.
     private func scanFolder(_ url: URL) {
         let generation = scanGeneration
         activeDiscoveries += 1
         isScanning = true
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
-            let keys: [URLResourceKey] = [.isDirectoryKey]
-            if let enumerator = FileManager.default.enumerator(
-                at: url,
-                includingPropertiesForKeys: keys,
-                options: [.skipsHiddenFiles]
-            ) {
+
+            let coordinator = NSFileCoordinator()
+            var coordinationError: NSError?
+
+            coordinator.coordinate(
+                readingItemAt: url,
+                options: [],
+                error: &coordinationError
+            ) { coordinatedURL in
+                let keys: [URLResourceKey] = [.isDirectoryKey, .isUbiquitousItemKey]
+                guard let enumerator = FileManager.default.enumerator(
+                    at: coordinatedURL,
+                    includingPropertiesForKeys: keys,
+                    options: [.skipsHiddenFiles]
+                ) else { return }
+
                 var batch: [URL] = []
                 for case let fileURL as URL in enumerator {
                     let values = try? fileURL.resourceValues(forKeys: Set(keys))
                     if values?.isDirectory == true { continue }
                     guard self.supportedExtensions.contains(fileURL.pathExtension.lowercased()) else { continue }
+
+                    // Si el archivo vive en iCloud y aún no está descargado, se pide su
+                    // descarga; la próxima actualización de biblioteca ya lo encontrará listo.
+                    if values?.isUbiquitousItem == true {
+                        try? FileManager.default.startDownloadingUbiquitousItem(at: fileURL)
+                    }
+
                     batch.append(fileURL)
                     if batch.count == self.metadataBatchSize {
                         self.registerMetadataBatch(batch, generation: generation)
@@ -245,6 +267,11 @@ class FileAccessService: ObservableObject {
                 }
                 if !batch.isEmpty { self.registerMetadataBatch(batch, generation: generation) }
             }
+
+            if let coordinationError {
+                AppLog.error(.library, "No se pudo leer la carpeta de forma coordinada: \(coordinationError.localizedDescription)")
+            }
+
             DispatchQueue.main.async { self.finishDiscovery(generation: generation) }
         }
     }

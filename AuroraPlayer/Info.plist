@@ -26,6 +26,13 @@
     <string>1</string>
     <key>LSRequiresIPhoneOS</key>
     <true/>
+    <!-- Necesarias para que el acceso a carpetas externas (iCloud Drive,
+         proveedores de terceros, "En este iPhone") funcione de forma fiable
+         con fileImporter/UIDocumentPickerViewController. -->
+    <key>LSSupportsOpeningDocumentsInPlace</key>
+    <true/>
+    <key>UIFileSharingEnabled</key>
+    <true/>
     <key>UISupportedInterfaceOrientations</key>
     <array>
         <string>UIInterfaceOrientationPortrait</string>

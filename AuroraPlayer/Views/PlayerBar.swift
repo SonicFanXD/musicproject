@@ -81,18 +81,20 @@ struct PlayerBar: View {
                         .background {
                             Circle()
                                 .fill(
-                                    Color.accentColor.opacity(0.20)
+                                    Color.accentColor.opacity(0.18)
                                 )
                         }
                         .overlay {
                             Circle()
                                 .stroke(
-                                    .white.opacity(0.25),
+                                    .white.opacity(0.20),
                                     lineWidth: 1
                                 )
                         }
                     }
                     .buttonStyle(.plain)
+                    .scaleEffect(audioEngine.isPlaying ? 1.0 : 0.92)
+                    .animation(.spring(response: 0.3, dampingFraction: 0.6), value: audioEngine.isPlaying)
 
                     // MARK: - Next
 
@@ -124,8 +126,8 @@ struct PlayerBar: View {
                     .stroke(
                         LinearGradient(
                             colors: [
-                                .white.opacity(0.45),
-                                .white.opacity(0.12),
+                                .white.opacity(0.35),
+                                .white.opacity(0.10),
                                 .clear
                             ],
                             startPoint: .topLeading,
@@ -142,10 +144,12 @@ struct PlayerBar: View {
                     .padding(.bottom, 4)
                 }
                 .shadow(
-                    color: .black.opacity(0.18),
-                    radius: 16,
-                    y: 7
+                    color: .black.opacity(0.14),
+                    radius: 14,
+                    y: 6
                 )
+                .transition(.opacity.combined(with: .move(edge: .bottom)))
+                .animation(.spring(response: 0.4, dampingFraction: 0.85), value: song.id)
                 .sheet(isPresented: $showingNowPlaying) {
                     NowPlayingView(
                         audioEngine: audioEngine
@@ -178,7 +182,7 @@ struct PlayerBar: View {
                         style: .continuous
                     )
                     .stroke(
-                        .white.opacity(0.18),
+                        .white.opacity(0.16),
                         lineWidth: 1
                     )
                 }
@@ -210,7 +214,7 @@ struct MiniProgressTrack: View {
             ZStack(alignment: .leading) {
 
                 Capsule()
-                    .fill(.white.opacity(0.12))
+                    .fill(.white.opacity(0.10))
                     .frame(height: 3)
 
                 Capsule()
@@ -222,10 +226,10 @@ struct MiniProgressTrack: View {
                         ),
                         height: 3
                     )
+                    .animation(.linear(duration: 0.4), value: progress)
             }
         }
         .frame(height: 3)
         .allowsHitTesting(false)
     }
 }
-

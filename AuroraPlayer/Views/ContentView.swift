@@ -32,6 +32,7 @@ struct ContentView: View {
                     .listStyle(.insetGrouped)
                     .scrollContentBackground(.hidden)
                     .background(Color.clear)
+                    .animation(.easeInOut(duration: 0.25), value: selectedCategory)
                     .searchable(
                         text: $searchText,
                         placement: .navigationBarDrawer(

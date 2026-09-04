@@ -14,6 +14,12 @@ final class AudioEngine: NSObject, ObservableObject {
     @Published var isShuffleEnabled = false { didSet { saveState() } }
     @Published var repeatMode: RepeatMode = .off { didSet { saveState() } }
 
+    // Datos para el panel de calidad de audio (estilo audiófilo).
+    @Published private(set) var outputSampleRate: Double = 0
+    @Published private(set) var outputChannelCount: Int = 0
+    @Published private(set) var sourceSampleRate: Double = 0
+    @Published private(set) var sourceChannelCount: Int = 0
+
     private var playlist: [Song] = []
     private(set) var currentIndex = 0
     private let engine = AVAudioEngine()
@@ -83,6 +89,8 @@ final class AudioEngine: NSObject, ObservableObject {
             let rate = file.processingFormat.sampleRate
             guard rate > 0, file.length > 0 else { throw PlaybackError.invalidAudioFile }
             audioFile = file; sampleRate = rate; duration = Double(file.length) / rate; currentSong = song
+            sourceSampleRate = rate
+            sourceChannelCount = Int(file.processingFormat.channelCount)
             // Pide al hardware la frecuencia nativa del archivo. Si el dispositivo
             // la soporta (DAC Lightning/USB-C, muchos receptores AirPlay), evita
             // el remuestreo silencioso que degrada la fidelidad en pistas Hi-Res.
@@ -276,6 +284,8 @@ final class AudioEngine: NSObject, ObservableObject {
         default: output.portName
         }
         let session = AVAudioSession.sharedInstance()
+        outputSampleRate = session.sampleRate
+        outputChannelCount = session.outputNumberOfChannels
         AppLog.info(.playback, "Ruta: \(currentRouteName); salida \(Int(session.sampleRate)) Hz / \(session.outputNumberOfChannels) canales")
     }
 
