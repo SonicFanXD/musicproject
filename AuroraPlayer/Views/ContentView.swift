@@ -187,7 +187,7 @@ struct ContentView: View {
         }
     }
 
-    // MARK: - Albums (Vertical list for better performance)
+    // MARK: - Albums (Vertical list - each row is a proper List row)
 
     @ViewBuilder
     private var albumsSection: some View {
@@ -204,25 +204,21 @@ struct ContentView: View {
             .listRowSeparator(.hidden)
             .listRowBackground(Color.clear)
         } else {
-            // Vertical list for albums (better performance)
-            VStack(spacing: 12) {
-                ForEach(albums) { album in
-                    NavigationLink {
-                        AlbumDetailView(album: album, audioEngine: audioEngine)
-                    } label: {
-                        albumListRow(album)
-                    }
-                    .buttonStyle(.plain)
+            ForEach(albums) { album in
+                NavigationLink {
+                    AlbumDetailView(album: album, audioEngine: audioEngine)
+                } label: {
+                    albumListRow(album)
                 }
+                .buttonStyle(.plain)
+                .listRowSeparator(.hidden)
+                .listRowBackground(Color.clear)
+                .listRowInsets(EdgeInsets(top: 6, leading: 12, bottom: 6, trailing: 12))
             }
-            .padding(.horizontal, 20)
-            .listRowSeparator(.hidden)
-            .listRowBackground(Color.clear)
-            .listRowInsets(EdgeInsets(top: 12, leading: 0, bottom: 12, trailing: 0))
         }
     }
 
-    // MARK: - Artists (Vertical list for better performance)
+    // MARK: - Artists (Vertical list - each row is a proper List row)
 
     @ViewBuilder
     private var artistsSection: some View {
@@ -239,21 +235,17 @@ struct ContentView: View {
             .listRowSeparator(.hidden)
             .listRowBackground(Color.clear)
         } else {
-            // Vertical list for artists (better performance)
-            VStack(spacing: 12) {
-                ForEach(artists) { artist in
-                    NavigationLink {
-                        ArtistDetailView(artist: artist, audioEngine: audioEngine)
-                    } label: {
-                        artistListRow(artist)
-                    }
-                    .buttonStyle(.plain)
+            ForEach(artists) { artist in
+                NavigationLink {
+                    ArtistDetailView(artist: artist, audioEngine: audioEngine)
+                } label: {
+                    artistListRow(artist)
                 }
+                .buttonStyle(.plain)
+                .listRowSeparator(.hidden)
+                .listRowBackground(Color.clear)
+                .listRowInsets(EdgeInsets(top: 6, leading: 12, bottom: 6, trailing: 12))
             }
-            .padding(.horizontal, 20)
-            .listRowSeparator(.hidden)
-            .listRowBackground(Color.clear)
-            .listRowInsets(EdgeInsets(top: 12, leading: 0, bottom: 12, trailing: 0))
         }
     }
 
@@ -395,18 +387,16 @@ struct ContentView: View {
         }
     }
 
-    // MARK: - Filtering
+    // MARK: - Filtering (optimized with cached query)
+
+    private var normalizedQuery: String {
+        searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
 
     private var filteredSongs: [Song] {
         let songs = fileAccessService.songs
-
-        guard !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return songs
-        }
-
-        let query = searchText
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased()
+        let query = normalizedQuery
+        guard !query.isEmpty else { return songs }
 
         return songs.filter { song in
             song.title.lowercased().contains(query) ||
@@ -417,14 +407,8 @@ struct ContentView: View {
 
     private var filteredAlbums: [Album] {
         let albums = fileAccessService.albums
-
-        guard !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return albums
-        }
-
-        let query = searchText
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased()
+        let query = normalizedQuery
+        guard !query.isEmpty else { return albums }
 
         return albums.filter { album in
             album.name.lowercased().contains(query) ||
@@ -434,14 +418,8 @@ struct ContentView: View {
 
     private var filteredArtists: [Artist] {
         let artists = fileAccessService.artists
-
-        guard !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return artists
-        }
-
-        let query = searchText
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased()
+        let query = normalizedQuery
+        guard !query.isEmpty else { return artists }
 
         return artists.filter {
             $0.name.lowercased().contains(query)
@@ -648,10 +626,10 @@ struct playlistLibraryCard: View {
     }
 }
 
-// MARK: - Album List Row (Vertical list - optimized)
+// MARK: - Album List Row (Vertical list - optimized for iPhone 8 Plus)
 private func albumListRow(_ album: Album) -> some View {
     HStack(spacing: 16) {
-        // Album artwork
+        // Album artwork (square aspect ratio preserved)
         Group {
             if let artwork = album.artwork {
                 Image(uiImage: artwork)
@@ -702,10 +680,10 @@ private func albumListRow(_ album: Album) -> some View {
     }
 }
 
-// MARK: - Artist List Row (Vertical list - optimized)
+// MARK: - Artist List Row (Vertical list - optimized for iPhone 8 Plus)
 private func artistListRow(_ artist: Artist) -> some View {
     HStack(spacing: 16) {
-        // Artist artwork
+        // Artist artwork (circular aspect ratio preserved)
         Group {
             if let artwork = artist.artwork {
                 Image(uiImage: artwork)

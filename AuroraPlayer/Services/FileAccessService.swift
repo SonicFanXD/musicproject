@@ -26,10 +26,12 @@ class FileAccessService: ObservableObject {
         let queue = OperationQueue()
         queue.name = "com.aurora.metadata"
         queue.qualityOfService = .utility
-        queue.maxConcurrentOperationCount = 1
+        queue.maxConcurrentOperationCount = 2
         return queue
     }()
-    private let metadataBatchSize = 10
+    private let metadataBatchSize = 20
+    private var pendingSongs: [Song] = []
+    private var isSortScheduled = false
 
     private let supportedExtensions: Set<String> = [
         "mp3", "m4a", "aac", "wav", "wave", "aiff", "aif", "flac"
@@ -163,6 +165,8 @@ class FileAccessService: ObservableObject {
         scanGeneration += 1
         metadataQueue.cancelAllOperations()
         songs = []
+        pendingSongs = []
+        isSortScheduled = false
         indexedSongURLs.removeAll(keepingCapacity: true)
         scanTotal = 0
         scanProcessed = 0
@@ -301,12 +305,34 @@ class FileAccessService: ObservableObject {
             self.scanProcessed += urls.count
             let uniqueSongs = foundSongs.filter { self.indexedSongURLs.insert($0.url).inserted }
             if !uniqueSongs.isEmpty {
-                self.songs.append(contentsOf: uniqueSongs)
-                self.songs.sort { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
-                AppLog.debug(.library, "Lote cargado: \(uniqueSongs.count); total: \(self.songs.count)")
-                self.scheduleCacheSave()
+                // Accumulate without sorting on every batch (O(n log n) per batch is too heavy for 1254+ songs)
+                self.pendingSongs.append(contentsOf: uniqueSongs)
+                self.scheduleSortAndCache()
+                AppLog.debug(.library, "Lote cargado: \(uniqueSongs.count); total: \(self.pendingSongs.count)")
             }
             self.updateScanningState()
+        }
+    }
+
+    private func scheduleSortAndCache() {
+        // Sort only once when scanning completes, not on every batch
+        guard !isSortScheduled else { return }
+        isSortScheduled = true
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            guard let self = self else { return }
+            self.isSortScheduled = false
+
+            // Only sort if we're not actively scanning more batches
+            if !self.isScanning || self.scanProcessed >= self.scanTotal {
+                // Merge with existing songs (from cache) before sorting
+                let allSongs = self.songs + self.pendingSongs
+                self.songs = allSongs.sorted {
+                    $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
+                }
+                self.pendingSongs.removeAll(keepingCapacity: true)
+                self.scheduleCacheSave()
+            }
         }
     }
 
@@ -318,6 +344,16 @@ class FileAccessService: ObservableObject {
 
     private func updateScanningState() {
         isScanning = activeDiscoveries > 0 || scanProcessed < scanTotal
+        if !isScanning && !pendingSongs.isEmpty {
+            // Final sort when all batches are done (merge with existing cached songs)
+            let allSongs = songs + pendingSongs
+            songs = allSongs.sorted {
+                $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
+            }
+            pendingSongs.removeAll(keepingCapacity: true)
+            scheduleCacheSave()
+            AppLog.info(.library, "Indexación completada: \(songs.count) canciones")
+        }
     }
 
     private func beginIncrementalProgressIfNeeded() {
@@ -345,7 +381,7 @@ class FileAccessService: ObservableObject {
         let releaseDate: Date?
     }
 
-    // MARK: - readMetadata (ACTUALIZADO PARA iOS 16+ CON ASYNC/AWAIT)
+    // MARK: - readMetadata (OPTIMIZADO: una sola apertura de archivo, sin lecturas redundantes)
     private func readMetadata(from url: URL) async -> SongMetadata {
         let asset = AVAsset(url: url)
         var title: String?
@@ -360,15 +396,8 @@ class FileAccessService: ObservableObject {
         var duration: TimeInterval = 0
 
         do {
-            // Usar las nuevas APIs asíncronas de iOS 16+
-            let availableFormats = try await asset.load(.availableMetadataFormats)
-            var formatMetadata: [AVMetadataItem] = []
-
-            for format in availableFormats {
-                let metadata = try await asset.loadMetadata(for: format)
-                formatMetadata.append(contentsOf: metadata)
-            }
-
+            // Cargar duración y metadata común en paralelo (una sola pasada)
+            async let durationTask = asset.load(.duration)
             let commonMetadata = try await asset.load(.commonMetadata)
 
             for item in commonMetadata {
@@ -398,71 +427,70 @@ class FileAccessService: ObservableObject {
                 }
             }
 
-            for item in formatMetadata {
-                let identifier = normalizedMetadataIdentifier(item)
-                let key = metadataKey(item)
+            // Solo leer formatMetadata si faltan campos esenciales
+            if title == nil || artist.isEmpty || album.isEmpty || albumArtist.isEmpty || lyrics.isEmpty {
+                let availableFormats = try await asset.load(.availableMetadataFormats)
+                var formatMetadata: [AVMetadataItem] = []
 
-                if (identifier.contains("albumartist") || key == "aart" || key == "album artist" || key == "tpe2"),
-                   let value = await metadataText(item), !value.isEmpty {
-                    albumArtist = value
+                for format in availableFormats {
+                    let metadata = try await asset.loadMetadata(for: format)
+                    formatMetadata.append(contentsOf: metadata)
                 }
-                if title == nil, (identifier.contains("title") || key == "©nam" || key == "tit2") {
-                    title = await metadataText(item)
-                }
-                if artist.isEmpty, (identifier.contains("artist") || key == "©art" || key == "tpe1"), key != "aart" {
-                    artist = (await metadataText(item)) ?? ""
-                }
-                if album.isEmpty, (identifier.contains("album") || key == "©alb" || key == "talb"), key != "aart" {
-                    album = (await metadataText(item)) ?? ""
-                }
-                if identifier.contains("discnumber") || identifier.contains("disknumber") || key.contains("disk") || key.contains("tpos") {
-                    discNumber = await metadataNumberAsync(item)
-                }
-                if identifier.contains("tracknumber") || key.contains("trkn") || key.contains("trck") {
-                    trackNumber = (await metadataNumberAsync(item)) ?? 0
-                }
-                if releaseDate == nil, identifier.contains("date") || identifier.contains("year") || key.contains("day") || key.contains("tdrc") {
-                    releaseDate = await metadataDateAsync(item)
-                }
-            }
 
-            // Fallback para letras e información ID3/FLAC/M4A
-            if let embedded = readID3Metadata(from: url) ?? readFLACMetadata(from: url) ?? readM4AMetadata(from: url) {
-                title = title ?? embedded.title
-                if artist.isEmpty { artist = embedded.artist ?? "" }
-                if albumArtist.isEmpty { albumArtist = embedded.albumArtist ?? "" }
-                if album.isEmpty { album = embedded.album ?? "" }
-                if trackNumber == 0 { trackNumber = embedded.trackNumber ?? 0 }
-                if discNumber == nil { discNumber = embedded.discNumber }
-                if releaseDate == nil { releaseDate = embedded.releaseDate }
-                if lyrics.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { lyrics = embedded.lyrics ?? "" }
-            }
-
-            if lyrics.isEmpty {
-                if let lyricsItem = formatMetadata.first(where: { item in
-                    let id = normalizedMetadataIdentifier(item)
-                    let key = metadataKey(item)
-                    return item.commonKey?.rawValue == "lyrics" || id.contains("lyric") || key == "©lyr" || key.contains("lyric") || key == "uslt" || key == "sylt"
-                }) {
-                    lyrics = await lyricsText(lyricsItem)
-                }
-            }
-            if lyrics.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 for item in formatMetadata {
-                    let id = self.normalizedMetadataIdentifier(item)
-                    let key = self.metadataKey(item)
-                    if item.commonKey?.rawValue == "lyrics" || id.contains("lyric") || key.contains("lyr") || key == "uslt" || key == "sylt" {
-                        let candidateLyrics = await lyricsText(item)
-                        if !candidateLyrics.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                            lyrics = candidateLyrics
-                            break
+                    let identifier = normalizedMetadataIdentifier(item)
+                    let key = metadataKey(item)
+
+                    if (identifier.contains("albumartist") || key == "aart" || key == "album artist" || key == "tpe2"),
+                       let value = await metadataText(item), !value.isEmpty {
+                        albumArtist = value
+                    }
+                    if title == nil, (identifier.contains("title") || key == "©nam" || key == "tit2") {
+                        title = await metadataText(item)
+                    }
+                    if artist.isEmpty, (identifier.contains("artist") || key == "©art" || key == "tpe1"), key != "aart" {
+                        artist = (await metadataText(item)) ?? ""
+                    }
+                    if album.isEmpty, (identifier.contains("album") || key == "©alb" || key == "talb"), key != "aart" {
+                        album = (await metadataText(item)) ?? ""
+                    }
+                    if discNumber == nil, identifier.contains("discnumber") || identifier.contains("disknumber") || key.contains("disk") || key.contains("tpos") {
+                        discNumber = await metadataNumberAsync(item)
+                    }
+                    if trackNumber == 0, identifier.contains("tracknumber") || key.contains("trkn") || key.contains("trck") {
+                        trackNumber = (await metadataNumberAsync(item)) ?? 0
+                    }
+                    if releaseDate == nil, identifier.contains("date") || identifier.contains("year") || key.contains("day") || key.contains("tdrc") {
+                        releaseDate = await metadataDateAsync(item)
+                    }
+                    if lyrics.isEmpty {
+                        let id = self.normalizedMetadataIdentifier(item)
+                        let key = self.metadataKey(item)
+                        if item.commonKey?.rawValue == "lyrics" || id.contains("lyric") || key.contains("lyr") || key == "uslt" || key == "sylt" {
+                            let candidateLyrics = await lyricsText(item)
+                            if !candidateLyrics.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                lyrics = candidateLyrics
+                            }
                         }
                     }
                 }
             }
 
-            // Cargar duración con la nueva API
-            let assetDuration = try await asset.load(.duration)
+            // Fallback binario SOLO si faltan campos esenciales (evita doble lectura de archivo)
+            if title == nil || artist.isEmpty || album.isEmpty {
+                if let embedded = readID3Metadata(from: url) ?? readFLACMetadata(from: url) ?? readM4AMetadata(from: url) {
+                    title = title ?? embedded.title
+                    if artist.isEmpty { artist = embedded.artist ?? "" }
+                    if albumArtist.isEmpty { albumArtist = embedded.albumArtist ?? "" }
+                    if album.isEmpty { album = embedded.album ?? "" }
+                    if trackNumber == 0 { trackNumber = embedded.trackNumber ?? 0 }
+                    if discNumber == nil { discNumber = embedded.discNumber }
+                    if releaseDate == nil { releaseDate = embedded.releaseDate }
+                    if lyrics.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { lyrics = embedded.lyrics ?? "" }
+                }
+            }
+
+            let assetDuration = try await durationTask
             duration = assetDuration.isNumeric ? max(0, assetDuration.seconds) : 0
 
         } catch {
@@ -471,12 +499,8 @@ class FileAccessService: ObservableObject {
             return await readMetadataFallback(from: url)
         }
 
-        let audioFile = try? AVAudioFile(forReading: url)
-        let sampleRate = audioFile?.processingFormat.sampleRate ?? 0
-        let bits = audioFile?.processingFormat.streamDescription.pointee.mBitsPerChannel ?? 0
-        let formatDescription = [url.pathExtension.uppercased(), bits > 0 ? "\(bits) bits" : nil, sampleRate > 0 ? "\(Int(sampleRate / 1000)) kHz" : nil]
-            .compactMap { $0 }
-            .joined(separator: " · ")
+        // Formato: usar solo la extensión (evita abrir AVAudioFile innecesariamente)
+        let formatDescription = url.pathExtension.uppercased()
 
         return SongMetadata(
             title: title,

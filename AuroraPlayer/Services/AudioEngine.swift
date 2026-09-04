@@ -61,6 +61,8 @@ class AudioEngine: NSObject, ObservableObject {
     // MARK: - Flags para evitar ejecuciones simultáneas
     private var isChangingTrack = false
     private var isSeeking = false
+    private var isStopping = false
+    private var playbackErrorCount = 0
 
     // MARK: - Persistencia de estado
     private let stateDefaultsKey = "com.aurora.playbackState"
@@ -207,7 +209,21 @@ class AudioEngine: NSObject, ObservableObject {
         }
 
         let song = playlist[currentIndex]
-        stop()
+
+        // Limpieza manual sin activar isStopping (evita interferencia con scheduleFile)
+        playerNode.stop()
+        audioFile = nil
+        isPlaying = false
+        currentTime = 0
+        seekOffset = 0
+        stopDisplayTimer()
+
+        // Verificar que el archivo exista antes de intentar abrirlo (evita crashes)
+        guard FileManager.default.fileExists(atPath: song.url.path) else {
+            AppLog.error(.playback, "Archivo no encontrado: \(song.displayName)")
+            handlePlaybackFailure(song: song)
+            return
+        }
 
         do {
             let file = try AVAudioFile(forReading: song.url)
@@ -216,17 +232,26 @@ class AudioEngine: NSObject, ObservableObject {
             sourceSampleRate = sampleRate
             duration = Double(file.length) / sampleRate
 
-            guard duration > 0 else {
-                playNext()
+            guard duration > 0, file.length > 0 else {
+                // Canción inválida: saltar a la siguiente pero con límite de errores
+                handlePlaybackFailure(song: song)
                 return
             }
 
-            // Reconectar nodos con el formato correcto
-            engine.disconnectNodeInput(playerNode)
-            if let eq = equalizerNode {
-                engine.connect(playerNode, to: eq, format: file.processingFormat)
+            // Reconectar nodos con el formato correcto (protegido contra desconexión doble)
+            if engine.outputConnectionPoints(for: playerNode, outputBus: 0).isEmpty {
+                if let eq = equalizerNode {
+                    engine.connect(playerNode, to: eq, format: file.processingFormat)
+                } else {
+                    engine.connect(playerNode, to: engine.mainMixerNode, format: file.processingFormat)
+                }
             } else {
-                engine.connect(playerNode, to: engine.mainMixerNode, format: file.processingFormat)
+                engine.disconnectNodeInput(playerNode)
+                if let eq = equalizerNode {
+                    engine.connect(playerNode, to: eq, format: file.processingFormat)
+                } else {
+                    engine.connect(playerNode, to: engine.mainMixerNode, format: file.processingFormat)
+                }
             }
 
             if !engine.isRunning {
@@ -238,6 +263,7 @@ class AudioEngine: NSObject, ObservableObject {
             currentSong = song
             seekOffset = 0
             isPlaying = true
+            playbackErrorCount = 0
             startDisplayTimer()
             updateNowPlayingInfo()
             updateAudioQuality()
@@ -246,14 +272,33 @@ class AudioEngine: NSObject, ObservableObject {
             saveState()
         } catch {
             handleAudioError(error, context: "playCurrentSong")
-            playNext()
+            handlePlaybackFailure(song: song)
         }
+    }
+
+    private func handlePlaybackFailure(song: Song) {
+        playbackErrorCount += 1
+        AppLog.error(.playback, "No se pudo reproducir: \(song.displayName) (error \(playbackErrorCount))")
+
+        // Evitar bucle infinito si muchas canciones fallan seguidas
+        if playbackErrorCount >= 5 {
+            AppLog.error(.playback, "Demasiados errores consecutivos, deteniendo reproducción")
+            stop()
+            playbackErrorCount = 0
+            return
+        }
+
+        // Resetear isChangingTrack para permitir que playNext() avance
+        isChangingTrack = false
+        playNext()
     }
 
     private func scheduleFile(_ file: AVAudioFile, from startFrame: AVAudioFramePosition) {
         playerNode.stop()
 
-        let framesToPlay = AVAudioFrameCount(file.length - startFrame)
+        // Proteger contra startFrame negativo o mayor que la duración del archivo
+        let safeStartFrame = max(0, min(startFrame, file.length))
+        let framesToPlay = AVAudioFrameCount(file.length - safeStartFrame)
         guard framesToPlay > 0 else {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
                 self?.playNext()
@@ -262,19 +307,21 @@ class AudioEngine: NSObject, ObservableObject {
         }
 
         // Configurar crossfade si no es la primera canción
-        let timeRemaining = Double(file.length - startFrame) / sampleRate
+        let timeRemaining = Double(file.length - safeStartFrame) / sampleRate
         if timeRemaining > crossfadeDuration && currentIndex > 0 {
-            scheduleCrossfade(for: file, startFrame: startFrame, framesToPlay: framesToPlay)
+            scheduleCrossfade(for: file, startFrame: safeStartFrame, framesToPlay: framesToPlay)
         }
 
         playerNode.scheduleSegment(
             file,
-            startingFrame: startFrame,
+            startingFrame: safeStartFrame,
             frameCount: framesToPlay,
             at: nil
         ) { [weak self] in
             DispatchQueue.main.async {
-                self?.handlePlaybackFinished()
+                // Solo avanzar si realmente estábamos reproduciendo
+                guard let self = self, self.isPlaying, !self.isStopping else { return }
+                self.handlePlaybackFinished()
             }
         }
 
@@ -657,6 +704,7 @@ class AudioEngine: NSObject, ObservableObject {
     }
 
     func stop() {
+        isStopping = true
         playerNode.stop()
         audioFile = nil
         isPlaying = false
@@ -667,6 +715,11 @@ class AudioEngine: NSObject, ObservableObject {
         // Limpiar información de now playing al detener completamente
         DispatchQueue.main.async {
             MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+        }
+        
+        // Resetear flag después de un ciclo de runloop
+        DispatchQueue.main.async { [weak self] in
+            self?.isStopping = false
         }
     }
 
@@ -699,7 +752,8 @@ class AudioEngine: NSObject, ObservableObject {
 
     private func startDisplayTimer() {
         stopDisplayTimer()
-        displayTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
+        // Optimized: 0.5s is smooth enough for UI updates while halving CPU load
+        displayTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             self?.updateCurrentTime()
         }
         startNowPlayingInfoTimer()
@@ -713,7 +767,8 @@ class AudioEngine: NSObject, ObservableObject {
 
     private func startNowPlayingInfoTimer() {
         stopNowPlayingInfoTimer()
-        nowPlayingInfoTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+        // Optimized: 2.0s is enough for lock screen updates, reduces CPU usage
+        nowPlayingInfoTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
             self?.updateNowPlayingInfo()
         }
     }
@@ -732,6 +787,7 @@ class AudioEngine: NSObject, ObservableObject {
     }
 
     private func handlePlaybackFinished() {
+        guard !isStopping else { return }
         if isPlaying && !isChangingTrack {
             if repeatMode == .one {
                 seek(to: 0)
@@ -995,8 +1051,13 @@ class AudioEngine: NSObject, ObservableObject {
             sampleRate = file.processingFormat.sampleRate
             duration = Double(file.length) / sampleRate
 
-            engine.disconnectNodeInput(playerNode)
-            engine.connect(playerNode, to: engine.mainMixerNode, format: file.processingFormat)
+            // Proteger contra desconexión doble
+            if engine.outputConnectionPoints(for: playerNode, outputBus: 0).isEmpty {
+                engine.connect(playerNode, to: engine.mainMixerNode, format: file.processingFormat)
+            } else {
+                engine.disconnectNodeInput(playerNode)
+                engine.connect(playerNode, to: engine.mainMixerNode, format: file.processingFormat)
+            }
 
             if !engine.isRunning {
                 try engine.start()

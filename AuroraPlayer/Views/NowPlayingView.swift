@@ -11,6 +11,27 @@ struct NowPlayingView: View {
     @State private var artworkScale: CGFloat = 1.0
     @State private var progressBarWidth: CGFloat = 0
 
+    // MARK: - Adaptive sizing for iPhone 8 Plus and smaller screens
+    private var isCompactScreen: Bool {
+        UIScreen.main.bounds.height < 800
+    }
+
+    private var artworkSize: CGFloat {
+        let screenWidth = UIScreen.main.bounds.width
+        let screenHeight = UIScreen.main.bounds.height
+        let maxByWidth = screenWidth - 80
+        let maxByHeight = screenHeight * (isCompactScreen ? 0.33 : 0.42)
+        return min(320, maxByWidth, maxByHeight)
+    }
+
+    private var contentSpacing: CGFloat {
+        isCompactScreen ? 16 : 24
+    }
+
+    private var largeSpacing: CGFloat {
+        isCompactScreen ? 20 : 32
+    }
+
     private var progress: Double {
         guard audioEngine.duration > 0 else { return 0 }
         return min(max(audioEngine.currentTime / audioEngine.duration, 0), 1)
@@ -34,31 +55,31 @@ struct NowPlayingView: View {
                     // Audio visualizer
                     if audioEngine.isPlaying {
                         AudioVisualizer(audioEngine: audioEngine)
-                            .frame(height: 40)
+                            .frame(height: isCompactScreen ? 32 : 40)
                             .padding(.horizontal, 20)
                     }
 
-                    Spacer().frame(height: 32)
+                    Spacer().frame(height: largeSpacing)
 
                     // Song info
                     songInfoView
 
-                    Spacer().frame(height: 24)
+                    Spacer().frame(height: contentSpacing)
 
                     // Progress bar with custom styling
                     progressView
 
-                    Spacer().frame(height: 24)
+                    Spacer().frame(height: contentSpacing)
 
                     // Controls
                     controlsView
 
-                    Spacer().frame(height: 24)
+                    Spacer().frame(height: contentSpacing)
 
                     // Queue button
                     queueButton
 
-                    Spacer().frame(height: 20)
+                    Spacer().frame(height: isCompactScreen ? 12 : 20)
                 }
                 .padding(.horizontal, 24)
             }
@@ -126,13 +147,13 @@ struct NowPlayingView: View {
             if let artwork = audioEngine.currentSong?.artwork {
                 GeometryReader { geometry in
                     ZStack {
-                        // Base blurred artwork
+                        // Base blurred artwork (reduced blur radius for performance)
                         Image(uiImage: artwork)
                             .resizable()
                             .scaledToFill()
                             .frame(width: geometry.size.width, height: geometry.size.height)
-                            .blur(radius: 60)
-                            .opacity(0.6)
+                            .blur(radius: 30)
+                            .opacity(0.5)
                             .clipped()
 
                         // Gradient overlay for depth
@@ -173,7 +194,7 @@ struct NowPlayingView: View {
                     Image(uiImage: artwork)
                         .resizable()
                         .scaledToFill()
-                        .frame(width: 320, height: 320)
+                        .frame(width: artworkSize, height: artworkSize)
                         .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
 
                     // Subtle gradient overlay for depth
@@ -208,7 +229,7 @@ struct NowPlayingView: View {
                                 endPoint: .bottomTrailing
                             )
                         )
-                        .frame(width: 320, height: 320)
+                        .frame(width: artworkSize, height: artworkSize)
                         .shadow(color: .black.opacity(0.25), radius: 18, x: 0, y: 10)
 
                     Image(systemName: "music.note")

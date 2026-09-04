@@ -3,174 +3,263 @@ import SwiftUI
 struct LogsView: View {
     @Environment(\.dismiss) private var dismiss
 
+    @State private var selectedCategory: LogCategory? = nil
+    @State private var showOnlyErrors = false
+    @State private var searchText = ""
+
+    private var filteredEntries: [InAppLogEntry] {
+        var entries = AppLog.entries
+
+        if let category = selectedCategory {
+            entries = entries.filter { $0.category == category }
+        }
+
+        if showOnlyErrors {
+            entries = entries.filter { $0.level == "ERROR" }
+        }
+
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if !query.isEmpty {
+            entries = entries.filter { $0.message.lowercased().contains(query) }
+        }
+
+        return entries.reversed()
+    }
+
     var body: some View {
         NavigationStack {
             ZStack {
                 AppBackground()
 
-                ScrollView {
-                    VStack(spacing: 18) {
-                        header
+                VStack(spacing: 0) {
+                    // Stats summary
+                    statsBar
 
-                        statusSection
+                    // Category filter
+                    categoryFilter
 
-                        informationSection
-
-                        tipsSection
-
-                        recentLogsSection
-
-                        Spacer(minLength: 30)
-                    }
-                    .padding(.horizontal, 18)
-                    .padding(.top, 12)
+                    // Log entries list
+                    logEntriesList
                 }
-                .scrollIndicators(.hidden)
             }
             .navigationTitle("Registros")
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        AppLog.clearEntries()
+                    } label: {
+                        Image(systemName: "trash")
+                            .foregroundStyle(.red)
+                    }
+                }
+
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Listo") {
                         dismiss()
                     }
                 }
             }
+            .searchable(
+                text: $searchText,
+                prompt: "Buscar en logs"
+            )
         }
     }
 
-    // MARK: - Header
+    // MARK: - Stats Bar (useful diagnostics at a glance)
+    private var statsBar: some View {
+        HStack(spacing: 12) {
+            statCard(
+                icon: "doc.text",
+                title: "Total",
+                value: "\(AppLog.entries.count)",
+                color: .blue
+            )
 
-    private var header: some View {
-        VStack(spacing: 12) {
-            ZStack {
-                Circle()
-                    .fill(Color.accentColor.opacity(0.16))
-                    .frame(width: 76, height: 76)
+            statCard(
+                icon: "xmark.circle.fill",
+                title: "Errores",
+                value: "\(AppLog.errorCount)",
+                color: .red
+            )
 
-                Image(systemName: "doc.text.magnifyingglass")
-                    .font(.system(size: 31, weight: .semibold))
-                    .foregroundStyle(Color.accentColor)
-            }
+            statCard(
+                icon: "exclamationmark.triangle.fill",
+                title: "Advertencias",
+                value: "\(AppLog.warningCount)",
+                color: .orange
+            )
 
-            Text("Diagnóstico")
-                .font(.system(size: 24, weight: .bold))
-
-            Text("Información útil para comprobar el estado de Aurora Player.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
+            statCard(
+                icon: "clock.fill",
+                title: "Último",
+                value: lastLogTime,
+                color: .green
+            )
         }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 22)
-        .padding(.horizontal, 18)
-        .nativeGlass(cornerRadius: 25)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
     }
 
-    // MARK: - Status
-
-    private var statusSection: some View {
-        logSection(title: "Estado", icon: "checkmark.shield.fill") {
-            VStack(spacing: 0) {
-                statusRow(icon: "checkmark.circle.fill", title: "Aplicación", value: "Funcionando")
-                divider
-                statusRow(icon: "waveform", title: "Motor de audio", value: "Activo")
-                divider
-                statusRow(icon: "folder.fill", title: "Acceso a archivos", value: "Gestionado por el sistema")
-                divider
-                statusRow(icon: "doc.text", title: "Logs en memoria", value: "\(AppLog.entries.count) entradas")
-            }
-        }
+    private var lastLogTime: String {
+        guard let last = AppLog.entries.last else { return "—" }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm:ss"
+        return formatter.string(from: last.date)
     }
 
-    // MARK: - Information
+    private func statCard(icon: String, title: String, value: String, color: Color) -> some View {
+        VStack(spacing: 6) {
+            HStack(spacing: 4) {
+                Image(systemName: icon)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(color)
 
-    private var informationSection: some View {
-        logSection(title: "Información", icon: "info.circle.fill") {
-            VStack(spacing: 0) {
-                informationRow(title: "Aplicación", value: "Aurora Player")
-                divider
-                informationRow(title: "Plataforma", value: "iOS")
-                divider
-                informationRow(title: "Interfaz", value: "SwiftUI")
-                divider
-                informationRow(title: "Audio", value: "AVFoundation")
-                divider
-                informationRow(title: "Diseño", value: "Aurora Glass")
-            }
-        }
-    }
-
-    // MARK: - Tips
-
-    private var tipsSection: some View {
-        logSection(title: "Solución de problemas", icon: "wrench.and.screwdriver.fill") {
-            VStack(alignment: .leading, spacing: 14) {
-                tip(icon: "folder", title: "La música no aparece",
-                    description: "Comprueba que Aurora Player tenga acceso a la carpeta donde están tus canciones.")
-
-                tip(icon: "speaker.wave.2", title: "No se escucha el audio",
-                    description: "Comprueba el volumen del dispositivo y la salida de audio seleccionada.")
-
-                tip(icon: "arrow.clockwise", title: "La biblioteca está desactualizada",
-                    description: "Vuelve a seleccionar tus carpetas de música para actualizar el contenido.")
-            }
-        }
-    }
-
-    // MARK: - Recent Logs
-
-    private var recentLogsSection: some View {
-        logSection(title: "Logs recientes", icon: "clock.fill") {
-            VStack(spacing: 0) {
-                if AppLog.entries.isEmpty {
-                    Text("No hay logs disponibles")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 20)
-                } else {
-                    ForEach(Array(AppLog.entries.suffix(10).enumerated()), id: \.element.id) { index, entry in
-                        logEntryRow(entry: entry)
-                        if index < min(AppLog.entries.count, 10) - 1 {
-                            divider
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    private func logEntryRow(entry: InAppLogEntry) -> some View {
-        HStack(alignment: .top, spacing: 8) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(entry.level)
-                    .font(.caption2.weight(.bold))
-                    .foregroundStyle(levelColor(for: entry.level))
-                    .frame(width: 40, alignment: .leading)
-
-                Text(entry.category.rawValue.uppercased())
+                Text(title)
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
 
-            VStack(alignment: .leading, spacing: 2) {
+            Text(value)
+                .font(.system(size: 15, weight: .bold))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 10)
+        .background {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(.ultraThinMaterial)
+        }
+        .overlay {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(.white.opacity(0.12), lineWidth: 1)
+        }
+    }
+
+    // MARK: - Category Filter
+    private var categoryFilter: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                filterChip(title: "Todos", isSelected: selectedCategory == nil) {
+                    selectedCategory = nil
+                }
+
+                ForEach(LogCategory.allCases, id: \.self) { category in
+                    filterChip(title: category.displayName, isSelected: selectedCategory == category) {
+                        selectedCategory = category
+                    }
+                }
+
+                filterChip(title: "Solo errores", isSelected: showOnlyErrors) {
+                    showOnlyErrors.toggle()
+                }
+            }
+            .padding(.horizontal, 16)
+        }
+        .padding(.vertical, 8)
+    }
+
+    private func filterChip(title: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(isSelected ? .white : .secondary)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .background {
+                    if isSelected {
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .fill(Color.accentColor)
+                    } else {
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .fill(Color.secondary.opacity(0.12))
+                    }
+                }
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - Log Entries List
+    private var logEntriesList: some View {
+        ScrollView {
+            LazyVStack(spacing: 8) {
+                if filteredEntries.isEmpty {
+                    VStack(spacing: 12) {
+                        Image(systemName: "doc.text.magnifyingglass")
+                            .font(.system(size: 40))
+                            .foregroundStyle(.tertiary)
+
+                        Text("No hay logs que coincidan")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 40)
+                } else {
+                    ForEach(filteredEntries) { entry in
+                        logEntryRow(entry: entry)
+                    }
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.bottom, 20)
+        }
+        .scrollIndicators(.hidden)
+    }
+
+    private func logEntryRow(entry: InAppLogEntry) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            // Level indicator
+            VStack(alignment: .leading, spacing: 4) {
+                Text(entry.level)
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(levelColor(for: entry.level))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background {
+                        Capsule()
+                            .fill(levelColor(for: entry.level).opacity(0.15))
+                    }
+
+                Text(entry.category.displayName)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            .frame(width: 80, alignment: .leading)
+
+            VStack(alignment: .leading, spacing: 4) {
                 Text(entry.message)
                     .font(.caption)
                     .foregroundStyle(.primary)
-                    .lineLimit(3)
+                    .lineLimit(4)
 
-                Text(formatDate(entry.date))
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
+                HStack(spacing: 8) {
+                    Text(formatDate(entry.date))
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+
+                    if let duration = entry.duration {
+                        Text("· \(String(format: "%.1f", duration * 1000))ms")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                            .monospacedDigit()
+                    }
+                }
             }
 
             Spacer()
         }
-        .padding(.horizontal, 15)
+        .padding(.horizontal, 12)
         .padding(.vertical, 10)
+        .background {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color.secondary.opacity(0.06))
+        }
     }
 
     private func levelColor(for level: String) -> Color {
@@ -185,121 +274,7 @@ struct LogsView: View {
 
     private func formatDate(_ date: Date) -> String {
         let formatter = DateFormatter()
-        formatter.dateStyle = .none
-        formatter.timeStyle = .medium
+        formatter.dateFormat = "HH:mm:ss"
         return formatter.string(from: date)
-    }
-
-    // MARK: - Section
-
-    private func logSection<Content: View>(
-        title: String,
-        icon: String,
-        @ViewBuilder content: () -> Content
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
-                Image(systemName: icon)
-                    .foregroundStyle(Color.accentColor)
-
-                Text(title)
-                    .font(.headline)
-            }
-            .padding(.horizontal, 4)
-
-            VStack(spacing: 0) {
-                content()
-            }
-            .background {
-                RoundedRectangle(cornerRadius: 22, style: .continuous)
-                    .fill(.ultraThinMaterial)
-            }
-            .overlay {
-                RoundedRectangle(cornerRadius: 22, style: .continuous)
-                    .stroke(.white.opacity(0.16), lineWidth: 1)
-            }
-            .shadow(color: .black.opacity(0.10), radius: 14, y: 6)
-        }
-    }
-
-    // MARK: - Status Row
-
-    private func statusRow(icon: String, title: String, value: String) -> some View {
-        HStack(spacing: 13) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(Color.accentColor.opacity(0.12))
-
-                Image(systemName: icon)
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(Color.accentColor)
-            }
-            .frame(width: 38, height: 38)
-
-            Text(title)
-                .font(.subheadline.weight(.semibold))
-
-            Spacer()
-
-            Text(value)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-        .padding(.horizontal, 15)
-        .padding(.vertical, 13)
-    }
-
-    // MARK: - Information Row
-
-    private func informationRow(title: String, value: String) -> some View {
-        HStack {
-            Text(title)
-                .font(.subheadline.weight(.medium))
-                .foregroundStyle(.secondary)
-
-            Spacer()
-
-            Text(value)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.primary)
-        }
-        .padding(.horizontal, 15)
-        .padding(.vertical, 13)
-    }
-
-    // MARK: - Tip
-
-    private func tip(icon: String, title: String, description: String) -> some View {
-        HStack(alignment: .top, spacing: 13) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(Color.accentColor.opacity(0.12))
-
-                Image(systemName: icon)
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(Color.accentColor)
-            }
-            .frame(width: 38, height: 38)
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text(title)
-                    .font(.subheadline.weight(.semibold))
-
-                Text(description)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .padding(.horizontal, 15)
-        .padding(.vertical, 10)
-    }
-
-    // MARK: - Divider
-
-    private var divider: some View {
-        Divider()
-            .opacity(0.12)
-            .padding(.leading, 66)
     }
 }

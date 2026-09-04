@@ -72,8 +72,8 @@ struct LyricsView: View {
     // MARK: - Animation Timer
     private func startAnimationTimer() {
         animationTimer?.invalidate()
-        // Optimized timer frequency for better performance
-        animationTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { _ in
+        // Optimized timer frequency: 0.25s is enough for smooth visuals while reducing CPU load
+        animationTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { _ in
             updateWordProgress()
             updateReadingCursor()
         }
@@ -90,10 +90,44 @@ struct LyricsView: View {
 
         let currentTime = audioEngine.currentTime
 
-        // Optimized progress update - only process words near current time
-        for word in syncLyrics.words {
+        // Optimized: only process words within a 3-second window around current time
+        // This avoids iterating over all words in the song on every timer tick
+        let windowStart = currentTime - 1.0
+        let windowEnd = currentTime + 2.0
+
+        // Binary search to find the starting index (words are time-sorted)
+        let words = syncLyrics.words
+        guard !words.isEmpty else { return }
+
+        var startIndex = 0
+        var endIndex = words.count - 1
+        while startIndex < endIndex {
+            let mid = (startIndex + endIndex) / 2
+            if words[mid].time < windowStart {
+                startIndex = mid + 1
+            } else {
+                endIndex = mid
+            }
+        }
+
+        // Safety: if all words are before the window, nothing to process
+        guard startIndex < words.count else { return }
+
+        // Clear old progress entries outside the window
+        if currentWordProgress.count > 0 {
+            let activeIDs = Set(currentWordProgress.keys)
+            for id in activeIDs {
+                if let word = words.first(where: { $0.id == id }),
+                   word.time < windowStart || word.time > windowEnd {
+                    currentWordProgress.removeValue(forKey: id)
+                }
+            }
+        }
+
+        // Only process words in the active window
+        for word in words[startIndex...] {
+            guard word.time <= windowEnd else { break }
             if let duration = word.duration {
-                // Only process words that are likely to be active
                 let timeDiff = currentTime - word.time
                 if timeDiff >= -0.5 && timeDiff <= duration + 0.5 {
                     let progress = min(1.0, max(0.0, timeDiff / duration))
@@ -102,8 +136,6 @@ struct LyricsView: View {
                     } else {
                         currentWordProgress.removeValue(forKey: word.id)
                     }
-                } else {
-                    currentWordProgress.removeValue(forKey: word.id)
                 }
             }
         }
@@ -273,20 +305,45 @@ struct LyricsView: View {
         return time >= wordStartTime && time < wordEndTime
     }
 
-    // MARK: - Update Active Words
+    // MARK: - Update Active Words (optimized with binary search window)
     private func updateActiveWords(for time: TimeInterval) {
         guard case .synchronized(let syncLyrics) = parsedLyrics,
               syncLyrics.isWordByWord else { return }
 
+        let words = syncLyrics.words
+        guard !words.isEmpty else {
+            activeWordIds = []
+            return
+        }
+
         var newActiveWordIds: Set<UUID> = []
 
-        // Only check words within a reasonable time window for performance
-        for word in syncLyrics.words {
-            let timeDiff = time - word.time
-            if timeDiff >= -0.5 && timeDiff <= (word.duration ?? 2.0) + 0.5 {
-                if isWordActive(word, at: time) {
-                    newActiveWordIds.insert(word.id)
-                }
+        // Binary search to find words near the current time
+        let windowStart = time - 0.5
+        let windowEnd = time + 3.0
+
+        var startIndex = 0
+        var endIndex = words.count - 1
+        while startIndex < endIndex {
+            let mid = (startIndex + endIndex) / 2
+            if words[mid].time < windowStart {
+                startIndex = mid + 1
+            } else {
+                endIndex = mid
+            }
+        }
+
+        // Safety: if all words are before the window, nothing is active
+        guard startIndex < words.count else {
+            activeWordIds = []
+            return
+        }
+
+        // Only check words within the active window
+        for word in words[startIndex...] {
+            guard word.time <= windowEnd else { break }
+            if isWordActive(word, at: time) {
+                newActiveWordIds.insert(word.id)
             }
         }
 

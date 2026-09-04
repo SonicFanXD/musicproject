@@ -236,7 +236,7 @@ struct AlbumDetailView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(song.displayName)
                         .font(.body.weight(.medium))
-                        .foregroundStyle(isCurrent ? .primary : .primary)
+                        .foregroundStyle(.primary)
                         .lineLimit(1)
 
                     Text(song.displaySubtitle)
@@ -277,6 +277,7 @@ struct AlbumDetailView: View {
                 }
             }
         }
+        .buttonStyle(.plain)
     }
 
     private func formatDuration(_ seconds: TimeInterval) -> String {
@@ -319,7 +320,7 @@ struct ArtistDetailView: View {
                     // Hero Section
                     artistHeroSection
 
-                    // Albums section
+                    // Albums section (vertical list for consistency with songs)
                     if !albums.isEmpty {
                         VStack(alignment: .leading, spacing: 16) {
                             Text("Álbumes")
@@ -327,18 +328,61 @@ struct ArtistDetailView: View {
                                 .foregroundStyle(.primary)
                                 .padding(.horizontal, 20)
 
-                            ScrollView(.horizontal, showsIndicators: false) {
-                                HStack(spacing: 16) {
-                                    ForEach(albums) { album in
-                                        NavigationLink {
-                                            AlbumDetailView(album: album, audioEngine: audioEngine)
-                                        } label: {
-                                            modernAlbumCard(album)
+                            VStack(spacing: 12) {
+                                ForEach(albums) { album in
+                                    NavigationLink {
+                                        AlbumDetailView(album: album, audioEngine: audioEngine)
+                                    } label: {
+                                        HStack(spacing: 16) {
+                                            // Album artwork
+                                            Group {
+                                                if let artwork = album.artwork {
+                                                    Image(uiImage: artwork)
+                                                        .resizable()
+                                                        .scaledToFill()
+                                                        .frame(width: 56, height: 56)
+                                                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                                } else {
+                                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                                        .fill(Color.secondary.opacity(0.2))
+                                                        .frame(width: 56, height: 56)
+                                                        .overlay {
+                                                            Image(systemName: "square.stack")
+                                                                .font(.system(size: 20))
+                                                                .foregroundStyle(.secondary)
+                                                        }
+                                                }
+                                            }
+
+                                            // Album info
+                                            VStack(alignment: .leading, spacing: 4) {
+                                                Text(album.name)
+                                                    .font(.body.weight(.medium))
+                                                    .foregroundStyle(.primary)
+                                                    .lineLimit(1)
+
+                                                Text("\(album.songs.count) canciones")
+                                                    .font(.caption)
+                                                    .foregroundStyle(.secondary)
+                                            }
+
+                                            Spacer()
+
+                                            Image(systemName: "chevron.right")
+                                                .font(.caption)
+                                                .foregroundStyle(.tertiary)
+                                        }
+                                        .padding(.horizontal, 16)
+                                        .padding(.vertical, 12)
+                                        .background {
+                                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                                .fill(Color.secondary.opacity(0.05))
                                         }
                                     }
+                                    .buttonStyle(.plain)
                                 }
-                                .padding(.horizontal, 20)
                             }
+                            .padding(.horizontal, 20)
                         }
                         .padding(.top, 32)
                     }
@@ -613,7 +657,7 @@ struct ArtistDetailView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(song.displayName)
                         .font(.body.weight(.medium))
-                        .foregroundStyle(isCurrent ? .primary : .primary)
+                        .foregroundStyle(.primary)
                         .lineLimit(1)
 
                     Text(song.displaySubtitle)
@@ -654,6 +698,7 @@ struct ArtistDetailView: View {
                 }
             }
         }
+        .buttonStyle(.plain)
     }
 
     private func formatDuration(_ seconds: TimeInterval) -> String {
