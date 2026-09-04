@@ -232,11 +232,11 @@ struct AlbumDetailView: View {
                     .foregroundStyle(isCurrent ? Color.accentColor : Color.secondary.opacity(0.6))
                     .frame(width: 30, alignment: .center)
 
-                // Song info with enhanced typography
+                // Song info with enhanced typography (no blue accent for album songs)
                 VStack(alignment: .leading, spacing: 6) {
                     Text(song.displayName)
                         .font(.body.weight(.medium))
-                        .foregroundStyle(isCurrent ? Color.accentColor : .primary)
+                        .foregroundStyle(isCurrent ? .primary : .primary)
                         .lineLimit(1)
 
                     Text(song.displaySubtitle)
@@ -609,11 +609,11 @@ struct ArtistDetailView: View {
                     .foregroundStyle(isCurrent ? Color.accentColor : Color.secondary.opacity(0.6))
                     .frame(width: 30, alignment: .center)
 
-                // Song info with enhanced typography
+                // Song info with enhanced typography (no blue accent for album songs)
                 VStack(alignment: .leading, spacing: 6) {
                     Text(song.displayName)
                         .font(.body.weight(.medium))
-                        .foregroundStyle(isCurrent ? Color.accentColor : .primary)
+                        .foregroundStyle(isCurrent ? .primary : .primary)
                         .lineLimit(1)
 
                     Text(song.displaySubtitle)

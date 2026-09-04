@@ -187,7 +187,7 @@ struct ContentView: View {
         }
     }
 
-    // MARK: - Albums
+    // MARK: - Albums (Vertical list for better performance)
 
     @ViewBuilder
     private var albumsSection: some View {
@@ -204,26 +204,25 @@ struct ContentView: View {
             .listRowSeparator(.hidden)
             .listRowBackground(Color.clear)
         } else {
-            // Grid layout for albums
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 16) {
-                    ForEach(albums) { album in
-                        NavigationLink {
-                            AlbumDetailView(album: album, audioEngine: audioEngine)
-                        } label: {
-                            AlbumLibraryRow(album: album)
-                        }
+            // Vertical list for albums (better performance)
+            VStack(spacing: 12) {
+                ForEach(albums) { album in
+                    NavigationLink {
+                        AlbumDetailView(album: album, audioEngine: audioEngine)
+                    } label: {
+                        albumListRow(album)
                     }
+                    .buttonStyle(.plain)
                 }
-                .padding(.horizontal, 20)
             }
+            .padding(.horizontal, 20)
             .listRowSeparator(.hidden)
             .listRowBackground(Color.clear)
-            .listRowInsets(EdgeInsets(top: 16, leading: 0, bottom: 16, trailing: 0))
+            .listRowInsets(EdgeInsets(top: 12, leading: 0, bottom: 12, trailing: 0))
         }
     }
 
-    // MARK: - Artists
+    // MARK: - Artists (Vertical list for better performance)
 
     @ViewBuilder
     private var artistsSection: some View {
@@ -240,22 +239,21 @@ struct ContentView: View {
             .listRowSeparator(.hidden)
             .listRowBackground(Color.clear)
         } else {
-            // Grid layout for artists
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 16) {
-                    ForEach(artists) { artist in
-                        NavigationLink {
-                            ArtistDetailView(artist: artist, audioEngine: audioEngine)
-                        } label: {
-                            ArtistLibraryRow(artist: artist)
-                        }
+            // Vertical list for artists (better performance)
+            VStack(spacing: 12) {
+                ForEach(artists) { artist in
+                    NavigationLink {
+                        ArtistDetailView(artist: artist, audioEngine: audioEngine)
+                    } label: {
+                        artistListRow(artist)
                     }
+                    .buttonStyle(.plain)
                 }
-                .padding(.horizontal, 20)
             }
+            .padding(.horizontal, 20)
             .listRowSeparator(.hidden)
             .listRowBackground(Color.clear)
-            .listRowInsets(EdgeInsets(top: 16, leading: 0, bottom: 16, trailing: 0))
+            .listRowInsets(EdgeInsets(top: 12, leading: 0, bottom: 12, trailing: 0))
         }
     }
 
@@ -647,6 +645,109 @@ struct playlistLibraryCard: View {
         }
         .frame(width: 140)
         .padding(.vertical, 8)
+    }
+}
+
+// MARK: - Album List Row (Vertical list - optimized)
+private func albumListRow(_ album: Album) -> some View {
+    HStack(spacing: 16) {
+        // Album artwork
+        Group {
+            if let artwork = album.artwork {
+                Image(uiImage: artwork)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 56, height: 56)
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            } else {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color.secondary.opacity(0.2))
+                    .frame(width: 56, height: 56)
+                    .overlay {
+                        Image(systemName: "square.stack")
+                            .font(.system(size: 20))
+                            .foregroundStyle(.secondary)
+                    }
+            }
+        }
+
+        // Album info
+        VStack(alignment: .leading, spacing: 4) {
+            Text(album.name)
+                .font(.body.weight(.medium))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+
+            Text(album.artist)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+
+            Text("\(album.songs.count) canciones")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+        }
+
+        Spacer()
+
+        Image(systemName: "chevron.right")
+            .font(.caption)
+            .foregroundStyle(.tertiary)
+    }
+    .padding(.horizontal, 16)
+    .padding(.vertical, 12)
+    .background {
+        RoundedRectangle(cornerRadius: 14, style: .continuous)
+            .fill(Color.secondary.opacity(0.05))
+    }
+}
+
+// MARK: - Artist List Row (Vertical list - optimized)
+private func artistListRow(_ artist: Artist) -> some View {
+    HStack(spacing: 16) {
+        // Artist artwork
+        Group {
+            if let artwork = artist.artwork {
+                Image(uiImage: artwork)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 56, height: 56)
+                    .clipShape(Circle())
+            } else {
+                Circle()
+                    .fill(Color.secondary.opacity(0.2))
+                    .frame(width: 56, height: 56)
+                    .overlay {
+                        Image(systemName: "person.fill")
+                            .font(.system(size: 20))
+                            .foregroundStyle(.secondary)
+                    }
+            }
+        }
+
+        // Artist info
+        VStack(alignment: .leading, spacing: 4) {
+            Text(artist.name)
+                .font(.body.weight(.medium))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+
+            Text("\(artist.songs.count) canciones")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+
+        Spacer()
+
+        Image(systemName: "chevron.right")
+            .font(.caption)
+            .foregroundStyle(.tertiary)
+    }
+    .padding(.horizontal, 16)
+    .padding(.vertical, 12)
+    .background {
+        RoundedRectangle(cornerRadius: 14, style: .continuous)
+            .fill(Color.secondary.opacity(0.05))
     }
 }
 

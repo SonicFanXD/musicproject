@@ -48,20 +48,17 @@ struct NowPlayingView: View {
                     // Progress bar with custom styling
                     progressView
 
-                    Spacer().frame(height: 32)
+                    Spacer().frame(height: 24)
 
                     // Controls
                     controlsView
 
-                    Spacer().frame(height: 32)
-
-                    // Enhanced audiophile quality details
-                    audiophileQualitySection
+                    Spacer().frame(height: 24)
 
                     // Queue button
                     queueButton
 
-                    Spacer().frame(height: 24)
+                    Spacer().frame(height: 20)
                 }
                 .padding(.horizontal, 24)
             }
@@ -226,42 +223,42 @@ struct NowPlayingView: View {
         }
     }
 
-    // MARK: - Song Info View (Enhanced audiophile typography)
+    // MARK: - Song Info View (Enhanced audiophile typography - iPhone 8 Plus optimized)
     private var songInfoView: some View {
-        VStack(spacing: 14) {
+        VStack(spacing: 12) {
             Text(audioEngine.currentSong?.displayName ?? "Sin canción")
-                .font(.system(size: 26, weight: .bold))
+                .font(.system(size: 22, weight: .bold))
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.primary)
                 .lineLimit(2)
-                .shadow(color: .black.opacity(0.2), radius: 2, x: 0, y: 1)
+                .shadow(color: .black.opacity(0.15), radius: 1.5, x: 0, y: 0.5)
 
             Text(audioEngine.currentSong?.displaySubtitle ?? "—")
-                .font(.system(size: 18, weight: .medium))
+                .font(.system(size: 16, weight: .medium))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
-                .padding(.horizontal, 20)
+                .padding(.horizontal, 16)
 
             if let album = audioEngine.currentSong?.album, !album.isEmpty {
-                HStack(spacing: 8) {
+                HStack(spacing: 6) {
                     ZStack {
                         Circle()
-                            .fill(Color.accentColor.opacity(0.15))
-                            .frame(width: 20, height: 20)
+                            .fill(Color.accentColor.opacity(0.12))
+                            .frame(width: 18, height: 18)
 
                         Image(systemName: "opticaldisc")
-                            .font(.system(size: 10, weight: .semibold))
+                            .font(.system(size: 9, weight: .semibold))
                             .foregroundStyle(Color.accentColor)
                     }
 
                     Text(album)
-                        .font(.system(size: 15, weight: .medium))
+                        .font(.system(size: 14, weight: .medium))
                         .foregroundStyle(.tertiary)
                         .lineLimit(1)
                 }
             }
         }
-        .padding(.horizontal, 8)
+        .padding(.horizontal, 6)
     }
 
     // MARK: - Progress View (iOS 16 native design)
