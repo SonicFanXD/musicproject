@@ -8,22 +8,24 @@ struct AudioVisualizer: View {
 
     var body: some View {
         GeometryReader { geometry in
-            HStack(spacing: 2) {
+            HStack(spacing: 3) {
                 ForEach(0..<amplitudes.count, id: \.self) { index in
-                    RoundedRectangle(cornerRadius: 2)
+                    RoundedRectangle(cornerRadius: 3)
                         .fill(
                             LinearGradient(
                                 colors: [
-                                    Color.accentColor.opacity(0.8),
-                                    Color.accentColor.opacity(0.4)
+                                    Color.accentColor.opacity(0.9),
+                                    Color.accentColor.opacity(0.6),
+                                    Color.accentColor.opacity(0.3)
                                 ],
                                 startPoint: .bottom,
                                 endPoint: .top
                             )
                         )
-                        .frame(width: geometry.size.width / CGFloat(amplitudes.count) - 2)
+                        .frame(width: geometry.size.width / CGFloat(amplitudes.count) - 3)
                         .frame(height: amplitudes[index] * geometry.size.height)
-                        .animation(.easeInOut(duration: 0.1), value: amplitudes[index])
+                        .shadow(color: Color.accentColor.opacity(0.3), radius: 4, x: 0, y: 2)
+                        .animation(.spring(response: 0.2, dampingFraction: 0.8), value: amplitudes[index])
                 }
             }
             .frame(height: geometry.size.height)
@@ -46,7 +48,7 @@ struct AudioVisualizer: View {
 
     private func startVisualization() {
         animationTimer?.invalidate()
-        animationTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { _ in
+        animationTimer = Timer.scheduledTimer(withTimeInterval: 0.08, repeats: true) { _ in
             updateAmplitudes()
         }
     }
@@ -57,7 +59,7 @@ struct AudioVisualizer: View {
     }
 
     private func resetAmplitudes() {
-        withAnimation(.easeOut(duration: 0.3)) {
+        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
             amplitudes = Array(repeating: 0, count: 32)
         }
     }
@@ -65,14 +67,14 @@ struct AudioVisualizer: View {
     private func updateAmplitudes() {
         guard audioEngine.isPlaying else { return }
 
-        // Simular visualización basada en el estado de reproducción
-        // En una implementación real, usaríamos AVAudioEngine.analyzer
-        let baseAmplitude: CGFloat = 0.1
-        let randomVariation: CGFloat = CGFloat.random(in: 0.05...0.3)
+        // Enhanced visualization with more natural variation
+        let baseAmplitude: CGFloat = 0.15
+        let randomVariation: CGFloat = CGFloat.random(in: 0.08...0.35)
 
         amplitudes = amplitudes.map { _ in
-            let variation = CGFloat.random(in: 0.2...0.8)
-            return min(1.0, baseAmplitude + (variation * randomVariation))
+            let variation = CGFloat.random(in: 0.25...0.85)
+            let amplitude = min(1.0, baseAmplitude + (variation * randomVariation))
+            return amplitude
         }
     }
 }

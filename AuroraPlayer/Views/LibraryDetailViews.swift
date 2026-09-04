@@ -87,25 +87,59 @@ struct AlbumDetailView: View {
             .padding(.horizontal, 20)
             .padding(.top, 10)
 
-            // Large artwork with native design
+            // Large artwork with enhanced native design
             Group {
                 if let artwork = album.artwork {
-                    Image(uiImage: artwork)
-                        .resizable()
-                        .scaledToFill()
-                        .frame(width: 280, height: 280)
-                        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-                        .shadow(color: .black.opacity(0.2), radius: 20, x: 0, y: 10)
+                    ZStack {
+                        Image(uiImage: artwork)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: 280, height: 280)
+                            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+
+                        // Subtle gradient overlay
+                        RoundedRectangle(cornerRadius: 24, style: .continuous)
+                            .fill(
+                                LinearGradient(
+                                    colors: [
+                                        .clear,
+                                        .black.opacity(0.08),
+                                        .black.opacity(0.15)
+                                    ],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                )
+                            )
+                    }
+                    .shadow(color: .black.opacity(0.35), radius: 28, x: 0, y: 14)
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 24, style: .continuous)
+                            .stroke(.white.opacity(0.2), lineWidth: 1.5)
+                    }
                 } else {
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .fill(Color.secondary.opacity(0.2))
-                        .frame(width: 280, height: 280)
-                        .shadow(color: .black.opacity(0.15), radius: 15, x: 0, y: 8)
-                        .overlay {
-                            Image(systemName: "square.stack")
-                                .font(.system(size: 60))
-                                .foregroundStyle(.secondary)
-                        }
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 24, style: .continuous)
+                            .fill(
+                                LinearGradient(
+                                    colors: [
+                                        Color.secondary.opacity(0.3),
+                                        Color.secondary.opacity(0.2)
+                                    ],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .frame(width: 280, height: 280)
+                            .shadow(color: .black.opacity(0.25), radius: 22, x: 0, y: 12)
+
+                        Image(systemName: "square.stack")
+                            .font(.system(size: 64))
+                            .foregroundStyle(.secondary.opacity(0.8))
+                    }
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 24, style: .continuous)
+                            .stroke(.white.opacity(0.15), lineWidth: 1.5)
+                    }
                 }
             }
             .padding(.top, 20)
@@ -136,26 +170,49 @@ struct AlbumDetailView: View {
             }
             .padding(.horizontal, 20)
 
-            // Native play button
+            // Enhanced native play button
             Button {
                 if let firstSong = songs.first {
                     audioEngine.play(song: firstSong, from: songs)
                 }
             } label: {
-                HStack(spacing: 12) {
-                    Image(systemName: "play.fill")
-                        .font(.system(size: 18, weight: .semibold))
+                HStack(spacing: 14) {
+                    ZStack {
+                        Circle()
+                            .fill(.white.opacity(0.2))
+                            .frame(width: 36, height: 36)
+
+                        Image(systemName: "play.fill")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundStyle(.white)
+                    }
 
                     Text("Reproducir todo")
                         .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(.white)
                 }
-                .foregroundStyle(.white)
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 16)
+                .padding(.vertical, 18)
                 .background {
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(Color.accentColor)
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            .fill(Color.accentColor)
+
+                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            .fill(
+                                LinearGradient(
+                                    colors: [
+                                        .white.opacity(0.15),
+                                        .white.opacity(0.05),
+                                        .clear
+                                    ],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                    }
                 }
+                .shadow(color: Color.accentColor.opacity(0.5), radius: 16, x: 0, y: 8)
             }
             .padding(.horizontal, 20)
         }
@@ -353,25 +410,59 @@ struct ArtistDetailView: View {
             .padding(.horizontal, 20)
             .padding(.top, 10)
 
-            // Artist artwork with native circular design
+            // Artist artwork with enhanced circular design
             Group {
                 if let artwork = artist.artwork {
-                    Image(uiImage: artwork)
-                        .resizable()
-                        .scaledToFill()
-                        .frame(width: 200, height: 200)
-                        .clipShape(Circle())
-                        .shadow(color: .black.opacity(0.2), radius: 15, x: 0, y: 8)
+                    ZStack {
+                        Image(uiImage: artwork)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: 200, height: 200)
+                            .clipShape(Circle())
+
+                        // Subtle gradient overlay
+                        Circle()
+                            .fill(
+                                LinearGradient(
+                                    colors: [
+                                        .clear,
+                                        .black.opacity(0.1),
+                                        .black.opacity(0.18)
+                                    ],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                )
+                            )
+                    }
+                    .shadow(color: .black.opacity(0.3), radius: 20, x: 0, y: 10)
+                    .overlay {
+                        Circle()
+                            .stroke(.white.opacity(0.2), lineWidth: 2)
+                    }
                 } else {
-                    Circle()
-                        .fill(Color.secondary.opacity(0.2))
-                        .frame(width: 200, height: 200)
-                        .shadow(color: .black.opacity(0.15), radius: 12, x: 0, y: 6)
-                        .overlay {
-                            Image(systemName: "person.fill")
-                                .font(.system(size: 50))
-                                .foregroundStyle(.secondary)
-                        }
+                    ZStack {
+                        Circle()
+                            .fill(
+                                LinearGradient(
+                                    colors: [
+                                        Color.secondary.opacity(0.3),
+                                        Color.secondary.opacity(0.2)
+                                    ],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .frame(width: 200, height: 200)
+                            .shadow(color: .black.opacity(0.25), radius: 18, x: 0, y: 9)
+
+                        Image(systemName: "person.fill")
+                            .font(.system(size: 56))
+                            .foregroundStyle(.secondary.opacity(0.8))
+                    }
+                    .overlay {
+                        Circle()
+                            .stroke(.white.opacity(0.15), lineWidth: 2)
+                    }
                 }
             }
             .padding(.top, 20)
@@ -409,25 +500,48 @@ struct ArtistDetailView: View {
             }
             .padding(.horizontal, 20)
 
-            // Native play button
+            // Enhanced native play button
             if let firstSong = songs.first {
                 Button {
                     audioEngine.play(song: firstSong, from: songs)
                 } label: {
-                    HStack(spacing: 12) {
-                        Image(systemName: "play.fill")
-                            .font(.system(size: 18, weight: .semibold))
+                    HStack(spacing: 14) {
+                        ZStack {
+                            Circle()
+                                .fill(.white.opacity(0.2))
+                                .frame(width: 36, height: 36)
+
+                            Image(systemName: "play.fill")
+                                .font(.system(size: 18, weight: .semibold))
+                                .foregroundStyle(.white)
+                        }
 
                         Text("Reproducir")
                             .font(.system(size: 17, weight: .semibold))
+                            .foregroundStyle(.white)
                     }
-                    .foregroundStyle(.white)
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 16)
+                    .padding(.vertical, 18)
                     .background {
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .fill(Color.accentColor)
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                .fill(Color.accentColor)
+
+                            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                .fill(
+                                    LinearGradient(
+                                        colors: [
+                                            .white.opacity(0.15),
+                                            .white.opacity(0.05),
+                                            .clear
+                                        ],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    )
+                                )
+                        }
                     }
+                    .shadow(color: Color.accentColor.opacity(0.5), radius: 16, x: 0, y: 8)
                 }
                 .padding(.horizontal, 20)
             }

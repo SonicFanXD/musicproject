@@ -71,38 +71,67 @@ struct ContentView: View {
         }
     }
 
-    // MARK: - Category Picker (iOS 16 native picker)
+    // MARK: - Category Picker (iOS 16 native picker with enhanced design)
 
     private var categoryPicker: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 10) {
+            HStack(spacing: 12) {
                 ForEach(LibraryCategory.allCases, id: \.self) { category in
                     Button {
                         withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
                             selectedCategory = category
                         }
                     } label: {
-                        Text(category.title)
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(selectedCategory == category ? .white : .secondary)
-                            .padding(.horizontal, 18)
-                            .padding(.vertical, 10)
-                            .background {
-                                if selectedCategory == category {
-                                    RoundedRectangle(cornerRadius: 22, style: .continuous)
+                        HStack(spacing: 8) {
+                            Image(systemName: categoryIcon(for: category))
+                                .font(.system(size: 14, weight: .semibold))
+
+                            Text(category.title)
+                                .font(.subheadline.weight(.semibold))
+                        }
+                        .foregroundStyle(selectedCategory == category ? .white : .secondary)
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 12)
+                        .background {
+                            if selectedCategory == category {
+                                ZStack {
+                                    RoundedRectangle(cornerRadius: 24, style: .continuous)
                                         .fill(Color.accentColor)
-                                } else {
-                                    RoundedRectangle(cornerRadius: 22, style: .continuous)
-                                        .fill(Color.secondary.opacity(0.12))
+
+                                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                                        .fill(
+                                            LinearGradient(
+                                                colors: [
+                                                    .white.opacity(0.15),
+                                                    .white.opacity(0.05),
+                                                    .clear
+                                                ],
+                                                startPoint: .topLeading,
+                                                endPoint: .bottomTrailing
+                                            )
+                                        )
                                 }
+                                .shadow(color: Color.accentColor.opacity(0.4), radius: 8, x: 0, y: 4)
+                            } else {
+                                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                                    .fill(Color.secondary.opacity(0.12))
                             }
+                        }
                     }
                     .buttonStyle(.plain)
                 }
             }
             .padding(.horizontal, 16)
         }
-        .padding(.vertical, 10)
+        .padding(.vertical, 12)
+    }
+
+    private func categoryIcon(for category: LibraryCategory) -> String {
+        switch category {
+        case .songs: return "music.note"
+        case .albums: return "square.stack"
+        case .artists: return "person.2"
+        }
     }
 
     // MARK: - Library Content
@@ -123,9 +152,9 @@ struct ContentView: View {
 
     @ViewBuilder
     private var songsSection: some View {
-        let filteredSongs = filteredSongs
+        let currentFilteredSongs = filteredSongs
 
-        if filteredSongs.isEmpty {
+        if currentFilteredSongs.isEmpty {
             ContentUnavailableLibraryView(
                 icon: "music.note.list",
                 title: searchText.isEmpty
@@ -138,7 +167,7 @@ struct ContentView: View {
             .listRowSeparator(.hidden)
             .listRowBackground(Color.clear)
         } else {
-            ForEach(filteredSongs) { song in
+            ForEach(currentFilteredSongs) { song in
                 songRow(song)
                     .transition(.opacity)
             }
@@ -495,30 +524,36 @@ struct ArtistLibraryRow: View {
     }
 }
 
-// MARK: - Empty Library
+// MARK: - Empty Library (Enhanced iOS 16 design)
 struct ContentUnavailableLibraryView: View {
     let icon: String
     let title: String
     let message: String
 
     var body: some View {
-        VStack(spacing: 12) {
-            Image(systemName: icon)
-                .font(.system(size: 34))
-                .foregroundStyle(.secondary)
+        VStack(spacing: 16) {
+            ZStack {
+                Circle()
+                    .fill(Color.accentColor.opacity(0.12))
+                    .frame(width: 80, height: 80)
+
+                Image(systemName: icon)
+                    .font(.system(size: 36, weight: .semibold))
+                    .foregroundStyle(Color.accentColor)
+            }
 
             Text(title)
-                .font(.headline)
+                .font(.system(size: 20, weight: .bold))
                 .foregroundStyle(.primary)
 
             Text(message)
-                .font(.subheadline)
+                .font(.system(size: 15))
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
-                .padding(.horizontal, 16)
+                .padding(.horizontal, 20)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 28)
-        .nativeGlass(cornerRadius: 20)
+        .padding(.vertical, 32)
+        .enhancedGlass(cornerRadius: 24)
     }
 }

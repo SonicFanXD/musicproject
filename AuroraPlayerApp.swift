@@ -6,6 +6,7 @@ struct AuroraPlayerApp: App {
         WindowGroup {
             ContentView()
                 .tint(.accentColor)
+                .preferredColorScheme(nil) // Follow system appearance
         }
     }
 }

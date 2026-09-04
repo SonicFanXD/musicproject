@@ -168,26 +168,60 @@ struct NowPlayingView: View {
         }
     }
 
-    // MARK: - Artwork View (iOS 16 native design)
+    // MARK: - Artwork View (Enhanced iOS 16 native design)
     private var artworkView: some View {
         Group {
             if let artwork = audioEngine.currentSong?.artwork {
-                Image(uiImage: artwork)
-                    .resizable()
-                    .scaledToFill()
-                    .frame(width: 320, height: 320)
-                    .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
-                    .shadow(color: .black.opacity(0.3), radius: 20, x: 0, y: 10)
+                ZStack {
+                    Image(uiImage: artwork)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: 320, height: 320)
+                        .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+
+                    // Subtle gradient overlay for depth
+                    RoundedRectangle(cornerRadius: 28, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    .clear,
+                                    .black.opacity(0.05),
+                                    .black.opacity(0.1)
+                                ],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
+                }
+                .shadow(color: .black.opacity(0.35), radius: 24, x: 0, y: 12)
+                .overlay {
+                    RoundedRectangle(cornerRadius: 28, style: .continuous)
+                        .stroke(.white.opacity(0.2), lineWidth: 1)
+                }
             } else {
-                RoundedRectangle(cornerRadius: 28, style: .continuous)
-                    .fill(Color.secondary.opacity(0.2))
-                    .frame(width: 320, height: 320)
-                    .shadow(color: .black.opacity(0.2), radius: 15, x: 0, y: 8)
-                    .overlay {
-                        Image(systemName: "music.note")
-                            .font(.system(size: 80))
-                            .foregroundStyle(.secondary)
-                    }
+                ZStack {
+                    RoundedRectangle(cornerRadius: 28, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    Color.secondary.opacity(0.25),
+                                    Color.secondary.opacity(0.15)
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .frame(width: 320, height: 320)
+                        .shadow(color: .black.opacity(0.25), radius: 18, x: 0, y: 10)
+
+                    Image(systemName: "music.note")
+                        .font(.system(size: 80))
+                        .foregroundStyle(.secondary.opacity(0.8))
+                }
+                .overlay {
+                    RoundedRectangle(cornerRadius: 28, style: .continuous)
+                        .stroke(.white.opacity(0.15), lineWidth: 1)
+                }
             }
         }
     }
@@ -280,18 +314,23 @@ struct NowPlayingView: View {
         audioEngine.seek(to: newTime)
     }
 
-    // MARK: - Controls View (iOS 16 native design)
+    // MARK: - Controls View (Enhanced iOS 16 native design)
     private var controlsView: some View {
-        HStack(spacing: 28) {
+        HStack(spacing: 32) {
             // Shuffle
             Button {
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 audioEngine.toggleShuffle()
             } label: {
-                Image(systemName: audioEngine.isShuffleEnabled ? "shuffle.circle.fill" : "shuffle")
-                    .font(.title3)
-                    .foregroundStyle(audioEngine.isShuffleEnabled ? Color.accentColor : .secondary)
-                    .frame(width: 44, height: 44)
+                ZStack {
+                    Circle()
+                        .fill(audioEngine.isShuffleEnabled ? Color.accentColor.opacity(0.15) : Color.secondary.opacity(0.08))
+                        .frame(width: 50, height: 50)
+
+                    Image(systemName: audioEngine.isShuffleEnabled ? "shuffle.circle.fill" : "shuffle")
+                        .font(.system(size: 22, weight: .semibold))
+                        .foregroundStyle(audioEngine.isShuffleEnabled ? Color.accentColor : .secondary)
+                }
             }
 
             // Previous
@@ -299,10 +338,16 @@ struct NowPlayingView: View {
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 audioEngine.playPrevious()
             } label: {
-                Image(systemName: "backward.fill")
-                    .font(.title2)
-                    .foregroundStyle(.primary)
-                    .frame(width: 48, height: 48)
+                ZStack {
+                    Circle()
+                        .fill(.regularMaterial)
+                        .frame(width: 56, height: 56)
+
+                    Image(systemName: "backward.fill")
+                        .font(.system(size: 24, weight: .semibold))
+                        .foregroundStyle(.primary)
+                }
+                .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 4)
             }
 
             // Play/Pause
@@ -314,10 +359,16 @@ struct NowPlayingView: View {
                     audioEngine.resume()
                 }
             } label: {
-                Image(systemName: audioEngine.isPlaying ? "pause.circle.fill" : "play.circle.fill")
-                    .font(.system(size: 68))
-                    .foregroundStyle(Color.accentColor)
-                    .frame(width: 68, height: 68)
+                ZStack {
+                    Circle()
+                        .fill(Color.accentColor)
+                        .frame(width: 76, height: 76)
+
+                    Image(systemName: audioEngine.isPlaying ? "pause.circle.fill" : "play.circle.fill")
+                        .font(.system(size: 36, weight: .semibold))
+                        .foregroundStyle(.white)
+                }
+                .shadow(color: Color.accentColor.opacity(0.5), radius: 16, x: 0, y: 8)
             }
 
             // Next
@@ -325,10 +376,16 @@ struct NowPlayingView: View {
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 audioEngine.playNext()
             } label: {
-                Image(systemName: "forward.fill")
-                    .font(.title2)
-                    .foregroundStyle(.primary)
-                    .frame(width: 48, height: 48)
+                ZStack {
+                    Circle()
+                        .fill(.regularMaterial)
+                        .frame(width: 56, height: 56)
+
+                    Image(systemName: "forward.fill")
+                        .font(.system(size: 24, weight: .semibold))
+                        .foregroundStyle(.primary)
+                }
+                .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 4)
             }
 
             // Repeat
@@ -336,51 +393,68 @@ struct NowPlayingView: View {
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 audioEngine.cycleRepeatMode()
             } label: {
-                Image(systemName: repeatIcon)
-                    .font(.title3)
-                    .foregroundStyle(audioEngine.repeatMode != .off ? Color.accentColor : .secondary)
-                    .frame(width: 44, height: 44)
+                ZStack {
+                    Circle()
+                        .fill(audioEngine.repeatMode != .off ? Color.accentColor.opacity(0.15) : Color.secondary.opacity(0.08))
+                        .frame(width: 50, height: 50)
+
+                    Image(systemName: repeatIcon)
+                        .font(.system(size: 22, weight: .semibold))
+                        .foregroundStyle(audioEngine.repeatMode != .off ? Color.accentColor : .secondary)
+                }
             }
         }
     }
 
-    // MARK: - Audio Quality Button (iOS 16 native design)
+    // MARK: - Audio Quality Button (Enhanced iOS 16 native design)
     private var audioQualityButton: some View {
         Button {
             showAudioInfo = true
         } label: {
-            HStack(spacing: 8) {
-                Image(systemName: "waveform.path")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(Color.accentColor)
+            HStack(spacing: 10) {
+                ZStack {
+                    Circle()
+                        .fill(Color.accentColor.opacity(0.15))
+                        .frame(width: 28, height: 28)
+
+                    Image(systemName: "waveform.path")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Color.accentColor)
+                }
 
                 Text(audioQualityInfo)
-                    .font(.caption.weight(.semibold))
+                    .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(.secondary)
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 8)
-            .nativeThinGlass(cornerRadius: 16)
+            .padding(.horizontal, 18)
+            .padding(.vertical, 10)
+            .enhancedGlass(cornerRadius: 18)
         }
     }
 
-    // MARK: - Queue Button (iOS 16 native design)
+    // MARK: - Queue Button (Enhanced iOS 16 native design)
     private var queueButton: some View {
         Button {
             showQueue = true
         } label: {
-            HStack(spacing: 8) {
-                Image(systemName: "list.bullet")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(Color.accentColor)
+            HStack(spacing: 10) {
+                ZStack {
+                    Circle()
+                        .fill(Color.accentColor.opacity(0.15))
+                        .frame(width: 28, height: 28)
+
+                    Image(systemName: "list.bullet")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Color.accentColor)
+                }
 
                 Text("Cola: \(audioEngine.nextUpQueue.count)")
-                    .font(.caption.weight(.semibold))
+                    .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(.secondary)
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 8)
-            .nativeThinGlass(cornerRadius: 16)
+            .padding(.horizontal, 18)
+            .padding(.vertical, 10)
+            .enhancedGlass(cornerRadius: 18)
         }
     }
 

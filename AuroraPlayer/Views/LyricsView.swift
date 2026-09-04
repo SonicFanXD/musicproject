@@ -118,24 +118,31 @@ struct LyricsView: View {
         readingCursor = currentTime
     }
     
-    // MARK: - Empty Lyrics View
+    // MARK: - Empty Lyrics View (Enhanced iOS 16 design)
     private var emptyLyricsView: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "quote.bubble")
-                .font(.system(size: 45))
-                .foregroundStyle(.tertiary)
+        VStack(spacing: 18) {
+            ZStack {
+                Circle()
+                    .fill(Color.accentColor.opacity(0.12))
+                    .frame(width: 100, height: 100)
+
+                Image(systemName: "quote.bubble")
+                    .font(.system(size: 48, weight: .semibold))
+                    .foregroundStyle(Color.accentColor)
+            }
 
             Text("No hay letras disponibles")
-                .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(.secondary)
+                .font(.system(size: 20, weight: .bold))
+                .foregroundStyle(.primary)
 
             Text("Esta canción no tiene información de letras en su metadata.")
                 .font(.system(size: 15))
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
+                .padding(.horizontal, 24)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(.vertical, 48)
+        .padding(.vertical, 60)
     }
     
     // MARK: - Plain Lyrics View
