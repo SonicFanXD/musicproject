@@ -66,6 +66,12 @@ enum AppLog {
             .error("\(message, privacy: .public)")
     }
 
+    static func warning(_ category: LogCategory, _ message: String) {
+        addToBuffer(level: "WARN", category: category, message: message)
+        os.Logger(subsystem: subsystem, category: category.rawValue)
+            .warning("\(message, privacy: .public)")
+    }
+
     static func debug(_ category: LogCategory, _ message: String) {
         #if DEBUG
         addToBuffer(level: "DEBUG", category: category, message: message)

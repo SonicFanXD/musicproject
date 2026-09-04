@@ -241,27 +241,14 @@ class AudioEngine: NSObject, ObservableObject {
             }
 
             // Reconectar nodos con el formato correcto (protegido contra desconexión doble)
-            do {
-                if engine.outputConnectionPoints(for: playerNode, outputBus: 0).isEmpty {
-                    if let eq = equalizerNode {
-                        engine.connect(playerNode, to: eq, format: file.processingFormat)
-                    } else {
-                        engine.connect(playerNode, to: engine.mainMixerNode, format: file.processingFormat)
-                    }
+            if engine.outputConnectionPoints(for: playerNode, outputBus: 0).isEmpty {
+                if let eq = equalizerNode {
+                    engine.connect(playerNode, to: eq, format: file.processingFormat)
                 } else {
-                    engine.disconnectNodeInput(playerNode)
-                    if let eq = equalizerNode {
-                        engine.connect(playerNode, to: eq, format: file.processingFormat)
-                    } else {
-                        engine.connect(playerNode, to: engine.mainMixerNode, format: file.processingFormat)
-                    }
+                    engine.connect(playerNode, to: engine.mainMixerNode, format: file.processingFormat)
                 }
-            } catch {
-                AppLog.error(.playback, "Error reconectando nodos: \(error.localizedDescription)")
-                // Intentar reiniciar el motor
-                cleanupAudioResources()
-                setupEngine()
-                setupEqualizer()
+            } else {
+                engine.disconnectNodeInput(playerNode)
                 if let eq = equalizerNode {
                     engine.connect(playerNode, to: eq, format: file.processingFormat)
                 } else {
