@@ -95,9 +95,9 @@ enum AppLog {
     }
 
     /// Registra un Error con dominio y código: clave para diagnosticar fallos de reproducción
-    static func error(_ category: LogCategory, _ error: Error, context: String) {
-        let nsError = error as NSError
-        error(category, "\(context) — [\(nsError.domain) · código \(nsError.code)] \(nsError.localizedDescription)")
+    static func error(_ category: LogCategory, _ sourceError: Error, context: String) {
+        let nsError = sourceError as NSError
+        AppLog.error(category, "\(context) — [\(nsError.domain) · código \(nsError.code)] \(nsError.localizedDescription)")
     }
 
     /// DEBUG ahora también se guarda en el buffer y en disco, para poder
@@ -208,7 +208,7 @@ enum AppLog {
             try text.write(to: url, atomically: true, encoding: .utf8)
             return url
         } catch {
-            error(.system, error, context: "writeExportFile")
+            AppLog.error(.system, error, context: "writeExportFile")
             return nil
         }
     }

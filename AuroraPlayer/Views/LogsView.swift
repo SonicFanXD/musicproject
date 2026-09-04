@@ -12,8 +12,10 @@ struct ActivityShareSheet: UIViewControllerRepresentable {
     func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }
 
-extension URL: Identifiable {
-    public var id: String { absoluteString }
+/// Wrapper para presentar una URL compartible en .sheet(item:)
+struct ShareItem: Identifiable {
+    let id = UUID()
+    let url: URL
 }
 
 struct LogsView: View {
@@ -22,7 +24,7 @@ struct LogsView: View {
     @State private var selectedCategory: LogCategory? = nil
     @State private var showOnlyErrors = false
     @State private var searchText = ""
-    @State private var shareURL: URL? = nil
+    @State private var shareItem: ShareItem? = nil
     @State private var copiedToast = false
 
     // Timer para refrescar la vista en vivo mientras se registran nuevos eventos
@@ -122,8 +124,8 @@ struct LogsView: View {
                 text: $searchText,
                 prompt: "Buscar en logs"
             )
-            .sheet(item: $shareURL) { url in
-                ActivityShareSheet(items: [url])
+            .sheet(item: $shareItem) { item in
+                ActivityShareSheet(items: [item.url])
             }
             .onReceive(timer) { _ in
                 refreshTick += 1 // fuerza re-render para logs en vivo
@@ -135,7 +137,7 @@ struct LogsView: View {
 
     private func shareDiagnostics() {
         if let url = AppLog.writeExportFile() {
-            shareURL = url
+            shareItem = ShareItem(url: url)
         }
     }
 
