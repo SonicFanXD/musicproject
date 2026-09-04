@@ -3,11 +3,11 @@ import UniformTypeIdentifiers
 
 struct FolderPickerView: View {
     @ObservedObject var fileAccessService: FileAccessService
-
     @Environment(\.dismiss) private var dismiss
 
     @State private var showFolderImporter = false
     @State private var showFileImporter = false
+    @State private var isLoaded = false
 
     var body: some View {
         NavigationStack {
@@ -17,13 +17,9 @@ struct FolderPickerView: View {
                 ScrollView {
                     VStack(spacing: 20) {
                         header
-
                         actionsSection
-
                         foldersSection
-
                         filesSection
-
                         Spacer(minLength: 30)
                     }
                     .padding(.horizontal, 18)
@@ -33,14 +29,8 @@ struct FolderPickerView: View {
             }
             .navigationTitle("Biblioteca")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(
-                .ultraThinMaterial,
-                for: .navigationBar
-            )
-            .toolbarBackground(
-                .visible,
-                for: .navigationBar
-            )
+            .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Listo") {
@@ -62,6 +52,13 @@ struct FolderPickerView: View {
             ) { result in
                 handleFileResult(result)
             }
+            .onAppear {
+                withAnimation(.spring(response: 0.5, dampingFraction: 0.8)) {
+                    isLoaded = true
+                }
+            }
+            .scaleEffect(isLoaded ? 1 : 0.97)
+            .opacity(isLoaded ? 1 : 0.85)
         }
     }
 
@@ -71,48 +68,26 @@ struct FolderPickerView: View {
         VStack(spacing: 12) {
             ZStack {
                 Circle()
-                    .fill(
-                        Color.accentColor.opacity(0.16)
-                    )
-                    .frame(
-                        width: 76,
-                        height: 76
-                    )
+                    .fill(Color.accentColor.opacity(0.16))
+                    .frame(width: 76, height: 76)
 
                 Image(systemName: "folder.badge.plus")
-                    .font(
-                        .system(
-                            size: 32,
-                            weight: .semibold
-                        )
-                    )
-                    .foregroundStyle(
-                        Color.accentColor
-                    )
+                    .font(.system(size: 32, weight: .semibold))
+                    .foregroundStyle(Color.accentColor)
             }
 
             Text("Tu biblioteca musical")
-                .font(
-                    .system(
-                        size: 24,
-                        weight: .bold
-                    )
-                )
+                .font(.system(size: 24, weight: .bold))
 
-            Text(
-                "Añade carpetas o archivos de música para que aparezcan en Aurora Player."
-            )
-            .font(.subheadline)
-            .foregroundStyle(.secondary)
-            .multilineTextAlignment(.center)
+            Text("Añade carpetas o archivos de música para que aparezcan en Aurora Player.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 22)
         .padding(.horizontal, 18)
-        .opaqueGlass(
-            cornerRadius: 25,
-            tint: .accentColor
-        )
+        .opaqueGlass(cornerRadius: 25, tint: .accentColor)
     }
 
     // MARK: - Actions
@@ -124,194 +99,107 @@ struct FolderPickerView: View {
             } label: {
                 HStack(spacing: 13) {
                     ZStack {
-                        RoundedRectangle(
-                            cornerRadius: 12,
-                            style: .continuous
-                        )
-                        .fill(.white.opacity(0.16))
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(.white.opacity(0.16))
 
                         Image(systemName: "folder.fill")
-                            .font(
-                                .system(
-                                    size: 18,
-                                    weight: .semibold
-                                )
-                            )
+                            .font(.system(size: 18, weight: .semibold))
                     }
-                    .frame(
-                        width: 42,
-                        height: 42
-                    )
+                    .frame(width: 42, height: 42)
 
-                    VStack(
-                        alignment: .leading,
-                        spacing: 3
-                    ) {
+                    VStack(alignment: .leading, spacing: 3) {
                         Text("Añadir carpeta")
-                            .font(
-                                .subheadline.weight(
-                                    .bold
-                                )
-                            )
+                            .font(.subheadline.weight(.bold))
 
-                        Text(
-                            "Escanear una carpeta completa"
-                        )
-                        .font(.caption)
-                        .opacity(0.70)
+                        Text("Escanear una carpeta completa")
+                            .font(.caption)
+                            .opacity(0.70)
                     }
 
                     Spacer()
 
-                    Image(
-                        systemName: "chevron.right"
-                    )
-                    .font(
-                        .caption.weight(
-                            .bold
-                        )
-                    )
-                    .opacity(0.60)
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.bold))
+                        .opacity(0.60)
                 }
                 .foregroundStyle(.primary)
                 .padding(15)
                 .frame(maxWidth: .infinity)
             }
             .buttonStyle(.plain)
-            .opaqueGlass(
-                cornerRadius: 18,
-                tint: .accentColor
-            )
+            .opaqueGlass(cornerRadius: 18, tint: .accentColor)
 
             Button {
                 showFileImporter = true
             } label: {
                 HStack(spacing: 13) {
                     ZStack {
-                        RoundedRectangle(
-                            cornerRadius: 12,
-                            style: .continuous
-                        )
-                        .fill(.white.opacity(0.12))
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(.white.opacity(0.12))
 
-                        Image(
-                            systemName: "music.note"
-                        )
-                        .font(
-                            .system(
-                                size: 18,
-                                weight: .semibold
-                            )
-                        )
+                        Image(systemName: "music.note")
+                            .font(.system(size: 18, weight: .semibold))
                     }
-                    .frame(
-                        width: 42,
-                        height: 42
-                    )
+                    .frame(width: 42, height: 42)
 
-                    VStack(
-                        alignment: .leading,
-                        spacing: 3
-                    ) {
+                    VStack(alignment: .leading, spacing: 3) {
                         Text("Añadir archivos")
-                            .font(
-                                .subheadline.weight(
-                                    .bold
-                                )
-                            )
+                            .font(.subheadline.weight(.bold))
 
-                        Text(
-                            "Seleccionar canciones individualmente"
-                        )
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        Text("Seleccionar canciones individualmente")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
 
                     Spacer()
 
-                    Image(
-                        systemName: "chevron.right"
-                    )
-                    .font(
-                        .caption.weight(
-                            .bold
-                        )
-                    )
-                    .foregroundStyle(.tertiary)
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.tertiary)
                 }
                 .foregroundStyle(.primary)
                 .padding(15)
                 .frame(maxWidth: .infinity)
             }
             .buttonStyle(.plain)
-            .opaqueGlass(
-                cornerRadius: 18,
-                tint: .white
-            )
+            .opaqueGlass(cornerRadius: 18, tint: .white)
 
             Button {
                 fileAccessService.refreshAllFolders()
             } label: {
                 HStack(spacing: 9) {
-                    Image(
-                        systemName: "arrow.clockwise"
-                    )
+                    Image(systemName: "arrow.clockwise")
 
-                    Text(
-                        fileAccessService.isScanning
-                            ? "Escaneando…"
-                            : "Actualizar biblioteca"
-                    )
-                    .font(
-                        .subheadline.weight(
-                            .semibold
-                        )
-                    )
+                    Text(fileAccessService.isScanning ? "Escaneando…" : "Actualizar biblioteca")
+                        .font(.subheadline.weight(.semibold))
 
                     if fileAccessService.isScanning {
                         ProgressView()
                             .controlSize(.small)
                     }
                 }
-                .foregroundStyle(
-                    Color.accentColor
-                )
+                .foregroundStyle(Color.accentColor)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 13)
             }
             .buttonStyle(.plain)
             .disabled(fileAccessService.isScanning)
-            .opaqueGlass(
-                cornerRadius: 16,
-                tint: .accentColor
-            )
+            .opaqueGlass(cornerRadius: 16, tint: .accentColor)
         }
     }
 
     // MARK: - Folders
 
     private var foldersSection: some View {
-        VStack(
-            alignment: .leading,
-            spacing: 10
-        ) {
-            sectionTitle(
-                "Carpetas",
-                icon: "folder.fill"
-            )
+        VStack(alignment: .leading, spacing: 10) {
+            sectionTitle("Carpetas", icon: "folder.fill")
 
             if fileAccessService.folders.isEmpty {
-                emptyCard(
-                    icon: "folder",
-                    title: "No hay carpetas",
-                    message:
-                        "Añade una carpeta para comenzar a importar música."
-                )
+                emptyCard(icon: "folder", title: "No hay carpetas",
+                          message: "Añade una carpeta para comenzar a importar música.")
             } else {
                 VStack(spacing: 0) {
-                    ForEach(
-                        fileAccessService.folders
-                    ) { folder in
+                    ForEach(fileAccessService.folders) { folder in
                         folderRow(folder)
 
                         if folder.id != fileAccessService.folders.last?.id {
@@ -322,65 +210,32 @@ struct FolderPickerView: View {
                     }
                 }
                 .background {
-                    RoundedRectangle(
-                        cornerRadius: 22,
-                        style: .continuous
-                    )
-                    .fill(.ultraThinMaterial)
+                    RoundedRectangle(cornerRadius: 22, style: .continuous)
+                        .fill(.ultraThinMaterial)
                 }
                 .overlay {
-                    RoundedRectangle(
-                        cornerRadius: 22,
-                        style: .continuous
-                    )
-                    .stroke(
-                        .white.opacity(0.16),
-                        lineWidth: 1
-                    )
+                    RoundedRectangle(cornerRadius: 22, style: .continuous)
+                        .stroke(.white.opacity(0.16), lineWidth: 1)
                 }
             }
         }
     }
 
-    private func folderRow(
-        _ folder: MusicFolder
-    ) -> some View {
+    private func folderRow(_ folder: MusicFolder) -> some View {
         HStack(spacing: 13) {
             ZStack {
-                RoundedRectangle(
-                    cornerRadius: 11,
-                    style: .continuous
-                )
-                .fill(
-                    Color.accentColor.opacity(0.12)
-                )
+                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                    .fill(Color.accentColor.opacity(0.12))
 
                 Image(systemName: "folder.fill")
-                    .font(
-                        .system(
-                            size: 17,
-                            weight: .semibold
-                        )
-                    )
-                    .foregroundStyle(
-                        Color.accentColor
-                    )
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(Color.accentColor)
             }
-            .frame(
-                width: 40,
-                height: 40
-            )
+            .frame(width: 40, height: 40)
 
-            VStack(
-                alignment: .leading,
-                spacing: 3
-            ) {
+            VStack(alignment: .leading, spacing: 3) {
                 Text(folder.displayName)
-                    .font(
-                        .subheadline.weight(
-                            .semibold
-                        )
-                    )
+                    .font(.subheadline.weight(.semibold))
                     .lineLimit(1)
 
                 Text("Carpeta de música")
@@ -391,24 +246,12 @@ struct FolderPickerView: View {
             Spacer()
 
             Button(role: .destructive) {
-                fileAccessService.removeFolder(
-                    folder
-                )
+                fileAccessService.removeFolder(folder)
             } label: {
-                Image(
-                    systemName: "trash"
-                )
-                .font(
-                    .system(
-                        size: 15,
-                        weight: .semibold
-                    )
-                )
-                .foregroundStyle(.red.opacity(0.80))
-                .frame(
-                    width: 38,
-                    height: 38
-                )
+                Image(systemName: "trash")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(.red.opacity(0.80))
+                    .frame(width: 38, height: 38)
             }
             .buttonStyle(.plain)
         }
@@ -419,27 +262,15 @@ struct FolderPickerView: View {
     // MARK: - Files
 
     private var filesSection: some View {
-        VStack(
-            alignment: .leading,
-            spacing: 10
-        ) {
-            sectionTitle(
-                "Archivos individuales",
-                icon: "music.note.list"
-            )
+        VStack(alignment: .leading, spacing: 10) {
+            sectionTitle("Archivos individuales", icon: "music.note.list")
 
             if fileAccessService.files.isEmpty {
-                emptyCard(
-                    icon: "music.note",
-                    title: "No hay archivos individuales",
-                    message:
-                        "También puedes importar canciones sin añadir una carpeta completa."
-                )
+                emptyCard(icon: "music.note", title: "No hay archivos individuales",
+                          message: "También puedes importar canciones sin añadir una carpeta completa.")
             } else {
                 VStack(spacing: 0) {
-                    ForEach(
-                        fileAccessService.files
-                    ) { file in
+                    ForEach(fileAccessService.files) { file in
                         fileRow(file)
 
                         if file.id != fileAccessService.files.last?.id {
@@ -450,65 +281,32 @@ struct FolderPickerView: View {
                     }
                 }
                 .background {
-                    RoundedRectangle(
-                        cornerRadius: 22,
-                        style: .continuous
-                    )
-                    .fill(.ultraThinMaterial)
+                    RoundedRectangle(cornerRadius: 22, style: .continuous)
+                        .fill(.ultraThinMaterial)
                 }
                 .overlay {
-                    RoundedRectangle(
-                        cornerRadius: 22,
-                        style: .continuous
-                    )
-                    .stroke(
-                        .white.opacity(0.16),
-                        lineWidth: 1
-                    )
+                    RoundedRectangle(cornerRadius: 22, style: .continuous)
+                        .stroke(.white.opacity(0.16), lineWidth: 1)
                 }
             }
         }
     }
 
-    private func fileRow(
-        _ file: MusicFile
-    ) -> some View {
+    private func fileRow(_ file: MusicFile) -> some View {
         HStack(spacing: 13) {
             ZStack {
-                RoundedRectangle(
-                    cornerRadius: 11,
-                    style: .continuous
-                )
-                .fill(
-                    Color.accentColor.opacity(0.12)
-                )
+                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                    .fill(Color.accentColor.opacity(0.12))
 
                 Image(systemName: "music.note")
-                    .font(
-                        .system(
-                            size: 17,
-                            weight: .semibold
-                        )
-                    )
-                    .foregroundStyle(
-                        Color.accentColor
-                    )
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(Color.accentColor)
             }
-            .frame(
-                width: 40,
-                height: 40
-            )
+            .frame(width: 40, height: 40)
 
-            VStack(
-                alignment: .leading,
-                spacing: 3
-            ) {
+            VStack(alignment: .leading, spacing: 3) {
                 Text(file.displayName)
-                    .font(
-                        .subheadline.weight(
-                            .semibold
-                        )
-                    )
+                    .font(.subheadline.weight(.semibold))
                     .lineLimit(1)
 
                 Text("Archivo de música")
@@ -521,20 +319,10 @@ struct FolderPickerView: View {
             Button(role: .destructive) {
                 fileAccessService.removeFile(file)
             } label: {
-                Image(
-                    systemName: "trash"
-                )
-                .font(
-                    .system(
-                        size: 15,
-                        weight: .semibold
-                    )
-                )
-                .foregroundStyle(.red.opacity(0.80))
-                .frame(
-                    width: 38,
-                    height: 38
-                )
+                Image(systemName: "trash")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(.red.opacity(0.80))
+                    .frame(width: 38, height: 38)
             }
             .buttonStyle(.plain)
         }
@@ -544,15 +332,10 @@ struct FolderPickerView: View {
 
     // MARK: - Helpers
 
-    private func sectionTitle(
-        _ title: String,
-        icon: String
-    ) -> some View {
+    private func sectionTitle(_ title: String, icon: String) -> some View {
         HStack(spacing: 8) {
             Image(systemName: icon)
-                .foregroundStyle(
-                    Color.accentColor
-                )
+                .foregroundStyle(Color.accentColor)
 
             Text(title)
                 .font(.headline)
@@ -560,18 +343,10 @@ struct FolderPickerView: View {
         .padding(.horizontal, 4)
     }
 
-    private func emptyCard(
-        icon: String,
-        title: String,
-        message: String
-    ) -> some View {
+    private func emptyCard(icon: String, title: String, message: String) -> some View {
         VStack(spacing: 9) {
             Image(systemName: icon)
-                .font(
-                    .system(
-                        size: 30
-                    )
-                )
+                .font(.system(size: 30))
                 .foregroundStyle(.secondary)
 
             Text(title)
@@ -585,18 +360,13 @@ struct FolderPickerView: View {
         .frame(maxWidth: .infinity)
         .padding(.vertical, 24)
         .padding(.horizontal, 18)
-        .opaqueGlass(
-            cornerRadius: 20,
-            tint: .white
-        )
+        .opaqueGlass(cornerRadius: 20, tint: .white)
     }
 
     // MARK: - File Types
 
     private var supportedAudioTypes: [UTType] {
-        var types: [UTType] = [
-            .audio
-        ]
+        var types: [UTType] = [.audio]
 
         if let mp3 = UTType(filenameExtension: "mp3") {
             types.append(mp3)
@@ -623,48 +393,24 @@ struct FolderPickerView: View {
 
     // MARK: - Import Handling
 
-    private func handleFolderResult(
-        _ result: Result<
-            [URL],
-            Error
-        >
-    ) {
+    private func handleFolderResult(_ result: Result<[URL], Error>) {
         switch result {
         case .success(let urls):
-            guard let url = urls.first else {
-                return
-            }
-
-            fileAccessService.addFolder(
-                url: url
-            )
+            guard let url = urls.first else { return }
+            fileAccessService.addFolder(url: url)
 
         case .failure(let error):
-            AppLog.error(
-                .library,
-                "Error al seleccionar carpeta: \(error.localizedDescription)"
-            )
+            AppLog.error(.library, "Error al seleccionar carpeta: \(error.localizedDescription)")
         }
     }
 
-    private func handleFileResult(
-        _ result: Result<
-            [URL],
-            Error
-        >
-    ) {
+    private func handleFileResult(_ result: Result<[URL], Error>) {
         switch result {
         case .success(let urls):
-            fileAccessService.addFiles(
-                urls: urls
-            )
+            fileAccessService.addFiles(urls: urls)
 
         case .failure(let error):
-            AppLog.error(
-                .library,
-                "Error al seleccionar archivos: \(error.localizedDescription)"
-            )
+            AppLog.error(.library, "Error al seleccionar archivos: \(error.localizedDescription)")
         }
     }
 }
-

@@ -2,9 +2,7 @@ import SwiftUI
 
 struct NowPlayingView: View {
     @ObservedObject var audioEngine: AudioEngine
-
     @Environment(\.dismiss) private var dismiss
-
     @State private var showQueue = false
     @State private var showLyrics = false
 
@@ -20,9 +18,6 @@ struct NowPlayingView: View {
     }
 
     var body: some View {
-        // GeometryReader reparte el espacio disponible con Spacers flexibles en
-        // vez de tamaños fijos: así cabe SIN scroll en pantallas compactas como
-        // el iPhone 8 Plus y sigue viéndose bien en pantallas más grandes.
         GeometryReader { proxy in
             let isCompact = proxy.size.height < 760
             let artworkSide = min(
@@ -35,31 +30,18 @@ struct NowPlayingView: View {
 
                 VStack(spacing: 0) {
                     topBar
-
                     Spacer(minLength: 6)
-
                     artwork(side: artworkSide)
-
                     Spacer(minLength: isCompact ? 12 : 20)
-
                     songInformation
-
                     Spacer(minLength: isCompact ? 12 : 18)
-
                     progressSection
-
                     Spacer(minLength: isCompact ? 10 : 16)
-
                     qualitySection
-
                     Spacer(minLength: isCompact ? 14 : 22)
-
                     playbackControls
-
                     Spacer(minLength: isCompact ? 12 : 20)
-
                     secondaryControls
-
                     Spacer(minLength: 4)
                 }
                 .padding(.horizontal, 20)
@@ -83,10 +65,7 @@ struct NowPlayingView: View {
                     Image(uiImage: artwork)
                         .resizable()
                         .scaledToFill()
-                        .frame(
-                            width: geometry.size.width,
-                            height: geometry.size.height
-                        )
+                        .frame(width: geometry.size.width, height: geometry.size.height)
                         .blur(radius: 60)
                         .opacity(0.34)
                         .scaleEffect(1.25)
@@ -213,7 +192,6 @@ struct NowPlayingView: View {
             }
         }
         .frame(maxWidth: .infinity)
-        // Transición suave (resorte) al cambiar de canción, ligera y sin timers.
         .id(audioEngine.currentSong?.id)
         .transition(.opacity.combined(with: .scale(scale: 0.96)))
         .animation(.spring(response: 0.42, dampingFraction: 0.85), value: audioEngine.currentSong?.id)
@@ -275,7 +253,7 @@ struct NowPlayingView: View {
         }
     }
 
-    // MARK: - Quality (audiófilo)
+    // MARK: - Quality
 
     private var qualitySection: some View {
         HStack(spacing: 8) {
@@ -453,7 +431,6 @@ struct NowPlayingView: View {
 
 struct QueueView: View {
     @ObservedObject var audioEngine: AudioEngine
-
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -462,65 +439,40 @@ struct QueueView: View {
                 AppBackground()
 
                 List {
-                    ForEach(
-                        audioEngine.playbackQueue
-                    ) { song in
+                    ForEach(audioEngine.playbackQueue) { song in
                         Button {
                             audioEngine.play(song: song, from: audioEngine.playbackQueue)
                         } label: {
                             HStack(spacing: 12) {
                                 artwork(for: song)
 
-                                VStack(
-                                    alignment: .leading,
-                                    spacing: 4
-                                ) {
+                                VStack(alignment: .leading, spacing: 4) {
                                     Text(song.title)
-                                        .font(
-                                            .subheadline.weight(
-                                                .semibold
-                                            )
-                                        )
+                                        .font(.subheadline.weight(.semibold))
                                         .foregroundStyle(.primary)
                                         .lineLimit(1)
 
                                     Text(song.artist)
                                         .font(.caption)
-                                        .foregroundStyle(
-                                            .secondary
-                                        )
+                                        .foregroundStyle(.secondary)
                                         .lineLimit(1)
                                 }
 
                                 Spacer()
 
                                 if audioEngine.currentSong?.id == song.id {
-                                    Image(
-                                        systemName: "waveform"
-                                    )
-                                    .foregroundStyle(
-                                        .tint
-                                    )
+                                    Image(systemName: "waveform")
+                                        .foregroundStyle(.tint)
                                 }
                             }
                             .padding(.vertical, 8)
                             .padding(.horizontal, 8)
-                            .opaqueGlass(
-                                cornerRadius: 14,
-                                tint: .white
-                            )
+                            .opaqueGlass(cornerRadius: 14, tint: .white)
                         }
                         .buttonStyle(.plain)
                         .listRowBackground(Color.clear)
                         .listRowSeparator(.hidden)
-                        .listRowInsets(
-                            EdgeInsets(
-                                top: 4,
-                                leading: 12,
-                                bottom: 4,
-                                trailing: 12
-                            )
-                        )
+                        .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12))
                     }
                 }
                 .listStyle(.plain)
@@ -529,18 +481,13 @@ struct QueueView: View {
             .navigationTitle("Cola")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(
-                    placement: .topBarTrailing
-                ) {
+                ToolbarItem(placement: .topBarTrailing) {
                     Button("Listo") {
                         dismiss()
                     }
                 }
             }
-            .toolbarBackground(
-                .ultraThinMaterial,
-                for: .navigationBar
-            )
+            .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
         }
     }
 
@@ -550,31 +497,17 @@ struct QueueView: View {
             Image(uiImage: image)
                 .resizable()
                 .scaledToFill()
-                .frame(
-                    width: 48,
-                    height: 48
-                )
-                .clipShape(
-                    RoundedRectangle(
-                        cornerRadius: 10,
-                        style: .continuous
-                    )
-                )
+                .frame(width: 48, height: 48)
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         } else {
             ZStack {
-                RoundedRectangle(
-                    cornerRadius: 10,
-                    style: .continuous
-                )
-                .fill(.thinMaterial)
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(.thinMaterial)
 
                 Image(systemName: "music.note")
                     .foregroundStyle(.secondary)
             }
-            .frame(
-                width: 48,
-                height: 48
-            )
+            .frame(width: 48, height: 48)
         }
     }
 }
@@ -583,8 +516,13 @@ struct QueueView: View {
 
 struct LyricsView: View {
     @ObservedObject var audioEngine: AudioEngine
-
     @Environment(\.dismiss) private var dismiss
+
+    @State private var displayedLyrics: String = ""
+    @State private var currentWordIndex: Int = 0
+    @State private var fullLyrics: String = ""
+    @State private var words: [String] = []
+    @State private var timer: Timer? = nil
 
     var body: some View {
         ZStack {
@@ -612,94 +550,75 @@ struct LyricsView: View {
                         Image(systemName: "chevron.down")
                             .font(.headline)
                             .foregroundStyle(.white)
-                            .frame(
-                                width: 42,
-                                height: 42
-                            )
+                            .frame(width: 42, height: 42)
                     }
                     .buttonStyle(.plain)
 
                     Spacer()
 
                     Text("LETRAS")
-                        .font(
-                            .caption.weight(.bold)
-                        )
+                        .font(.caption.weight(.bold))
                         .tracking(1.5)
-                        .foregroundStyle(
-                            .white.opacity(0.65)
-                        )
+                        .foregroundStyle(.white.opacity(0.65))
 
                     Spacer()
 
                     Color.clear
-                        .frame(
-                            width: 42,
-                            height: 42
-                        )
+                        .frame(width: 42, height: 42)
                 }
                 .padding(.horizontal, 16)
                 .padding(.top, 10)
 
                 ScrollView {
                     VStack(spacing: 18) {
-                        Text(
-                            audioEngine.currentSong?.title
-                                ?? "Sin canción"
-                        )
-                        .font(
-                            .system(
-                                size: 28,
-                                weight: .bold
-                            )
-                        )
-                        .foregroundStyle(.white)
-                        .multilineTextAlignment(.center)
+                        Text(audioEngine.currentSong?.title ?? "Sin canción")
+                            .font(.system(size: 28, weight: .bold))
+                            .foregroundStyle(.white)
+                            .multilineTextAlignment(.center)
 
-                        Text(
-                            audioEngine.currentSong?.artist
-                                ?? "—"
-                        )
-                        .font(.headline)
-                        .foregroundStyle(
-                            .white.opacity(0.65)
-                        )
+                        Text(audioEngine.currentSong?.artist ?? "—")
+                            .font(.headline)
+                            .foregroundStyle(.white.opacity(0.65))
 
-                        if let lyrics = audioEngine.currentSong?.lyrics,
-                           !lyrics.isEmpty {
-                            Text(lyrics)
-                                .font(
-                                    .system(
-                                        size: 20,
-                                        weight: .medium
-                                    )
-                                )
+                        if let lyrics = audioEngine.currentSong?.lyrics, !lyrics.isEmpty {
+                            Text(displayedLyrics)
+                                .font(.system(size: 20, weight: .medium))
                                 .foregroundStyle(.white)
-                                .multilineTextAlignment(
-                                    .center
-                                )
+                                .multilineTextAlignment(.center)
                                 .lineSpacing(9)
                                 .padding(.horizontal, 12)
                                 .padding(.top, 20)
+                                .onAppear {
+                                    fullLyrics = lyrics
+                                    words = lyrics.components(separatedBy: " ")
+                                    displayedLyrics = ""
+                                    currentWordIndex = 0
+                                    startWordAnimation()
+                                }
+                                .onDisappear {
+                                    stopWordAnimation()
+                                }
+                                .onChange(of: audioEngine.currentSong?.id) { _ in
+                                    if let newLyrics = audioEngine.currentSong?.lyrics, !newLyrics.isEmpty {
+                                        fullLyrics = newLyrics
+                                        words = newLyrics.components(separatedBy: " ")
+                                        displayedLyrics = ""
+                                        currentWordIndex = 0
+                                        startWordAnimation()
+                                    } else {
+                                        displayedLyrics = ""
+                                        stopWordAnimation()
+                                    }
+                                }
                         } else {
                             VStack(spacing: 12) {
-                                Image(
-                                    systemName: "text.quote"
-                                )
-                                .font(
-                                    .system(size: 40)
-                                )
-                                .foregroundStyle(
-                                    .white.opacity(0.35)
-                                )
+                                Image(systemName: "text.quote")
+                                    .font(.system(size: 40))
+                                    .foregroundStyle(.white.opacity(0.35))
 
-                                Text(
-                                    "No hay letras disponibles"
-                                )
-                                .font(.headline)
-                                .foregroundStyle(
-                                    .white.opacity(0.65)
-                                )
+                                Text("No hay letras disponibles")
+                                    .font(.headline)
+                                    .foregroundStyle(.white.opacity(0.65))
                             }
                             .padding(.top, 80)
                         }
@@ -710,5 +629,31 @@ struct LyricsView: View {
                 }
             }
         }
+    }
+
+    // MARK: - Word-by-word animation
+
+    private func startWordAnimation() {
+        stopWordAnimation()
+        displayedLyrics = ""
+        currentWordIndex = 0
+
+        timer = Timer.scheduledTimer(withTimeInterval: 0.15, repeats: true) { _ in
+            if currentWordIndex < words.count {
+                let word = words[currentWordIndex]
+                if currentWordIndex > 0 {
+                    displayedLyrics += " "
+                }
+                displayedLyrics += word
+                currentWordIndex += 1
+            } else {
+                stopWordAnimation()
+            }
+        }
+    }
+
+    private func stopWordAnimation() {
+        timer?.invalidate()
+        timer = nil
     }
 }

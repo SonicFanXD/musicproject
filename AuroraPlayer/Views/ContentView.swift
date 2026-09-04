@@ -13,11 +13,9 @@ struct ContentView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                // Fondo principal de Aurora Player
                 AppBackground()
 
                 VStack(spacing: 0) {
-                    // Selector de biblioteca
                     LibraryCategorySelector(
                         selectedCategory: $selectedCategory
                     )
@@ -25,19 +23,16 @@ struct ContentView: View {
                     .padding(.top, 8)
                     .padding(.bottom, 8)
 
-                    // Biblioteca
                     List {
                         libraryContent
                     }
                     .listStyle(.insetGrouped)
                     .scrollContentBackground(.hidden)
                     .background(Color.clear)
-                    .animation(.easeInOut(duration: 0.25), value: selectedCategory)
+                    .animation(.easeInOut(duration: 0.2), value: selectedCategory)
                     .searchable(
                         text: $searchText,
-                        placement: .navigationBarDrawer(
-                            displayMode: .automatic
-                        ),
+                        placement: .navigationBarDrawer(displayMode: .automatic),
                         prompt: "Buscar en tu biblioteca"
                     )
                 }
@@ -50,19 +45,13 @@ struct ContentView: View {
                         Button {
                             showFolderPicker = true
                         } label: {
-                            Label(
-                                "Agregar carpeta",
-                                systemImage: "folder.badge.plus"
-                            )
+                            Label("Agregar carpeta", systemImage: "folder.badge.plus")
                         }
 
                         Button {
                             fileAccessService.refreshAllFolders()
                         } label: {
-                            Label(
-                                "Actualizar biblioteca",
-                                systemImage: "arrow.clockwise"
-                            )
+                            Label("Actualizar biblioteca", systemImage: "arrow.clockwise")
                         }
                     } label: {
                         Image(systemName: "ellipsis.circle")
@@ -93,10 +82,8 @@ struct ContentView: View {
         switch selectedCategory {
         case .songs:
             songsSection
-
         case .albums:
             albumsSection
-
         case .artists:
             artistsSection
         }
@@ -123,6 +110,7 @@ struct ContentView: View {
             } else {
                 ForEach(filteredSongs) { song in
                     songRow(song)
+                        .transition(.opacity)
                 }
             }
         } header: {
@@ -160,30 +148,18 @@ struct ContentView: View {
             } else {
                 ForEach(albums) { album in
                     NavigationLink {
-                        AlbumDetailView(
-                            album: album,
-                            audioEngine: audioEngine
-                        )
+                        AlbumDetailView(album: album, audioEngine: audioEngine)
                     } label: {
                         AlbumLibraryRow(album: album)
                             .padding(.vertical, 5)
                             .padding(.horizontal, 4)
-                            .opaqueGlass(
-                                cornerRadius: 16,
-                                tint: .white
-                            )
+                            .opaqueGlass(cornerRadius: 16, tint: .white)
                     }
                     .buttonStyle(.plain)
-                    .listRowInsets(
-                        EdgeInsets(
-                            top: 5,
-                            leading: 12,
-                            bottom: 5,
-                            trailing: 12
-                        )
-                    )
+                    .listRowInsets(EdgeInsets(top: 5, leading: 12, bottom: 5, trailing: 12))
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
+                    .transition(.opacity)
                 }
             }
         } header: {
@@ -221,30 +197,18 @@ struct ContentView: View {
             } else {
                 ForEach(artists) { artist in
                     NavigationLink {
-                        ArtistDetailView(
-                            artist: artist,
-                            audioEngine: audioEngine
-                        )
+                        ArtistDetailView(artist: artist, audioEngine: audioEngine)
                     } label: {
                         ArtistLibraryRow(artist: artist)
                             .padding(.vertical, 5)
                             .padding(.horizontal, 4)
-                            .opaqueGlass(
-                                cornerRadius: 16,
-                                tint: .white
-                            )
+                            .opaqueGlass(cornerRadius: 16, tint: .white)
                     }
                     .buttonStyle(.plain)
-                    .listRowInsets(
-                        EdgeInsets(
-                            top: 5,
-                            leading: 12,
-                            bottom: 5,
-                            trailing: 12
-                        )
-                    )
+                    .listRowInsets(EdgeInsets(top: 5, leading: 12, bottom: 5, trailing: 12))
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
+                    .transition(.opacity)
                 }
             }
         } header: {
@@ -300,10 +264,7 @@ struct ContentView: View {
                             Image(systemName: "waveform")
                                 .font(.headline)
                                 .foregroundStyle(.tint)
-                                .symbolEffect(
-                                    .variableColor.iterative,
-                                    options: .repeating
-                                )
+                                .symbolEffect(.variableColor.iterative, options: .repeating)
                         } else {
                             Image(systemName: "waveform")
                                 .font(.headline)
@@ -326,14 +287,7 @@ struct ContentView: View {
             )
         }
         .buttonStyle(.plain)
-        .listRowInsets(
-            EdgeInsets(
-                top: 5,
-                leading: 12,
-                bottom: 5,
-                trailing: 12
-            )
-        )
+        .listRowInsets(EdgeInsets(top: 5, leading: 12, bottom: 5, trailing: 12))
         .listRowBackground(Color.clear)
         .listRowSeparator(.hidden)
     }
@@ -347,19 +301,11 @@ struct ContentView: View {
                 .resizable()
                 .scaledToFill()
                 .frame(width: 58, height: 58)
-                .clipShape(
-                    RoundedRectangle(
-                        cornerRadius: 12,
-                        style: .continuous
-                    )
-                )
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         } else {
             ZStack {
-                RoundedRectangle(
-                    cornerRadius: 12,
-                    style: .continuous
-                )
-                .fill(.thinMaterial)
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(.thinMaterial)
 
                 Image(systemName: "music.note")
                     .font(.title2)
@@ -374,9 +320,7 @@ struct ContentView: View {
     private var filteredSongs: [Song] {
         let songs = fileAccessService.songs
 
-        guard !searchText.trimmingCharacters(
-            in: .whitespacesAndNewlines
-        ).isEmpty else {
+        guard !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return songs
         }
 
@@ -394,9 +338,7 @@ struct ContentView: View {
     private var filteredAlbums: [Album] {
         let albums = fileAccessService.albums
 
-        guard !searchText.trimmingCharacters(
-            in: .whitespacesAndNewlines
-        ).isEmpty else {
+        guard !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return albums
         }
 
@@ -413,9 +355,7 @@ struct ContentView: View {
     private var filteredArtists: [Artist] {
         let artists = fileAccessService.artists
 
-        guard !searchText.trimmingCharacters(
-            in: .whitespacesAndNewlines
-        ).isEmpty else {
+        guard !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return artists
         }
 
@@ -438,9 +378,7 @@ struct ContentView: View {
 
     private func restoreLibraryIfNeeded() {
         guard !hasRestored else { return }
-
         hasRestored = true
-
         audioEngine.restoreState(with: fileAccessService.songs)
     }
 }
@@ -455,10 +393,8 @@ enum LibraryCategory: String, CaseIterable {
         switch self {
         case .songs:
             return "Canciones"
-
         case .albums:
             return "Álbumes"
-
         case .artists:
             return "Artistas"
         }
@@ -468,10 +404,8 @@ enum LibraryCategory: String, CaseIterable {
         switch self {
         case .songs:
             return "music.note.list"
-
         case .albums:
             return "square.stack"
-
         case .artists:
             return "person.2"
         }
@@ -486,13 +420,12 @@ struct LibraryCategorySelector: View {
         HStack(spacing: 8) {
             ForEach(LibraryCategory.allCases, id: \.self) { category in
                 Button {
-                    withAnimation(.easeInOut(duration: 0.2)) {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                         selectedCategory = category
                     }
                 } label: {
                     HStack(spacing: 6) {
                         Image(systemName: category.icon)
-
                         Text(category.title)
                     }
                     .font(.subheadline.weight(.semibold))
@@ -516,9 +449,7 @@ struct LibraryCategorySelector: View {
             }
         }
         .padding(5)
-        .opaqueGlassCapsule(
-            tint: .white
-        )
+        .opaqueGlassCapsule(tint: .white)
     }
 }
 
@@ -533,12 +464,7 @@ struct AlbumLibraryRow: View {
                     .resizable()
                     .scaledToFill()
                     .frame(width: 60, height: 60)
-                    .clipShape(
-                        RoundedRectangle(
-                            cornerRadius: 12,
-                            style: .continuous
-                        )
-                    )
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             } else {
                 placeholderArtwork
             }
@@ -569,11 +495,8 @@ struct AlbumLibraryRow: View {
 
     private var placeholderArtwork: some View {
         ZStack {
-            RoundedRectangle(
-                cornerRadius: 12,
-                style: .continuous
-            )
-            .fill(.thinMaterial)
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(.thinMaterial)
 
             Image(systemName: "square.stack")
                 .font(.title2)
@@ -651,9 +574,6 @@ struct ContentUnavailableLibraryView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 28)
-        .opaqueGlass(
-            cornerRadius: 20,
-            tint: .white
-        )
+        .opaqueGlass(cornerRadius: 20, tint: .white)
     }
 }

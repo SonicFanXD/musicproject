@@ -15,34 +15,32 @@ struct AppBackground: View {
                 endPoint: .bottom
             )
 
-            // Lavado de color superior derecho
+            // Lavado de color superior derecho (más sutil)
             RadialGradient(
                 colors: [
-                    Color.accentColor.opacity(0.09),
+                    Color.accentColor.opacity(0.06),
                     .clear
                 ],
                 center: .topTrailing,
                 startRadius: 0,
                 endRadius: 480
             )
-            .opacity(glowPulse ? 1.0 : 0.65)
+            .opacity(glowPulse ? 1.0 : 0.6)
 
-            // Lavado de color inferior izquierdo, en contrafase con el anterior
+            // Lavado de color inferior izquierdo
             RadialGradient(
                 colors: [
-                    Color.accentColor.opacity(0.05),
+                    Color.accentColor.opacity(0.04),
                     .clear
                 ],
                 center: .bottomLeading,
                 startRadius: 0,
                 endRadius: 420
             )
-            .opacity(glowPulse ? 0.65 : 1.0)
+            .opacity(glowPulse ? 0.6 : 1.0)
         }
         .ignoresSafeArea()
         .onAppear {
-            // Animación muy lenta (6s) y solo de opacidad: barata en CPU/GPU,
-            // segura incluso en un iPhone 8 Plus. No recrea geometría.
             withAnimation(
                 .easeInOut(duration: 6)
                     .repeatForever(autoreverses: true)
@@ -50,5 +48,5 @@ struct AppBackground: View {
                 glowPulse = true
             }
         }
-    
+    }
 }

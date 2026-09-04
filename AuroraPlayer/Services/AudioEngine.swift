@@ -3,372 +3,597 @@ import AVFoundation
 import MediaPlayer
 import UIKit
 
-@MainActor
-final class AudioEngine: NSObject, ObservableObject {
-    @Published private(set) var isPlaying = false
-    @Published private(set) var currentTime: TimeInterval = 0
-    @Published private(set) var duration: TimeInterval = 0
-    @Published private(set) var currentSong: Song?
-    @Published private(set) var currentRouteName = "Altavoz"
-    @Published private(set) var playbackQueue: [Song] = []
-    @Published var isShuffleEnabled = false { didSet { saveState() } }
-    @Published var repeatMode: RepeatMode = .off { didSet { saveState() } }
+class AudioEngine: NSObject, ObservableObject {
+    // MARK: - Publicado para la UI
+    @Published var isPlaying: Bool = false
+    @Published var currentTime: TimeInterval = 0
+    @Published var duration: TimeInterval = 0
+    @Published var currentSong: Song?
+    @Published var currentRouteName: String = "Altavoz"
 
-    // Datos para el panel de calidad de audio (estilo audiófilo).
-    @Published private(set) var outputSampleRate: Double = 0
-    @Published private(set) var outputChannelCount: Int = 0
-    @Published private(set) var sourceSampleRate: Double = 0
-    @Published private(set) var sourceChannelCount: Int = 0
+    // MARK: - Propiedades para la vista de calidad de audio
+    @Published var sourceSampleRate: Double = 0
+    @Published var outputSampleRate: Double = 0
+    @Published var outputChannelCount: Int = 0
 
+    // MARK: - Propiedades para la cola y controles
+    @Published var isShuffleEnabled: Bool = false
+    @Published var repeatMode: RepeatMode = .off
+    @Published var playbackQueue: [Song] = []
+
+    // MARK: - Cola de reproducción interna
     private var playlist: [Song] = []
-    private(set) var currentIndex = 0
+    private(set) var currentIndex: Int = 0
+
+    // MARK: - Motor de audio
     private let engine = AVAudioEngine()
     private let playerNode = AVAudioPlayerNode()
     private var audioFile: AVAudioFile?
     private var displayTimer: Timer?
-    private var sampleRate = 44_100.0
+    private var sampleRate: Double = 44100
     private var seekOffset: TimeInterval = 0
-    private var playbackGeneration = 0
-    private var nowPlayingArtwork: MPMediaItemArtwork?
-    private var nowPlayingArtworkSongID: UUID?
-    private var lastNowPlayingPositionUpdate: TimeInterval = 0
-    private var isConfigured = false
-    private var hasRestored = false
+
+    // MARK: - Flag para evitar ejecuciones simultáneas de skip
+    private var isChangingTrack = false
+
+    // MARK: - Persistencia de estado
     private let stateDefaultsKey = "com.aurora.playbackState"
+    private var hasRestored: Bool = false
 
-    private func configureIfNeeded() {
-        guard !isConfigured else { return }
-        isConfigured = true
-        let session = AVAudioSession.sharedInstance()
-        do {
-            try session.setCategory(.playback, mode: .default, options: [.allowBluetoothA2DP, .allowAirPlay])
-            // Buffer corto: reduce la latencia y el riesgo de underrun sin afectar
-            // la fidelidad, ya que solo cambia el tamaño de bloque, no el formato.
-            try? session.setPreferredIOBufferDuration(0.005)
-            try session.setActive(true)
-        } catch { AppLog.error(.playback, "Sesión de audio: \(error.localizedDescription)") }
-        engine.attach(playerNode)
-        // El motor adapta el archivo al formato nativo de cada salida sin imponer 44.1 kHz.
-        engine.connect(playerNode, to: engine.mainMixerNode, format: nil)
-        NotificationCenter.default.addObserver(self, selector: #selector(handleRouteChange), name: AVAudioSession.routeChangeNotification, object: nil)
-        NotificationCenter.default.addObserver(self, selector: #selector(handleInterruption), name: AVAudioSession.interruptionNotification, object: nil)
-        // Sin este observador, un cambio de frecuencia de muestreo (el nuestro,
-        // vía setPreferredSampleRate, o uno externo por cambio de ruta) invalida
-        // el grafo del motor y la reproducción puede quedarse en silencio.
-        NotificationCenter.default.addObserver(self, selector: #selector(handleEngineConfigurationChange), name: .AVAudioEngineConfigurationChange, object: engine)
-        NotificationCenter.default.addObserver(self, selector: #selector(applicationWillResignActive), name: UIApplication.willResignActiveNotification, object: nil)
-        NotificationCenter.default.addObserver(self, selector: #selector(applicationWillResignActive), name: UIApplication.didEnterBackgroundNotification, object: nil)
-        NotificationCenter.default.addObserver(self, selector: #selector(applicationWillResignActive), name: UIApplication.willTerminateNotification, object: nil)
-        engine.prepare()
-        updateRouteName()
+    // MARK: - Init
+    override init() {
+        super.init()
+        setupSession()
+        setupEngine()
+        observeRouteChanges()
+        observeInterruptions()
         setupRemoteCommandCenter()
+        setupBackgroundNotification()
+        loadPlaybackState()
     }
 
-    @objc private func applicationWillResignActive() { saveState() }
+    // MARK: - Configuración inicial
 
-    func play(song: Song, from songs: [Song]? = nil) {
-        configureIfNeeded()
-        playlist = songs?.isEmpty == false ? songs! : [song]
-        playbackQueue = playlist
-        currentIndex = playlist.firstIndex(where: { $0.id == song.id }) ?? 0
-        playCurrentSong()
-    }
-
-    func playShuffled(from songs: [Song]) {
-        guard let song = songs.randomElement() else { return }
-        isShuffleEnabled = true
-        play(song: song, from: songs)
-    }
-
-    private func playCurrentSong(startAt time: TimeInterval = 0, shouldPlay: Bool = true) {
-        guard playlist.indices.contains(currentIndex) else { stop(clearSong: true); return }
-        let song = playlist[currentIndex]
-        stopPlayback(resetPosition: true)
-        do {
-            let file = try AVAudioFile(forReading: song.url)
-            let rate = file.processingFormat.sampleRate
-            guard rate > 0, file.length > 0 else { throw PlaybackError.invalidAudioFile }
-            audioFile = file; sampleRate = rate; duration = Double(file.length) / rate; currentSong = song
-            sourceSampleRate = rate
-            sourceChannelCount = Int(file.processingFormat.channelCount)
-            // Pide al hardware la frecuencia nativa del archivo. Si el dispositivo
-            // la soporta (DAC Lightning/USB-C, muchos receptores AirPlay), evita
-            // el remuestreo silencioso que degrada la fidelidad en pistas Hi-Res.
-            // El grafo se reconstruye en handleEngineConfigurationChange cuando
-            // el cambio se hace efectivo.
-            adaptSessionSampleRate(toMatch: rate)
-            prepareNowPlayingArtwork(for: song)
-            let position = min(max(0, time), duration)
-            seekOffset = position; currentTime = position
-            if !engine.isRunning { try engine.start() }
-            scheduleFile(file, from: AVAudioFramePosition(position * rate), shouldPlay: shouldPlay)
-            isPlaying = shouldPlay
-            if shouldPlay { startDisplayTimer() }
-            updateNowPlayingInfo(); saveState()
-            let session = AVAudioSession.sharedInstance()
-            AppLog.info(.playback, "Reproduciendo \(song.title): fuente \(Int(rate)) Hz / \(file.processingFormat.channelCount) canales; salida \(Int(session.sampleRate)) Hz / \(session.outputNumberOfChannels) canales")
-        } catch {
-            AppLog.error(.playback, "No se pudo reproducir \(song.title): \(error.localizedDescription)")
-            advanceAfterFailure()
-        }
-    }
-
-    /// Solicita a la sesión de audio la frecuencia de muestreo nativa de la pista
-    /// actual. Es solo una preferencia: el sistema puede ignorarla según la ruta
-    /// (el altavoz interno suele fijarse en 48 kHz pase lo que pase), pero en
-    /// salidas que sí soportan múltiples frecuencias nativas evita el remuestreo.
-    private func adaptSessionSampleRate(toMatch fileRate: Double) {
+    private func setupSession() {
         let session = AVAudioSession.sharedInstance()
-        guard abs(session.sampleRate - fileRate) > 1 else { return }
         do {
-            try session.setPreferredSampleRate(fileRate)
+            try session.setCategory(.playback, mode: .default, options: [])
+            try session.setActive(true)
+            updateRouteName()
+            updateAudioQuality()
         } catch {
-            AppLog.error(.playback, "No se pudo solicitar \(Int(fileRate)) Hz nativos: \(error.localizedDescription)")
+            print("Error configurando AVAudioSession: \(error.localizedDescription)")
         }
     }
 
-    /// Reconstruye el grafo del motor tras un AVAudioEngineConfigurationChange
-    /// (cambio de frecuencia de muestreo o de formato de hardware) y retoma la
-    /// reproducción exactamente donde iba, en vez de dejarla en silencio.
-    @objc private func handleEngineConfigurationChange(_ note: Notification) {
-        Task { @MainActor in
-            guard self.isConfigured else { return }
-            AppLog.info(.playback, "Formato de salida reconfigurado; reconstruyendo el grafo de audio")
-            self.rebuildAudioGraph()
-        }
-    }
-
-    private func rebuildAudioGraph() {
-        let wasPlaying = isPlaying
-        let resumeTime = currentTime
-        engine.disconnectNodeOutput(playerNode)
+    private func setupEngine() {
+        engine.attach(playerNode)
         engine.connect(playerNode, to: engine.mainMixerNode, format: nil)
-        engine.prepare()
-        updateRouteName()
-        guard let file = audioFile else { return }
-        do {
-            if !engine.isRunning { try engine.start() }
-        } catch {
-            AppLog.error(.playback, "No se pudo reiniciar el motor tras el cambio de formato: \(error.localizedDescription)")
+    }
+
+    private func setupBackgroundNotification() {
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(applicationWillResignActive),
+            name: UIApplication.willResignActiveNotification,
+            object: nil
+        )
+    }
+
+    @objc private func applicationWillResignActive() {
+        saveState()
+    }
+
+    // MARK: - Reproducción
+
+    func play(song: Song, from playlist: [Song]? = nil) {
+        if let playlist = playlist {
+            self.playlist = playlist
+            if let index = playlist.firstIndex(where: { $0.id == song.id }) {
+                currentIndex = index
+            } else {
+                self.playlist.insert(song, at: 0)
+                currentIndex = 0
+            }
+        } else {
+            self.playlist = [song]
+            currentIndex = 0
+        }
+
+        updatePlaybackQueue()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+            self?.playCurrentSong()
+        }
+        saveState()
+    }
+
+    private func playCurrentSong() {
+        guard currentIndex >= 0 && currentIndex < playlist.count else {
+            stop()
             return
         }
-        scheduleFile(file, from: AVAudioFramePosition(resumeTime * sampleRate), shouldPlay: wasPlaying)
-        isPlaying = wasPlaying
-        if wasPlaying { startDisplayTimer() }
-        let session = AVAudioSession.sharedInstance()
-        AppLog.info(.playback, "Grafo reconstruido: salida \(Int(session.sampleRate)) Hz / \(session.outputNumberOfChannels) canales")
-        updateNowPlayingInfo()
+
+        let song = playlist[currentIndex]
+        stop()
+
+        do {
+            let file = try AVAudioFile(forReading: song.url)
+            audioFile = file
+            sampleRate = file.processingFormat.sampleRate
+            duration = Double(file.length) / sampleRate
+
+            guard duration > 0 else {
+                playNext()
+                return
+            }
+
+            engine.disconnectNodeInput(playerNode)
+            engine.connect(playerNode, to: engine.mainMixerNode, format: file.processingFormat)
+
+            if !engine.isRunning {
+                try engine.start()
+            }
+
+            scheduleFile(file, from: 0)
+
+            currentSong = song
+            seekOffset = 0
+            isPlaying = true
+            startDisplayTimer()
+            updateNowPlayingInfo()
+            updateAudioQuality()
+            saveState()
+        } catch {
+            print("Error al reproducir \(song.title): \(error.localizedDescription)")
+            playNext()
+        }
     }
 
-    private func scheduleFile(_ file: AVAudioFile, from startFrame: AVAudioFramePosition, shouldPlay: Bool) {
-        playbackGeneration += 1
-        let generation = playbackGeneration
+    private func scheduleFile(_ file: AVAudioFile, from startFrame: AVAudioFramePosition) {
         playerNode.stop()
-        let start = min(max(startFrame, 0), file.length)
-        let remaining = file.length - start
-        guard remaining > 0 else { handlePlaybackFinished(); return }
-        playerNode.scheduleSegment(file, startingFrame: start, frameCount: AVAudioFrameCount(remaining), at: nil) { [weak self] in
-            DispatchQueue.main.async { guard self?.playbackGeneration == generation else { return }; self?.handlePlaybackFinished() }
+
+        let framesToPlay = AVAudioFrameCount(file.length - startFrame)
+        guard framesToPlay > 0 else {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+                self?.playNext()
+            }
+            return
         }
-        if shouldPlay { playerNode.play() }
+
+        playerNode.scheduleSegment(
+            file,
+            startingFrame: startFrame,
+            frameCount: framesToPlay,
+            at: nil
+        ) { [weak self] in
+            DispatchQueue.main.async {
+                self?.handlePlaybackFinished()
+            }
+        }
+
+        playerNode.play()
     }
+
+    // MARK: - Controles de cola
 
     func playNext() {
-        guard !playlist.isEmpty else { return }
-        // La cola puede haberse recreado al navegar. Reanclar por URL impide
-        // avanzar desde un índice viejo y terminar en una canción aleatoria.
-        if let currentSong, let index = playlist.firstIndex(where: { $0.url == currentSong.url }) {
-            currentIndex = index
+        guard !isChangingTrack else { return }
+        isChangingTrack = true
+
+        guard !playlist.isEmpty else {
+            isChangingTrack = false
+            return
         }
-        if isShuffleEnabled, playlist.count > 1 {
-            var next = currentIndex
-            while next == currentIndex { next = Int.random(in: playlist.indices) }
-            currentIndex = next
-        } else if currentIndex + 1 < playlist.count { currentIndex += 1
-        } else if repeatMode == .all { currentIndex = 0
-        } else { stop(clearSong: true); return }
+
+        let nextIndex = currentIndex + 1
+        guard nextIndex < playlist.count else {
+            if repeatMode == .all {
+                currentIndex = 0
+                playCurrentSong()
+                isChangingTrack = false
+                return
+            }
+            stop()
+            isChangingTrack = false
+            return
+        }
+
+        currentIndex = nextIndex
         playCurrentSong()
+        updatePlaybackQueue()
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+            self?.isChangingTrack = false
+        }
     }
 
     func playPrevious() {
-        guard !playlist.isEmpty else { return }
-        if currentTime > 3 { seek(to: 0); return }
-        if currentIndex > 0 { currentIndex -= 1
-        } else if repeatMode == .all { currentIndex = playlist.count - 1
-        } else { seek(to: 0); return }
+        guard !isChangingTrack else { return }
+        isChangingTrack = true
+
+        guard !playlist.isEmpty else {
+            isChangingTrack = false
+            return
+        }
+
+        if currentTime > 3.0 {
+            seek(to: 0)
+            isChangingTrack = false
+            return
+        }
+
+        let prevIndex = currentIndex - 1
+        guard prevIndex >= 0 else {
+            if repeatMode == .all {
+                currentIndex = playlist.count - 1
+                playCurrentSong()
+                isChangingTrack = false
+                return
+            }
+            isChangingTrack = false
+            return
+        }
+
+        currentIndex = prevIndex
         playCurrentSong()
+        updatePlaybackQueue()
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+            self?.isChangingTrack = false
+        }
     }
 
-    func pause() {
-        guard isPlaying else { return }
-        updateCurrentTime()
-        // Publicar primero el estado evita que Control Center conserve el botón de pausa
-        // durante el breve intervalo en que AVAudioPlayerNode procesa la pausa.
-        isPlaying = false
-        playerNode.pause()
-        stopDisplayTimer()
-        updateNowPlayingInfo(playing: false, forceSystemRefresh: true)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
-            guard let self, !self.isPlaying else { return }
-            self.updateNowPlayingInfo(playing: false, forceSystemRefresh: true)
+    // MARK: - Shuffle
+    func toggleShuffle() {
+        isShuffleEnabled.toggle()
+        if isShuffleEnabled {
+            playlist.shuffle()
+        } else {
+            // Restaurar orden original si es posible (no implementado por simplicidad)
         }
+        updatePlaybackQueue()
+        AppLog.info(.playback, "Shuffle: \(isShuffleEnabled ? "activado" : "desactivado")")
+    }
+
+    // MARK: - Repeat
+    func cycleRepeatMode() {
+        switch repeatMode {
+        case .off:
+            repeatMode = .all
+        case .all:
+            repeatMode = .one
+        case .one:
+            repeatMode = .off
+        }
+        AppLog.info(.playback, "Repeat: \(repeatMode.rawValue)")
+    }
+
+    private func updatePlaybackQueue() {
+        playbackQueue = playlist
+    }
+
+    // MARK: - Pausa / Reanudar / Detener
+
+    func pause() {
+        playerNode.pause()
+        isPlaying = false
+        stopDisplayTimer()
+        updateNowPlayingInfo()
         saveState()
-        AppLog.debug(.playback, "Pausa")
     }
 
     func resume() {
-        configureIfNeeded(); guard audioFile != nil else { return }
-        do { if !engine.isRunning { try engine.start() } } catch { AppLog.error(.playback, "Motor: \(error.localizedDescription)"); return }
-        isPlaying = true
-        playerNode.play()
-        startDisplayTimer()
-        updateNowPlayingInfo(playing: true)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
-            guard let self, self.isPlaying else { return }
-            self.updateNowPlayingInfo(playing: true)
+        guard audioFile != nil else { return }
+        if !engine.isRunning {
+            try? engine.start()
         }
+        playerNode.play()
+        isPlaying = true
+        startDisplayTimer()
+        updateNowPlayingInfo()
         saveState()
     }
 
-    func stop(clearSong: Bool = false) {
-        stopPlayback(resetPosition: true)
-        if clearSong { currentSong = nil; duration = 0; updateNowPlayingInfo() }
-        saveState()
-    }
-
-    private func stopPlayback(resetPosition: Bool) {
-        playbackGeneration += 1; playerNode.stop(); audioFile = nil; isPlaying = false; stopDisplayTimer()
-        if resetPosition { currentTime = 0; seekOffset = 0 }
+    func stop() {
+        playerNode.stop()
+        audioFile = nil
+        isPlaying = false
+        currentTime = 0
+        seekOffset = 0
+        stopDisplayTimer()
+        updateNowPlayingInfo()
     }
 
     func seek(to time: TimeInterval) {
         guard let file = audioFile else { return }
-        let position = min(max(0, time), duration), wasPlaying = isPlaying
-        seekOffset = position; currentTime = position
-        scheduleFile(file, from: AVAudioFramePosition(position * sampleRate), shouldPlay: wasPlaying)
-        updateNowPlayingInfo(); saveState()
+        let clampedTime = max(0, min(time, duration))
+        let startFrame = AVAudioFramePosition(clampedTime * sampleRate)
+
+        seekOffset = clampedTime
+        scheduleFile(file, from: startFrame)
+        currentTime = clampedTime
+
+        if !isPlaying {
+            playerNode.pause()
+        }
+
+        updateNowPlayingInfo()
+        saveState()
     }
 
-    func toggleShuffle() { isShuffleEnabled.toggle() }
-    func cycleRepeatMode() { repeatMode = switch repeatMode { case .off: .all; case .all: .one; case .one: .off } }
+    // MARK: - Progreso
 
     private func startDisplayTimer() {
         stopDisplayTimer()
         displayTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.updateCurrentTime() }
+            self?.updateCurrentTime()
         }
     }
-    private func stopDisplayTimer() { displayTimer?.invalidate(); displayTimer = nil }
+
+    private func stopDisplayTimer() {
+        displayTimer?.invalidate()
+        displayTimer = nil
+    }
+
     private func updateCurrentTime() {
-        guard let nodeTime = playerNode.lastRenderTime, let playerTime = playerNode.playerTime(forNodeTime: nodeTime) else { return }
-        currentTime = min(duration, seekOffset + Double(playerTime.sampleTime) / playerTime.sampleRate)
-        // La pantalla bloqueada interpola la posición; una actualización espaciada
-        // corrige posibles desajustes sin trabajo ni decodificación por cada tick.
-        if currentTime - lastNowPlayingPositionUpdate >= 5 {
+        guard let nodeTime = playerNode.lastRenderTime,
+              let playerTime = playerNode.playerTime(forNodeTime: nodeTime) else { return }
+
+        let elapsed = Double(playerTime.sampleTime) / playerTime.sampleRate
+        currentTime = seekOffset + elapsed
+    }
+
+    private func handlePlaybackFinished() {
+        if isPlaying && !isChangingTrack {
+            if repeatMode == .one {
+                seek(to: 0)
+                if isPlaying { resume() }
+                return
+            }
+            playNext()
+        } else {
+            isPlaying = false
+            currentTime = 0
+            stopDisplayTimer()
             updateNowPlayingInfo()
+            saveState()
         }
     }
-    private func handlePlaybackFinished() { guard isPlaying else { return }; repeatMode == .one ? playCurrentSong() : playNext() }
-    private func advanceAfterFailure() {
-        guard playlist.count > 1 else { stop(clearSong: true); return }
-        currentIndex = currentIndex + 1 < playlist.count ? currentIndex + 1 : 0; playCurrentSong()
+
+    // MARK: - Ruta de audio (Bluetooth, Jack, etc.)
+
+    private func observeRouteChanges() {
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleRouteChange),
+            name: AVAudioSession.routeChangeNotification,
+            object: nil
+        )
     }
 
-    @objc private func handleRouteChange(_: Notification) { updateRouteName() }
+    @objc private func handleRouteChange(_ notification: Notification) {
+        updateRouteName()
+        updateAudioQuality()
+    }
+
     private func updateRouteName() {
-        guard let output = AVAudioSession.sharedInstance().currentRoute.outputs.first else { return }
-        currentRouteName = switch output.portType {
-        case .bluetoothA2DP, .bluetoothHFP, .bluetoothLE: "Bluetooth: \(output.portName)"
-        case .headphones: "Audífonos: \(output.portName)"
-        case .builtInSpeaker: "Altavoz"
-        default: output.portName
-        }
         let session = AVAudioSession.sharedInstance()
-        outputSampleRate = session.sampleRate
-        outputChannelCount = session.outputNumberOfChannels
-        AppLog.info(.playback, "Ruta: \(currentRouteName); salida \(Int(session.sampleRate)) Hz / \(session.outputNumberOfChannels) canales")
+        guard let output = session.currentRoute.outputs.first else { return }
+
+        DispatchQueue.main.async {
+            switch output.portType {
+            case .bluetoothA2DP, .bluetoothHFP, .bluetoothLE:
+                self.currentRouteName = "Bluetooth: \(output.portName)"
+            case .headphones:
+                self.currentRouteName = "Audífonos (Jack 3.5mm): \(output.portName)"
+            case .builtInSpeaker:
+                self.currentRouteName = "Altavoz"
+            default:
+                self.currentRouteName = output.portName
+            }
+        }
     }
 
-    @objc private func handleInterruption(_ note: Notification) {
-        guard let value = note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt, let type = AVAudioSession.InterruptionType(rawValue: value) else { return }
-        if type == .began { pause(); return }
-        let options = AVAudioSession.InterruptionOptions(rawValue: note.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0)
-        if options.contains(.shouldResume) { resume() }
+    private func updateAudioQuality() {
+        let session = AVAudioSession.sharedInstance()
+        DispatchQueue.main.async {
+            self.outputSampleRate = session.sampleRate
+            self.outputChannelCount = Int(session.outputNumberOfChannels)
+        }
     }
+
+    // MARK: - Interrupciones (llamadas, Siri)
+
+    private func observeInterruptions() {
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleInterruption),
+            name: AVAudioSession.interruptionNotification,
+            object: nil
+        )
+    }
+
+    @objc private func handleInterruption(_ notification: Notification) {
+        guard let info = notification.userInfo,
+              let typeValue = info[AVAudioSessionInterruptionTypeKey] as? UInt,
+              let type = AVAudioSession.InterruptionType(rawValue: typeValue) else { return }
+
+        switch type {
+        case .began:
+            if isPlaying { pause() }
+        case .ended:
+            guard let optionsValue = info[AVAudioSessionInterruptionOptionKey] as? UInt else { return }
+            let options = AVAudioSession.InterruptionOptions(rawValue: optionsValue)
+            if options.contains(.shouldResume) {
+                resume()
+            }
+        @unknown default:
+            break
+        }
+    }
+
+    // MARK: - Pantalla de bloqueo y Centro de Control
 
     private func setupRemoteCommandCenter() {
-        let center = MPRemoteCommandCenter.shared()
-        center.playCommand.addTarget { [weak self] _ in Task { @MainActor in self?.resume() }; return .success }
-        center.pauseCommand.addTarget { [weak self] _ in Task { @MainActor in self?.pause() }; return .success }
-        center.togglePlayPauseCommand.addTarget { [weak self] _ in
-            Task { @MainActor in guard let self else { return }; self.isPlaying ? self.pause() : self.resume() }
+        let commandCenter = MPRemoteCommandCenter.shared()
+
+        commandCenter.playCommand.addTarget { [weak self] _ in
+            guard let self = self, self.currentSong != nil else { return .noActionableNowPlayingItem }
+            self.resume()
             return .success
         }
-        center.nextTrackCommand.addTarget { [weak self] _ in Task { @MainActor in self?.playNext() }; return .success }
-        center.previousTrackCommand.addTarget { [weak self] _ in Task { @MainActor in self?.playPrevious() }; return .success }
-        center.changePlaybackPositionCommand.addTarget { [weak self] event in
-            guard let event = event as? MPChangePlaybackPositionCommandEvent else { return .commandFailed }
-            Task { @MainActor in self?.seek(to: event.positionTime) }
+
+        commandCenter.pauseCommand.addTarget { [weak self] _ in
+            guard let self = self, self.currentSong != nil else { return .noActionableNowPlayingItem }
+            self.pause()
             return .success
         }
-        center.playCommand.isEnabled = true
-        center.pauseCommand.isEnabled = true
-        center.togglePlayPauseCommand.isEnabled = true
+
+        commandCenter.togglePlayPauseCommand.addTarget { [weak self] _ in
+            guard let self = self, self.currentSong != nil else { return .noActionableNowPlayingItem }
+            if self.isPlaying {
+                self.pause()
+            } else {
+                self.resume()
+            }
+            return .success
+        }
+
+        commandCenter.nextTrackCommand.addTarget { [weak self] _ in
+            guard let self = self else { return .commandFailed }
+            self.playNext()
+            return .success
+        }
+        commandCenter.nextTrackCommand.isEnabled = true
+
+        commandCenter.previousTrackCommand.addTarget { [weak self] _ in
+            guard let self = self else { return .commandFailed }
+            self.playPrevious()
+            return .success
+        }
+        commandCenter.previousTrackCommand.isEnabled = true
+
+        commandCenter.changePlaybackPositionCommand.addTarget { [weak self] event in
+            guard let self = self,
+                  let positionEvent = event as? MPChangePlaybackPositionCommandEvent else {
+                return .commandFailed
+            }
+            self.seek(to: positionEvent.positionTime)
+            return .success
+        }
     }
 
-    private func updateNowPlayingInfo(playing explicitPlaybackState: Bool? = nil, forceSystemRefresh: Bool = false) {
+    private func updateNowPlayingInfo() {
         guard let song = currentSong else {
             MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
             return
         }
-        let playing = explicitPlaybackState ?? isPlaying
+
+        let artist = song.artist.isEmpty ? "Artista desconocido" : song.artist
+        let album = song.album.isEmpty ? "" : song.album
+
         var info: [String: Any] = [
             MPMediaItemPropertyTitle: song.title,
+            MPMediaItemPropertyArtist: artist,
+            MPMediaItemPropertyAlbumTitle: album,
             MPMediaItemPropertyPlaybackDuration: duration,
             MPNowPlayingInfoPropertyElapsedPlaybackTime: currentTime,
-            MPNowPlayingInfoPropertyPlaybackRate: NSNumber(value: playing ? 1.0 : 0.0),
-            MPNowPlayingInfoPropertyDefaultPlaybackRate: NSNumber(value: 1.0)
+            MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1.0 : 0.0
         ]
-        if !song.artist.isEmpty { info[MPMediaItemPropertyArtist] = song.artist }
-        if !song.album.isEmpty { info[MPMediaItemPropertyAlbumTitle] = song.album }
-        if let nowPlayingArtwork { info[MPMediaItemPropertyArtwork] = nowPlayingArtwork }
-        let nowPlayingCenter = MPNowPlayingInfoCenter.default()
-        // En iOS el icono se deriva de PlaybackRate (no de playbackState, que
-        // es un API de macOS). Al pausar se invalida una vez el diccionario
-        // anterior para que Lock Screen descarte su tasa interpolada de 1.0.
-        if forceSystemRefresh { nowPlayingCenter.nowPlayingInfo = nil }
-        nowPlayingCenter.nowPlayingInfo = info
-        // Mantener ambos comandos disponibles evita que Control Center conserve
-        // el botón anterior; el icono lo decide PlaybackRate en iOS.
-        let commands = MPRemoteCommandCenter.shared()
-        commands.playCommand.isEnabled = true
-        commands.pauseCommand.isEnabled = true
-        lastNowPlayingPositionUpdate = currentTime
-        AppLog.debug(.metadata, "Centro de control actualizado: \(song.title), estado=\(playing ? "playing" : "paused"), rate=\(playing ? "1" : "0")")
+
+        if let artworkData = song.artworkData,
+           let image = UIImage(data: artworkData) {
+            let artwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+            info[MPMediaItemPropertyArtwork] = artwork
+        }
+
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
     }
 
-    private func prepareNowPlayingArtwork(for song: Song) {
-        guard nowPlayingArtworkSongID != song.id else { return }
-        nowPlayingArtworkSongID = song.id
-        nowPlayingArtwork = song.artworkData.flatMap(UIImage.init(data:)).map { image in
-            MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+    // MARK: - Persistencia de estado
+
+    func saveState() {
+        guard let song = currentSong else {
+            UserDefaults.standard.removeObject(forKey: stateDefaultsKey)
+            return
+        }
+
+        let state: [String: Any] = [
+            "songID": song.id.uuidString,
+            "currentTime": currentTime,
+            "isPlaying": isPlaying,
+            "duration": duration
+        ]
+        UserDefaults.standard.set(state, forKey: stateDefaultsKey)
+    }
+
+    private func loadPlaybackState() {
+        // La restauración se hace desde ContentView con restoreState
+    }
+
+    func restoreState(with allSongs: [Song]) {
+        guard !hasRestored else { return }
+        guard let state = UserDefaults.standard.dictionary(forKey: stateDefaultsKey) else { return }
+        guard let songIDString = state["songID"] as? String,
+              let songID = UUID(uuidString: songIDString),
+              let song = allSongs.first(where: { $0.id == songID }) else {
+            UserDefaults.standard.removeObject(forKey: stateDefaultsKey)
+            return
+        }
+
+        let savedTime = state["currentTime"] as? TimeInterval ?? 0
+        let wasPlaying = state["isPlaying"] as? Bool ?? false
+
+        self.playlist = allSongs
+        if let index = allSongs.firstIndex(where: { $0.id == songID }) {
+            self.currentIndex = index
+        } else {
+            self.playlist.insert(song, at: 0)
+            self.currentIndex = 0
+        }
+        updatePlaybackQueue()
+
+        // Reproducir desde el punto guardado
+        do {
+            let file = try AVAudioFile(forReading: song.url)
+            audioFile = file
+            sampleRate = file.processingFormat.sampleRate
+            duration = Double(file.length) / sampleRate
+
+            engine.disconnectNodeInput(playerNode)
+            engine.connect(playerNode, to: engine.mainMixerNode, format: file.processingFormat)
+
+            if !engine.isRunning {
+                try engine.start()
+            }
+
+            let startFrame = AVAudioFramePosition(savedTime * sampleRate)
+            scheduleFile(file, from: startFrame)
+
+            currentSong = song
+            seekOffset = savedTime
+            currentTime = savedTime
+
+            if wasPlaying {
+                playerNode.play()
+                isPlaying = true
+                startDisplayTimer()
+            } else {
+                playerNode.pause()
+                isPlaying = false
+            }
+
+            updateNowPlayingInfo()
+            updateAudioQuality()
+            hasRestored = true
+        } catch {
+            print("Error al restaurar estado: \(error.localizedDescription)")
+            UserDefaults.standard.removeObject(forKey: stateDefaultsKey)
         }
     }
 
-    func saveState() {
-        guard let song = currentSong else { UserDefaults.standard.removeObject(forKey: stateDefaultsKey); return }
-        UserDefaults.standard.set(["songURL": song.url.absoluteString, "currentTime": currentTime, "isPlaying": isPlaying, "shuffle": isShuffleEnabled, "repeat": repeatMode.rawValue], forKey: stateDefaultsKey)
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+        saveState()
     }
-    func restoreState(with songs: [Song]) {
-        guard !hasRestored, let state = UserDefaults.standard.dictionary(forKey: stateDefaultsKey), let url = state["songURL"] as? String, let song = songs.first(where: { $0.url.absoluteString == url }) else { return }
-        configureIfNeeded(); playlist = songs; playbackQueue = songs; currentIndex = songs.firstIndex(where: { $0.id == song.id }) ?? 0
-        isShuffleEnabled = state["shuffle"] as? Bool ?? false
-        repeatMode = RepeatMode(rawValue: state["repeat"] as? String ?? "") ?? .off
-        playCurrentSong(startAt: state["currentTime"] as? TimeInterval ?? 0, shouldPlay: state["isPlaying"] as? Bool ?? false); hasRestored = true
-    }
-    deinit { NotificationCenter.default.removeObserver(self) }
-}
-
-private enum PlaybackError: LocalizedError { case invalidAudioFile
-    var errorDescription: String? { "El archivo no contiene muestras reproducibles." }
 }

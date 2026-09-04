@@ -34,9 +34,7 @@ struct SettingsView: View {
         .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
         .sheet(isPresented: $showFolderPicker) {
-            FolderPickerView(
-                fileAccessService: fileAccessService
-            )
+            FolderPickerView(fileAccessService: fileAccessService)
         }
         .sheet(isPresented: $showLogs) {
             LogsView()
@@ -49,9 +47,7 @@ struct SettingsView: View {
         VStack(spacing: 10) {
             ZStack {
                 Circle()
-                    .fill(
-                        Color.accentColor.opacity(0.18)
-                    )
+                    .fill(Color.accentColor.opacity(0.18))
                     .frame(width: 78, height: 78)
 
                 Image(systemName: "gearshape.fill")
@@ -60,12 +56,7 @@ struct SettingsView: View {
             }
 
             Text("Aurora Player")
-                .font(
-                    .system(
-                        size: 25,
-                        weight: .bold
-                    )
-                )
+                .font(.system(size: 25, weight: .bold))
 
             Text("Personaliza tu experiencia musical")
                 .font(.subheadline)
@@ -73,19 +64,13 @@ struct SettingsView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 22)
-        .opaqueGlass(
-            cornerRadius: 26,
-            tint: .accentColor
-        )
+        .opaqueGlass(cornerRadius: 26, tint: .accentColor)
     }
 
     // MARK: - Playback
 
     private var playbackSection: some View {
-        settingsSection(
-            title: "Reproducción",
-            icon: "play.circle.fill"
-        ) {
+        settingsSection(title: "Reproducción", icon: "play.circle.fill") {
             VStack(spacing: 0) {
                 settingRow(
                     icon: "shuffle",
@@ -97,9 +82,7 @@ struct SettingsView: View {
                     Toggle(
                         "",
                         isOn: Binding(
-                            get: {
-                                audioEngine.isShuffleEnabled
-                            },
+                            get: { audioEngine.isShuffleEnabled },
                             set: { value in
                                 if value != audioEngine.isShuffleEnabled {
                                     audioEngine.toggleShuffle()
@@ -109,6 +92,7 @@ struct SettingsView: View {
                     )
                     .labelsHidden()
                     .tint(.accentColor)
+                    .animation(.spring(response: 0.3, dampingFraction: 0.7), value: audioEngine.isShuffleEnabled)
                 }
 
                 Divider()
@@ -128,6 +112,7 @@ struct SettingsView: View {
                             .foregroundStyle(Color.accentColor)
                     }
                     .buttonStyle(.plain)
+                    .animation(.spring(response: 0.3, dampingFraction: 0.7), value: audioEngine.repeatMode)
                 }
 
                 Divider()
@@ -139,11 +124,9 @@ struct SettingsView: View {
                     title: "Salida de audio",
                     subtitle: audioEngine.currentRouteName
                 ) {
-                    Image(
-                        systemName: "chevron.right"
-                    )
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(.tertiary)
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.tertiary)
                 }
             }
         }
@@ -152,10 +135,7 @@ struct SettingsView: View {
     // MARK: - Library
 
     private var librarySection: some View {
-        settingsSection(
-            title: "Biblioteca",
-            icon: "music.note.list"
-        ) {
+        settingsSection(title: "Biblioteca", icon: "music.note.list") {
             VStack(spacing: 0) {
                 Button {
                     showFolderPicker = true
@@ -165,11 +145,9 @@ struct SettingsView: View {
                         title: "Carpetas de música",
                         subtitle: "Selecciona dónde buscar tus canciones"
                     ) {
-                        Image(
-                            systemName: "chevron.right"
-                        )
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(.tertiary)
+                        Image(systemName: "chevron.right")
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(.tertiary)
                     }
                 }
                 .buttonStyle(.plain)
@@ -192,11 +170,9 @@ struct SettingsView: View {
                             ProgressView()
                                 .controlSize(.small)
                         } else {
-                            Image(
-                                systemName: "chevron.right"
-                            )
-                            .font(.caption.weight(.bold))
-                            .foregroundStyle(.tertiary)
+                            Image(systemName: "chevron.right")
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(.tertiary)
                         }
                     }
                 }
@@ -209,10 +185,7 @@ struct SettingsView: View {
     // MARK: - Library Stats
 
     private var statsSection: some View {
-        settingsSection(
-            title: "Tu biblioteca",
-            icon: "chart.bar.fill"
-        ) {
+        settingsSection(title: "Tu biblioteca", icon: "chart.bar.fill") {
             VStack(spacing: 0) {
                 settingRow(
                     icon: "music.note",
@@ -259,20 +232,15 @@ struct SettingsView: View {
     // MARK: - Audio
 
     private var audioSection: some View {
-        settingsSection(
-            title: "Audio",
-            icon: "waveform"
-        ) {
+        settingsSection(title: "Audio", icon: "waveform") {
             VStack(spacing: 0) {
                 settingRow(
                     icon: "waveform",
                     title: "Motor de audio",
                     subtitle: "AVAudioEngine / AVAudioPlayer"
                 ) {
-                    Image(
-                        systemName: "checkmark.circle.fill"
-                    )
-                    .foregroundStyle(.green)
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
                 }
 
                 Divider()
@@ -290,13 +258,10 @@ struct SettingsView: View {
         }
     }
 
-    // MARK: - Audio Quality (audiófilo)
+    // MARK: - Audio Quality
 
     private var audioQualitySection: some View {
-        settingsSection(
-            title: "Calidad de audio",
-            icon: "hifispeaker.fill"
-        ) {
+        settingsSection(title: "Calidad de audio", icon: "hifispeaker.fill") {
             VStack(spacing: 0) {
                 if let song = audioEngine.currentSong {
                     settingRow(
@@ -316,11 +281,9 @@ struct SettingsView: View {
                             ? "\(Int(audioEngine.outputSampleRate)) Hz · \(audioEngine.outputChannelCount) canales"
                             : "—"
                     ) {
-                        Image(
-                            systemName: isBitPerfect
-                                ? "checkmark.seal.fill"
-                                : "arrow.triangle.2.circlepath"
-                        )
+                        Image(systemName: isBitPerfect
+                            ? "checkmark.seal.fill"
+                            : "arrow.triangle.2.circlepath")
                         .foregroundStyle(isBitPerfect ? .green : .orange)
                     }
 
@@ -352,18 +315,13 @@ struct SettingsView: View {
     // MARK: - About
 
     private var aboutSection: some View {
-        settingsSection(
-            title: "Aurora Player",
-            icon: "sparkles"
-        ) {
+        settingsSection(title: "Aurora Player", icon: "sparkles") {
             VStack(spacing: 0) {
                 settingRow(
                     icon: "info.circle.fill",
                     title: "Versión",
                     subtitle: "1.0"
-                ) {
-                    EmptyView()
-                }
+                ) { EmptyView() }
 
                 Divider()
                     .opacity(0.12)
@@ -377,11 +335,9 @@ struct SettingsView: View {
                         title: "Registros",
                         subtitle: "Información de diagnóstico"
                     ) {
-                        Image(
-                            systemName: "chevron.right"
-                        )
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(.tertiary)
+                        Image(systemName: "chevron.right")
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(.tertiary)
                     }
                 }
                 .buttonStyle(.plain)
@@ -394,9 +350,7 @@ struct SettingsView: View {
                     icon: "music.note",
                     title: "Aurora Player",
                     subtitle: "Tu música, a tu manera."
-                ) {
-                    EmptyView()
-                }
+                ) { EmptyView() }
             }
         }
     }
@@ -422,27 +376,14 @@ struct SettingsView: View {
                 content()
             }
             .background {
-                RoundedRectangle(
-                    cornerRadius: 22,
-                    style: .continuous
-                )
-                .fill(.ultraThinMaterial)
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .fill(.ultraThinMaterial)
             }
             .overlay {
-                RoundedRectangle(
-                    cornerRadius: 22,
-                    style: .continuous
-                )
-                .stroke(
-                    .white.opacity(0.16),
-                    lineWidth: 1
-                )
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .stroke(.white.opacity(0.16), lineWidth: 1)
             }
-            .shadow(
-                color: .black.opacity(0.10),
-                radius: 14,
-                y: 6
-            )
+            .shadow(color: .black.opacity(0.10), radius: 14, y: 6)
         }
     }
 
@@ -470,37 +411,18 @@ struct SettingsView: View {
     ) -> some View {
         HStack(spacing: 13) {
             ZStack {
-                RoundedRectangle(
-                    cornerRadius: 11,
-                    style: .continuous
-                )
-                .fill(
-                    Color.accentColor.opacity(0.12)
-                )
+                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                    .fill(Color.accentColor.opacity(0.12))
 
                 Image(systemName: icon)
-                    .font(
-                        .system(
-                            size: 16,
-                            weight: .semibold
-                        )
-                    )
-                    .foregroundStyle(
-                        Color.accentColor
-                    )
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(Color.accentColor)
             }
             .frame(width: 38, height: 38)
 
-            VStack(
-                alignment: .leading,
-                spacing: 3
-            ) {
+            VStack(alignment: .leading, spacing: 3) {
                 Text(title)
-                    .font(
-                        .subheadline.weight(
-                            .semibold
-                        )
-                    )
+                    .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.primary)
 
                 Text(subtitle)

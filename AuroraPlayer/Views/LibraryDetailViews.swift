@@ -19,14 +19,7 @@ struct AlbumDetailView: View {
                     albumHeader
                         .listRowBackground(Color.clear)
                         .listRowSeparator(.hidden)
-                        .listRowInsets(
-                            EdgeInsets(
-                                top: 12,
-                                leading: 16,
-                                bottom: 12,
-                                trailing: 16
-                            )
-                        )
+                        .listRowInsets(EdgeInsets(top: 12, leading: 16, bottom: 12, trailing: 16))
                 }
 
                 Section {
@@ -41,21 +34,12 @@ struct AlbumDetailView: View {
                                 isCurrent: audioEngine.currentSong?.id == song.id,
                                 isPlaying: audioEngine.isPlaying
                             ) {
-                                audioEngine.play(
-                                    song: song,
-                                    from: songs
-                                )
+                                audioEngine.play(song: song, from: songs)
                             }
                             .listRowBackground(Color.clear)
                             .listRowSeparator(.hidden)
-                            .listRowInsets(
-                                EdgeInsets(
-                                    top: 5,
-                                    leading: 12,
-                                    bottom: 5,
-                                    trailing: 12
-                                )
-                            )
+                            .listRowInsets(EdgeInsets(top: 5, leading: 12, bottom: 5, trailing: 12))
+                            .transition(.opacity)
                         }
                     }
                 } header: {
@@ -84,22 +68,16 @@ struct AlbumDetailView: View {
                     Image(uiImage: artwork)
                         .resizable()
                         .scaledToFill()
-                        .frame(
-                            width: geometry.size.width,
-                            height: geometry.size.height
-                        )
+                        .frame(width: geometry.size.width, height: geometry.size.height)
                         .blur(radius: 55)
                         .opacity(0.28)
                         .scaleEffect(1.2)
 
                     LinearGradient(
                         colors: [
-                            Color(uiColor: .systemBackground)
-                                .opacity(0.30),
-                            Color(uiColor: .systemBackground)
-                                .opacity(0.82),
-                            Color(uiColor: .systemBackground)
-                                .opacity(0.98)
+                            Color(uiColor: .systemBackground).opacity(0.30),
+                            Color(uiColor: .systemBackground).opacity(0.82),
+                            Color(uiColor: .systemBackground).opacity(0.98)
                         ],
                         startPoint: .top,
                         endPoint: .bottom
@@ -120,12 +98,7 @@ struct AlbumDetailView: View {
 
             VStack(spacing: 6) {
                 Text(album.name)
-                    .font(
-                        .system(
-                            size: 25,
-                            weight: .bold
-                        )
-                    )
+                    .font(.system(size: 25, weight: .bold))
                     .foregroundStyle(.primary)
                     .multilineTextAlignment(.center)
 
@@ -139,37 +112,24 @@ struct AlbumDetailView: View {
             }
 
             Button {
-                guard let firstSong = songs.first else {
-                    return
-                }
-
-                audioEngine.play(
-                    song: firstSong,
-                    from: songs
-                )
+                guard let firstSong = songs.first else { return }
+                audioEngine.play(song: firstSong, from: songs)
             } label: {
-                Label(
-                    "Reproducir álbum",
-                    systemImage: "play.fill"
-                )
-                .font(.subheadline.weight(.bold))
-                .foregroundStyle(.primary)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 13)
+                Label("Reproducir álbum", systemImage: "play.fill")
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(.primary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 13)
             }
             .buttonStyle(.plain)
-            .opaqueGlass(
-                cornerRadius: 16,
-                tint: .accentColor
-            )
+            .opaqueGlass(cornerRadius: 16, tint: .accentColor)
+            .scaleEffect(0.98)
+            .animation(.spring(response: 0.3, dampingFraction: 0.6), value: true)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 8)
         .padding(.horizontal, 4)
-        .opaqueGlass(
-            cornerRadius: 24,
-            tint: .white
-        )
+        .opaqueGlass(cornerRadius: 24, tint: .white)
     }
 
     // MARK: - Artwork
@@ -180,49 +140,23 @@ struct AlbumDetailView: View {
                 Image(uiImage: artwork)
                     .resizable()
                     .scaledToFill()
-                    .frame(
-                        width: 230,
-                        height: 230
-                    )
-                    .clipShape(
-                        RoundedRectangle(
-                            cornerRadius: 22,
-                            style: .continuous
-                        )
-                    )
+                    .frame(width: 230, height: 230)
+                    .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
                     .overlay {
-                        RoundedRectangle(
-                            cornerRadius: 22,
-                            style: .continuous
-                        )
-                        .stroke(
-                            .white.opacity(0.22),
-                            lineWidth: 1
-                        )
+                        RoundedRectangle(cornerRadius: 22, style: .continuous)
+                            .stroke(.white.opacity(0.22), lineWidth: 1)
                     }
-                    .shadow(
-                        color: .black.opacity(0.30),
-                        radius: 20,
-                        y: 10
-                    )
+                    .shadow(color: .black.opacity(0.30), radius: 20, y: 10)
             } else {
                 ZStack {
-                    RoundedRectangle(
-                        cornerRadius: 22,
-                        style: .continuous
-                    )
-                    .fill(.thinMaterial)
+                    RoundedRectangle(cornerRadius: 22, style: .continuous)
+                        .fill(.thinMaterial)
 
                     Image(systemName: "square.stack")
-                        .font(
-                            .system(size: 55)
-                        )
+                        .font(.system(size: 55))
                         .foregroundStyle(.secondary)
                 }
-                .frame(
-                    width: 230,
-                    height: 230
-                )
+                .frame(width: 230, height: 230)
             }
         }
     }
@@ -245,10 +179,7 @@ struct AlbumDetailView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 30)
-        .opaqueGlass(
-            cornerRadius: 18,
-            tint: .white
-        )
+        .opaqueGlass(cornerRadius: 18, tint: .white)
     }
 }
 
@@ -274,78 +205,44 @@ struct ArtistDetailView: View {
                     artistHeader
                         .listRowBackground(Color.clear)
                         .listRowSeparator(.hidden)
-                        .listRowInsets(
-                            EdgeInsets(
-                                top: 12,
-                                leading: 16,
-                                bottom: 12,
-                                trailing: 16
-                            )
-                        )
+                        .listRowInsets(EdgeInsets(top: 12, leading: 16, bottom: 12, trailing: 16))
                 }
 
                 if !albums.isEmpty {
                     Section {
                         ForEach(albums) { album in
                             NavigationLink {
-                                AlbumDetailView(
-                                    album: album,
-                                    audioEngine: audioEngine
-                                )
+                                AlbumDetailView(album: album, audioEngine: audioEngine)
                             } label: {
                                 HStack(spacing: 12) {
                                     albumArtwork(album)
 
-                                    VStack(
-                                        alignment: .leading,
-                                        spacing: 4
-                                    ) {
+                                    VStack(alignment: .leading, spacing: 4) {
                                         Text(album.name)
-                                            .font(
-                                                .subheadline.weight(
-                                                    .semibold
-                                                )
-                                            )
+                                            .font(.subheadline.weight(.semibold))
                                             .foregroundStyle(.primary)
                                             .lineLimit(1)
 
-                                        Text(
-                                            "\(album.songs.count) canciones"
-                                        )
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
+                                        Text("\(album.songs.count) canciones")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
                                     }
 
                                     Spacer()
 
-                                    Image(
-                                        systemName: "chevron.right"
-                                    )
-                                    .font(
-                                        .caption.weight(
-                                            .semibold
-                                        )
-                                    )
-                                    .foregroundStyle(.tertiary)
+                                    Image(systemName: "chevron.right")
+                                        .font(.caption.weight(.semibold))
+                                        .foregroundStyle(.tertiary)
                                 }
                                 .padding(.vertical, 8)
                                 .padding(.horizontal, 8)
-                                .opaqueGlass(
-                                    cornerRadius: 16,
-                                    tint: .white
-                                )
+                                .opaqueGlass(cornerRadius: 16, tint: .white)
                             }
                             .buttonStyle(.plain)
                             .listRowBackground(Color.clear)
                             .listRowSeparator(.hidden)
-                            .listRowInsets(
-                                EdgeInsets(
-                                    top: 5,
-                                    leading: 12,
-                                    bottom: 5,
-                                    trailing: 12
-                                )
-                            )
+                            .listRowInsets(EdgeInsets(top: 5, leading: 12, bottom: 5, trailing: 12))
+                            .transition(.opacity)
                         }
                     } header: {
                         Text("Álbumes")
@@ -358,28 +255,21 @@ struct ArtistDetailView: View {
                 Section {
                     if songs.isEmpty {
                         VStack(spacing: 10) {
-                            Image(
-                                systemName: "music.note.list"
-                            )
-                            .font(.system(size: 32))
-                            .foregroundStyle(.secondary)
+                            Image(systemName: "music.note.list")
+                                .font(.system(size: 32))
+                                .foregroundStyle(.secondary)
 
                             Text("No hay canciones")
                                 .font(.headline)
 
-                            Text(
-                                "No se encontraron canciones para este artista."
-                            )
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                            .multilineTextAlignment(.center)
+                            Text("No se encontraron canciones para este artista.")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                                .multilineTextAlignment(.center)
                         }
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 30)
-                        .opaqueGlass(
-                            cornerRadius: 18,
-                            tint: .white
-                        )
+                        .opaqueGlass(cornerRadius: 18, tint: .white)
                         .listRowBackground(Color.clear)
                         .listRowSeparator(.hidden)
                     } else {
@@ -389,21 +279,12 @@ struct ArtistDetailView: View {
                                 isCurrent: audioEngine.currentSong?.id == song.id,
                                 isPlaying: audioEngine.isPlaying
                             ) {
-                                audioEngine.play(
-                                    song: song,
-                                    from: songs
-                                )
+                                audioEngine.play(song: song, from: songs)
                             }
                             .listRowBackground(Color.clear)
                             .listRowSeparator(.hidden)
-                            .listRowInsets(
-                                EdgeInsets(
-                                    top: 5,
-                                    leading: 12,
-                                    bottom: 5,
-                                    trailing: 12
-                                )
-                            )
+                            .listRowInsets(EdgeInsets(top: 5, leading: 12, bottom: 5, trailing: 12))
+                            .transition(.opacity)
                         }
                     }
                 } header: {
@@ -432,22 +313,16 @@ struct ArtistDetailView: View {
                     Image(uiImage: artwork)
                         .resizable()
                         .scaledToFill()
-                        .frame(
-                            width: geometry.size.width,
-                            height: geometry.size.height
-                        )
+                        .frame(width: geometry.size.width, height: geometry.size.height)
                         .blur(radius: 60)
                         .opacity(0.25)
                         .scaleEffect(1.25)
 
                     LinearGradient(
                         colors: [
-                            Color(uiColor: .systemBackground)
-                                .opacity(0.25),
-                            Color(uiColor: .systemBackground)
-                                .opacity(0.84),
-                            Color(uiColor: .systemBackground)
-                                .opacity(0.98)
+                            Color(uiColor: .systemBackground).opacity(0.25),
+                            Color(uiColor: .systemBackground).opacity(0.84),
+                            Color(uiColor: .systemBackground).opacity(0.98)
                         ],
                         startPoint: .top,
                         endPoint: .bottom
@@ -468,98 +343,62 @@ struct ArtistDetailView: View {
                 Image(uiImage: artwork)
                     .resizable()
                     .scaledToFill()
-                    .frame(
-                        width: 150,
-                        height: 150
-                    )
+                    .frame(width: 150, height: 150)
                     .clipShape(Circle())
                     .overlay {
                         Circle()
-                            .stroke(
-                                .white.opacity(0.22),
-                                lineWidth: 1
-                            )
+                            .stroke(.white.opacity(0.22), lineWidth: 1)
                     }
-                    .shadow(
-                        color: .black.opacity(0.25),
-                        radius: 18,
-                        y: 8
-                    )
+                    .shadow(color: .black.opacity(0.25), radius: 18, y: 8)
             } else {
                 ZStack {
                     Circle()
                         .fill(.thinMaterial)
 
-                    Image(
-                        systemName: "person.fill"
-                    )
-                    .font(
-                        .system(size: 55)
-                    )
-                    .foregroundStyle(.secondary)
+                    Image(systemName: "person.fill")
+                        .font(.system(size: 55))
+                        .foregroundStyle(.secondary)
                 }
-                .frame(
-                    width: 150,
-                    height: 150
-                )
+                .frame(width: 150, height: 150)
             }
 
             VStack(spacing: 5) {
                 Text(artist.name)
-                    .font(
-                        .system(
-                            size: 26,
-                            weight: .bold
-                        )
-                    )
+                    .font(.system(size: 26, weight: .bold))
                     .foregroundStyle(.primary)
                     .multilineTextAlignment(.center)
 
-                Text(
-                    "\(songs.count) canciones"
-                )
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+                Text("\(songs.count) canciones")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
 
                 if !albums.isEmpty {
-                    Text(
-                        "\(albums.count) álbumes"
-                    )
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
+                    Text("\(albums.count) álbumes")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
                 }
             }
 
             if let firstSong = songs.first {
                 Button {
-                    audioEngine.play(
-                        song: firstSong,
-                        from: songs
-                    )
+                    audioEngine.play(song: firstSong, from: songs)
                 } label: {
-                    Label(
-                        "Reproducir",
-                        systemImage: "play.fill"
-                    )
-                    .font(.subheadline.weight(.bold))
-                    .foregroundStyle(.primary)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 13)
+                    Label("Reproducir", systemImage: "play.fill")
+                        .font(.subheadline.weight(.bold))
+                        .foregroundStyle(.primary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 13)
                 }
                 .buttonStyle(.plain)
-                .opaqueGlass(
-                    cornerRadius: 16,
-                    tint: .accentColor
-                )
+                .opaqueGlass(cornerRadius: 16, tint: .accentColor)
+                .scaleEffect(0.98)
+                .animation(.spring(response: 0.3, dampingFraction: 0.6), value: true)
             }
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 10)
         .padding(.horizontal, 4)
-        .opaqueGlass(
-            cornerRadius: 24,
-            tint: .white
-        )
+        .opaqueGlass(cornerRadius: 24, tint: .white)
     }
 
     // MARK: - Album Artwork
@@ -570,31 +409,17 @@ struct ArtistDetailView: View {
             Image(uiImage: artwork)
                 .resizable()
                 .scaledToFill()
-                .frame(
-                    width: 55,
-                    height: 55
-                )
-                .clipShape(
-                    RoundedRectangle(
-                        cornerRadius: 11,
-                        style: .continuous
-                    )
-                )
+                .frame(width: 55, height: 55)
+                .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
         } else {
             ZStack {
-                RoundedRectangle(
-                    cornerRadius: 11,
-                    style: .continuous
-                )
-                .fill(.thinMaterial)
+                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                    .fill(.thinMaterial)
 
                 Image(systemName: "square.stack")
                     .foregroundStyle(.secondary)
             }
-            .frame(
-                width: 55,
-                height: 55
-            )
+            .frame(width: 55, height: 55)
         }
     }
 }
@@ -611,21 +436,10 @@ struct DetailSongRow: View {
             HStack(spacing: 12) {
                 artwork
 
-                VStack(
-                    alignment: .leading,
-                    spacing: 4
-                ) {
+                VStack(alignment: .leading, spacing: 4) {
                     Text(song.title)
-                        .font(
-                            .subheadline.weight(
-                                .semibold
-                            )
-                        )
-                        .foregroundStyle(
-                            isCurrent
-                                ? Color.accentColor
-                                : .primary
-                        )
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(isCurrent ? Color.accentColor : .primary)
                         .lineLimit(1)
 
                     if !song.album.isEmpty {
@@ -644,10 +458,7 @@ struct DetailSongRow: View {
                             Image(systemName: "waveform")
                                 .font(.headline)
                                 .foregroundStyle(Color.accentColor)
-                                .symbolEffect(
-                                    .variableColor.iterative,
-                                    options: .repeating
-                                )
+                                .symbolEffect(.variableColor.iterative, options: .repeating)
                         } else {
                             Image(systemName: "waveform")
                                 .font(.headline)
@@ -655,29 +466,18 @@ struct DetailSongRow: View {
                         }
                     }
                 } else if isCurrent {
-                    Image(
-                        systemName: "pause.fill"
-                    )
-                    .font(.caption)
-                    .foregroundStyle(
-                        Color.accentColor
-                    )
+                    Image(systemName: "pause.fill")
+                        .font(.caption)
+                        .foregroundStyle(Color.accentColor)
                 } else {
-                    Image(
-                        systemName: "play.fill"
-                    )
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    Image(systemName: "play.fill")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             }
             .padding(.vertical, 8)
             .padding(.horizontal, 8)
-            .opaqueGlass(
-                cornerRadius: 15,
-                tint: isCurrent
-                    ? .accentColor
-                    : .white
-            )
+            .opaqueGlass(cornerRadius: 15, tint: isCurrent ? .accentColor : .white)
         }
         .buttonStyle(.plain)
     }
@@ -690,31 +490,17 @@ struct DetailSongRow: View {
             Image(uiImage: image)
                 .resizable()
                 .scaledToFill()
-                .frame(
-                    width: 52,
-                    height: 52
-                )
-                .clipShape(
-                    RoundedRectangle(
-                        cornerRadius: 10,
-                        style: .continuous
-                    )
-                )
+                .frame(width: 52, height: 52)
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         } else {
             ZStack {
-                RoundedRectangle(
-                    cornerRadius: 10,
-                    style: .continuous
-                )
-                .fill(.thinMaterial)
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(.thinMaterial)
 
                 Image(systemName: "music.note")
                     .foregroundStyle(.secondary)
             }
-            .frame(
-                width: 52,
-                height: 52
-            )
+            .frame(width: 52, height: 52)
         }
     }
 }

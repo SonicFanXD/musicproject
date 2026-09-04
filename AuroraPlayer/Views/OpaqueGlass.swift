@@ -8,21 +8,21 @@ struct OpaqueGlass<S: Shape>: ViewModifier {
         content
             .background {
                 ZStack {
-                    // Material principal (ya es el más transparente de iOS)
+                    // Material ultra delgado para máxima transparencia
                     shape
                         .fill(.ultraThinMaterial)
 
-                    // Tinte suave, más discreto que antes
+                    // Tinte muy sutil (reducido para mayor transparencia)
                     shape
                         .fill(tint.opacity(0.05))
 
-                    // Brillo superior, reducido para dejar ver más el fondo
+                    // Brillo superior muy ligero
                     shape
                         .fill(
                             LinearGradient(
                                 colors: [
-                                    .white.opacity(0.14),
-                                    tint.opacity(0.05),
+                                    .white.opacity(0.12),
+                                    tint.opacity(0.04),
                                     .clear
                                 ],
                                 startPoint: .topLeading,
@@ -36,26 +36,24 @@ struct OpaqueGlass<S: Shape>: ViewModifier {
                     .stroke(
                         LinearGradient(
                             colors: [
-                                .white.opacity(0.40),
-                                .white.opacity(0.12),
-                                .white.opacity(0.04)
+                                .white.opacity(0.30),
+                                .white.opacity(0.08),
+                                .white.opacity(0.02)
                             ],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         ),
-                        lineWidth: 1
+                        lineWidth: 0.8
                     )
             }
             .clipShape(shape)
             .shadow(
-                color: .black.opacity(0.14),
-                radius: 14,
+                color: .black.opacity(0.08),
+                radius: 10,
                 x: 0,
-                y: 6
+                y: 4
             )
-            // Transición suave cuando cambia el tinte (p. ej. canción activa),
-            // sin animaciones continuas que consuman batería.
-            .animation(.easeInOut(duration: 0.25), value: tint)
+            .animation(.easeInOut(duration: 0.2), value: tint)
     }
 }
 
