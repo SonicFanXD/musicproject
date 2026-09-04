@@ -64,6 +64,10 @@ class AudioEngine: NSObject, ObservableObject {
     private var isStopping = false
     private var playbackErrorCount = 0
 
+    // Generación de programación: invalida completion handlers huérfanos
+    // que provocaban que las canciones se saltaran al cambiar de pista.
+    private var scheduleGeneration = 0
+
     // MARK: - Persistencia de estado
     private let stateDefaultsKey = "com.aurora.playbackState"
     private var hasRestored: Bool = false
@@ -98,23 +102,26 @@ class AudioEngine: NSObject, ObservableObject {
             try session.setPreferredSampleRate(48000)
             try session.setPreferredIOBufferDuration(0.02) // 20ms buffer (balance entre latencia y CPU)
 
-            try session.setActive(true)
+            try session.setActive(true, options: .notifyOthersOnDeactivation)
             updateRouteName()
             updateAudioQuality()
-
-            // Activar el control remoto y la recepción de eventos de control
-            try session.setActive(true, options: .notifyOthersOnDeactivation)
         } catch {
             print("Error configurando AVAudioSession: \(error.localizedDescription)")
         }
     }
 
     private func setupEngine() {
+        // Solo adjuntar el nodo; la conexión se configura en setupEqualizer()
+        // para evitar dobles conexiones playerNode -> mainMixer y playerNode -> EQ.
         engine.attach(playerNode)
-        engine.connect(playerNode, to: engine.mainMixerNode, format: nil)
     }
 
     private func setupEqualizer() {
+        // Si hay un EQ previo (recuperación de errores), desconectarlo primero
+        if let existingEQ = equalizerNode {
+            engine.detach(existingEQ)
+        }
+
         equalizerNode = AVAudioUnitEQ(numberOfBands: 10)
         guard let eq = equalizerNode else { return }
 
@@ -131,6 +138,19 @@ class AudioEngine: NSObject, ObservableObject {
         engine.attach(eq)
         engine.connect(playerNode, to: eq, format: nil)
         engine.connect(eq, to: engine.mainMixerNode, format: nil)
+    }
+
+    /// Reconecta el playerNode con el formato indicado, evitando dobles conexiones.
+    /// Usa disconnectNodeOutput (no disconnectNodeInput) para liberar bien la conexión.
+    private func reconnectPlayerNode(format: AVAudioFormat?) {
+        if !engine.outputConnectionPoints(for: playerNode, outputBus: 0).isEmpty {
+            engine.disconnectNodeOutput(playerNode)
+        }
+        if let eq = equalizerNode {
+            engine.connect(playerNode, to: eq, format: format)
+        } else {
+            engine.connect(playerNode, to: engine.mainMixerNode, format: format)
+        }
     }
 
     private func setupBackgroundNotification() {
@@ -241,20 +261,7 @@ class AudioEngine: NSObject, ObservableObject {
             }
 
             // Reconectar nodos con el formato correcto (protegido contra desconexión doble)
-            if engine.outputConnectionPoints(for: playerNode, outputBus: 0).isEmpty {
-                if let eq = equalizerNode {
-                    engine.connect(playerNode, to: eq, format: file.processingFormat)
-                } else {
-                    engine.connect(playerNode, to: engine.mainMixerNode, format: file.processingFormat)
-                }
-            } else {
-                engine.disconnectNodeInput(playerNode)
-                if let eq = equalizerNode {
-                    engine.connect(playerNode, to: eq, format: file.processingFormat)
-                } else {
-                    engine.connect(playerNode, to: engine.mainMixerNode, format: file.processingFormat)
-                }
-            }
+            reconnectPlayerNode(format: file.processingFormat)
 
             if !engine.isRunning {
                 try engine.start()
@@ -309,6 +316,10 @@ class AudioEngine: NSObject, ObservableObject {
             playerNode.stop()
         }
 
+        // Nueva generación: cualquier completion handler anterior queda invalidado
+        scheduleGeneration += 1
+        let generation = scheduleGeneration
+
         // Proteger contra startFrame negativo o mayor que la duración del archivo
         let safeStartFrame = max(0, min(startFrame, file.length))
         let framesToPlay = AVAudioFrameCount(file.length - safeStartFrame)
@@ -332,8 +343,12 @@ class AudioEngine: NSObject, ObservableObject {
             at: nil
         ) { [weak self] in
             DispatchQueue.main.async {
-                // Solo avanzar si realmente estábamos reproduciendo
-                guard let self = self, self.isPlaying, !self.isStopping else { return }
+                // Solo avanzar si esta programación sigue vigente y estábamos reproduciendo.
+                // Evita que el completion del track anterior salte el track nuevo.
+                guard let self = self,
+                      self.scheduleGeneration == generation,
+                      self.isPlaying,
+                      !self.isStopping else { return }
                 self.handlePlaybackFinished()
             }
         }
@@ -429,12 +444,16 @@ class AudioEngine: NSObject, ObservableObject {
 
     private func completeCrossfade() {
         guard let nextPlayer = nextPlayerNode else { return }
+        guard currentIndex + 1 < playlist.count else {
+            isCrossfading = false
+            return
+        }
 
-        // Limpiar player anterior
-        engine.detach(playerNode)
-
-        // Reemplazar con el nuevo
+        // Detener y desconectar el player anterior (una sola vez, sin dobles detach)
         playerNode.stop()
+        if !engine.outputConnectionPoints(for: playerNode, outputBus: 0).isEmpty {
+            engine.disconnectNodeOutput(playerNode)
+        }
         engine.detach(playerNode)
 
         let currentFile = nextAudioFile
@@ -445,14 +464,11 @@ class AudioEngine: NSObject, ObservableObject {
         currentIndex += 1
         currentSong = playlist[currentIndex]
         seekOffset = 0
+        scheduleGeneration += 1
 
         // Configurar el nuevo player como principal
         engine.attach(playerNode)
-        if let eq = equalizerNode {
-            engine.connect(playerNode, to: eq, format: currentFile?.processingFormat)
-        } else {
-            engine.connect(playerNode, to: engine.mainMixerNode, format: currentFile?.processingFormat)
-        }
+        reconnectPlayerNode(format: currentFile?.processingFormat)
 
         // Limpiar recursos
         engine.detach(nextPlayer)
@@ -583,7 +599,13 @@ class AudioEngine: NSObject, ObservableObject {
             return
         }
 
-        let upcomingSongs = Array(playlist.suffix(from: currentIndex + 1))
+        let nextIndex = currentIndex + 1
+        guard nextIndex < playlist.count else {
+            nextUpQueue = []
+            return
+        }
+
+        let upcomingSongs = Array(playlist.suffix(from: nextIndex))
         nextUpQueue = Array(upcomingSongs.prefix(3)) // Reducido a 3 para mejor rendimiento
     }
 
@@ -718,6 +740,7 @@ class AudioEngine: NSObject, ObservableObject {
 
     func stop() {
         isStopping = true
+        scheduleGeneration += 1 // Invalida completion handlers pendientes
         playerNode.stop()
         audioFile = nil
         isPlaying = false
@@ -803,8 +826,9 @@ class AudioEngine: NSObject, ObservableObject {
         guard !isStopping else { return }
         if isPlaying && !isChangingTrack {
             if repeatMode == .one {
+                // seek(to:) ya reprograma y reanuda la reproducción desde 0;
+                // llamar resume() aquí causaba doble programación del archivo.
                 seek(to: 0)
-                if isPlaying { resume() }
                 return
             }
             playNext()
@@ -1066,13 +1090,8 @@ class AudioEngine: NSObject, ObservableObject {
             sampleRate = file.processingFormat.sampleRate
             duration = Double(file.length) / sampleRate
 
-            // Proteger contra desconexión doble
-            if engine.outputConnectionPoints(for: playerNode, outputBus: 0).isEmpty {
-                engine.connect(playerNode, to: engine.mainMixerNode, format: file.processingFormat)
-            } else {
-                engine.disconnectNodeInput(playerNode)
-                engine.connect(playerNode, to: engine.mainMixerNode, format: file.processingFormat)
-            }
+            // Proteger contra desconexión doble (pasa por el EQ si está activo)
+            reconnectPlayerNode(format: file.processingFormat)
 
             if !engine.isRunning {
                 try engine.start()

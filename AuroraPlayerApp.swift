@@ -2,13 +2,13 @@ import SwiftUI
 
 @main
 struct AuroraPlayerApp: App {
-    // Custom accent color - less blue, more elegant purple/indigo
-    private let customAccent = Color(red: 0.55, green: 0.35, blue: 0.85)
-
     var body: some Scene {
         WindowGroup {
             ContentView()
-                .tint(customAccent)
+                // El color de acento morado se define en Assets.xcassets/AccentColor,
+                // así Color.accentColor y .tint coinciden en TODA la app
+                // (antes .tint() era morado pero Color.accentColor caía al azul del sistema).
+                .tint(Color.accentColor)
                 .preferredColorScheme(nil) // Follow system appearance
         }
     }
