@@ -17,9 +17,37 @@ struct FolderPickerView: View {
                 ScrollView {
                     VStack(spacing: 20) {
                         header
+                            .opacity(isLoaded ? 1 : 0)
+                            .offset(y: isLoaded ? 0 : 14)
+                            .animation(
+                                .spring(response: 0.5, dampingFraction: 0.8).delay(0.04),
+                                value: isLoaded
+                            )
+
                         actionsSection
+                            .opacity(isLoaded ? 1 : 0)
+                            .offset(y: isLoaded ? 0 : 14)
+                            .animation(
+                                .spring(response: 0.5, dampingFraction: 0.8).delay(0.10),
+                                value: isLoaded
+                            )
+
                         foldersSection
+                            .opacity(isLoaded ? 1 : 0)
+                            .offset(y: isLoaded ? 0 : 14)
+                            .animation(
+                                .spring(response: 0.5, dampingFraction: 0.8).delay(0.16),
+                                value: isLoaded
+                            )
+
                         filesSection
+                            .opacity(isLoaded ? 1 : 0)
+                            .offset(y: isLoaded ? 0 : 14)
+                            .animation(
+                                .spring(response: 0.5, dampingFraction: 0.8).delay(0.22),
+                                value: isLoaded
+                            )
+
                         Spacer(minLength: 30)
                     }
                     .padding(.horizontal, 18)
@@ -53,12 +81,12 @@ struct FolderPickerView: View {
                 handleFileResult(result)
             }
             .onAppear {
-                withAnimation(.spring(response: 0.5, dampingFraction: 0.8)) {
+                // Pequeño delay para que la cascada de entrada se sienta
+                // intencional y no como un "parpadeo" apenas se abre la sheet.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.02) {
                     isLoaded = true
                 }
             }
-            .scaleEffect(isLoaded ? 1 : 0.97)
-            .opacity(isLoaded ? 1 : 0.85)
         }
     }
 
@@ -95,6 +123,7 @@ struct FolderPickerView: View {
     private var actionsSection: some View {
         VStack(spacing: 12) {
             Button {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 showFolderImporter = true
             } label: {
                 HStack(spacing: 13) {
@@ -126,10 +155,11 @@ struct FolderPickerView: View {
                 .padding(15)
                 .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(GlassPressStyle())
             .opaqueGlass(cornerRadius: 18, tint: .accentColor)
 
             Button {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 showFileImporter = true
             } label: {
                 HStack(spacing: 13) {
@@ -161,7 +191,7 @@ struct FolderPickerView: View {
                 .padding(15)
                 .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(GlassPressStyle())
             .opaqueGlass(cornerRadius: 18, tint: .white)
 
             Button {
@@ -169,6 +199,15 @@ struct FolderPickerView: View {
             } label: {
                 HStack(spacing: 9) {
                     Image(systemName: "arrow.clockwise")
+                        // Pequeño giro mientras escanea, en vez de quedarse
+                        // estático junto al ProgressView.
+                        .rotationEffect(.degrees(fileAccessService.isScanning ? 360 : 0))
+                        .animation(
+                            fileAccessService.isScanning
+                                ? .linear(duration: 1).repeatForever(autoreverses: false)
+                                : .default,
+                            value: fileAccessService.isScanning
+                        )
 
                     Text(fileAccessService.isScanning ? "Escaneando…" : "Actualizar biblioteca")
                         .font(.subheadline.weight(.semibold))
@@ -182,7 +221,7 @@ struct FolderPickerView: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 13)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(GlassPressStyle())
             .disabled(fileAccessService.isScanning)
             .opaqueGlass(cornerRadius: 16, tint: .accentColor)
         }
@@ -201,6 +240,7 @@ struct FolderPickerView: View {
                 VStack(spacing: 0) {
                     ForEach(fileAccessService.folders) { folder in
                         folderRow(folder)
+                            .transition(rowTransition)
 
                         if folder.id != fileAccessService.folders.last?.id {
                             Divider()
@@ -246,14 +286,14 @@ struct FolderPickerView: View {
             Spacer()
 
             Button(role: .destructive) {
-                fileAccessService.removeFolder(folder)
+                removeFolder(folder)
             } label: {
                 Image(systemName: "trash")
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(.red.opacity(0.80))
                     .frame(width: 38, height: 38)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(GlassPressStyle())
         }
         .padding(.horizontal, 15)
         .padding(.vertical, 12)
@@ -272,6 +312,7 @@ struct FolderPickerView: View {
                 VStack(spacing: 0) {
                     ForEach(fileAccessService.files) { file in
                         fileRow(file)
+                            .transition(rowTransition)
 
                         if file.id != fileAccessService.files.last?.id {
                             Divider()
@@ -317,14 +358,14 @@ struct FolderPickerView: View {
             Spacer()
 
             Button(role: .destructive) {
-                fileAccessService.removeFile(file)
+                removeFile(file)
             } label: {
                 Image(systemName: "trash")
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(.red.opacity(0.80))
                     .frame(width: 38, height: 38)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(GlassPressStyle())
         }
         .padding(.horizontal, 15)
         .padding(.vertical, 12)
@@ -363,6 +404,15 @@ struct FolderPickerView: View {
         .opaqueGlass(cornerRadius: 20, tint: .white)
     }
 
+    /// Transición para filas que se eliminan: se deslizan hacia la derecha
+    /// y se desvanecen, en vez de desaparecer de golpe.
+    private var rowTransition: AnyTransition {
+        .asymmetric(
+            insertion: .opacity,
+            removal: .move(edge: .trailing).combined(with: .opacity)
+        )
+    }
+
     // MARK: - File Types
 
     private var supportedAudioTypes: [UTType] {
@@ -391,13 +441,31 @@ struct FolderPickerView: View {
         return types
     }
 
+    // MARK: - Deletion
+
+    private func removeFolder(_ folder: MusicFolder) {
+        UINotificationFeedbackGenerator().notificationOccurred(.warning)
+        withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
+            fileAccessService.removeFolder(folder)
+        }
+    }
+
+    private func removeFile(_ file: MusicFile) {
+        UINotificationFeedbackGenerator().notificationOccurred(.warning)
+        withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
+            fileAccessService.removeFile(file)
+        }
+    }
+
     // MARK: - Import Handling
 
     private func handleFolderResult(_ result: Result<[URL], Error>) {
         switch result {
         case .success(let urls):
             guard let url = urls.first else { return }
-            fileAccessService.addFolder(url: url)
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
+                fileAccessService.addFolder(url: url)
+            }
 
         case .failure(let error):
             AppLog.error(.library, "Error al seleccionar carpeta: \(error.localizedDescription)")
@@ -407,7 +475,9 @@ struct FolderPickerView: View {
     private func handleFileResult(_ result: Result<[URL], Error>) {
         switch result {
         case .success(let urls):
-            fileAccessService.addFiles(urls: urls)
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
+                fileAccessService.addFiles(urls: urls)
+            }
 
         case .failure(let error):
             AppLog.error(.library, "Error al seleccionar archivos: \(error.localizedDescription)")

@@ -57,18 +57,11 @@ struct PlayerBar: View {
                     } label: {
                         Image(systemName: audioEngine.isPlaying ? "pause.fill" : "play.fill")
                             .font(.system(size: 16, weight: .bold))
-                            .foregroundStyle(.primary)
+                            .foregroundStyle(.white)
                             .frame(width: 40, height: 40)
-                            .background {
-                                Circle()
-                                    .fill(Color.accentColor.opacity(0.18))
-                            }
-                            .overlay {
-                                Circle()
-                                    .stroke(.white.opacity(0.20), lineWidth: 1)
-                            }
                     }
                     .buttonStyle(.plain)
+                    .opaqueGlassCircle(isPressed: !audioEngine.isPlaying)
                     .scaleEffect(audioEngine.isPlaying ? 1.0 : 0.92)
                     .animation(.spring(response: 0.3, dampingFraction: 0.6), value: audioEngine.isPlaying)
 
@@ -86,31 +79,12 @@ struct PlayerBar: View {
                 .padding(.horizontal, 12)
                 .padding(.vertical, 9)
                 .frame(maxWidth: .infinity)
-                .background {
-                    RoundedRectangle(cornerRadius: 24, style: .continuous)
-                        .fill(.ultraThinMaterial)
-                }
-                .overlay {
-                    RoundedRectangle(cornerRadius: 24, style: .continuous)
-                        .stroke(
-                            LinearGradient(
-                                colors: [
-                                    .white.opacity(0.35),
-                                    .white.opacity(0.10),
-                                    .clear
-                                ],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            ),
-                            lineWidth: 1
-                        )
-                }
+                .opaqueGlass(cornerRadius: 24)
                 .overlay(alignment: .bottom) {
                     MiniProgressTrack(progress: progress)
                         .padding(.horizontal, 14)
                         .padding(.bottom, 4)
                 }
-                .shadow(color: .black.opacity(0.14), radius: 14, y: 6)
                 .transition(.opacity.combined(with: .move(edge: .bottom)))
                 .animation(.spring(response: 0.4, dampingFraction: 0.85), value: song.id)
                 .sheet(isPresented: $showingNowPlaying) {
@@ -124,8 +98,7 @@ struct PlayerBar: View {
 
     @ViewBuilder
     private func artwork(for song: Song) -> some View {
-        if let artworkData = song.artworkData,
-           let image = UIImage(data: artworkData) {
+        if let image = song.artwork {
             Image(uiImage: image)
                 .resizable()
                 .scaledToFill()

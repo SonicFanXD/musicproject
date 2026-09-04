@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct ContentView: View {
     @StateObject private var audioEngine = AudioEngine()
@@ -24,12 +25,17 @@ struct ContentView: View {
                     .padding(.bottom, 8)
 
                     List {
+                        // .id() fuerza un reemplazo limpio de la sección al
+                        // cambiar de categoría, en vez de dejar que List
+                        // intente "diffear" filas de tipos distintos
+                        // (canción vs. álbum vs. artista), que es lo que
+                        // causaba el glitch visual al cambiar de tab.
                         libraryContent
+                            .id(selectedCategory)
                     }
                     .listStyle(.insetGrouped)
                     .scrollContentBackground(.hidden)
                     .background(Color.clear)
-                    .animation(.easeInOut(duration: 0.2), value: selectedCategory)
                     .searchable(
                         text: $searchText,
                         placement: .navigationBarDrawer(displayMode: .automatic),
@@ -155,7 +161,7 @@ struct ContentView: View {
                             .padding(.horizontal, 4)
                             .opaqueGlass(cornerRadius: 16, tint: .white)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(GlassPressStyle())
                     .listRowInsets(EdgeInsets(top: 5, leading: 12, bottom: 5, trailing: 12))
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
@@ -204,7 +210,7 @@ struct ContentView: View {
                             .padding(.horizontal, 4)
                             .opaqueGlass(cornerRadius: 16, tint: .white)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(GlassPressStyle())
                     .listRowInsets(EdgeInsets(top: 5, leading: 12, bottom: 5, trailing: 12))
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
@@ -231,6 +237,12 @@ struct ContentView: View {
 
     @ViewBuilder
     private func songRow(_ song: Song) -> some View {
+        // Antes se comparaba audioEngine.currentSong?.id == song.id dos
+        // veces (una para el ícono, otra para el tinte del glass).
+        // Se calcula una sola vez: menos trabajo, y evita que ambas
+        // comparaciones se desincronicen si el modelo cambia entre medio.
+        let isCurrent = audioEngine.currentSong?.id == song.id
+
         Button {
             playSong(song)
         } label: {
@@ -258,7 +270,7 @@ struct ContentView: View {
 
                 Spacer(minLength: 8)
 
-                if audioEngine.currentSong?.id == song.id {
+                if isCurrent {
                     Group {
                         if #available(iOS 17.0, *) {
                             Image(systemName: "waveform")
@@ -281,12 +293,10 @@ struct ContentView: View {
             .padding(.horizontal, 12)
             .opaqueGlass(
                 cornerRadius: 16,
-                tint: audioEngine.currentSong?.id == song.id
-                    ? .accentColor
-                    : .white
+                tint: isCurrent ? .accentColor : .white
             )
         }
-        .buttonStyle(.plain)
+        .buttonStyle(GlassPressStyle())
         .listRowInsets(EdgeInsets(top: 5, leading: 12, bottom: 5, trailing: 12))
         .listRowBackground(Color.clear)
         .listRowSeparator(.hidden)
@@ -371,6 +381,9 @@ struct ContentView: View {
     // MARK: - Playback
 
     private func playSong(_ song: Song) {
+        // Feedback háptico suave al iniciar reproducción: detalle pequeño
+        // pero es justo lo que hace sentir "premium" a un reproductor.
+        UIImpactFeedbackGenerator(style: .soft).impactOccurred()
         audioEngine.play(song: song, from: fileAccessService.songs)
     }
 
@@ -380,6 +393,20 @@ struct ContentView: View {
         guard !hasRestored else { return }
         hasRestored = true
         audioEngine.restoreState(with: fileAccessService.songs)
+    }
+}
+
+// MARK: - Press Style
+
+/// Estilo de botón reutilizable: escala y atenúa levemente al presionar.
+/// Se usa en toda la biblioteca (canciones, álbumes, artistas, categorías)
+/// para que la respuesta táctil sea consistente en toda la app.
+struct GlassPressStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.97 : 1.0)
+            .opacity(configuration.isPressed ? 0.92 : 1.0)
+            .animation(.spring(response: 0.3, dampingFraction: 0.65), value: configuration.isPressed)
     }
 }
 
@@ -416,13 +443,16 @@ enum LibraryCategory: String, CaseIterable {
 struct LibraryCategorySelector: View {
     @Binding var selectedCategory: LibraryCategory
 
+    // El namespace permite que la "píldora" de fondo se DESLICE de un
+    // botón a otro en vez de aparecer/desaparecer de golpe -> es el
+    // cambio que más se va a notar visualmente.
+    @Namespace private var indicatorNamespace
+
     var body: some View {
         HStack(spacing: 8) {
             ForEach(LibraryCategory.allCases, id: \.self) { category in
                 Button {
-                    withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                        selectedCategory = category
-                    }
+                    selectCategory(category)
                 } label: {
                     HStack(spacing: 6) {
                         Image(systemName: category.icon)
@@ -437,19 +467,31 @@ struct LibraryCategorySelector: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 11)
                     .background {
-                        Capsule()
-                            .fill(
-                                selectedCategory == category
-                                    ? Color.accentColor.opacity(0.18)
-                                    : Color.clear
-                            )
+                        if selectedCategory == category {
+                            Capsule()
+                                .fill(Color.accentColor.opacity(0.18))
+                                .matchedGeometryEffect(
+                                    id: "categoryIndicator",
+                                    in: indicatorNamespace
+                                )
+                        }
                     }
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(GlassPressStyle())
             }
         }
         .padding(5)
         .opaqueGlassCapsule(tint: .white)
+    }
+
+    private func selectCategory(_ category: LibraryCategory) {
+        guard category != selectedCategory else { return }
+
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+
+        withAnimation(.spring(response: 0.4, dampingFraction: 0.78)) {
+            selectedCategory = category
+        }
     }
 }
 

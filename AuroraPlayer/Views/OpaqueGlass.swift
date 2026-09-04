@@ -1,66 +1,77 @@
 import SwiftUI
 
+/// Modificador de vidrio esmerilado opaco, optimizado para fluidez en iOS 16+.
 struct OpaqueGlass<S: Shape>: ViewModifier {
     let shape: S
     var tint: Color = .white
+    var tintIntensity: Double = 0.05
+    var strokeIntensity: Double = 0.30
+    var isPressed: Bool = false
+
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
+    private var tintGradient: LinearGradient {
+        LinearGradient(
+            colors: [
+                .white.opacity(0.12),
+                tint.opacity(tintIntensity + 0.04),
+                tint.opacity(tintIntensity)
+            ],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+    }
+
+    private var strokeGradient: LinearGradient {
+        LinearGradient(
+            colors: [
+                .white.opacity(strokeIntensity),
+                .white.opacity(strokeIntensity * 0.27),
+                .white.opacity(strokeIntensity * 0.07)
+            ],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+    }
 
     func body(content: Content) -> some View {
         content
             .background {
-                ZStack {
-                    // Material ultra delgado para máxima transparencia
+                if reduceTransparency {
+                    // Fallback sólido: sin blur en vivo, más barato y accesible
+                    shape
+                        .fill(Color(white: 0.14))
+                        .overlay { shape.fill(tintGradient) }
+                } else {
                     shape
                         .fill(.ultraThinMaterial)
-
-                    // Tinte muy sutil (reducido para mayor transparencia)
-                    shape
-                        .fill(tint.opacity(0.05))
-
-                    // Brillo superior muy ligero
-                    shape
-                        .fill(
-                            LinearGradient(
-                                colors: [
-                                    .white.opacity(0.12),
-                                    tint.opacity(0.04),
-                                    .clear
-                                ],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
+                        .overlay { shape.fill(tintGradient) }
                 }
             }
             .overlay {
-                shape
-                    .stroke(
-                        LinearGradient(
-                            colors: [
-                                .white.opacity(0.30),
-                                .white.opacity(0.08),
-                                .white.opacity(0.02)
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ),
-                        lineWidth: 0.8
-                    )
+                shape.stroke(strokeGradient, lineWidth: 0.8)
             }
             .clipShape(shape)
+            .compositingGroup() // aplana material + tinte + stroke antes de la sombra -> menos overdraw
             .shadow(
-                color: .black.opacity(0.08),
-                radius: 10,
+                color: .black.opacity(isPressed ? 0.04 : 0.08),
+                radius: isPressed ? 5 : 10,
                 x: 0,
-                y: 4
+                y: isPressed ? 2 : 4
             )
-            .animation(.easeInOut(duration: 0.2), value: tint)
+            .scaleEffect(isPressed ? 0.97 : 1.0)
+            .animation(.spring(response: 0.3, dampingFraction: 0.6), value: isPressed)
+            .animation(.spring(response: 0.35, dampingFraction: 0.75), value: tint)
     }
 }
 
 extension View {
     func opaqueGlass(
         cornerRadius: CGFloat = 20,
-        tint: Color = .white
+        tint: Color = .white,
+        tintIntensity: Double = 0.05,
+        strokeIntensity: Double = 0.30,
+        isPressed: Bool = false
     ) -> some View {
         modifier(
             OpaqueGlass(
@@ -68,18 +79,27 @@ extension View {
                     cornerRadius: cornerRadius,
                     style: .continuous
                 ),
-                tint: tint
+                tint: tint,
+                tintIntensity: tintIntensity,
+                strokeIntensity: strokeIntensity,
+                isPressed: isPressed
             )
         )
     }
 
     func opaqueGlassCapsule(
-        tint: Color = .white
+        tint: Color = .white,
+        tintIntensity: Double = 0.05,
+        strokeIntensity: Double = 0.30,
+        isPressed: Bool = false
     ) -> some View {
         modifier(
             OpaqueGlass(
                 shape: Capsule(),
-                tint: tint
+                tint: tint,
+                tintIntensity: tintIntensity,
+                strokeIntensity: strokeIntensity,
+                isPressed: isPressed
             )
         )
     }

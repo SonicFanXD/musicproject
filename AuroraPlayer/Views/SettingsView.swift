@@ -375,15 +375,7 @@ struct SettingsView: View {
             VStack(spacing: 0) {
                 content()
             }
-            .background {
-                RoundedRectangle(cornerRadius: 22, style: .continuous)
-                    .fill(.ultraThinMaterial)
-            }
-            .overlay {
-                RoundedRectangle(cornerRadius: 22, style: .continuous)
-                    .stroke(.white.opacity(0.16), lineWidth: 1)
-            }
-            .shadow(color: .black.opacity(0.10), radius: 14, y: 6)
+            .opaqueGlass(cornerRadius: 22)
         }
     }
 

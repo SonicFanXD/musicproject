@@ -82,6 +82,9 @@ struct NowPlayingView: View {
                 }
                 .ignoresSafeArea()
             }
+            .id(audioEngine.currentSong?.id)
+            .transition(.opacity)
+            .animation(.easeInOut(duration: 0.5), value: audioEngine.currentSong?.id)
         } else {
             LinearGradient(
                 colors: [
@@ -113,7 +116,7 @@ struct NowPlayingView: View {
                         Circle().stroke(.white.opacity(0.18), lineWidth: 1)
                     }
             }
-            .buttonStyle(.plain)
+            .buttonStyle(GlassPressButtonStyle())
 
             Spacer()
 
@@ -127,8 +130,10 @@ struct NowPlayingView: View {
                     Text(audioEngine.currentRouteName)
                         .font(.caption2)
                         .foregroundStyle(.white.opacity(0.42))
+                        .transition(.opacity)
                 }
             }
+            .animation(.easeInOut(duration: 0.2), value: audioEngine.currentRouteName)
 
             Spacer()
 
@@ -156,6 +161,7 @@ struct NowPlayingView: View {
                         Circle().stroke(.white.opacity(0.18), lineWidth: 1)
                     }
             }
+            .buttonStyle(GlassPressButtonStyle())
         }
         .padding(.top, 10)
     }
@@ -219,6 +225,9 @@ struct NowPlayingView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .id(audioEngine.currentSong?.id)
+        .transition(.opacity.combined(with: .move(edge: .bottom)))
+        .animation(.easeOut(duration: 0.3), value: audioEngine.currentSong?.id)
     }
 
     // MARK: - Progress
@@ -243,12 +252,14 @@ struct NowPlayingView: View {
                 Text(formatTime(audioEngine.currentTime))
                     .font(.caption)
                     .foregroundStyle(.white.opacity(0.62))
+                    .monospacedDigit()
 
                 Spacer()
 
                 Text(formatTime(audioEngine.duration))
                     .font(.caption)
                     .foregroundStyle(.white.opacity(0.62))
+                    .monospacedDigit()
             }
         }
     }
@@ -275,6 +286,8 @@ struct NowPlayingView: View {
 
             Spacer(minLength: 0)
         }
+        .animation(.easeInOut(duration: 0.2), value: isBitPerfect)
+        .transition(.opacity)
     }
 
     private func qualityChip(icon: String, text: String, tint: Color) -> some View {
@@ -294,6 +307,7 @@ struct NowPlayingView: View {
         .overlay {
             Capsule().stroke(.white.opacity(0.15), lineWidth: 1)
         }
+        .transition(.opacity.combined(with: .scale(scale: 0.9)))
     }
 
     // MARK: - Playback Controls
@@ -308,7 +322,7 @@ struct NowPlayingView: View {
                     .foregroundStyle(.white)
                     .frame(width: 56, height: 56)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(GlassPressButtonStyle())
 
             Spacer()
 
@@ -342,7 +356,7 @@ struct NowPlayingView: View {
                     .foregroundStyle(.white)
                     .frame(width: 56, height: 56)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(GlassPressButtonStyle())
         }
     }
 
@@ -412,8 +426,9 @@ struct NowPlayingView: View {
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .stroke(.white.opacity(0.14), lineWidth: 1)
             }
+            .animation(.easeInOut(duration: 0.2), value: active)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(GlassPressButtonStyle())
     }
 
     // MARK: - Time
@@ -439,7 +454,7 @@ struct QueueView: View {
                 AppBackground()
 
                 List {
-                    ForEach(audioEngine.playbackQueue) { song in
+                    ForEach(Array(audioEngine.playbackQueue.enumerated()), id: \.element.id) { index, song in
                         Button {
                             audioEngine.play(song: song, from: audioEngine.playbackQueue)
                         } label: {
@@ -463,16 +478,19 @@ struct QueueView: View {
                                 if audioEngine.currentSong?.id == song.id {
                                     Image(systemName: "waveform")
                                         .foregroundStyle(.tint)
+                                        .transition(.opacity.combined(with: .scale(scale: 0.8)))
                                 }
                             }
                             .padding(.vertical, 8)
                             .padding(.horizontal, 8)
                             .opaqueGlass(cornerRadius: 14, tint: .white)
+                            .animation(.easeInOut(duration: 0.2), value: audioEngine.currentSong?.id)
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(RowPressButtonStyle())
                         .listRowBackground(Color.clear)
                         .listRowSeparator(.hidden)
                         .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12))
+                        .rowAppear(index: index)
                     }
                 }
                 .listStyle(.plain)
@@ -552,7 +570,7 @@ struct LyricsView: View {
                             .foregroundStyle(.white)
                             .frame(width: 42, height: 42)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(GlassPressButtonStyle())
 
                     Spacer()
 
@@ -588,6 +606,7 @@ struct LyricsView: View {
                                 .lineSpacing(9)
                                 .padding(.horizontal, 12)
                                 .padding(.top, 20)
+                                .animation(.easeOut(duration: 0.12), value: displayedLyrics)
                                 .onAppear {
                                     fullLyrics = lyrics
                                     words = lyrics.components(separatedBy: " ")

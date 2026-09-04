@@ -3,9 +3,6 @@ import SwiftUI
 struct LogsView: View {
     @Environment(\.dismiss) private var dismiss
 
-    @State private var copied = false
-    @State private var isLoaded = false
-
     var body: some View {
         NavigationStack {
             ZStack {
@@ -14,10 +11,16 @@ struct LogsView: View {
                 ScrollView {
                     VStack(spacing: 18) {
                         header
+                            .rowAppear(index: 0)
 
                         statusSection
+                            .rowAppear(index: 1)
+
                         informationSection
+                            .rowAppear(index: 2)
+
                         tipsSection
+                            .rowAppear(index: 3)
 
                         Spacer(minLength: 30)
                     }
@@ -37,13 +40,6 @@ struct LogsView: View {
                     }
                 }
             }
-            .onAppear {
-                withAnimation(.spring(response: 0.5, dampingFraction: 0.8)) {
-                    isLoaded = true
-                }
-            }
-            .scaleEffect(isLoaded ? 1 : 0.98)
-            .opacity(isLoaded ? 1 : 0.8)
         }
     }
 

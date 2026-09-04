@@ -1,5 +1,62 @@
 import SwiftUI
 
+// MARK: - Button Styles (animación de presión real, iOS 16 compatible)
+
+/// Estilo de botón que anima escala + opacidad en base a `isPressed`.
+/// A diferencia de `.animation(_:value: true)` (que nunca se dispara porque
+/// `true` nunca cambia), esto SÍ reacciona al gesto de presión y es barato:
+/// la animación vive local al botón, sin invalidar el resto del árbol de vistas.
+struct GlassPressButtonStyle: ButtonStyle {
+    var pressedScale: CGFloat = 0.96
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? pressedScale : 1)
+            .opacity(configuration.isPressed ? 0.85 : 1)
+            .animation(.spring(response: 0.28, dampingFraction: 0.65), value: configuration.isPressed)
+    }
+}
+
+/// Igual que la anterior pero pensada para filas de lista (escala más sutil).
+struct RowPressButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.985 : 1)
+            .opacity(configuration.isPressed ? 0.9 : 1)
+            .animation(.easeOut(duration: 0.18), value: configuration.isPressed)
+    }
+}
+
+// MARK: - Row Appear Animation
+
+/// Hace que una fila aparezca con un leve fade + slide-up al entrar en pantalla.
+/// El delay progresivo por índice le da una sensación de "cascada" fluida al
+/// primer despliegue de la lista, sin costo notable en scroll (es un solo
+/// `withAnimation` local, no recalcula layout del resto de la lista).
+struct RowAppearModifier: ViewModifier {
+    let delay: Double
+    @State private var appeared = false
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(appeared ? 1 : 0)
+            .offset(y: appeared ? 0 : 8)
+            .onAppear {
+                withAnimation(.easeOut(duration: 0.35).delay(delay)) {
+                    appeared = true
+                }
+            }
+    }
+}
+
+extension View {
+    /// `index`: posición en la lista. Se limita el delay máximo para que
+    /// listas largas no tarden en "terminar" de aparecer.
+    func rowAppear(index: Int) -> some View {
+        modifier(RowAppearModifier(delay: Double(min(index, 10)) * 0.035))
+    }
+}
+
 // MARK: - Album Detail
 struct AlbumDetailView: View {
     let album: Album
@@ -28,7 +85,7 @@ struct AlbumDetailView: View {
                             .listRowBackground(Color.clear)
                             .listRowSeparator(.hidden)
                     } else {
-                        ForEach(songs) { song in
+                        ForEach(Array(songs.enumerated()), id: \.element.id) { index, song in
                             DetailSongRow(
                                 song: song,
                                 isCurrent: audioEngine.currentSong?.id == song.id,
@@ -39,6 +96,7 @@ struct AlbumDetailView: View {
                             .listRowBackground(Color.clear)
                             .listRowSeparator(.hidden)
                             .listRowInsets(EdgeInsets(top: 5, leading: 12, bottom: 5, trailing: 12))
+                            .rowAppear(index: index)
                             .transition(.opacity)
                         }
                     }
@@ -85,6 +143,7 @@ struct AlbumDetailView: View {
                 }
                 .ignoresSafeArea()
             }
+            .transition(.opacity)
         } else {
             AppBackground()
         }
@@ -121,10 +180,8 @@ struct AlbumDetailView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 13)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(GlassPressButtonStyle())
             .opaqueGlass(cornerRadius: 16, tint: .accentColor)
-            .scaleEffect(0.98)
-            .animation(.spring(response: 0.3, dampingFraction: 0.6), value: true)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 8)
@@ -159,6 +216,8 @@ struct AlbumDetailView: View {
                 .frame(width: 230, height: 230)
             }
         }
+        .transition(.opacity.combined(with: .scale(scale: 0.96)))
+        .animation(.easeOut(duration: 0.25), value: album.id)
     }
 
     // MARK: - Empty
@@ -210,7 +269,7 @@ struct ArtistDetailView: View {
 
                 if !albums.isEmpty {
                     Section {
-                        ForEach(albums) { album in
+                        ForEach(Array(albums.enumerated()), id: \.element.id) { index, album in
                             NavigationLink {
                                 AlbumDetailView(album: album, audioEngine: audioEngine)
                             } label: {
@@ -238,10 +297,11 @@ struct ArtistDetailView: View {
                                 .padding(.horizontal, 8)
                                 .opaqueGlass(cornerRadius: 16, tint: .white)
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(RowPressButtonStyle())
                             .listRowBackground(Color.clear)
                             .listRowSeparator(.hidden)
                             .listRowInsets(EdgeInsets(top: 5, leading: 12, bottom: 5, trailing: 12))
+                            .rowAppear(index: index)
                             .transition(.opacity)
                         }
                     } header: {
@@ -273,7 +333,7 @@ struct ArtistDetailView: View {
                         .listRowBackground(Color.clear)
                         .listRowSeparator(.hidden)
                     } else {
-                        ForEach(songs) { song in
+                        ForEach(Array(songs.enumerated()), id: \.element.id) { index, song in
                             DetailSongRow(
                                 song: song,
                                 isCurrent: audioEngine.currentSong?.id == song.id,
@@ -284,6 +344,7 @@ struct ArtistDetailView: View {
                             .listRowBackground(Color.clear)
                             .listRowSeparator(.hidden)
                             .listRowInsets(EdgeInsets(top: 5, leading: 12, bottom: 5, trailing: 12))
+                            .rowAppear(index: index)
                             .transition(.opacity)
                         }
                     }
@@ -330,6 +391,7 @@ struct ArtistDetailView: View {
                 }
                 .ignoresSafeArea()
             }
+            .transition(.opacity)
         } else {
             AppBackground()
         }
@@ -389,10 +451,8 @@ struct ArtistDetailView: View {
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 13)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(GlassPressButtonStyle())
                 .opaqueGlass(cornerRadius: 16, tint: .accentColor)
-                .scaleEffect(0.98)
-                .animation(.spring(response: 0.3, dampingFraction: 0.6), value: true)
             }
         }
         .frame(maxWidth: .infinity)
@@ -452,34 +512,47 @@ struct DetailSongRow: View {
 
                 Spacer()
 
-                if isCurrent && isPlaying {
-                    Group {
-                        if #available(iOS 17.0, *) {
-                            Image(systemName: "waveform")
-                                .font(.headline)
-                                .foregroundStyle(Color.accentColor)
-                                .symbolEffect(.variableColor.iterative, options: .repeating)
-                        } else {
-                            Image(systemName: "waveform")
-                                .font(.headline)
-                                .foregroundStyle(Color.accentColor)
-                        }
-                    }
-                } else if isCurrent {
-                    Image(systemName: "pause.fill")
-                        .font(.caption)
-                        .foregroundStyle(Color.accentColor)
-                } else {
-                    Image(systemName: "play.fill")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
+                statusIcon
+                    .frame(width: 20)
+                    .animation(.easeInOut(duration: 0.2), value: isCurrent)
+                    .animation(.easeInOut(duration: 0.2), value: isPlaying)
             }
             .padding(.vertical, 8)
             .padding(.horizontal, 8)
             .opaqueGlass(cornerRadius: 15, tint: isCurrent ? .accentColor : .white)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(RowPressButtonStyle())
+    }
+
+    // MARK: - Status Icon
+
+    @ViewBuilder
+    private var statusIcon: some View {
+        if isCurrent && isPlaying {
+            Group {
+                if #available(iOS 17.0, *) {
+                    Image(systemName: "waveform")
+                        .font(.headline)
+                        .foregroundStyle(Color.accentColor)
+                        .symbolEffect(.variableColor.iterative, options: .repeating)
+                } else {
+                    Image(systemName: "waveform")
+                        .font(.headline)
+                        .foregroundStyle(Color.accentColor)
+                }
+            }
+            .transition(.opacity.combined(with: .scale(scale: 0.8)))
+        } else if isCurrent {
+            Image(systemName: "pause.fill")
+                .font(.caption)
+                .foregroundStyle(Color.accentColor)
+                .transition(.opacity.combined(with: .scale(scale: 0.8)))
+        } else {
+            Image(systemName: "play.fill")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .transition(.opacity.combined(with: .scale(scale: 0.8)))
+        }
     }
 
     // MARK: - Artwork
