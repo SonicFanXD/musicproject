@@ -59,7 +59,7 @@ class AudioEngine: NSObject, ObservableObject {
     private func setupSession() {
         let session = AVAudioSession.sharedInstance()
         do {
-            try session.setCategory(.playback, mode: .default, options: [.allowBluetooth, .allowBluetoothA2DP])
+            try session.setCategory(.playback, mode: .default, options: [.allowBluetoothHFP, .allowBluetoothA2DP])
             try session.setActive(true)
             updateRouteName()
             updateAudioQuality()

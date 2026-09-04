@@ -121,6 +121,7 @@ struct ContentView: View {
 
     // MARK: - Songs
 
+    @ViewBuilder
     private var songsSection: some View {
         let filteredSongs = filteredSongs
 
@@ -146,6 +147,7 @@ struct ContentView: View {
 
     // MARK: - Albums
 
+    @ViewBuilder
     private var albumsSection: some View {
         let albums = filteredAlbums
 
@@ -175,6 +177,7 @@ struct ContentView: View {
 
     // MARK: - Artists
 
+    @ViewBuilder
     private var artistsSection: some View {
         let artists = filteredArtists
 
