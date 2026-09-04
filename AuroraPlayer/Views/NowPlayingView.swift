@@ -7,6 +7,7 @@ struct NowPlayingView: View {
     @State private var showLyrics = false
     @State private var showAudioInfo = false
     @State private var artworkScale: CGFloat = 1.0
+    @State private var progressBarWidth: CGFloat = 0
 
     private var progress: Double {
         guard audioEngine.duration > 0 else { return 0 }
@@ -180,13 +181,13 @@ struct NowPlayingView: View {
                 .lineLimit(1)
                 .padding(.horizontal, 20)
 
-            if !audioEngine.currentSong?.album.isEmpty ?? false {
+            if let album = audioEngine.currentSong?.album, !album.isEmpty {
                 HStack(spacing: 6) {
                     Image(systemName: "opticaldisc")
                         .font(.system(size: 12))
                         .foregroundStyle(.tertiary)
                     
-                    Text(audioEngine.currentSong?.album ?? "")
+                    Text(album)
                         .font(.system(size: 15, weight: .medium))
                         .foregroundStyle(.tertiary)
                         .lineLimit(1)
@@ -212,13 +213,19 @@ struct NowPlayingView: View {
                         .fill(Color.accentColor)
                         .frame(width: geometry.size.width * progress, height: 6)
                 }
+                .onAppear {
+                    progressBarWidth = geometry.size.width
+                }
+                .onChange(of: geometry.size.width) { newWidth in
+                    progressBarWidth = newWidth
+                }
             }
             .frame(height: 6)
             .contentShape(Rectangle())
             .gesture(
                 DragGesture(minimumDistance: 0)
                     .onChanged { value in
-                        handleScrub(value.location.x, in: value.bounds?.width ?? 0)
+                        handleScrub(value.location.x)
                     }
             )
 
@@ -240,9 +247,9 @@ struct NowPlayingView: View {
     }
     
     // MARK: - Handle Scrubbing
-    private func handleScrub(_ location: CGFloat, in width: CGFloat) {
-        guard width > 0 else { return }
-        let percentage = max(0, min(1, location / width))
+    private func handleScrub(_ location: CGFloat) {
+        guard progressBarWidth > 0 else { return }
+        let percentage = max(0, min(1, location / progressBarWidth))
         let newTime = audioEngine.duration * percentage
         audioEngine.seek(to: newTime)
     }
