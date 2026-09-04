@@ -134,12 +134,12 @@ struct QueueView: View {
                 .frame(width: 24, alignment: .center)
 
             VStack(alignment: .leading, spacing: 4) {
-                Text(song.title)
-                    .font(.body)
+                Text(song.displayName)
+                    .font(.body.weight(.medium))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
 
-                Text(song.artist)
+                Text(song.displaySubtitle)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -168,12 +168,12 @@ struct QueueView: View {
                 .frame(width: 24, alignment: .center)
 
             VStack(alignment: .leading, spacing: 4) {
-                Text(song.title)
-                    .font(.body)
+                Text(song.displayName)
+                    .font(.body.weight(.medium))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
 
-                Text(song.artist)
+                Text(song.displaySubtitle)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)

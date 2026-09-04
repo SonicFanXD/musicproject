@@ -142,6 +142,22 @@ extension Song {
         guard let data = artworkData else { return nil }
         return UIImage(data: data)
     }
+
+    // Display formatted title with artist if album is unknown
+    var displayName: String {
+        if album.isEmpty {
+            return "\(title) • \(artist)"
+        }
+        return title
+    }
+
+    // Display formatted subtitle
+    var displaySubtitle: String {
+        var components: [String] = []
+        if !artist.isEmpty { components.append(artist) }
+        if !album.isEmpty { components.append(album) }
+        return components.joined(separator: " • ")
+    }
 }
 
 struct Album: Identifiable, Equatable {
@@ -149,7 +165,7 @@ struct Album: Identifiable, Equatable {
     let name: String
     let artist: String
     let songs: [Song]
-    
+
     var artwork: UIImage? {
         songs.first(where: { $0.artworkData != nil }).flatMap { UIImage(data: $0.artworkData!) }
     }
@@ -159,7 +175,7 @@ struct Artist: Identifiable, Equatable {
     let id = UUID()
     let name: String
     let songs: [Song]
-    
+
     var albums: [Album] {
         let grouped = Dictionary(grouping: songs) { $0.album }
         return grouped.map { (albumName, songs) in
@@ -170,8 +186,42 @@ struct Artist: Identifiable, Equatable {
             )
         }.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
-    
+
     var artwork: UIImage? {
         songs.first(where: { $0.artworkData != nil }).flatMap { UIImage(data: $0.artworkData!) }
+    }
+}
+
+// MARK: - Playlist System
+struct Playlist: Identifiable, Codable {
+    let id: UUID
+    var name: String
+    var description: String
+    var songIDs: [UUID]
+    var createdAt: Date
+    var modifiedAt: Date
+    var coverArtworkData: Data?
+
+    init(
+        id: UUID = UUID(),
+        name: String,
+        description: String = "",
+        songIDs: [UUID] = [],
+        createdAt: Date = Date(),
+        modifiedAt: Date = Date(),
+        coverArtworkData: Data? = nil
+    ) {
+        self.id = id
+        self.name = name
+        self.description = description
+        self.songIDs = songIDs
+        self.createdAt = createdAt
+        self.modifiedAt = modifiedAt
+        self.coverArtworkData = coverArtworkData
+    }
+
+    var artwork: UIImage? {
+        guard let data = coverArtworkData else { return nil }
+        return UIImage(data: data)
     }
 }

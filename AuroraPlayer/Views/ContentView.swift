@@ -11,6 +11,7 @@ struct ContentView: View {
     @State private var selectedCategory: LibraryCategory = .songs
     @State private var searchText = ""
     @State private var showLogs = false
+    @State private var showPlaylists = false
 
     var body: some View {
         NavigationStack {
@@ -41,6 +42,12 @@ struct ContentView: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     HStack(spacing: 12) {
                         Button {
+                            showPlaylists = true
+                        } label: {
+                            Image(systemName: "music.note.list")
+                        }
+
+                        Button {
                             showLogs = true
                         } label: {
                             Image(systemName: "doc.text.magnifyingglass")
@@ -59,6 +66,9 @@ struct ContentView: View {
             }
             .sheet(isPresented: $showLogs) {
                 LogsView()
+            }
+            .sheet(isPresented: $showPlaylists) {
+                PlaylistsView(fileAccessService: fileAccessService, audioEngine: audioEngine)
             }
             .onAppear {
                 restoreLibraryIfNeeded()
@@ -145,6 +155,8 @@ struct ContentView: View {
             albumsSection
         case .artists:
             artistsSection
+        case .playlists:
+            playlistsSection
         }
     }
 
@@ -246,6 +258,40 @@ struct ContentView: View {
         }
     }
 
+    // MARK: - Playlists
+
+    @ViewBuilder
+    private var playlistsSection: some View {
+        let playlists = fileAccessService.playlists
+
+        if playlists.isEmpty {
+            ContentUnavailableLibraryView(
+                icon: "music.note.list",
+                title: "Sin listas",
+                message: "Crea tu primera lista de reproducción para organizar tu música."
+            )
+            .listRowSeparator(.hidden)
+            .listRowBackground(Color.clear)
+        } else {
+            // Grid layout for playlists
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 16) {
+                    ForEach(playlists) { playlist in
+                        Button {
+                            // Navigate to playlist detail
+                        } label: {
+                            playlistLibraryCard(playlist)
+                        }
+                    }
+                }
+                .padding(.horizontal, 20)
+            }
+            .listRowSeparator(.hidden)
+            .listRowBackground(Color.clear)
+            .listRowInsets(EdgeInsets(top: 16, leading: 0, bottom: 16, trailing: 0))
+        }
+    }
+
     // MARK: - Song Row (iOS 16 native design)
     @ViewBuilder
     private func songRow(_ song: Song) -> some View {
@@ -258,23 +304,29 @@ struct ContentView: View {
                 // Artwork
                 artworkView(for: song)
 
-                // Song info with native typography
+                // Song info with enhanced typography
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(song.title)
-                        .font(.body)
+                    Text(song.displayName)
+                        .font(.body.weight(.medium))
                         .foregroundStyle(isCurrent ? Color.accentColor : .primary)
                         .lineLimit(1)
 
-                    Text(song.artist)
+                    Text(song.displaySubtitle)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
 
                     if !song.album.isEmpty {
-                        Text(song.album)
-                            .font(.caption2)
-                            .foregroundStyle(.tertiary)
-                            .lineLimit(1)
+                        HStack(spacing: 4) {
+                            Image(systemName: "opticaldisc")
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
+
+                            Text(song.album)
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
+                                .lineLimit(1)
+                        }
                     }
                 }
 
@@ -397,6 +449,23 @@ struct ContentView: View {
         }
     }
 
+    private var filteredPlaylists: [Playlist] {
+        let playlists = fileAccessService.playlists
+
+        guard !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return playlists
+        }
+
+        let query = searchText
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+
+        return playlists.filter {
+            $0.name.lowercased().contains(query) ||
+            $0.description.lowercased().contains(query)
+        }
+    }
+
     // MARK: - Playback
 
     private func playSong(_ song: Song) {
@@ -420,6 +489,7 @@ enum LibraryCategory: String, CaseIterable {
     case songs
     case albums
     case artists
+    case playlists
 
     var title: String {
         switch self {
@@ -429,6 +499,8 @@ enum LibraryCategory: String, CaseIterable {
             return "Álbumes"
         case .artists:
             return "Artistas"
+        case .playlists:
+            return "Listas"
         }
     }
 }
@@ -515,6 +587,59 @@ struct ArtistLibraryRow: View {
                     .lineLimit(1)
 
                 Text("\(artist.songs.count) canciones")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(width: 140)
+        .padding(.vertical, 8)
+    }
+}
+
+// MARK: - Playlist Library Card (iOS 16 native design)
+struct playlistLibraryCard: View {
+    let playlist: Playlist
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // Playlist artwork with native design
+            Group {
+                if let artwork = playlist.artwork {
+                    Image(uiImage: artwork)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: 140, height: 140)
+                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                } else {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .fill(
+                                LinearGradient(
+                                    colors: [
+                                        Color.accentColor.opacity(0.3),
+                                        Color.accentColor.opacity(0.15)
+                                    ],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .frame(width: 140, height: 140)
+
+                        Image(systemName: "music.note.list")
+                            .font(.system(size: 35))
+                            .foregroundStyle(.white.opacity(0.8))
+                    }
+                }
+            }
+
+            // Playlist info with native typography
+            VStack(alignment: .leading, spacing: 4) {
+                Text(playlist.name)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+
+                Text("\(playlist.songIDs.count) canciones")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

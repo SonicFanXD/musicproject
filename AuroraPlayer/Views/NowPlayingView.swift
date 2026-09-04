@@ -55,8 +55,8 @@ struct NowPlayingView: View {
 
                     Spacer().frame(height: 32)
 
-                    // Audio quality indicator
-                    audioQualityButton
+                    // Enhanced audiophile quality details
+                    audiophileQualitySection
 
                     // Queue button
                     queueButton
@@ -226,29 +226,36 @@ struct NowPlayingView: View {
         }
     }
 
-    // MARK: - Song Info View (iOS 16 native typography)
+    // MARK: - Song Info View (Enhanced audiophile typography)
     private var songInfoView: some View {
-        VStack(spacing: 12) {
-            Text(audioEngine.currentSong?.title ?? "Sin canción")
-                .font(.title)
+        VStack(spacing: 14) {
+            Text(audioEngine.currentSong?.displayName ?? "Sin canción")
+                .font(.system(size: 26, weight: .bold))
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.primary)
                 .lineLimit(2)
+                .shadow(color: .black.opacity(0.2), radius: 2, x: 0, y: 1)
 
-            Text(audioEngine.currentSong?.artist ?? "—")
-                .font(.title3)
+            Text(audioEngine.currentSong?.displaySubtitle ?? "—")
+                .font(.system(size: 18, weight: .medium))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .padding(.horizontal, 20)
 
             if let album = audioEngine.currentSong?.album, !album.isEmpty {
-                HStack(spacing: 6) {
-                    Image(systemName: "opticaldisc")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
+                HStack(spacing: 8) {
+                    ZStack {
+                        Circle()
+                            .fill(Color.accentColor.opacity(0.15))
+                            .frame(width: 20, height: 20)
+
+                        Image(systemName: "opticaldisc")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(Color.accentColor)
+                    }
 
                     Text(album)
-                        .font(.subheadline)
+                        .font(.system(size: 15, weight: .medium))
                         .foregroundStyle(.tertiary)
                         .lineLimit(1)
                 }
@@ -406,29 +413,111 @@ struct NowPlayingView: View {
         }
     }
 
-    // MARK: - Audio Quality Button (Enhanced iOS 16 native design)
-    private var audioQualityButton: some View {
-        Button {
-            showAudioInfo = true
-        } label: {
-            HStack(spacing: 10) {
-                ZStack {
-                    Circle()
-                        .fill(Color.accentColor.opacity(0.15))
-                        .frame(width: 28, height: 28)
+    // MARK: - Audiophile Quality Section (Enhanced audio file details)
+    private var audiophileQualitySection: some View {
+        VStack(spacing: 12) {
+            HStack(spacing: 16) {
+                // Format badge
+                HStack(spacing: 6) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(Color.accentColor.opacity(0.15))
+                            .frame(width: 32, height: 32)
 
-                    Image(systemName: "waveform.path")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Color.accentColor)
+                        Image(systemName: "waveform")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(Color.accentColor)
+                    }
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Formato")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+
+                        Text(audioEngine.currentSong?.formatDescription.isEmpty == false ?
+                             audioEngine.currentSong!.formatDescription : "Desconocido")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(.primary)
+                    }
                 }
 
-                Text(audioQualityInfo)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.secondary)
+                Spacer()
+
+                // Sample rate badge
+                HStack(spacing: 6) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(Color.orange.opacity(0.15))
+                            .frame(width: 32, height: 32)
+
+                        Image(systemName: "hertz")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(Color.orange)
+                    }
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Sample Rate")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+
+                        Text("\(Int(audioEngine.sourceSampleRate / 1000)) kHz")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(.primary)
+                    }
+                }
+
+                Spacer()
+
+                // Channels badge
+                HStack(spacing: 6) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(Color.green.opacity(0.15))
+                            .frame(width: 32, height: 32)
+
+                        Image(systemName: "speaker.wave.2")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(Color.green)
+                    }
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Canales")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+
+                        Text("\(audioEngine.outputChannelCount)ch")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(.primary)
+                    }
+                }
             }
-            .padding(.horizontal, 18)
-            .padding(.vertical, 10)
-            .enhancedGlass(cornerRadius: 18)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .enhancedGlass(cornerRadius: 16)
+
+            // Detailed technical info button
+            Button {
+                showAudioInfo = true
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "info.circle.fill")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(Color.accentColor)
+
+                    Text("Detalles técnicos completos")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.secondary)
+
+                    Spacer()
+
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.tertiary)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .nativeThinGlass(cornerRadius: 14)
+            }
         }
     }
 

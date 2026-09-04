@@ -232,19 +232,17 @@ struct AlbumDetailView: View {
                     .foregroundStyle(isCurrent ? Color.accentColor : Color.secondary.opacity(0.6))
                     .frame(width: 30, alignment: .center)
 
-                // Song info with native typography
+                // Song info with enhanced typography
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(song.title)
-                        .font(.body)
+                    Text(song.displayName)
+                        .font(.body.weight(.medium))
                         .foregroundStyle(isCurrent ? Color.accentColor : .primary)
                         .lineLimit(1)
 
-                    if !song.album.isEmpty {
-                        Text(song.album)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
+                    Text(song.displaySubtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
                 }
 
                 Spacer()
@@ -611,19 +609,17 @@ struct ArtistDetailView: View {
                     .foregroundStyle(isCurrent ? Color.accentColor : Color.secondary.opacity(0.6))
                     .frame(width: 30, alignment: .center)
 
-                // Song info with native typography
+                // Song info with enhanced typography
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(song.title)
-                        .font(.body)
+                    Text(song.displayName)
+                        .font(.body.weight(.medium))
                         .foregroundStyle(isCurrent ? Color.accentColor : .primary)
                         .lineLimit(1)
 
-                    if !song.album.isEmpty {
-                        Text(song.album)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
+                    Text(song.displaySubtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
                 }
 
                 Spacer()

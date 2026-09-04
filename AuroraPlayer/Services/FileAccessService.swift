@@ -7,12 +7,14 @@ class FileAccessService: ObservableObject {
     @Published var folders: [MusicFolder] = []
     @Published var files: [MusicFile] = []
     @Published var songs: [Song] = []
+    @Published var playlists: [Playlist] = []
     @Published private(set) var scanTotal = 0
     @Published private(set) var scanProcessed = 0
     @Published private(set) var isScanning = false
 
     private let defaultsKey = "com.aurora.musicFolders"
     private let filesDefaultsKey = "com.aurora.musicFiles"
+    private let playlistsDefaultsKey = "com.aurora.playlists"
     private let libraryCacheFileName = "library-metadata-v7.json"
     private var activeURLs: [UUID: URL] = [:]
     private var activeFileURLs: [UUID: URL] = [:]
@@ -36,6 +38,7 @@ class FileAccessService: ObservableObject {
     init() {
         loadFolders()
         loadFiles()
+        loadPlaylists()
         loadCachedSongs()
     }
 
@@ -1082,6 +1085,66 @@ class FileAccessService: ObservableObject {
     private func saveFiles() {
         guard let data = try? JSONEncoder().encode(files) else { return }
         UserDefaults.standard.set(data, forKey: filesDefaultsKey)
+    }
+
+    // MARK: - Playlist Management
+    private func loadPlaylists() {
+        guard let data = UserDefaults.standard.data(forKey: playlistsDefaultsKey),
+              let savedPlaylists = try? JSONDecoder().decode([Playlist].self, from: data) else {
+            return
+        }
+        playlists = savedPlaylists
+    }
+
+    private func savePlaylists() {
+        guard let data = try? JSONEncoder().encode(playlists) else { return }
+        UserDefaults.standard.set(data, forKey: playlistsDefaultsKey)
+    }
+
+    func createPlaylist(name: String, description: String = "") -> Playlist {
+        let playlist = Playlist(name: name, description: description)
+        playlists.append(playlist)
+        savePlaylists()
+        AppLog.info(.library, "Playlist creada: \(name)")
+        return playlist
+    }
+
+    func deletePlaylist(_ playlist: Playlist) {
+        playlists.removeAll { $0.id == playlist.id }
+        savePlaylists()
+        AppLog.info(.library, "Playlist eliminada: \(playlist.name)")
+    }
+
+    func addSongToPlaylist(_ song: Song, playlist: Playlist) {
+        guard let index = playlists.firstIndex(where: { $0.id == playlist.id }) else { return }
+        if !playlists[index].songIDs.contains(song.id) {
+            playlists[index].songIDs.append(song.id)
+            playlists[index].modifiedAt = Date()
+            savePlaylists()
+            AppLog.info(.library, "Canción añadida a playlist: \(playlist.name)")
+        }
+    }
+
+    func removeSongFromPlaylist(_ song: Song, playlist: Playlist) {
+        guard let index = playlists.firstIndex(where: { $0.id == playlist.id }) else { return }
+        playlists[index].songIDs.removeAll { $0 == song.id }
+        playlists[index].modifiedAt = Date()
+        savePlaylists()
+        AppLog.info(.library, "Canción eliminada de playlist: \(playlist.name)")
+    }
+
+    func updatePlaylist(_ playlist: Playlist, name: String? = nil, description: String? = nil) {
+        guard let index = playlists.firstIndex(where: { $0.id == playlist.id }) else { return }
+        if let name = name { playlists[index].name = name }
+        if let description = description { playlists[index].description = description }
+        playlists[index].modifiedAt = Date()
+        savePlaylists()
+    }
+
+    func songsInPlaylist(_ playlist: Playlist) -> [Song] {
+        playlist.songIDs.compactMap { songID in
+            songs.first { $0.id == songID }
+        }
     }
 
     private var libraryCacheURL: URL? {
