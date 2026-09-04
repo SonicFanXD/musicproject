@@ -61,9 +61,9 @@ struct PlayerBar: View {
                             .frame(width: 40, height: 40)
                     }
                     .buttonStyle(.plain)
-                    .opaqueGlassCircle(isPressed: !audioEngine.isPlaying)
+                    // .opaqueGlassCircle(isPressed: !audioEngine.isPlaying) // ❌ Eliminado: método no existe
                     .scaleEffect(audioEngine.isPlaying ? 1.0 : 0.92)
-                    .animation(.spring(response: 0.3, dampingFraction: 0.6), value: audioEngine.isPlaying)
+                    .animation(.spring(response: 0.3, dampingFraction: 0.6)) // ✅ Quitado 'value:' para iOS 16
 
                     // Next
                     Button {
