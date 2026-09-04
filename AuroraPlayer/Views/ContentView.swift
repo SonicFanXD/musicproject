@@ -141,6 +141,7 @@ struct ContentView: View {
         case .songs: return "music.note"
         case .albums: return "square.stack"
         case .artists: return "person.2"
+        case .playlists: return "music.note.list"
         }
     }
 
@@ -280,7 +281,7 @@ struct ContentView: View {
                         Button {
                             // Navigate to playlist detail
                         } label: {
-                            playlistLibraryCard(playlist)
+                            playlistLibraryCard(playlist: playlist)
                         }
                     }
                 }
