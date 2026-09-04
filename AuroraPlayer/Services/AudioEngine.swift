@@ -68,6 +68,15 @@ class AudioEngine: NSObject, ObservableObject {
     // que provocaban que las canciones se saltaran al cambiar de pista.
     private var scheduleGeneration = 0
 
+    // MARK: - Reproductor de respaldo (AVPlayer)
+    // Se usa cuando AVAudioFile/AVAudioEngine no puede abrir o reproducir un
+    // archivo (códecs no soportados por AVAudioFile, errores -10868/-10875,
+    // motor en estado inválido...). AVPlayer soporta más códecs y contenedores.
+    private var avPlayer: AVPlayer?
+    private var avTimeObserver: Any?
+    private var avEndObserver: NSObjectProtocol?
+    private var isUsingFallback = false
+
     // MARK: - Persistencia de estado
     private let stateDefaultsKey = "com.aurora.playbackState"
     private var hasRestored: Bool = false
@@ -174,7 +183,7 @@ class AudioEngine: NSObject, ObservableObject {
 
     @objc private func handleEngineConfigurationChange() {
         AppLog.warning(.playback, "Cambio de configuración de audio; reiniciando motor (isPlaying: \(isPlaying))")
-        guard isPlaying else { return }
+        guard isPlaying, !isUsingFallback else { return } // AVPlayer gestiona rutas por sí solo
 
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
@@ -269,6 +278,8 @@ class AudioEngine: NSObject, ObservableObject {
         AppLog.info(.playback, "Reproduciendo: \(song.displayName) [\(song.formatDescription)]")
 
         // Limpieza manual sin activar isStopping (evita interferencia con scheduleFile)
+        stopFallbackPlayback()
+        isUsingFallback = false
         if playerNode.isPlaying {
             playerNode.stop()
         }
@@ -286,7 +297,22 @@ class AudioEngine: NSObject, ObservableObject {
         }
 
         do {
-            let file = try AVAudioFile(forReading: song.url)
+            let file: AVAudioFile
+            do {
+                file = try AVAudioFile(forReading: song.url)
+            } catch {
+                let ns = error as NSError
+                let hint: String
+                switch ns.code {
+                case -10868: hint = "formato de datos no soportado por AVAudioFile (códec o DRM)"
+                case -10875: hint = "tipo de archivo no soportado"
+                case -10864: hint = "archivo no encontrado o inaccesible"
+                default: hint = "apertura fallida"
+                }
+                AppLog.error(.playback, error, context: "AVAudioFile [\(hint)]: \(song.displayName)")
+                throw error
+            }
+
             audioFile = file
             sampleRate = file.processingFormat.sampleRate
             sourceSampleRate = sampleRate
@@ -298,10 +324,23 @@ class AudioEngine: NSObject, ObservableObject {
                 return
             }
 
+            // CRÍTICO: detener el motor ANTES de cambiar conexiones. Reconectar
+            // con el motor corriendo provoca kAudioUnitErr_CannotDoInCurrentContext (-10868).
+            if engine.isRunning {
+                engine.stop()
+            }
+            playerNode.stop()
+
             // Reconectar nodos con el formato correcto (protegido contra desconexión doble)
             reconnectPlayerNode(format: file.processingFormat)
 
-            if !engine.isRunning {
+            do {
+                try engine.start()
+            } catch {
+                AppLog.error(.playback, error, context: "engine.start() — reactivando sesión y reintentando")
+                let session = AVAudioSession.sharedInstance()
+                try? session.setActive(false, options: .notifyOthersOnDeactivation)
+                try? session.setActive(true, options: .notifyOthersOnDeactivation)
                 try engine.start()
             }
 
@@ -322,8 +361,9 @@ class AudioEngine: NSObject, ObservableObject {
             updateNextUpQueue()
             saveState()
         } catch {
-            handleAudioError(error, context: "playCurrentSong")
-            handlePlaybackFailure(song: song)
+            // Cualquier fallo del motor AVAudioEngine → reproductor de respaldo AVPlayer
+            AppLog.error(.playback, error, context: "Motor AVAudioEngine con \(song.displayName); usando reproductor de respaldo")
+            startFallbackPlayback(song: song)
         }
     }
 
@@ -349,6 +389,70 @@ class AudioEngine: NSObject, ObservableObject {
             self.isChangingTrack = false
             self.playNext()
         }
+    }
+
+    // MARK: - Reproductor de respaldo (AVPlayer)
+
+    private func stopFallbackPlayback() {
+        if let observer = avTimeObserver {
+            avPlayer?.removeTimeObserver(observer)
+            avTimeObserver = nil
+        }
+        if let observer = avEndObserver {
+            NotificationCenter.default.removeObserver(observer)
+            avEndObserver = nil
+        }
+        avPlayer?.pause()
+        avPlayer = nil
+    }
+
+    private func startFallbackPlayback(song: Song) {
+        stopFallbackPlayback()
+        if playerNode.isPlaying {
+            playerNode.stop()
+        }
+        audioFile = nil
+        stopDisplayTimer()
+
+        isUsingFallback = true
+        currentSong = song
+        currentTime = 0
+        duration = song.duration > 0 ? song.duration : 0
+        seekOffset = 0
+        playbackErrorCount = 0
+
+        let player = AVPlayer(url: song.url)
+        avPlayer = player
+
+        let interval = CMTime(seconds: 0.5, preferredTimescale: CMTimeScale(NSEC_PER_SEC))
+        avTimeObserver = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] time in
+            guard let self = self, self.isUsingFallback else { return }
+            let seconds = time.seconds
+            if seconds.isFinite { self.currentTime = max(0, seconds) }
+            if self.duration <= 0, let item = self.avPlayer?.currentItem, item.duration.isNumeric {
+                self.duration = max(0, item.duration.seconds)
+            }
+        }
+        avEndObserver = NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemDidPlayToEndTime,
+            object: player.currentItem,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self = self, self.isUsingFallback else { return }
+            self.handlePlaybackFinished()
+        }
+
+        avPlayer?.play()
+        isPlaying = true
+
+        startDisplayTimer()
+        updateNowPlayingInfo()
+        updateAudioQuality()
+        addToHistory(song)
+        updateNextUpQueue()
+        saveState()
+
+        AppLog.info(.playback, "Reproduciendo con AVPlayer (respaldo): \(song.displayName)")
     }
 
     private func scheduleFile(_ file: AVAudioFile, from startFrame: AVAudioFramePosition) {
@@ -741,6 +845,20 @@ class AudioEngine: NSObject, ObservableObject {
     // MARK: - Pausa / Reanudar / Detener
 
     func pause() {
+        if isUsingFallback {
+            avPlayer?.pause()
+            isPlaying = false
+            stopDisplayTimer()
+            DispatchQueue.main.async {
+                self.updateNowPlayingInfo()
+                var currentInfo = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:]
+                currentInfo[MPNowPlayingInfoPropertyPlaybackRate] = 0.0
+                MPNowPlayingInfoCenter.default().nowPlayingInfo = currentInfo
+            }
+            saveState()
+            return
+        }
+
         playerNode.pause()
         isPlaying = false
         stopDisplayTimer()
@@ -758,6 +876,21 @@ class AudioEngine: NSObject, ObservableObject {
     }
 
     func resume() {
+        if isUsingFallback {
+            guard avPlayer != nil else { return }
+            avPlayer?.play()
+            isPlaying = true
+            startDisplayTimer()
+            DispatchQueue.main.async {
+                self.updateNowPlayingInfo()
+                var currentInfo = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:]
+                currentInfo[MPNowPlayingInfoPropertyPlaybackRate] = 1.0
+                MPNowPlayingInfoCenter.default().nowPlayingInfo = currentInfo
+            }
+            saveState()
+            return
+        }
+
         guard let file = audioFile else {
             AppLog.warning(.playback, "resume() sin archivo cargado; ignorado")
             return
@@ -807,6 +940,8 @@ class AudioEngine: NSObject, ObservableObject {
     func stop() {
         isStopping = true
         scheduleGeneration += 1 // Invalida completion handlers pendientes
+        stopFallbackPlayback()
+        isUsingFallback = false
         playerNode.stop()
         audioFile = nil
         isPlaying = false
@@ -826,6 +961,20 @@ class AudioEngine: NSObject, ObservableObject {
     }
 
     func seek(to time: TimeInterval) {
+        if isUsingFallback {
+            guard let player = avPlayer else { return }
+            let clamped = max(0, min(time, duration > 0 ? duration : time))
+            let target = CMTime(seconds: clamped, preferredTimescale: 600)
+            player.seek(to: target, toleranceBefore: .zero, toleranceAfter: .zero)
+            currentTime = clamped
+            if isPlaying { avPlayer?.play() } // necesario para repeat-one tras llegar al final
+            DispatchQueue.main.async {
+                self.updateNowPlayingInfo()
+            }
+            saveState()
+            return
+        }
+
         guard let file = audioFile else { return }
         let clampedTime = max(0, min(time, duration))
         let startFrame = AVAudioFramePosition(clampedTime * sampleRate)
@@ -881,6 +1030,13 @@ class AudioEngine: NSObject, ObservableObject {
     }
 
     private func updateCurrentTime() {
+        if isUsingFallback {
+            guard let player = avPlayer else { return }
+            let seconds = player.currentTime().seconds
+            if seconds.isFinite { currentTime = max(0, seconds) }
+            return
+        }
+
         guard let nodeTime = playerNode.lastRenderTime,
               let playerTime = playerNode.playerTime(forNodeTime: nodeTime) else { return }
 
@@ -1218,6 +1374,8 @@ class AudioEngine: NSObject, ObservableObject {
         crossfadeTimer = nil
 
         // Limpiar nodos
+        stopFallbackPlayback()
+        isUsingFallback = false
         playerNode.stop()
         nextPlayerNode?.stop()
 
