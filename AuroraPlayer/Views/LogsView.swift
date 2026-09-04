@@ -1,4 +1,20 @@
 import SwiftUI
+import UIKit
+
+// MARK: - Share Sheet (UIKit wrapper)
+struct ActivityShareSheet: UIViewControllerRepresentable {
+    let items: [Any]
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: items, applicationActivities: nil)
+    }
+
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
+}
+
+extension URL: Identifiable {
+    public var id: String { absoluteString }
+}
 
 struct LogsView: View {
     @Environment(\.dismiss) private var dismiss
@@ -6,6 +22,12 @@ struct LogsView: View {
     @State private var selectedCategory: LogCategory? = nil
     @State private var showOnlyErrors = false
     @State private var searchText = ""
+    @State private var shareURL: URL? = nil
+    @State private var copiedToast = false
+
+    // Timer para refrescar la vista en vivo mientras se registran nuevos eventos
+    let timer = Timer.publish(every: 1.5, on: .main, in: .common).autoconnect()
+    @State private var refreshTick = 0
 
     private var filteredEntries: [InAppLogEntry] {
         var entries = AppLog.entries
@@ -41,6 +63,23 @@ struct LogsView: View {
                     // Log entries list
                     logEntriesList
                 }
+
+                // Toast de confirmación de copia
+                if copiedToast {
+                    VStack {
+                        Spacer()
+                        Label("Diagnóstico copiado", systemImage: "checkmark.circle.fill")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 10)
+                            .background {
+                                Capsule().fill(Color.black.opacity(0.8))
+                            }
+                            .padding(.bottom, 30)
+                    }
+                    .transition(.opacity)
+                }
             }
             .navigationTitle("Registros")
             .navigationBarTitleDisplayMode(.inline)
@@ -48,11 +87,28 @@ struct LogsView: View {
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button {
-                        AppLog.clearEntries()
+                    Menu {
+                        Button {
+                            shareDiagnostics()
+                        } label: {
+                            Label("Compartir / Guardar diagnóstico", systemImage: "square.and.arrow.up")
+                        }
+
+                        Button {
+                            copyDiagnostics()
+                        } label: {
+                            Label("Copiar diagnóstico completo", systemImage: "doc.on.doc")
+                        }
+
+                        Divider()
+
+                        Button(role: .destructive) {
+                            AppLog.clearEntries()
+                        } label: {
+                            Label("Borrar registros", systemImage: "trash")
+                        }
                     } label: {
-                        Image(systemName: "trash")
-                            .foregroundStyle(.red)
+                        Image(systemName: "ellipsis.circle")
                     }
                 }
 
@@ -66,6 +122,32 @@ struct LogsView: View {
                 text: $searchText,
                 prompt: "Buscar en logs"
             )
+            .sheet(item: $shareURL) { url in
+                ActivityShareSheet(items: [url])
+            }
+            .onReceive(timer) { _ in
+                refreshTick += 1 // fuerza re-render para logs en vivo
+            }
+        }
+    }
+
+    // MARK: - Exportar / Copiar
+
+    private func shareDiagnostics() {
+        if let url = AppLog.writeExportFile() {
+            shareURL = url
+        }
+    }
+
+    private func copyDiagnostics() {
+        AppLog.copyReportToClipboard()
+        withAnimation {
+            copiedToast = true
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) {
+            withAnimation {
+                copiedToast = false
+            }
         }
     }
 

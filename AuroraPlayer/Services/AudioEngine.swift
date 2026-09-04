@@ -160,6 +160,43 @@ class AudioEngine: NSObject, ObservableObject {
             name: UIApplication.willResignActiveNotification,
             object: nil
         )
+
+        // Recuperación ante cambios de configuración de audio (desconectar
+        // auriculares, Bluetooth, llamadas): el motor puede detenerse y
+        // quedarse "reproduciendo" en silencio si no se reinicia.
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleEngineConfigurationChange),
+            name: .AVAudioEngineConfigurationChange,
+            object: engine
+        )
+    }
+
+    @objc private func handleEngineConfigurationChange() {
+        AppLog.warning(.playback, "Cambio de configuración de audio; reiniciando motor (isPlaying: \(isPlaying))")
+        guard isPlaying else { return }
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            do {
+                try AVAudioSession.sharedInstance().setActive(true)
+                if !self.engine.isRunning {
+                    try self.engine.start()
+                }
+                // Reanudar desde la posición actual (el motor reiniciado
+                // pierde la programación del playerNode)
+                let position = self.currentTime
+                if let file = self.audioFile {
+                    self.seekOffset = position
+                    self.scheduleFile(file, from: AVAudioFramePosition(position * self.sampleRate))
+                    AppLog.info(.playback, "Motor reiniciado y reproducción reanudada en \(String(format: "%.1f", position))s")
+                } else {
+                    self.playerNode.play()
+                }
+            } catch {
+                AppLog.error(.playback, error, context: "handleEngineConfigurationChange")
+            }
+        }
     }
 
     @objc private func applicationWillResignActive() {
@@ -229,6 +266,7 @@ class AudioEngine: NSObject, ObservableObject {
         }
 
         let song = playlist[currentIndex]
+        AppLog.info(.playback, "Reproduciendo: \(song.displayName) [\(song.formatDescription)]")
 
         // Limpieza manual sin activar isStopping (evita interferencia con scheduleFile)
         if playerNode.isPlaying {
@@ -242,7 +280,7 @@ class AudioEngine: NSObject, ObservableObject {
 
         // Verificar que el archivo exista antes de intentar abrirlo (evita crashes)
         guard FileManager.default.fileExists(atPath: song.url.path) else {
-            AppLog.error(.playback, "Archivo no encontrado: \(song.displayName)")
+            AppLog.error(.playback, "Archivo no encontrado en: \(song.url.path)")
             handlePlaybackFailure(song: song)
             return
         }
@@ -267,6 +305,8 @@ class AudioEngine: NSObject, ObservableObject {
                 try engine.start()
             }
 
+            AppLog.debug(.playback, "Formato: \(Int(file.processingFormat.sampleRate))Hz · \(file.processingFormat.channelCount) canales · \(file.length) frames")
+
             // Establecer estado ANTES de programar el archivo para que el completion handler funcione
             currentSong = song
             seekOffset = 0
@@ -289,7 +329,7 @@ class AudioEngine: NSObject, ObservableObject {
 
     private func handlePlaybackFailure(song: Song) {
         playbackErrorCount += 1
-        AppLog.error(.playback, "No se pudo reproducir: \(song.displayName) (error \(playbackErrorCount))")
+        AppLog.error(.playback, "Fallo de reproducción #\(playbackErrorCount): \(song.displayName) — saltando a la siguiente")
 
         // Evitar bucle infinito si muchas canciones fallan seguidas
         if playbackErrorCount >= 5 {
@@ -718,10 +758,36 @@ class AudioEngine: NSObject, ObservableObject {
     }
 
     func resume() {
-        guard audioFile != nil else { return }
-        if !engine.isRunning {
-            try? engine.start()
+        guard let file = audioFile else {
+            AppLog.warning(.playback, "resume() sin archivo cargado; ignorado")
+            return
         }
+
+        // Si el motor no está corriendo, reiniciarlo; si falla, reprogramar
+        do {
+            if !engine.isRunning {
+                try engine.start()
+            }
+        } catch {
+            AppLog.error(.playback, error, context: "resume(): motor no arrancó")
+        }
+
+        // Caso crítico: la programación terminó (playerTime == nil) pero la
+        // UI seguía en pausa. Re-programar desde la posición actual, si no
+        // play() no produce sonido y el usuario ve "reproduciendo" en silencio.
+        let nodeTime = playerNode.lastRenderTime
+        let playerTime = nodeTime.flatMap { playerNode.playerTime(forNodeTime: $0) }
+        if playerTime == nil {
+            let position = min(max(currentTime, 0), duration)
+            AppLog.info(.playback, "resume(): reprogramando desde \(String(format: "%.1f", position))s (programación previa agotada)")
+            seekOffset = position
+            scheduleFile(file, from: AVAudioFramePosition(position * sampleRate))
+            isPlaying = true
+            startDisplayTimer()
+            saveState()
+            return
+        }
+
         playerNode.play()
         isPlaying = true
         startDisplayTimer()
@@ -1121,7 +1187,11 @@ class AudioEngine: NSObject, ObservableObject {
             updateNowPlayingInfo()
             updateAudioQuality()
         } catch {
-            print("Error al restaurar estado: \(error.localizedDescription)")
+            // Al restaurar NO saltamos de canción: solo registramos y limpiamos el estado
+            AppLog.error(.playback, error, context: "restoreState: \(song.displayName)")
+            handleAudioError(error, context: "restoreState")
+            audioFile = nil
+            isPlaying = false
             UserDefaults.standard.removeObject(forKey: stateDefaultsKey)
         }
     }
@@ -1168,14 +1238,37 @@ class AudioEngine: NSObject, ObservableObject {
 
     // MARK: - Manejo de errores mejorado
     private func handleAudioError(_ error: Error, context: String) {
-        AppLog.error(.playback, "Error en \(context): \(error.localizedDescription)")
+        let nsError = error as NSError
+        AppLog.error(.playback, error, context: context)
 
-        // Intentar recuperar de errores comunes
-        if (error as NSError).code == -51 { // Invalid parameter
-            // Reiniciar el motor de audio
-            cleanupAudioResources()
-            setupEngine()
-            setupEqualizer()
+        // Recuperación para errores comunes del motor (-51 invalid param,
+        // -10877 formato, 561015905 'kAudioUnitErr_InvalidParameter'...)
+        let recoverableCodes: Set<Int> = [-51, -10877, 561015905, 2003334207]
+        guard recoverableCodes.contains(nsError.code) else { return }
+
+        AppLog.warning(.playback, "Recuperando motor de audio tras error \(nsError.code)")
+
+        engine.stop()
+        playerNode.stop()
+
+        // Desmontar y volver a montar el grafo completo de forma segura
+        if !engine.outputConnectionPoints(for: playerNode, outputBus: 0).isEmpty {
+            engine.disconnectNodeOutput(playerNode)
+        }
+        if let eq = equalizerNode {
+            engine.detach(eq)
+        }
+        engine.detach(playerNode)
+        equalizerNode = nil
+
+        setupEngine()
+        setupEqualizer()
+
+        do {
+            try engine.start()
+            AppLog.info(.playback, "Motor de audio reiniciado correctamente")
+        } catch {
+            AppLog.error(.playback, error, context: "handleAudioError: reinicio del motor")
         }
     }
 }
