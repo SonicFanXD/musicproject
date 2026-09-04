@@ -6,6 +6,8 @@
     <array>
         <string>audio</string>
     </array>
+    <key>NSAppleMusicUsageDescription</key>
+    <string>Aurora Player necesita acceso a tu biblioteca de música para reproducir tus archivos.</string>
     <key>UILaunchStoryboardName</key>
     <string>LaunchScreen</string>
     <key>CFBundleDevelopmentRegion</key>

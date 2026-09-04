@@ -34,7 +34,7 @@ struct AlbumDetailView: View {
                             Spacer()
                             if audioEngine.currentSong?.id == song.id {
                                 Image(systemName: "speaker.wave.2.fill")
-                                    .foregroundStyle(.accentColor)
+                                    .foregroundStyle(Color.accentColor)
                             }
                         }
                     }
@@ -173,7 +173,7 @@ struct ArtistDetailView: View {
                             Spacer()
                             if audioEngine.currentSong?.id == song.id {
                                 Image(systemName: "speaker.wave.2.fill")
-                                    .foregroundStyle(.accentColor)
+                                    .foregroundStyle(Color.accentColor)
                             }
                         }
                     }

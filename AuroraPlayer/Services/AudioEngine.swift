@@ -31,6 +31,7 @@ class AudioEngine: NSObject, ObservableObject {
     private let playerNode = AVAudioPlayerNode()
     private var audioFile: AVAudioFile?
     private var displayTimer: Timer?
+    private var nowPlayingInfoTimer: Timer?
     private var sampleRate: Double = 44100
     private var seekOffset: TimeInterval = 0
 
@@ -58,7 +59,7 @@ class AudioEngine: NSObject, ObservableObject {
     private func setupSession() {
         let session = AVAudioSession.sharedInstance()
         do {
-            try session.setCategory(.playback, mode: .default, options: [])
+            try session.setCategory(.playback, mode: .default, options: [.allowBluetooth, .allowBluetoothA2DP])
             try session.setActive(true)
             updateRouteName()
             updateAudioQuality()
@@ -358,11 +359,25 @@ class AudioEngine: NSObject, ObservableObject {
         displayTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             self?.updateCurrentTime()
         }
+        startNowPlayingInfoTimer()
     }
 
     private func stopDisplayTimer() {
         displayTimer?.invalidate()
         displayTimer = nil
+        stopNowPlayingInfoTimer()
+    }
+
+    private func startNowPlayingInfoTimer() {
+        stopNowPlayingInfoTimer()
+        nowPlayingInfoTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            self?.updateNowPlayingInfo()
+        }
+    }
+
+    private func stopNowPlayingInfoTimer() {
+        nowPlayingInfoTimer?.invalidate()
+        nowPlayingInfoTimer = nil
     }
 
     private func updateCurrentTime() {
@@ -469,36 +484,46 @@ class AudioEngine: NSObject, ObservableObject {
 
         commandCenter.playCommand.addTarget { [weak self] _ in
             guard let self = self, self.currentSong != nil else { return .noActionableNowPlayingItem }
-            self.resume()
+            DispatchQueue.main.async {
+                self.resume()
+            }
             return .success
         }
 
         commandCenter.pauseCommand.addTarget { [weak self] _ in
             guard let self = self, self.currentSong != nil else { return .noActionableNowPlayingItem }
-            self.pause()
+            DispatchQueue.main.async {
+                self.pause()
+            }
             return .success
         }
 
         commandCenter.togglePlayPauseCommand.addTarget { [weak self] _ in
             guard let self = self, self.currentSong != nil else { return .noActionableNowPlayingItem }
-            if self.isPlaying {
-                self.pause()
-            } else {
-                self.resume()
+            DispatchQueue.main.async {
+                if self.isPlaying {
+                    self.pause()
+                } else {
+                    self.resume()
+                }
             }
             return .success
         }
 
         commandCenter.nextTrackCommand.addTarget { [weak self] _ in
             guard let self = self else { return .commandFailed }
-            self.playNext()
+            DispatchQueue.main.async {
+                self.playNext()
+            }
             return .success
         }
         commandCenter.nextTrackCommand.isEnabled = true
 
         commandCenter.previousTrackCommand.addTarget { [weak self] _ in
             guard let self = self else { return .commandFailed }
-            self.playPrevious()
+            DispatchQueue.main.async {
+                self.playPrevious()
+            }
             return .success
         }
         commandCenter.previousTrackCommand.isEnabled = true
@@ -508,9 +533,12 @@ class AudioEngine: NSObject, ObservableObject {
                   let positionEvent = event as? MPChangePlaybackPositionCommandEvent else {
                 return .commandFailed
             }
-            self.seek(to: positionEvent.positionTime)
+            DispatchQueue.main.async {
+                self.seek(to: positionEvent.positionTime)
+            }
             return .success
         }
+        commandCenter.changePlaybackPositionCommand.isEnabled = true
     }
 
     private func updateNowPlayingInfo() {
@@ -528,7 +556,8 @@ class AudioEngine: NSObject, ObservableObject {
             MPMediaItemPropertyAlbumTitle: album,
             MPMediaItemPropertyPlaybackDuration: duration,
             MPNowPlayingInfoPropertyElapsedPlaybackTime: currentTime,
-            MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1.0 : 0.0
+            MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1.0 : 0.0,
+            MPNowPlayingInfoPropertyDefaultPlaybackRate: 1.0
         ]
 
         if let artworkData = song.artworkData,
@@ -537,7 +566,10 @@ class AudioEngine: NSObject, ObservableObject {
             info[MPMediaItemPropertyArtwork] = artwork
         }
 
-        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+        // Asegurar que la actualización se realice en el hilo principal
+        DispatchQueue.main.async {
+            MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+        }
     }
 
     // MARK: - Persistencia de estado

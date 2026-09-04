@@ -11,19 +11,14 @@ struct LogsView: View {
                 ScrollView {
                     VStack(spacing: 18) {
                         header
-                            .rowAppear(index: 0)
 
                         statusSection
-                            .rowAppear(index: 1)
 
                         informationSection
-                            .rowAppear(index: 2)
 
                         tipsSection
-                            .rowAppear(index: 3)
 
                         recentLogsSection
-                            .rowAppear(index: 4)
 
                         Spacer(minLength: 30)
                     }

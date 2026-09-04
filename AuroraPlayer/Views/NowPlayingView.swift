@@ -45,7 +45,7 @@ struct NowPlayingView: View {
 
                 VStack(spacing: 8) {
                     ProgressView(value: progress)
-                        .progressViewStyle(LinearProgressViewStyle(tint: .accentColor))
+                        .progressViewStyle(LinearProgressViewStyle(tint: Color.accentColor))
 
                     HStack {
                         Text(formatTime(audioEngine.currentTime))
@@ -67,7 +67,7 @@ struct NowPlayingView: View {
                     } label: {
                         Image(systemName: audioEngine.isShuffleEnabled ? "shuffle.circle.fill" : "shuffle")
                             .font(.title3)
-                            .foregroundStyle(audioEngine.isShuffleEnabled ? .accentColor : .secondary)
+                            .foregroundStyle(audioEngine.isShuffleEnabled ? Color.accentColor : .secondary)
                     }
 
                     Button {
@@ -86,7 +86,7 @@ struct NowPlayingView: View {
                     } label: {
                         Image(systemName: audioEngine.isPlaying ? "pause.circle.fill" : "play.circle.fill")
                             .font(.system(size: 60))
-                            .foregroundStyle(.accentColor)
+                            .foregroundStyle(Color.accentColor)
                     }
 
                     Button {
@@ -101,7 +101,7 @@ struct NowPlayingView: View {
                     } label: {
                         Image(systemName: repeatIcon)
                             .font(.title3)
-                            .foregroundStyle(audioEngine.repeatMode != .off ? .accentColor : .secondary)
+                            .foregroundStyle(audioEngine.repeatMode != .off ? Color.accentColor : .secondary)
                     }
                 }
 
