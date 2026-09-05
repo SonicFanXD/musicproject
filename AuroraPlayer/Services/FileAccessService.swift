@@ -576,7 +576,7 @@ class FileAccessService: ObservableObject {
         )
     }
 
-    // Fallback síncrono para iOS < 16 o si falla la carga asíncrona
+    // Fallback asíncrono moderno (si falla la carga principal). Sin APIs deprecadas.
     private func readMetadataFallback(from url: URL) async -> SongMetadata {
         let asset = AVAsset(url: url)
         var title: String?
@@ -588,80 +588,54 @@ class FileAccessService: ObservableObject {
         var discNumber: Int?
         var trackNumber = 0
         var releaseDate: Date?
+        var durationSeconds: Double = 0
 
-        // Usar APIs síncronas (deprecadas pero funcionan)
-        let formatMetadata = asset.availableMetadataFormats.flatMap { asset.metadata(forFormat: $0) }
-
-        for item in asset.commonMetadata {
-            switch item.commonKey?.rawValue {
-            case "title":
-                if let value = item.stringValue, !value.isEmpty {
-                    title = value
+        do {
+            let commonMetadata = try await asset.load(.commonMetadata)
+            for item in commonMetadata {
+                switch item.commonKey?.rawValue {
+                case "title":
+                    if let value = try? await item.load(.stringValue), !value.isEmpty {
+                        title = value
+                    }
+                case "artist":
+                    artist = (try? await item.load(.stringValue)) ?? ""
+                case "albumName":
+                    album = (try? await item.load(.stringValue)) ?? ""
+                case "artwork":
+                    if let data = try? await item.load(.dataValue) {
+                        artworkData = thumbnailArtwork(data)
+                    }
+                case "lyrics":
+                    lyrics = (try? await item.load(.stringValue)) ?? ""
+                case "discNumber":
+                    discNumber = (try? await item.load(.numberValue))?.intValue
+                case "trackNumber":
+                    trackNumber = (try? await item.load(.numberValue))?.intValue ?? 0
+                case "creationDate":
+                    releaseDate = try? await item.load(.dateValue)
+                default:
+                    break
                 }
-            case "artist":
-                artist = item.stringValue ?? ""
-            case "albumName":
-                album = item.stringValue ?? ""
-            case "artwork":
-                artworkData = item.dataValue.flatMap(thumbnailArtwork)
-            case "lyrics":
-                lyrics = item.stringValue ?? ""
-            case "discNumber":
-                discNumber = item.numberValue?.intValue
-            case "trackNumber":
-                trackNumber = item.numberValue?.intValue ?? 0
-            case "creationDate":
-                releaseDate = item.dateValue
-            default:
-                break
             }
+            let assetDuration = try await asset.load(.duration)
+            durationSeconds = assetDuration.isNumeric ? max(0, assetDuration.seconds) : 0
+        } catch {
+            AppLog.error(.library, "readMetadataFallback: \(error.localizedDescription)")
         }
 
-        for item in formatMetadata {
-            let identifier = normalizedMetadataIdentifier(item)
-            let key = metadataKey(item)
-
-            if (identifier.contains("albumartist") || key == "aart" || key == "album artist" || key == "tpe2"),
-               let value = metadataTextSync(item), !value.isEmpty {
-                albumArtist = value
+        // Fallback binario (ID3/FLAC/M4A) para lo que AVFoundation no mapea
+        if title == nil || artist.isEmpty || album.isEmpty || lyrics.isEmpty {
+            if let embedded = readID3Metadata(from: url) ?? readFLACMetadata(from: url) ?? readM4AMetadata(from: url) {
+                title = title ?? embedded.title
+                if artist.isEmpty { artist = embedded.artist ?? "" }
+                if albumArtist.isEmpty { albumArtist = embedded.albumArtist ?? "" }
+                if album.isEmpty { album = embedded.album ?? "" }
+                if trackNumber == 0 { trackNumber = embedded.trackNumber ?? 0 }
+                if discNumber == nil { discNumber = embedded.discNumber }
+                if releaseDate == nil { releaseDate = embedded.releaseDate }
+                if lyrics.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { lyrics = embedded.lyrics ?? "" }
             }
-            if title == nil, (identifier.contains("title") || key == "©nam" || key == "tit2") {
-                title = metadataTextSync(item)
-            }
-            if artist.isEmpty, (identifier.contains("artist") || key == "©art" || key == "tpe1"), key != "aart" {
-                artist = metadataTextSync(item) ?? ""
-            }
-            if album.isEmpty, (identifier.contains("album") || key == "©alb" || key == "talb"), key != "aart" {
-                album = metadataTextSync(item) ?? ""
-            }
-            if identifier.contains("discnumber") || identifier.contains("disknumber") || key.contains("disk") || key.contains("tpos") {
-                discNumber = metadataNumberSync(item)
-            }
-            if identifier.contains("tracknumber") || key.contains("trkn") || key.contains("trck") {
-                trackNumber = metadataNumberSync(item) ?? 0
-            }
-            if releaseDate == nil, identifier.contains("date") || identifier.contains("year") || key.contains("day") || key.contains("tdrc") {
-                releaseDate = metadataDateSync(item)
-            }
-        }
-
-        if let embedded = readID3Metadata(from: url) ?? readFLACMetadata(from: url) ?? readM4AMetadata(from: url) {
-            title = title ?? embedded.title
-            if artist.isEmpty { artist = embedded.artist ?? "" }
-            if albumArtist.isEmpty { albumArtist = embedded.albumArtist ?? "" }
-            if album.isEmpty { album = embedded.album ?? "" }
-            if trackNumber == 0 { trackNumber = embedded.trackNumber ?? 0 }
-            if discNumber == nil { discNumber = embedded.discNumber }
-            if releaseDate == nil { releaseDate = embedded.releaseDate }
-            if lyrics.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { lyrics = embedded.lyrics ?? "" }
-        }
-
-        if lyrics.isEmpty {
-            lyrics = formatMetadata.first(where: { item in
-                let id = normalizedMetadataIdentifier(item)
-                let key = metadataKey(item)
-                return item.commonKey?.rawValue == "lyrics" || id.contains("lyric") || key == "©lyr" || key.contains("lyric") || key == "uslt" || key == "sylt"
-            }).map { self.lyricsTextSync($0) } ?? ""
         }
 
         let audioFile = try? AVAudioFile(forReading: url)
@@ -678,7 +652,7 @@ class FileAccessService: ObservableObject {
             albumArtist: albumArtist,
             album: album,
             artworkData: artworkData,
-            duration: asset.duration.isNumeric ? max(0, asset.duration.seconds) : 0,
+            duration: durationSeconds,
             lyrics: lyrics,
             formatDescription: formatDescription,
             discNumber: discNumber,
@@ -716,16 +690,6 @@ class FileAccessService: ObservableObject {
     private func metadataText(_ item: AVMetadataItem) async -> String? {
         if let value = try? await item.load(.stringValue) { return value }
         guard let data = try? await item.load(.dataValue) else { return nil }
-        return String(data: data, encoding: .utf8)
-            ?? String(data: data, encoding: .utf16)
-            ?? String(data: data, encoding: .utf16LittleEndian)
-    }
-
-    // Non-async version for backwards compatibility
-    private func metadataTextSync(_ item: AVMetadataItem) -> String? {
-        // Use deprecated properties for non-async context
-        if let value = item.stringValue { return value }
-        guard let data = item.dataValue else { return nil }
         return String(data: data, encoding: .utf8)
             ?? String(data: data, encoding: .utf16)
             ?? String(data: data, encoding: .utf16LittleEndian)
@@ -782,60 +746,6 @@ class FileAccessService: ObservableObject {
         return fallbackText ?? ""
     }
 
-    // Non-async version for backwards compatibility
-    private func lyricsTextSync(_ item: AVMetadataItem) -> String {
-        let key = metadataKey(item)
-        let identifier = normalizedMetadataIdentifier(item)
-        let isSynchronizedID3 = key == "sylt" || identifier.contains("sylt")
-        
-        guard (key == "uslt" || isSynchronizedID3 || identifier.contains("uslt")), let data = item.dataValue else {
-            if let value = item.stringValue { return value }
-            guard let data = item.dataValue else { return "" }
-            return String(data: data, encoding: .utf8) ?? String(data: data, encoding: .utf16) ?? String(data: data, encoding: .utf16LittleEndian) ?? ""
-        }
-        
-        if isSynchronizedID3, let parsed = synchronizedID3Lyrics(data), !parsed.isEmpty {
-            return parsed
-        }
-        
-        guard data.count > 4 else {
-            if let value = item.stringValue { return value }
-            guard let data = item.dataValue else { return "" }
-            return String(data: data, encoding: .utf8) ?? String(data: data, encoding: .utf16) ?? String(data: data, encoding: .utf16LittleEndian) ?? ""
-        }
-        
-        let bytes = [UInt8](data)
-        let encoding = bytes[0]
-        let payload = Data(bytes.dropFirst(4))
-        
-        if encoding == 0 || encoding == 3 {
-            let terminator = payload.firstIndex(of: 0).map { payload.index(after: $0) } ?? payload.startIndex
-            let result = String(data: payload[terminator...], encoding: encoding == 3 ? .utf8 : .isoLatin1)?.trimmingCharacters(in: .controlCharacters)
-            if let result = result {
-                return result
-            }
-            if let value = item.stringValue { return value }
-            guard let data = item.dataValue else { return "" }
-            return String(data: data, encoding: .utf8) ?? String(data: data, encoding: .utf16) ?? String(data: data, encoding: .utf16LittleEndian) ?? ""
-        }
-        
-        let values = [UInt8](payload)
-        if let end = values.indices.dropLast().first(where: { values[$0] == 0 && values[$0 + 1] == 0 }), end + 2 < values.count {
-            let text = Data(values[(end + 2)...])
-            let result = String(data: text, encoding: encoding == 1 ? .utf16 : .utf16BigEndian)?.trimmingCharacters(in: .controlCharacters)
-            if let result = result {
-                return result
-            }
-            if let value = item.stringValue { return value }
-            guard let data = item.dataValue else { return "" }
-            return String(data: data, encoding: .utf8) ?? String(data: data, encoding: .utf16) ?? String(data: data, encoding: .utf16LittleEndian) ?? ""
-        }
-        
-        if let value = item.stringValue { return value }
-        guard let data = item.dataValue else { return "" }
-        return String(data: data, encoding: .utf8) ?? String(data: data, encoding: .utf16) ?? String(data: data, encoding: .utf16LittleEndian) ?? ""
-    }
-
     private func synchronizedID3Lyrics(_ data: Data) -> String? {
         let bytes = [UInt8](data)
         guard bytes.count > 7, (bytes[0] == 0 || bytes[0] == 3), bytes[4] == 2 else { return nil }
@@ -860,32 +770,6 @@ class FileAccessService: ObservableObject {
             lines.append(String(format: "[%u:%02u.%02u]%@", minutes, seconds, hundredths, text))
         }
         return lines.isEmpty ? nil : lines.joined(separator: "\n")
-    }
-
-    private func metadataNumberSync(_ item: AVMetadataItem) -> Int? {
-        if let number = item.numberValue?.intValue, number > 0 { return number }
-        if let value = item.stringValue,
-           let number = Int(value.split(separator: "/", maxSplits: 1).first ?? ""), number > 0 { return number }
-        if let data = item.dataValue, data.count >= 6 {
-            let bytes = [UInt8](data)
-            let number = Int(bytes[4]) << 8 | Int(bytes[5])
-            if number > 0 { return number }
-        }
-        return nil
-    }
-
-    // ✅ CORREGIDO: optional chaining en nilIfEmpty
-    private func metadataDateSync(_ item: AVMetadataItem) -> Date? {
-        if let date = item.dateValue { return date }
-        guard let text = metadataTextSync(item)?.nilIfEmpty else { return nil }
-        let iso = ISO8601DateFormatter()
-        if let date = iso.date(from: text) { return date }
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "yyyy-MM-dd"
-        if let date = formatter.date(from: text) { return date }
-        formatter.dateFormat = "yyyy"
-        return formatter.date(from: text)
     }
 
     // Versiones asíncronas para iOS 16+

@@ -25,6 +25,10 @@ struct NowPlayingView: View {
     // ✅ Guardamos el UIColor dominante crudo para calcular contraste
     @State private var extractedUIColor: UIColor = UIColor.systemPurple
 
+    // ✅ Caché de color dominante por canción: evita recalcular el histograma
+    // HSB al reabrir NowPlaying o re-entrar a la misma pista (60fps sin hitch)
+    private static let colorCache = NSCache<NSString, UIColor>()
+
     // ✅ Scrub optimizado: preview local a 60fps, seek real solo al soltar
     @State private var isScrubbing = false
     @State private var scrubPreviewTime: TimeInterval = 0
@@ -669,12 +673,19 @@ struct NowPlayingView: View {
             return
         }
 
-        // ✅ MEJORADO: color dominante VIVO vía histograma HSB (hilo de fondo)
+        // ✅ Color dominante VIVO vía histograma HSB, con caché por canción
+        let cacheKey = (audioEngine.currentSong?.id.uuidString ?? "none") as NSString
+        if let cached = NowPlayingView.colorCache.object(forKey: cacheKey) {
+            extractedColor = AppTheme.readableColor(from: cached)
+            extractedUIColor = cached
+            return
+        }
         DispatchQueue.global(qos: .userInitiated).async {
-            let dominant = AppTheme.dominantColor(from: artwork)
+            let dominant = AppTheme.dominantColor(from: artwork) ?? UIColor.systemPurple
+            NowPlayingView.colorCache.setObject(dominant, forKey: cacheKey)
             DispatchQueue.main.async {
                 self.extractedColor = AppTheme.readableColor(from: dominant)
-                self.extractedUIColor = dominant ?? UIColor.systemPurple
+                self.extractedUIColor = dominant
             }
         }
     }

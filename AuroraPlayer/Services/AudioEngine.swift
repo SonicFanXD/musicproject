@@ -46,7 +46,6 @@ class AudioEngine: NSObject, ObservableObject {
     private let playerNode = AVAudioPlayerNode()
     private var audioFile: AVAudioFile?
     private var displayTimer: Timer?
-    private var nowPlayingInfoTimer: Timer?
     private var sampleRate: Double = 44100
     private var seekOffset: TimeInterval = 0
 
@@ -551,28 +550,21 @@ class AudioEngine: NSObject, ObservableObject {
         nextPlayer.volume = 0
         nextPlayer.play()
 
-        // Transición de Crossfade fluida
-        let startTime = Date()
+        // ✅ CROSSFADE SUAVE: ramps nativos del render thread de AVAudioPlayerNode
+        // (sin Timer → sin zipper noise ni escalones de 50ms). El fundido es
+        // continuo a nivel de sample y ambos temas se cruzan de verdad.
         let duration = crossfadeDuration
+        nextPlayer.setVolume(1.0, rampDuration: duration)
+        if playerNode.isPlaying {
+            playerNode.setVolume(0.0, rampDuration: duration)
+        }
 
-        Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] timer in
-            guard let self = self else {
-                timer.invalidate()
-                return
-            }
-
-            let elapsed = Date().timeIntervalSince(startTime)
-            let progress = min(1.0, elapsed / duration)
-
-            self.playerNode.volume = Float(1.0 - progress)
-            nextPlayer.volume = Float(progress)
-
-            if progress >= 1.0 {
-                timer.invalidate()
-                self.playerNode.stop()
-                self.playerNode.volume = 1.0
-                self.completeCrossfade()
-            }
+        // ✅ Migración programada UNA sola vez al terminar el fundido.
+        // Se usa crossfadeTimer (single-shot) para que todos los sitios que ya
+        // lo invalidan (pause/stop/seek/toggle) cancelen también la migración.
+        crossfadeTimer?.invalidate()
+        crossfadeTimer = Timer.scheduledTimer(withTimeInterval: duration + 0.05, repeats: false) { [weak self] _ in
+            self?.completeCrossfade()
         }
     }
 
@@ -625,10 +617,16 @@ class AudioEngine: NSObject, ObservableObject {
         }
         playerNode.volume = 1.0
 
-        // ✅ FIX CRÍTICO del crossfade: el nextPlayer ya reprodujo ~crossfadeDuration
-        // segundos de la canción siguiente durante el fundido. Continuamos desde
-        // donde quedó el fade, sin reiniciar la canción.
-        let alreadyPlayed = crossfadeDuration
+        // ✅ FIX CRÍTICO del crossfade: medir la posición REAL del nextPlayer
+        // (reloj del render thread) en vez de asumir crossfadeDuration teórico.
+        // Antes, cualquier drift del fundido causaba un salto audible al migrar.
+        var framesPlayed = AVAudioFramePosition(crossfadeDuration * sampleRate)
+        if let nodeTime = nextPlayer.lastRenderTime,
+           let playerTime = nextPlayer.playerTime(forNodeTime: nodeTime) {
+            framesPlayed = playerTime.sampleTime
+        }
+        framesPlayed = min(max(framesPlayed, 0), AVAudioFramePosition(nextFile.length) - 1)
+        let alreadyPlayed = Double(framesPlayed) / sampleRate
         seekOffset = alreadyPlayed
         scheduleFile(nextFile, from: alreadyPlayed)
 
@@ -644,6 +642,20 @@ class AudioEngine: NSObject, ObservableObject {
     // MARK: - Controles básicos y otros métodos requeridos
     func pause() {
         crossfadeTimer?.invalidate()
+        // ✅ FIX Centro de Control: capturar la posición EXACTA del render thread
+        // ANTES de pausar. El display timer (0.3s) dejaba `currentTime` obsoleto
+        // y la barra de Centro de Control/Bloqueo pantalla quedaba desincronizada.
+        if !isUsingFallback,
+           let nodeTime = playerNode.lastRenderTime,
+           let playerTime = playerNode.playerTime(forNodeTime: nodeTime) {
+            let current = seekOffset + Double(playerTime.sampleTime) / sampleRate
+            if current >= 0 && current <= duration {
+                currentTime = current
+            }
+        } else if isUsingFallback, let current = avPlayer?.currentTime().seconds, current.isFinite, current >= 0 {
+            // ✅ FIX fallback: elapsed exacto también con AVPlayer
+            currentTime = current
+        }
         if playerNode.isPlaying {
             playerNode.pause()
         }
@@ -653,6 +665,8 @@ class AudioEngine: NSObject, ObservableObject {
         avPlayer?.pause()
         isPlaying = false
         stopDisplayTimer()
+        // ✅ Publicar la info de Now Playing explícitamente (rate 0 + elapsed exacto)
+        updateNowPlayingInfo()
         saveState()
     }
 
@@ -679,10 +693,20 @@ class AudioEngine: NSObject, ObservableObject {
                 playerNode.play()
                 if let nextNode = nextPlayerNode, isCrossfading {
                     nextNode.play()
+                    // ✅ FIX: si se pausó a mitad del crossfade, el timer de
+                    // migración fue invalidado. Reprogramarlo para que el
+                    // fundido termine de migrar a la canción siguiente.
+                    crossfadeTimer?.invalidate()
+                    let remaining = max(0.1, crossfadeDuration * 0.25 + 0.05)
+                    crossfadeTimer = Timer.scheduledTimer(withTimeInterval: remaining, repeats: false) { [weak self] _ in
+                        self?.completeCrossfade()
+                    }
                 }
             }
         }
         isPlaying = true
+        // ✅ FIX Centro de Control: publicar rate 1.0 + elapsed al reanudar
+        updateNowPlayingInfo()
         startDisplayTimer()
         saveState()
     }
@@ -899,12 +923,13 @@ class AudioEngine: NSObject, ObservableObject {
             scheduleGeneration += 1
             seekOffset = 0
             currentTime = 0
+            // ✅ FIX repeat-one: detener el nodo ANTES de re-programar. Sin esto,
+            // el segmento nuevo se encolaba detrás del anterior y las barras de
+            // progreso (app + Centro de Control) quedaban desincronizadas.
+            playerNode.stop()
             scheduleFile(file, from: 0)
-            if isPlaying {
-                playerNode.play()
-            }
-            // ✅ FIX: Actualizar NowPlayingInfo para Centro de Control/pantalla de bloqueo
-            // cuando la canción se repite, para que la barra de progreso se reinicie correctamente
+            // ✅ FIX: Actualizar NowPlayingInfo con elapsed=0 al repetir, para que
+            // la barra de Centro de Control/pantalla de bloqueo se reinicie correctamente
             updateNowPlayingInfo()
             return
         }
@@ -1204,12 +1229,12 @@ class AudioEngine: NSObject, ObservableObject {
         info[MPNowPlayingInfoPropertyPlaybackRate] = isPlaying ? 1.0 : 0.0
         info[MPNowPlayingInfoPropertyDefaultPlaybackRate] = 1.0
         info[MPMediaItemPropertyPlaybackDuration] = duration
-
-        if !isPlaying {
-            // Solo fijar elapsedTime al pausar o tras seek para que la barra
-            // muestre la posición exacta y NO se reinicie al reanudar.
-            info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = currentTime
-        }
+        // ✅ FIX Centro de Control: enviar SIEMPRE el elapsed. Al (re)iniciar
+        // playback (repeat-one, seek, cambio de pista), si no se envía, iOS
+        // sigue avanzando el elapsed desde el valor anterior (fin de canción)
+        // y la barra de progreso queda desincronizada. Enviarlo en cada
+        // actualización es lo estándar: el sistema lo avanza con el rate.
+        info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = currentTime
 
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
     }

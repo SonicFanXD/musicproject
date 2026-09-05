@@ -43,3 +43,5 @@ Desktop.ini
 # Archivos temporales de audio / pruebas
 *.tmp
 *.log
+# Herramientas locales (no parte de la app)
+OmniCopilot/

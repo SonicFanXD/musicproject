@@ -17,8 +17,17 @@ struct ContentView: View {
     }
     @State private var searchText = ""
     
-    // ✅ Opciones de ordenamiento para categorías
-    @State private var sortOption: SortOption = .title
+    // ✅ Opciones de ordenamiento para categorías (persistidas)
+    @AppStorage("com.aurora.songSort") private var sortOptionRaw = SortOption.title.rawValue
+    private var sortOption: SortOption {
+        SortOption(rawValue: sortOptionRaw) ?? .title
+    }
+    @AppStorage("com.aurora.songSortAscending") private var songSortAscending = true
+    @AppStorage("com.aurora.albumSort") private var albumSortRaw = AlbumSortOption.title.rawValue
+    private var albumSort: AlbumSortOption {
+        AlbumSortOption(rawValue: albumSortRaw) ?? .title
+    }
+    @AppStorage("com.aurora.albumSortAscending") private var albumSortAscending = true
     @State private var showSortMenu = false
 
     var body: some View {
@@ -343,7 +352,7 @@ struct ContentView: View {
         Menu {
             ForEach(SortOption.allCases, id: \.self) { option in
                 Button {
-                    sortOption = option
+                    sortOptionRaw = option.rawValue
                 } label: {
                     HStack {
                         Label(option.title, systemImage: option.icon)
@@ -353,11 +362,72 @@ struct ContentView: View {
                     }
                 }
             }
+            Divider()
+            // ✅ Dirección del orden: ascendente / descendente
+            Button {
+                songSortAscending = true
+            } label: {
+                Label("Ascendente", systemImage: "arrow.up")
+                    .opacity(songSortAscending ? 1 : 0.4)
+            }
+            Button {
+                songSortAscending = false
+            } label: {
+                Label("Descendente", systemImage: "arrow.down")
+                    .opacity(songSortAscending ? 0.4 : 1)
+            }
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: sortOption.icon)
                     .font(.system(size: 11, weight: .semibold))
-                Text("Ordenar: \(sortOption.title)")
+                Text("Ordenar: \(sortOption.title) \(songSortAscending ? "↑" : "↓")")
+                    .font(.system(size: 12, weight: .medium))
+            }
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background {
+                Capsule().fill(Color.secondary.opacity(0.1))
+            }
+        }
+        .buttonStyle(.plain)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 16)
+    }
+
+    // ✅ Botón de ordenamiento para álbumes (con dirección asc/desc)
+    private var albumSortButtonRow: some View {
+        Menu {
+            ForEach(AlbumSortOption.allCases, id: \.self) { option in
+                Button {
+                    albumSortRaw = option.rawValue
+                } label: {
+                    HStack {
+                        Label(option.title, systemImage: option.icon)
+                        if albumSort == option {
+                            Image(systemName: "checkmark")
+                        }
+                    }
+                }
+            }
+            Divider()
+            Button {
+                albumSortAscending = true
+            } label: {
+                Label("Ascendente", systemImage: "arrow.up")
+                    .opacity(albumSortAscending ? 1 : 0.4)
+            }
+            Button {
+                albumSortAscending = false
+            } label: {
+                Label("Descendente", systemImage: "arrow.down")
+                    .opacity(albumSortAscending ? 0.4 : 1)
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: albumSort.icon)
+                    .font(.system(size: 11, weight: .semibold))
+                Text("Ordenar: \(albumSort.title) \(albumSortAscending ? "↑" : "↓")")
                     .font(.system(size: 12, weight: .medium))
             }
             .foregroundStyle(.secondary)
@@ -459,6 +529,10 @@ struct ContentView: View {
             )
             .listRowSeparator(.hidden).listRowBackground(Color.clear)
         } else {
+            // ✅ Botón de ordenamiento para álbumes
+            albumSortButtonRow
+                .listRowSeparator(.hidden)
+                .listRowBackground(Color.clear)
             ForEach(albums) { album in
                 NavigationLink {
                     AlbumDetailView(album: album, audioEngine: audioEngine)
@@ -735,31 +809,77 @@ struct ContentView: View {
         return sortSongs(filtered)
     }
     
-    /// ✅ Ordenar canciones según la opción seleccionada
+    /// ✅ Ordenar canciones según la opción y dirección seleccionadas
     private func sortSongs(_ songs: [Song]) -> [Song] {
+        let ascending = songSortAscending
         switch sortOption {
+        // ✅ localizedStandardCompare: orden estilo Finder/Música (tildes correctas,
+        // "Track 2" antes que "Track 10")
         case .title:
-            return songs.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+            return songs.sorted {
+                let r = $0.title.localizedStandardCompare($1.title)
+                return ascending ? r == .orderedAscending : r == .orderedDescending
+            }
         case .artist:
-            return songs.sorted { $0.artist.localizedCaseInsensitiveCompare($1.artist) == .orderedAscending }
+            return songs.sorted {
+                let r = $0.artist.localizedStandardCompare($1.artist)
+                return ascending ? r == .orderedAscending : r == .orderedDescending
+            }
         case .album:
-            return songs.sorted { $0.album.localizedCaseInsensitiveCompare($1.album) == .orderedAscending }
+            return songs.sorted {
+                let r = $0.album.localizedStandardCompare($1.album)
+                return ascending ? r == .orderedAscending : r == .orderedDescending
+            }
         case .duration:
-            return songs.sorted { $0.duration < $1.duration }
+            return ascending ? songs.sorted { $0.duration < $1.duration }
+                             : songs.sorted { $0.duration > $1.duration }
         case .year:
-            return songs.sorted { ($0.releaseDate ?? Date.distantPast) > ($1.releaseDate ?? Date.distantPast) }
+            return ascending ? songs.sorted { ($0.releaseDate ?? Date.distantPast) < ($1.releaseDate ?? Date.distantPast) }
+                             : songs.sorted { ($0.releaseDate ?? Date.distantPast) > ($1.releaseDate ?? Date.distantPast) }
         case .recentlyAdded:
-            return songs // Ya están en orden de indexación
+            return ascending ? songs : Array(songs.reversed())
         }
     }
 
     private var filteredAlbums: [Album] {
         let albums = fileAccessService.albums
         let query = normalizedQuery
-        guard !query.isEmpty else { return albums }
-        return albums.filter {
-            $0.name.lowercased().contains(query) ||
-            $0.artist.lowercased().contains(query)
+        let filtered: [Album]
+        if query.isEmpty {
+            filtered = albums
+        } else {
+            filtered = albums.filter {
+                $0.name.lowercased().contains(query) ||
+                $0.artist.lowercased().contains(query)
+            }
+        }
+        // ✅ Aplicar ordenamiento y dirección seleccionados
+        return sortAlbums(filtered)
+    }
+
+    /// ✅ Ordenar álbumes según la opción y dirección seleccionadas
+    private func sortAlbums(_ albums: [Album]) -> [Album] {
+        let ascending = albumSortAscending
+        switch albumSort {
+        case .title:
+            return albums.sorted {
+                let r = $0.name.localizedStandardCompare($1.name)
+                return ascending ? r == .orderedAscending : r == .orderedDescending
+            }
+        case .artist:
+            return albums.sorted {
+                let r = $0.artist.localizedStandardCompare($1.artist)
+                return ascending ? r == .orderedAscending : r == .orderedDescending
+            }
+        case .songCount:
+            return ascending ? albums.sorted { $0.songs.count < $1.songs.count }
+                             : albums.sorted { $0.songs.count > $1.songs.count }
+        case .year:
+            let year = { (album: Album) -> Date in
+                album.songs.compactMap(\.releaseDate).min() ?? Date.distantPast
+            }
+            return ascending ? albums.sorted { year($0) < year($1) }
+                             : albums.sorted { year($0) > year($1) }
         }
     }
 
@@ -848,6 +968,29 @@ enum SortOption: String, CaseIterable {
         case .duration: return "clock"
         case .year: return "calendar"
         case .recentlyAdded: return "clock.arrow.circlepath"
+        }
+    }
+}
+
+// ✅ Opciones de ordenamiento para álbumes
+enum AlbumSortOption: String, CaseIterable {
+    case title, artist, songCount, year
+
+    var title: String {
+        switch self {
+        case .title: return "Título"
+        case .artist: return "Artista"
+        case .songCount: return "Nº de canciones"
+        case .year: return "Año"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .title: return "textformat.abc"
+        case .artist: return "person.fill"
+        case .songCount: return "music.note.list"
+        case .year: return "calendar"
         }
     }
 }

@@ -14,43 +14,25 @@ struct MaskedLyricText: View {
     let fontWeight: Font.Weight
 
     var body: some View {
-        ZStack(alignment: .leading) {
-            Text(text)
-                .font(.system(size: fontSize, weight: fontWeight))
-                .foregroundStyle(highlightColor)
-                .opacity(0) // mide el ancho real sin mostrarlo
-                .background(
-                    GeometryReader { geo in
-                        Color.clear
-                            .preference(key: TextWidthKey.self, value: geo.size.width)
+        // ✅ FIX: la máscara usa un GeometryReader LOCAL (mask alignment .leading),
+        // así cada línea mide su propio ancho. La versión anterior usaba una
+        // PreferenceKey compartida: con varias líneas en el LazyVStack todas
+        // recibían el mismo ancho y el efecto karaoke no se veía.
+        Text(text)
+            .font(.system(size: fontSize, weight: fontWeight))
+            .foregroundStyle(baseColor)
+            .overlay(alignment: .leading) {
+                Text(text)
+                    .font(.system(size: fontSize, weight: fontWeight))
+                    .foregroundStyle(highlightColor)
+                    .mask(alignment: .leading) {
+                        GeometryReader { geo in
+                            Rectangle()
+                                .frame(width: geo.size.width * CGFloat(min(max(progress, 0), 1)))
+                        }
                     }
-                )
-            // Capa gris (base)
-            Text(text)
-                .font(.system(size: fontSize, weight: fontWeight))
-                .foregroundStyle(baseColor)
-            // Capa blanca recortada (left→right) según progreso
-            Text(text)
-                .font(.system(size: fontSize, weight: fontWeight))
-                .foregroundStyle(highlightColor)
-                .mask(
-                    Rectangle()
-                        .frame(width: measuredWidth * CGFloat(min(max(progress, 0), 1)))
-                )
-        }
-        .onPreferenceChange(TextWidthKey.self) { width in
-            measuredWidth = width
-        }
-        .lineLimit(1)
-    }
-
-    @State private var measuredWidth: CGFloat = 0
-}
-
-private struct TextWidthKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
+            }
+            .lineLimit(1)
     }
 }
 
@@ -192,7 +174,12 @@ struct LyricsView: View {
             }
             .onChange(of: scrollTarget) { target in
                 if let target = target {
-                    withAnimation(.easeInOut(duration: 0.5)) { proxy.scrollTo(target, anchor: .center) }
+                    // ✅ Spring críticamente amortiguado (damping 1.0): desplazamiento
+                    // suave y directo SIN rebote (antes "subía y bajaba" con easeInOut
+                    // + anchos de línea distintos). Animación de offset → GPU, 60fps.
+                    withAnimation(.spring(response: 0.55, dampingFraction: 1.0)) {
+                        proxy.scrollTo(target, anchor: .center)
+                    }
                 }
             }
         }
@@ -223,7 +210,10 @@ struct LyricsView: View {
             }
             .onChange(of: scrollTarget) { target in
                 if let target = target {
-                    withAnimation(.easeInOut(duration: 0.5)) { proxy.scrollTo(target, anchor: .center) }
+                    // ✅ Misma animación amortiguada que el auto-scroll (consistencia)
+                    withAnimation(.spring(response: 0.55, dampingFraction: 1.0)) {
+                        proxy.scrollTo(target, anchor: .center)
+                    }
                 }
             }
         }
@@ -234,7 +224,8 @@ struct LyricsView: View {
         Haptics.light()
         audioEngine.seek(to: time)
         currentLineIndex = index
-        withAnimation(.easeInOut(duration: 0.4)) {
+        // ✅ Misma animación amortiguada que el auto-scroll (consistencia)
+        withAnimation(.spring(response: 0.55, dampingFraction: 1.0)) {
             proxy.scrollTo(index, anchor: .center)
         }
     }
@@ -255,7 +246,8 @@ struct LyricsView: View {
             .scaleEffect(isActive ? 1.0 : 0.95)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.vertical, 10)
-            .animation(.spring(response: 0.35, dampingFraction: 0.75), value: isActive)
+            // ✅ Amortiguación crítica: transición de línea sin rebote (60fps, GPU)
+            .animation(.spring(response: 0.4, dampingFraction: 1.0), value: isActive)
     }
 
     // MARK: - Word by Word Line View
@@ -268,8 +260,8 @@ struct LyricsView: View {
             MaskedLyricText(
                 text: words.map(\.text).joined(separator: " "),
                 baseColor: isActive ? Color.secondary : Color.secondary.opacity(0.6),
-                // ✅ Gradiente en el highlight del karaoke (más premium, mismo costo)
-                highlightColor: Color.white,
+                // ✅ FIX: usa AppTheme.accent para respetar el ajuste "Color de acento"
+                highlightColor: AppTheme.accent,
                 progress: lineProgress,
                 fontSize: isActive ? 23 : 19,
                 fontWeight: isActive ? .bold : .medium
@@ -304,7 +296,9 @@ struct LyricsView: View {
 
         var newProgress: [UUID: Double] = [:]
 
-        let windowStart = time - 0.3
+        // ✅ FIX: ventana amplia hacia atrás para que las palabras ya cantadas
+        // mantengan progreso 1.0 (antes con 0.3s el karaoke "retrocedía").
+        let windowStart = time - 15.0
         let windowEnd = time + 2.0
 
         var startIndex = 0
