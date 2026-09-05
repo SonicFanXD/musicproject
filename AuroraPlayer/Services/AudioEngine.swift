@@ -1253,7 +1253,7 @@ class AudioEngine: NSObject, ObservableObject {
         if let shuffle = state["isShuffleEnabled"] as? Bool {
             isShuffleEnabled = shuffle
         }
-        if let repeatRaw = state["repeatMode"] as? Int,
+        if let repeatRaw = state["repeatMode"] as? String,
            let mode = RepeatMode(rawValue: repeatRaw) {
             repeatMode = mode
         }

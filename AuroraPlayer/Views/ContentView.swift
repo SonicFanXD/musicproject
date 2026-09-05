@@ -588,7 +588,7 @@ struct ContentView: View {
             } label: {
                 Image(systemName: isLiked ? "heart.fill" : "heart")
                     .font(.system(size: 16, weight: .medium))
-                    .foregroundStyle(isLiked ? .red : .tertiary)
+                    .foregroundStyle(isLiked ? Color.red : Color.secondary.opacity(0.4))
                     .frame(width: 36, height: 36)
                     .contentShape(Rectangle())
             }

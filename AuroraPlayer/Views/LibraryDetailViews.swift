@@ -60,11 +60,11 @@ struct AlbumDetailView: View {
             }
             // ✅ Extraer el color dominante VIVO de la carátula en hilo de fondo
             guard let artwork = album.artwork else { return }
-            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            DispatchQueue.global(qos: .userInitiated).async {
                 let dominant = AppTheme.dominantColor(from: artwork)
                 DispatchQueue.main.async {
                     withAnimation(.easeInOut(duration: 0.3)) {
-                        self?.liveDominantColor = dominant
+                        self.liveDominantColor = dominant
                     }
                 }
             }
