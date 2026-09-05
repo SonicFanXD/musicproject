@@ -35,7 +35,7 @@ struct PlaylistsView: View {
             .toolbar {
                 // Título personalizado consistente con la app
                 ToolbarItem(placement: .principal) {
-                    Text("Listas de Reproducción")
+                    Text(Localization.localized("playlists.title"))
                         .font(.system(size: 18, weight: .bold, design: .rounded))
                         .foregroundStyle(
                             LinearGradient(
@@ -46,7 +46,7 @@ struct PlaylistsView: View {
                         )
                         .lineLimit(1)
                         .minimumScaleFactor(0.7)
-                        .accessibilityLabel("Listas de Reproducción")
+                        .accessibilityLabel(Localization.localized("playlists.title"))
                 }
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button {
@@ -89,10 +89,10 @@ struct PlaylistsView: View {
                     .foregroundStyle(Color.accentColor)
             }
 
-            Text("Tus Listas")
+            Text(Localization.localized("playlists.yourPlaylists"))
                 .font(.system(size: 24, weight: .bold))
 
-            Text("Crea y gestiona tus listas de reproducción personalizadas")
+            Text(Localization.localized("playlists.subtitle"))
                 .font(.system(size: 15))
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -109,11 +109,11 @@ struct PlaylistsView: View {
                 .font(.system(size: 48))
                 .foregroundStyle(.tertiary)
 
-            Text("Sin listas de reproducción")
+            Text(Localization.localized("playlists.empty"))
                 .font(.system(size: 18, weight: .semibold))
                 .foregroundStyle(.secondary)
 
-            Text("Crea tu primera lista para organizar tu música")
+            Text(Localization.localized("playlists.emptySubtitle2"))
                 .font(.system(size: 14))
                 .foregroundStyle(.tertiary)
                 .multilineTextAlignment(.center)
@@ -236,10 +236,10 @@ struct PlaylistsView: View {
                                     .foregroundStyle(Color.accentColor)
                             }
 
-                            Text("Nueva Lista")
+                            Text(Localization.localized("playlists.newPlaylist"))
                                 .font(.system(size: 22, weight: .bold))
 
-                            Text("Crea una nueva lista de reproducción personalizada")
+                            Text(Localization.localized("playlists.newPlaylistSubtitle"))
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
                                 .multilineTextAlignment(.center)
@@ -250,21 +250,21 @@ struct PlaylistsView: View {
 
                         VStack(spacing: 16) {
                             VStack(alignment: .leading, spacing: 8) {
-                                Text("Nombre")
+                                Text(Localization.localized("playlists.name"))
                                     .font(.system(size: 14, weight: .semibold))
                                     .foregroundStyle(.secondary)
 
-                                TextField("Mi lista", text: $newPlaylistName)
+                                TextField(Localization.localized("playlists.placeholderName"), text: $newPlaylistName)
                                     .textFieldStyle(.roundedBorder)
                                     .padding(.horizontal, 4)
                             }
 
                             VStack(alignment: .leading, spacing: 8) {
-                                Text("Descripción (opcional)")
+                                Text(Localization.localized("playlists.descriptionOptional"))
                                     .font(.system(size: 14, weight: .semibold))
                                     .foregroundStyle(.secondary)
 
-                                TextField("Descripción de la lista", text: $newPlaylistDescription)
+                                TextField(Localization.localized("playlists.placeholderDescription"), text: $newPlaylistDescription)
                                     .textFieldStyle(.roundedBorder)
                                     .padding(.horizontal, 4)
                             }
@@ -278,7 +278,7 @@ struct PlaylistsView: View {
                                 Image(systemName: "plus.circle.fill")
                                     .font(.system(size: 18, weight: .semibold))
 
-                                Text("Crear Lista")
+                                Text(Localization.localized("playlists.createPlaylist"))
                                     .font(.system(size: 17, weight: .semibold))
                             }
                             .foregroundStyle(.white)

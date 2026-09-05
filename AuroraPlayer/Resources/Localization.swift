@@ -117,6 +117,22 @@ enum Localization {
             // App name
             "app.name": [.spanish: "Aurora Player", .english: "Aurora Player"],
 
+            // Playlists
+            "playlists.title": [.spanish: "Listas de Reproducción", .english: "Playlists"],
+            "playlists.yourPlaylists": [.spanish: "Tus Listas", .english: "Your Playlists"],
+            "playlists.subtitle": [.spanish: "Crea y gestiona tus listas de reproducción personalizadas", .english: "Create and manage your custom playlists"],
+            "playlists.newPlaylist": [.spanish: "Nueva Lista", .english: "New Playlist"],
+            "playlists.newPlaylistSubtitle": [.spanish: "Crea una nueva lista de reproducción personalizada", .english: "Create a new custom playlist"],
+            "playlists.name": [.spanish: "Nombre", .english: "Name"],
+            "playlists.description": [.spanish: "Descripción", .english: "Description"],
+            "playlists.descriptionOptional": [.spanish: "Descripción (opcional)", .english: "Description (optional)"],
+            "playlists.createPlaylist": [.spanish: "Crear Lista", .english: "Create Playlist"],
+            "playlists.placeholderName": [.spanish: "Mi lista", .english: "My playlist"],
+            "playlists.placeholderDescription": [.spanish: "Descripción de la lista", .english: "Playlist description"],
+            "playlists.empty": [.spanish: "No hay listas", .english: "No playlists"],
+            "playlists.emptySubtitle": [.spanish: "Crea tu primera lista de reproducción", .english: "Create your first playlist"],
+            "playlists.emptySubtitle2": [.spanish: "Crea tu primera lista para organizar tu música", .english: "Create your first list to organize your music"],
+
             // Indexing / Escaneo
             "indexing.updating": [.spanish: "Actualizando...", .english: "Updating..."],
             "indexing.indexingLibrary": [.spanish: "Indexando tu biblioteca", .english: "Indexing your library"],
