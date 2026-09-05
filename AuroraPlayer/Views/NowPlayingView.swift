@@ -186,20 +186,27 @@ struct NowPlayingView: View {
             .sheet(isPresented: $showQueue) {
                 QueueView(audioEngine: audioEngine)
             }
-            .sheet(isPresented: $showQualityDetail) {
-                qualityCardModal
+            .overlay {
+                // ✅ Modal centrado como ventana emergente (no sheet) — se ve el NowPlaying de fondo
+                if showQualityDetail {
+                    qualityCardModal
+                        .transition(.opacity.combined(with: .scale(scale: 0.92)))
+                }
             }
+            .animation(.spring(response: 0.35, dampingFraction: 0.85), value: showQualityDetail)
         }
     }
 
-    // MARK: - Modal centrado con X (mejorado, estilo ventana emergente)
+    // MARK: - Modal centrado con X (ventana emergente sobre el NowPlaying)
     private var qualityCardModal: some View {
         ZStack {
-            // Fondo oscuro semitransparente que bloquea el NowPlaying detrás
-            Color.black.opacity(0.4)
+            // ✅ Fondo semitransparente que deja ver el NowPlayingView detrás
+            Color.black.opacity(0.35)
                 .ignoresSafeArea()
                 .onTapGesture {
-                    showQualityDetail = false
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                        showQualityDetail = false
+                    }
                 }
 
             // Tarjeta modal centrada
@@ -219,7 +226,9 @@ struct NowPlayingView: View {
                     // Botón X
                     Button {
                         Haptics.light()
-                        showQualityDetail = false
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                            showQualityDetail = false
+                        }
                     } label: {
                         Image(systemName: "xmark")
                             .font(.system(size: 13, weight: .bold))

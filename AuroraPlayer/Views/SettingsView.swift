@@ -153,7 +153,7 @@ struct SettingsView: View {
                             }
                         }
 
-                        // Visual Section — Tema y color de acento
+                        // Visual Section — Tema, color y personalización visual
                         settingsSection(
                             icon: "paintbrush.fill",
                             title: "Apariencia",
@@ -278,6 +278,8 @@ struct SettingsView: View {
                                 isOn: $keepScreenOn
                             )
                         }
+
+                        // NEW: Reproducción / Comportamiento (ya fusionado arriba)
 
                         // NEW: Tecnica / Rendimiento
                         settingsSection(
