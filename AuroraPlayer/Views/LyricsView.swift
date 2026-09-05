@@ -1,6 +1,39 @@
 import SwiftUI
 import UIKit
 
+// MARK: - Letra con máscara de progreso (estilo Apple Music, sin re-render por palabra)
+struct MaskedLyricText: View {
+    let text: String
+    let baseColor: Color
+    let highlightColor: Color
+    /// 0...1 = cuanto texto está "iluminado" (blanco)
+    let progress: Double
+    let fontSize: CGFloat
+    let fontWeight: Font.Weight
+
+    var body: some View {
+        ZStack(alignment: .leading) {
+            // Capa gris (base)
+            Text(text)
+                .font(.system(size: fontSize, weight: fontWeight))
+                .foregroundStyle(baseColor)
+
+            // Capa blanca recortada al progreso (izquierda→derecha)
+            Text(text)
+                .font(.system(size: fontSize, weight: fontWeight))
+                .foregroundStyle(highlightColor)
+                .mask(
+                    GeometryReader { geo in
+                        Rectangle()
+                            .frame(width: geo.size.width * CGFloat(min(max(progress, 0), 1)))
+                            .offset(x: 0, y: 0)
+                    }
+                )
+        }
+        .lineLimit(1)
+    }
+}
+
 struct LyricsView: View {
     let song: Song?
     @ObservedObject var audioEngine: AudioEngine
@@ -11,8 +44,7 @@ struct LyricsView: View {
     @State private var scrollTarget: Int? = nil
     @State private var wordProgress: [UUID: Double] = [:]
 
-    // ✅ OPTIMIZACIÓN: palabras agrupadas por línea UNA sola vez (O(n) al parsear),
-    // en lugar de filtrar O(n²) en cada frame de render como antes.
+    // ✅ OPTIMIZACIÓN: palabras agrupadas por línea UNA sola vez (O(n) al parsear)
     @State private var wordsByLine: [[LyricWord]] = []
 
     var body: some View {
@@ -107,18 +139,21 @@ struct LyricsView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity).padding(.vertical, 60)
     }
 
-    // MARK: - Plain Lyrics View
+    // MARK: - Plain Lyrics View (mejorado: fondo glass + scroll)
     private func plainLyricsView(text: String) -> some View {
         ScrollView {
-            Text(text).font(.system(size: 19, weight: .medium)).foregroundStyle(.primary).lineSpacing(14)
-                .padding(24).frame(maxWidth: .infinity, alignment: .leading)
+            Text(text)
+                .font(.system(size: 19, weight: .medium))
+                .foregroundStyle(.primary)
+                .lineSpacing(14)
+                .padding(24)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
-    // MARK: - Synchronized Lyrics View (con tap-to-seek)
+    // MARK: - Synchronized Lyrics View (línea animada con spring + tap-to-seek)
     private func synchronizedLyricsView(lyrics: SynchronizedLyrics) -> some View {
         ScrollViewReader { proxy in
-            // ✅ OPTIMIZACIÓN: LazyVStack solo crea las líneas visibles
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 18) {
                     ForEach(Array(lyrics.lines.enumerated()), id: \.element.id) { index, line in
@@ -140,14 +175,12 @@ struct LyricsView: View {
         }
     }
 
-    // MARK: - Word by Word Lyrics View (karaoke animado + tap-to-seek)
+    // MARK: - Word by Word Lyrics View (karaoke estilo Apple Music + tap-to-seek)
     private func wordByWordLyricsView(lyrics: SynchronizedLyrics) -> some View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 22) {
                     ForEach(Array(lyrics.lines.enumerated()), id: \.element.id) { index, line in
-                        // ✅ OPTIMIZACIÓN: usa el array precalculado wordsByLine (O(1) por línea)
-                        // en vez de filtrar todas las palabras en cada render
                         let wordsInLine = index < wordsByLine.count ? wordsByLine[index] : []
 
                         wordByWordLineView(line: line, words: wordsInLine, isActive: currentLineIndex == index)
@@ -174,58 +207,60 @@ struct LyricsView: View {
     }
 
     // MARK: - Seek a línea (tap en letra)
-    // ✅ FIX del bug: tras el seek, el AudioEngine ahora mantiene el reloj consistente
-    // (seekOffset actualizado), así que la animación CONTINÚA desde la línea tocada
-    // en vez de reiniciar. Además marcamos la línea como activa inmediatamente
-    // y hacemos scroll para que el usuario vea el salto al instante.
     private func seekToLine(_ index: Int, time: TimeInterval, proxy: ScrollViewProxy) {
         Haptics.light()
         audioEngine.seek(to: time)
         currentLineIndex = index
-        // Scroll inmediato para feedback visual instantáneo
         withAnimation(.easeInOut(duration: 0.4)) {
             proxy.scrollTo(index, anchor: .center)
         }
     }
 
-    // MARK: - Lyric Line View (brillante)
+    // MARK: - Lyric Line View (animación de línea mejorada: escala + opacidad)
     private func lyricLineView(line: LyricLine, isActive: Bool) -> some View {
         Text(line.text)
             .font(.system(size: isActive ? 24 : 20, weight: isActive ? .bold : .medium))
             .foregroundStyle(isActive ? .primary : .secondary)
-            .opacity(isActive ? 1.0 : 0.8)
+            .opacity(isActive ? 1.0 : 0.65)
+            .scaleEffect(isActive ? 1.0 : 0.95)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.vertical, 10)
-            .animation(.spring(response: 0.4, dampingFraction: 0.8), value: isActive)
+            .animation(.spring(response: 0.35, dampingFraction: 0.75), value: isActive)
     }
 
-    // MARK: - Word by Word Line View (karaoke con animación fluida)
+    // MARK: - Word by Word Line View
+    // Estilo Apple Music: la línea se muestra gris y las palabras se van
+    // "cubriendo de blanco" según su progreso. Optimizado: un solo Text
+    // con máscara por línea (no re-render por palabra).
+    // Single-line "karaoke" usando máscara continua (más suave y barato)
     private func wordByWordLineView(line: LyricLine, words: [LyricWord], isActive: Bool) -> some View {
-        HStack(alignment: .center, spacing: 5) {
-            ForEach(Array(words.enumerated()), id: \.element.id) { _, word in
-                let progress = wordProgress[word.id] ?? 0.0
-
-                Text(word.text)
-                    .font(.system(size: isActive ? 22 : 18, weight: progress > 0 ? .bold : .medium))
-                    .foregroundStyle(karaokeColor(progress: progress, isActive: isActive))
-                    .opacity(isActive ? (progress > 0 ? 1.0 : 0.85) : 0.75)
-                    .scaleEffect(1.0 + (progress * 0.08))
-                    .animation(.spring(response: 0.35, dampingFraction: 0.7), value: progress)
-            }
+        VStack(alignment: .leading, spacing: 6) {
+            MaskedLyricText(
+                text: words.map(\.text).joined(separator: " "),
+                baseColor: isActive ? Color.secondary : Color.secondary.opacity(0.6),
+                highlightColor: .white,
+                progress: lineProgress,
+                fontSize: isActive ? 23 : 19,
+                fontWeight: isActive ? .bold : .medium
+            )
+            .animation(.easeOut(duration: 0.15), value: lineProgress)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 8)
     }
 
-    // MARK: - Color karaoke (gradiente de inactivo a activo)
-    private func karaokeColor(progress: Double, isActive: Bool) -> Color {
-        if !isActive { return .secondary }
-        if progress >= 1.0 { return Color.accentColor }
-        if progress > 0 { return Color.accentColor.opacity(0.4 + progress * 0.6) }
-        return .primary
+    // Progreso de la línea activa: suma de progresos de sus palabras / nº de palabras.
+    // wordProgress solo contiene palabras dentro de la ventana temporal cercana,
+    // así que accedemos por id a las de la línea activa.
+    private var lineProgress: Double {
+        guard let current = currentLineIndex, current >= 0, current < wordsByLine.count else { return 0 }
+        let lineWords = wordsByLine[current]
+        guard !lineWords.isEmpty else { return 0 }
+        let total = lineWords.reduce(0.0) { $0 + (wordProgress[$1.id] ?? 0.0) }
+        return min(1.0, total / Double(lineWords.count))
     }
 
-    // MARK: - Update Word Progress (animación karaoke suave)
+    // MARK: - Update Word Progress (búsqueda binaria + ventana)
     private func updateWordProgress(for time: TimeInterval) {
         guard case .synchronized(let syncLyrics) = parsedLyrics,
               syncLyrics.isWordByWord else { return }
@@ -238,7 +273,6 @@ struct LyricsView: View {
 
         var newProgress: [UUID: Double] = [:]
 
-        // Binary search para ventana de tiempo
         let windowStart = time - 0.3
         let windowEnd = time + 2.0
 
@@ -294,9 +328,6 @@ struct LyricsView: View {
         let parsed = LyricsParser.parse(lyrics)
         parsedLyrics = parsed
 
-        // ✅ OPTIMIZACIÓN: agrupar palabras por línea UNA vez (O(n)) en lugar de
-        // filtrar en cada render (O(n²) por frame). También se hace en background
-        // para no bloquear el primer frame en canciones con muchas letras.
         if case .synchronized(let syncLyrics) = parsed, syncLyrics.isWordByWord {
             let lines = syncLyrics.lines
             let words = syncLyrics.words
@@ -308,7 +339,6 @@ struct LyricsView: View {
                     var lineWords: [LyricWord] = []
                     let lineEnd = lineIndex < lines.count - 1 ? lines[lineIndex + 1].time : .infinity
 
-                    // Las palabras están ordenadas por tiempo: avance lineal
                     while wordIndex < words.count, words[wordIndex].time < line.time {
                         wordIndex += 1
                     }

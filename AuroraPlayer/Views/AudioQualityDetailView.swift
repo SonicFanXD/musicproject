@@ -1,4 +1,5 @@
 import SwiftUI
+import AVFoundation
 
 /// Ventana emergente estilo PowerAmp: muestra la calidad del archivo fuente
 /// y la cadena de procesamiento completa hasta la salida física.

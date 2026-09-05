@@ -26,8 +26,8 @@ struct SettingsView: View {
     private let themeDefaultsKey = "com.aurora.uiTheme"
 
     private var appVersion: String {
-        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.3.1"
-        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "5"
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.3.2"
+        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "7"
         return "\(version) (\(build))"
     }
 
@@ -476,7 +476,7 @@ struct SettingsView: View {
 
             Spacer()
 
-            Text(value)
+             Text(value)
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(.primary)
                 .monospacedDigit()

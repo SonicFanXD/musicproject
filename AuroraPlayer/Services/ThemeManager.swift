@@ -16,7 +16,8 @@ final class ThemeManager: ObservableObject {
     }
 
     private init() {
-        let saved = UserDefaults.standard.integer(forKey: key)
+        // ✅ FIX CI: 'key' es estático, debe referenciarse como Self.key
+        let saved = UserDefaults.standard.integer(forKey: Self.key)
         accentIndex = (saved >= 0 && saved < 5) ? saved : 0
     }
 
