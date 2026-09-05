@@ -1,36 +1,56 @@
 import SwiftUI
 import UIKit
 
-// MARK: - Letra con máscara de progreso (estilo Apple Music, sin re-render por palabra)
+// MARK: - Letra con máscara de progreso (estilo Apple Music)
+// El problema anterior: el GeometryReader de la máscara no tenía tamaño
+// definido → el ancho era 0 y el texto nunca se "iluminaba".
+// Fix: se mide el Text una sola vez y la máscara usa ese ancho.
 struct MaskedLyricText: View {
     let text: String
     let baseColor: Color
     let highlightColor: Color
-    /// 0...1 = cuanto texto está "iluminado" (blanco)
     let progress: Double
     let fontSize: CGFloat
     let fontWeight: Font.Weight
 
     var body: some View {
         ZStack(alignment: .leading) {
+            Text(text)
+                .font(.system(size: fontSize, weight: fontWeight))
+                .foregroundStyle(highlightColor)
+                .opacity(0) // mide el ancho real sin mostrarlo
+                .background(
+                    GeometryReader { geo in
+                        Color.clear
+                            .preference(key: TextWidthKey.self, value: geo.size.width)
+                    }
+                )
             // Capa gris (base)
             Text(text)
                 .font(.system(size: fontSize, weight: fontWeight))
                 .foregroundStyle(baseColor)
-
-            // Capa blanca recortada al progreso (izquierda→derecha)
+            // Capa blanca recortada (left→right) según progreso
             Text(text)
                 .font(.system(size: fontSize, weight: fontWeight))
                 .foregroundStyle(highlightColor)
                 .mask(
-                    GeometryReader { geo in
-                        Rectangle()
-                            .frame(width: geo.size.width * CGFloat(min(max(progress, 0), 1)))
-                            .offset(x: 0, y: 0)
-                    }
+                    Rectangle()
+                        .frame(width: measuredWidth * CGFloat(min(max(progress, 0), 1)))
                 )
         }
+        .onPreferenceChange(TextWidthKey.self) { width in
+            measuredWidth = width
+        }
         .lineLimit(1)
+    }
+
+    @State private var measuredWidth: CGFloat = 0
+}
+
+private struct TextWidthKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
     }
 }
 

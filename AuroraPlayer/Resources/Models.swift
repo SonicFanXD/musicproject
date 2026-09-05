@@ -130,7 +130,7 @@ struct Song: Identifiable, Equatable, Codable {
 extension Song {
     private static let artworkCache: NSCache<NSUUID, UIImage> = {
         let cache = NSCache<NSUUID, UIImage>()
-        cache.countLimit = 300
+        cache.countLimit = 500 // ✅ Aumentado para mantener más portadas en caché
         return cache
     }()
 

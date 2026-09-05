@@ -6,6 +6,10 @@ struct AlbumDetailView: View {
     @ObservedObject var audioEngine: AudioEngine
     @Environment(\.dismiss) private var dismiss
 
+    // ✅ Color dominante VIVO (histograma HSB) extraído en segundo plano
+    @State private var liveDominantColor: UIColor? = nil
+    @State private var appearAnimation = false
+
     private var songs: [Song] { album.songs }
     private var totalDuration: TimeInterval { songs.reduce(0) { $0 + $1.duration } }
     private var hasMultipleDiscs: Bool { Set(songs.compactMap { $0.discNumber }).count > 1 }
@@ -13,9 +17,12 @@ struct AlbumDetailView: View {
         let grouped = Dictionary(grouping: songs) { $0.discNumber ?? 1 }
         return grouped.keys.sorted().map { ($0, grouped[$0]!.sorted { $0.trackNumber < $1.trackNumber }) }
     }
-    // ✅ FIX: normalizar el color dominante del álbum para que siempre sea
-    // legible (saturación/brillo adecuados) y concuerde con la portada.
-    private var tintColor: Color { AppTheme.readableColor(from: album.dominantColor) }
+    // ✅ FIX: color normalizado para legibilidad; usa el vivo si ya se extrajo
+    private var tintColor: Color { AppTheme.readableColor(from: liveDominantColor ?? album.dominantColor) }
+    // ✅ UIColor crudo para calcular contraste de textos/botones
+    private var tintUIColor: UIColor { liveDominantColor ?? album.dominantColor ?? UIColor.systemPurple }
+    // ✅ Contraste: blanco o negro según luminancia del color de la portada
+    private var onTintColor: Color { AppTheme.contrastingText(on: tintUIColor) }
 
     var body: some View {
         ScrollView {
@@ -46,61 +53,95 @@ struct AlbumDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(Color(UIColor.systemBackground).opacity(0.92), for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
+        .onAppear {
+            // ✅ Animación de entrada suave
+            withAnimation(.easeOut(duration: 0.4)) {
+                appearAnimation = true
+            }
+            // ✅ Extraer el color dominante VIVO de la carátula en hilo de fondo
+            guard let artwork = album.artwork else { return }
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                let dominant = AppTheme.dominantColor(from: artwork)
+                DispatchQueue.main.async {
+                    withAnimation(.easeInOut(duration: 0.3)) {
+                        self?.liveDominantColor = dominant
+                    }
+                }
+            }
+        }
     }
 
     private var heroSection: some View {
-        VStack(spacing: 18) {
+        VStack(spacing: 20) {
+            // ✅ Artwork con animación de entrada y brillo sutil
             Group {
                 if let artwork = album.artwork {
                     Image(uiImage: artwork)
                         .resizable().interpolation(.high).scaledToFill()
-                        .frame(width: 240, height: 240)
-                        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+                        .frame(width: 250, height: 250)
+                        .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
                         .overlay {
-                            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                            // ✅ Brillo premium en el borde
+                            RoundedRectangle(cornerRadius: 26, style: .continuous)
                                 .strokeBorder(
                                     LinearGradient(
-                                        colors: [.white.opacity(0.25), .white.opacity(0.05)],
+                                        colors: [.white.opacity(0.3), .white.opacity(0.05), .clear],
                                         startPoint: .topLeading, endPoint: .bottomTrailing
                                     ),
-                                    lineWidth: 1
+                                    lineWidth: 1.2
                                 )
                         }
-                        .shadow(color: .black.opacity(0.35), radius: 28, x: 0, y: 16)
+                        .shadow(color: .black.opacity(0.4), radius: 30, x: 0, y: 18)
+                        .shadow(color: tintColor.opacity(0.2), radius: 15, x: 0, y: 5)
                 } else {
                     ZStack {
-                        RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        RoundedRectangle(cornerRadius: 26, style: .continuous)
                             .fill(
                                 LinearGradient(
-                                    colors: [tintColor.opacity(0.25), Color.secondary.opacity(0.2)],
+                                    colors: [tintColor.opacity(0.3), tintColor.opacity(0.1), Color.secondary.opacity(0.15)],
                                     startPoint: .topLeading, endPoint: .bottomTrailing
                                 )
                             )
-                            .frame(width: 240, height: 240)
+                            .frame(width: 250, height: 250)
                         Image(systemName: "square.stack")
-                            .font(.system(size: 60))
-                            .foregroundStyle(.secondary.opacity(0.8))
+                            .font(.system(size: 65, weight: .light))
+                            .foregroundStyle(.secondary.opacity(0.7))
                     }
                     .shadow(color: .black.opacity(0.2), radius: 20, x: 0, y: 10)
                 }
             }
             .padding(.top, 16)
+            .scaleEffect(appearAnimation ? 1.0 : 0.9)
+            .opacity(appearAnimation ? 1.0 : 0)
+            .animation(.spring(response: 0.5, dampingFraction: 0.8), value: appearAnimation)
 
-            VStack(spacing: 6) {
+            // ✅ Info del álbum con mejor jerarquía visual
+            VStack(spacing: 8) {
                 Text(album.name)
-                    .font(.system(size: 24, weight: .bold, design: .rounded))
-                    .multilineTextAlignment(.center).foregroundStyle(.primary).lineLimit(2)
+                    .font(.system(size: 26, weight: .bold, design: .rounded))
+                    .multilineTextAlignment(.center)
+                    .foregroundStyle(.primary)
+                    .lineLimit(2)
                 Text(album.artist)
-                    .font(.system(size: 17, weight: .medium)).foregroundStyle(.secondary).lineLimit(1)
+                    .font(.system(size: 18, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
             .padding(.horizontal, 24)
+            .offset(y: appearAnimation ? 0 : 10)
+            .opacity(appearAnimation ? 1.0 : 0)
+            .animation(.easeOut(duration: 0.5).delay(0.1), value: appearAnimation)
 
-            HStack(spacing: 10) {
+            // ✅ Estadísticas con diseño mejorado
+            HStack(spacing: 12) {
                 statPill(icon: "music.note", text: "\(songs.count) canciones")
                 if totalDuration > 60 {
                     statPill(icon: "clock", text: formatLongDuration(totalDuration))
                 }
             }
+            .offset(y: appearAnimation ? 0 : 10)
+            .opacity(appearAnimation ? 1.0 : 0)
+            .animation(.easeOut(duration: 0.5).delay(0.15), value: appearAnimation)
         }
         .frame(maxWidth: .infinity).padding(.bottom, 4)
         .background(alignment: .top) {
@@ -108,22 +149,27 @@ struct AlbumDetailView: View {
                 Group {
                     if let artwork = album.artwork {
                         Image(uiImage: artwork)
-                            .resizable().scaledToFill().blur(radius: 44).opacity(0.4)
+                            .resizable().scaledToFill().blur(radius: 50).opacity(0.35)
                             .overlay(
                                 LinearGradient(
-                                    colors: [tintColor.opacity(0.25), Color(UIColor.systemBackground).opacity(0.55)],
+                                    colors: [
+                                        tintColor.opacity(0.3),
+                                        tintColor.opacity(0.1),
+                                        Color(UIColor.systemBackground).opacity(0.6)
+                                    ],
                                     startPoint: .top, endPoint: .bottom
                                 )
                             )
                     } else {
                         LinearGradient(
-                            colors: [tintColor.opacity(0.18), Color(UIColor.systemBackground)],
+                            colors: [tintColor.opacity(0.2), Color(UIColor.systemBackground)],
                             startPoint: .top, endPoint: .bottom
                         )
                     }
                 }
                 .frame(width: geometry.size.width, height: geometry.size.height + 80)
                 .clipped().ignoresSafeArea(edges: .top)
+                .drawingGroup() // ✅ Optimización GPU para 60fps
             }
         }
     }
@@ -140,7 +186,7 @@ struct AlbumDetailView: View {
                     Image(systemName: "play.fill").font(.system(size: 16, weight: .bold))
                     Text("Reproducir").font(.system(size: 16, weight: .bold, design: .rounded))
                 }
-                .foregroundStyle(.white).frame(maxWidth: .infinity).frame(height: 54)
+                .foregroundStyle(onTintColor).frame(maxWidth: .infinity).frame(height: 54)
                 .background {
                     Capsule().fill(
                         LinearGradient(colors: [tintColor, tintColor.opacity(0.82)], startPoint: .topLeading, endPoint: .bottomTrailing)
@@ -275,9 +321,14 @@ struct ArtistDetailView: View {
     @ObservedObject var audioEngine: AudioEngine
     @Environment(\.dismiss) private var dismiss
 
+    @State private var appearAnimation = false
+    @State private var liveDominantColor: UIColor? = nil
+
     private var songs: [Song] { artist.songs }
     private var albums: [Album] { artist.albums }
     private var totalDuration: TimeInterval { songs.reduce(0) { $0 + $1.duration } }
+    private var tintColor: Color { AppTheme.readableColor(from: liveDominantColor ?? artist.albums.first?.dominantColor) }
+    private var tintUIColor: UIColor { liveDominantColor ?? artist.albums.first?.dominantColor ?? UIColor.systemPurple }
 
     var body: some View {
         ScrollView {
@@ -320,36 +371,74 @@ struct ArtistDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(Color(UIColor.systemBackground).opacity(0.92), for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
+        .onAppear {
+            withAnimation(.easeOut(duration: 0.4)) {
+                appearAnimation = true
+            }
+            // ✅ Extraer color del primer álbum
+            if let artwork = artist.artwork {
+                DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                    let dominant = AppTheme.dominantColor(from: artwork)
+                    DispatchQueue.main.async {
+                        withAnimation(.easeInOut(duration: 0.3)) {
+                            self?.liveDominantColor = dominant
+                        }
+                    }
+                }
+            }
+        }
     }
 
     private var artistHeroSection: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 18) {
+            // ✅ Avatar del artista con animación y efectos mejorados
             Group {
                 if let artwork = artist.artwork {
                     Image(uiImage: artwork)
                         .resizable().interpolation(.high).scaledToFill()
-                        .frame(width: 150, height: 150).clipShape(Circle())
+                        .frame(width: 160, height: 160)
+                        .clipShape(Circle())
                         .overlay {
-                            Circle().strokeBorder(Color.accentColor.opacity(0.4), lineWidth: 3)
+                            // ✅ Borde con gradiente premium
+                            Circle().strokeBorder(
+                                LinearGradient(
+                                    colors: [.white.opacity(0.4), tintColor.opacity(0.6), .white.opacity(0.1)],
+                                    startPoint: .topLeading, endPoint: .bottomTrailing
+                                ),
+                                lineWidth: 3
+                            )
                         }
-                        .shadow(color: Color.accentColor.opacity(0.25), radius: 18, x: 0, y: 8)
+                        .shadow(color: tintColor.opacity(0.3), radius: 20, x: 0, y: 10)
+                        .shadow(color: .black.opacity(0.2), radius: 15, x: 0, y: 5)
                 } else {
                     ZStack {
                         Circle().fill(
-                            LinearGradient(colors: [Color.accentColor.opacity(0.3), Color.secondary.opacity(0.2)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                            LinearGradient(
+                                colors: [tintColor.opacity(0.4), tintColor.opacity(0.15), Color.secondary.opacity(0.2)],
+                                startPoint: .topLeading, endPoint: .bottomTrailing
+                            )
                         )
-                        .frame(width: 150, height: 150)
-                        Image(systemName: "person.fill").font(.system(size: 48)).foregroundStyle(.secondary.opacity(0.8))
+                        .frame(width: 160, height: 160)
+                        Image(systemName: "person.fill")
+                            .font(.system(size: 52, weight: .light))
+                            .foregroundStyle(.white.opacity(0.9))
                     }
+                    .shadow(color: tintColor.opacity(0.2), radius: 15, x: 0, y: 8)
                 }
             }
             .padding(.top, 20)
+            .scaleEffect(appearAnimation ? 1.0 : 0.85)
+            .opacity(appearAnimation ? 1.0 : 0)
+            .animation(.spring(response: 0.5, dampingFraction: 0.8), value: appearAnimation)
 
-            VStack(spacing: 6) {
+            // ✅ Info del artista con mejor jerarquía visual
+            VStack(spacing: 8) {
                 Text(artist.name)
-                    .font(.system(size: 26, weight: .bold, design: .rounded))
-                    .multilineTextAlignment(.center).foregroundStyle(.primary).lineLimit(2)
-                HStack(spacing: 8) {
+                    .font(.system(size: 28, weight: .bold, design: .rounded))
+                    .multilineTextAlignment(.center)
+                    .foregroundStyle(.primary)
+                    .lineLimit(2)
+                HStack(spacing: 10) {
                     statPill(icon: "music.note", text: "\(songs.count) canciones")
                     if !albums.isEmpty {
                         statPill(icon: "square.stack", text: "\(albums.count) álbumes")
@@ -360,6 +449,9 @@ struct ArtistDetailView: View {
                 }
             }
             .padding(.horizontal, 24)
+            .offset(y: appearAnimation ? 0 : 10)
+            .opacity(appearAnimation ? 1.0 : 0)
+            .animation(.easeOut(duration: 0.5).delay(0.1), value: appearAnimation)
         }
         .frame(maxWidth: .infinity).padding(.bottom, 4)
         .background(alignment: .top) {
@@ -367,14 +459,27 @@ struct ArtistDetailView: View {
                 Group {
                     if let artwork = artist.artwork {
                         Image(uiImage: artwork)
-                            .resizable().scaledToFill().blur(radius: 46).opacity(0.35)
-                            .overlay(Color(UIColor.systemBackground).opacity(0.45))
+                            .resizable().scaledToFill().blur(radius: 50).opacity(0.3)
+                            .overlay(
+                                LinearGradient(
+                                    colors: [
+                                        tintColor.opacity(0.25),
+                                        tintColor.opacity(0.1),
+                                        Color(UIColor.systemBackground).opacity(0.5)
+                                    ],
+                                    startPoint: .top, endPoint: .bottom
+                                )
+                            )
                     } else {
-                        LinearGradient(colors: [Color.accentColor.opacity(0.18), Color(UIColor.systemBackground)], startPoint: .top, endPoint: .bottom)
+                        LinearGradient(
+                            colors: [tintColor.opacity(0.2), Color(UIColor.systemBackground)],
+                            startPoint: .top, endPoint: .bottom
+                        )
                     }
                 }
                 .frame(width: geometry.size.width, height: geometry.size.height + 80)
                 .clipped().ignoresSafeArea(edges: .top)
+                .drawingGroup() // ✅ Optimización GPU para 60fps
             }
         }
     }

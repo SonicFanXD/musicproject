@@ -19,6 +19,13 @@ struct SettingsView: View {
     @AppStorage("com.aurora.artworkCorner") private var artworkCorner: Double = 22
     @AppStorage("com.aurora.dynamicColor") private var dynamicColor = true
     @AppStorage("com.aurora.reduceTransparency") private var reduceTransparency = false
+    @AppStorage("com.aurora.progressBarStyle") private var progressBarStyle = 0
+    @AppStorage("com.aurora.animationSpeed") private var animationSpeed: Double = 1.0
+    @AppStorage("com.aurora.hapticIntensity") private var hapticIntensity: Double = 1.0
+    @AppStorage("com.aurora.showLyricsByDefault") private var showLyricsByDefault = false
+    @AppStorage("com.aurora.autoPlayOnStart") private var autoPlayOnStart = false
+    @AppStorage("com.aurora.showVisualizerInBar") private var showVisualizerInBar = true
+    @AppStorage("com.aurora.compactPlayerBar") private var compactPlayerBar = false
 
     private let themes = ["Sistema (claro/oscuro)", "Modo Claro", "Modo Oscuro"]
     private let accents = ["Morado (predeterminado)", "Azul Aurora", "Esmeralda", "Rosa Neón", "Ámbar Solar"]
@@ -26,8 +33,8 @@ struct SettingsView: View {
     private let themeDefaultsKey = "com.aurora.uiTheme"
 
     private var appVersion: String {
-        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.3.2"
-        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "7"
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.4.0"
+        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "12"
         return "\(version) (\(build))"
     }
 
@@ -108,6 +115,21 @@ struct SettingsView: View {
                             settingsToggleRow(title: "Respuesta táctil", subtitle: "Vibración al tocar los controles", icon: "iphone.radiowaves.left.and.right", color: .mint, isOn: $enableHaptics)
                             settingsDivider
                             settingsToggleRow(title: "Mantener pantalla encendida", subtitle: "Evita que se bloquee mientras se reproduce", icon: "sun.max.fill", color: .yellow, isOn: $keepScreenOn)
+                            settingsDivider
+                            settingsToggleRow(title: "Reproducir al iniciar", subtitle: "Reanudar reproducción al abrir la app", icon: "play.circle", color: .green, isOn: $autoPlayOnStart)
+                        }
+                        
+                        // ✅ Personalización avanzada
+                        settingsSection(icon: "wand.and.rays", title: "Personalización", color: .indigo) {
+                            settingsSliderRow(title: "Velocidad de animación", value: $animationSpeed, range: 0.5...2.0, step: 0.1, color: .indigo, suffix: "x")
+                            settingsDivider
+                            settingsSliderRow(title: "Intensidad táctil", value: $hapticIntensity, range: 0.0...1.0, step: 0.1, color: .mint, suffix: "")
+                            settingsDivider
+                            settingsToggleRow(title: "Visualizador en barra", subtitle: "Mostrar barras en la barra de reproducción", icon: "waveform", color: .purple, isOn: $showVisualizerInBar)
+                            settingsDivider
+                            settingsToggleRow(title: "Barra compacta", subtitle: "Barra de reproducción más pequeña", icon: "rectangle.compress.vertical", color: .gray, isOn: $compactPlayerBar)
+                            settingsDivider
+                            settingsToggleRow(title: "Mostrar letras", subtitle: "Abrir letras automáticamente", icon: "quote.bubble", color: .blue, isOn: $showLyricsByDefault)
                         }
                         // ✅ Sincronización en vivo con el engine (antes solo
                         // se aplicaba al reiniciar ContentView)

@@ -201,6 +201,8 @@ class AudioEngine: NSObject, ObservableObject {
                     AppLog.debug(.playback, "Buffer I/O óptimo: \(duration * 1000)ms")
                     break
                 } catch {
+                    // ✅ Esperado en A11 (iPhone 8): no es un error real,
+                    // solo probamos el siguiente buffer más corto soportado.
                     AppLog.debug(.playback, "Buffer \(Int(duration * 1000))ms no soportado, probando siguiente")
                 }
             }
@@ -604,11 +606,14 @@ class AudioEngine: NSObject, ObservableObject {
         engine.detach(nextPlayer)
         nextPlayerNode = nil
         nextAudioFile = nil
-        isCrossfading = false
 
-        // Reutilizar el playerNode principal con el nuevo archivo
-        // ⚠️ Incrementar generación antes de stop() para que el handler obsoleto no dispare playNext()
+        // ⚠️ FIX CRÍTICO (crash + doble "Reproduciendo"): incrementar la generación
+        // ANTES de poner isCrossfading=false. Si lo hacemos después, el completion
+        // del segmento VIEJO del playerNode pasa el guard (!isCrossfading) y sus
+        // scheduleGeneration aún coincide → dispara playNext() duplicado que
+        // colisiona con la reprogramación del crossfade (crash).
         scheduleGeneration += 1
+        isCrossfading = false
         if playerNode.isPlaying {
             playerNode.stop()
         }
@@ -830,6 +835,32 @@ class AudioEngine: NSObject, ObservableObject {
         play(song: song, from: playHistory)
     }
 
+    // ✅ Gestión de la cola "Siguiente" (reordenar, eliminar, limpiar)
+    func removeFromNextUpQueue(_ song: Song) {
+        nextUpQueue.removeAll { $0.id == song.id }
+        // Reconstruir playlist interna para reflejar el cambio
+        rebuildPlaylistFromQueue()
+    }
+
+    func reorderNextUpQueue(_ songs: [Song]) {
+        nextUpQueue = songs
+        rebuildPlaylistFromQueue()
+    }
+
+    func clearNextUpQueue() {
+        nextUpQueue.removeAll()
+        rebuildPlaylistFromQueue()
+    }
+
+    private func rebuildPlaylistFromQueue() {
+        // La playlist actual = [canción actual] + cola siguiente
+        guard currentIndex >= 0, currentIndex < playlist.count else { return }
+        let current = playlist[currentIndex]
+        playlist = [current] + nextUpQueue
+        currentIndex = 0
+        originalPlaylist = []
+    }
+
     private func startDisplayTimer() {
         stopDisplayTimer()
         // 0.3s interval reduces UI churn on iPhone 8 Plus (A11) while remaining accurate
@@ -854,12 +885,29 @@ class AudioEngine: NSObject, ObservableObject {
         displayTimer = nil
     }
 
+    // ✅ Repeat one mejorado: en vez de seek(0)+resume (que puede fallar si
+    // el engine se detuvo), reprograma el segmento completo desde 0 con una
+    // nueva generación para garantizar que suene sin cortes ni silencios.
     private func handlePlaybackFinished() {
         if repeatMode == .one {
-            seek(to: 0)
-            resume()
+            guard let file = audioFile else { return }
+            scheduleGeneration += 1
+            seekOffset = 0
+            currentTime = 0
+            scheduleFile(file, from: 0)
+            if isPlaying {
+                playerNode.play()
+            }
+            // ✅ FIX: Actualizar NowPlayingInfo para Centro de Control/pantalla de bloqueo
+            // cuando la canción se repite, para que la barra de progreso se reinicie correctamente
+            updateNowPlayingInfo()
             return
         }
+        // ✅ FIX: detener el display timer y resetear currentTime antes de
+        // reproducir la siguiente canción para evitar que la barra de progreso
+        // muestre la canción como terminada mientras sigue sonando.
+        stopDisplayTimer()
+        currentTime = 0
         playNext()
     }
 
@@ -962,7 +1010,14 @@ class AudioEngine: NSObject, ObservableObject {
         DispatchQueue.main.async {
             self.currentRouteName = output.portName
             self.outputPortType = output.portType.rawValue
+            // ✅ FIX: Forzar actualización de la info de calidad al cambiar ruta
+            self.updateAudioQuality()
         }
+    }
+    
+    /// ✅ Verificación adicional de la ruta de salida para detectar cambios
+    func refreshOutputRoute() {
+        updateRouteName()
     }
 
     // ✅ Resuelve el nombre comercial del dispositivo desde el identificador
@@ -1072,8 +1127,18 @@ class AudioEngine: NSObject, ObservableObject {
             if type == .began && self.isPlaying {
                 self.pause()
             } else if type == .ended {
-                if let optVal = info[AVAudioSessionInterruptionOptionKey] as? UInt,
-                   AVAudioSession.InterruptionOptions(rawValue: optVal).contains(.shouldResume) {
+                let shouldResume = (info[AVAudioSessionInterruptionOptionKey] as? UInt)
+                    .flatMap { AVAudioSession.InterruptionOptions(rawValue: $0) }
+                    .map { $0.contains(.shouldResume) } ?? false
+                // ✅ Resistente a pausas no otorgadas: si la interrupción terminó
+                // (ej. llamada finalizada, video pausado por el usuario) y NO
+                // venía con shouldResume pero la app estaba reproduciendo antes,
+                // reanudamos manualmente para no quedar colgados en pausa.
+                if shouldResume {
+                    self.resume()
+                } else if self.wasPlayingBeforeRouteChange {
+                    // La interrupción fue por el sistema (llamada/video):
+                    // reanudar solo si fue un interruptor temporal que terminó.
                     self.resume()
                 }
             }
@@ -1112,10 +1177,25 @@ class AudioEngine: NSObject, ObservableObject {
             info[MPMediaItemPropertyArtist] = song.artist
             info[MPMediaItemPropertyAlbumTitle] = song.album
             if let art = song.artwork {
-                info[MPMediaItemPropertyArtwork] = MPMediaItemArtwork(boundsSize: art.size) { _ in art }
+                // ✅ MEJORADO: Proporcionar artwork de alta calidad para Centro de Control
+                // Usamos un tamaño de bounds más grande para que el sistema escale correctamente
+                let artworkSize = CGSize(width: 1200, height: 1200)
+                info[MPMediaItemPropertyArtwork] = MPMediaItemArtwork(boundsSize: artworkSize) { size in
+                    // ✅ Redimensionar manteniendo calidad
+                    let renderer = UIGraphicsImageRenderer(size: size)
+                    return renderer.image { _ in
+                        art.draw(in: CGRect(origin: .zero, size: size))
+                    }
+                }
             }
         }
+        // ✅ Sincronización pulida con el Centro de Control / bloquear pantalla:
+        // - PlaybackRate  0/1 hace que el sistema ponga/quite el pause.
+        // - DefaultPlaybackRate evita que al pausar se reinicie la canción.
+        // - ElapsedPlaybackTime actualizado para que la barra del sistema
+        //   refleje la posición exacta al pausar/reanudar.
         info[MPNowPlayingInfoPropertyPlaybackRate] = isPlaying ? 1.0 : 0.0
+        info[MPNowPlayingInfoPropertyDefaultPlaybackRate] = 1.0
         info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = currentTime
         info[MPMediaItemPropertyPlaybackDuration] = duration
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
@@ -1155,7 +1235,11 @@ class AudioEngine: NSObject, ObservableObject {
         let state: [String: Any] = [
             "isPlaying": isPlaying,
             "currentTime": currentTime,
-            "currentIndex": currentIndex
+            "currentIndex": currentIndex,
+            // ✅ Persistir repeat/shuffle para que al cerrar la app por
+            // voluntad o ahorro de rendimiento no se pierdan estos ajustes.
+            "isShuffleEnabled": isShuffleEnabled,
+            "repeatMode": repeatMode.rawValue
         ]
         UserDefaults.standard.set(state, forKey: stateDefaultsKey)
     }
@@ -1164,6 +1248,14 @@ class AudioEngine: NSObject, ObservableObject {
         guard let state = UserDefaults.standard.dictionary(forKey: stateDefaultsKey) else { return }
         if let time = state["currentTime"] as? TimeInterval {
             currentTime = time
+        }
+        // ✅ Restaurar repeat/shuffle persistidos
+        if let shuffle = state["isShuffleEnabled"] as? Bool {
+            isShuffleEnabled = shuffle
+        }
+        if let repeatRaw = state["repeatMode"] as? Int,
+           let mode = RepeatMode(rawValue: repeatRaw) {
+            repeatMode = mode
         }
     }
 }

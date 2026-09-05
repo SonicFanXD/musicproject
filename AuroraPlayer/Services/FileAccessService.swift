@@ -21,6 +21,8 @@ class FileAccessService: ObservableObject {
     private let filesDefaultsKey = "com.aurora.musicFiles"
     private let playlistsDefaultsKey = "com.aurora.playlists"
     private let libraryCacheFileName = "library-metadata-v7.json"
+    private let likedSongsKey = "com.aurora.likedSongs"
+    private let likedPlaylistName = "Me Gusta"
     private var activeURLs: [UUID: URL] = [:]
     private var activeFileURLs: [UUID: URL] = [:]
     private var scanGeneration = 0
@@ -680,18 +682,18 @@ class FileAccessService: ObservableObject {
     }
 
     private func thumbnailArtwork(_ data: Data) -> Data {
-        // 640px es suficiente para NowPlaying a pantalla completa en @2x/@3x
-        // y reduce drásticamente la memoria del caché (antes 1024px por canción).
-        guard data.count > 150_000,
+        // ✅ MEJORADO: 1280px para mayor calidad en pantallas @2x/@3x modernas
+        // Calidad JPEG 0.92 para mejor nitidez sin aumento excesivo de tamaño
+        guard data.count > 100_000,
               let source = CGImageSourceCreateWithData(data as CFData, nil) else { return data }
         let options: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
-            kCGImageSourceThumbnailMaxPixelSize: 640,
+            kCGImageSourceThumbnailMaxPixelSize: 1280,
             kCGImageSourceCreateThumbnailWithTransform: true,
             kCGImageSourceShouldCacheImmediately: true
         ]
         guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary),
-              let compressed = UIImage(cgImage: image).jpegData(compressionQuality: 0.85) else { return data }
+              let compressed = UIImage(cgImage: image).jpegData(compressionQuality: 0.92) else { return data }
         return compressed
     }
 
@@ -1224,6 +1226,49 @@ class FileAccessService: ObservableObject {
         // Diccionario para búsqueda O(1) en lugar de O(n) por canción
         let songsByID = Dictionary(uniqueKeysWithValues: songs.map { ($0.id, $0) })
         return playlist.songIDs.compactMap { songsByID[$0] }
+    }
+    
+    // MARK: - Liked Songs (Me Gusta)
+    
+    /// Returns the "Me Gusta" playlist, creating it if it doesn't exist
+    var likedPlaylist: Playlist? {
+        playlists.first(where: { $0.name == likedPlaylistName })
+    }
+    
+    /// Ensures the "Me Gusta" playlist exists (called on app start)
+    func ensureLikedPlaylistExists() {
+        if likedPlaylist == nil {
+            let playlist = Playlist(name: likedPlaylistName, description: "Canciones que te gustan")
+            playlists.insert(playlist, at: 0)
+            savePlaylists()
+            AppLog.info(.library, "Playlist 'Me Gusta' creada automáticamente")
+        }
+    }
+    
+    /// Check if a song is liked
+    func isLiked(_ song: Song) -> Bool {
+        guard let liked = likedPlaylist else { return false }
+        return liked.songIDs.contains(song.id)
+    }
+    
+    /// Toggle like status for a song
+    func toggleLike(_ song: Song) {
+        ensureLikedPlaylistExists()
+        guard let index = playlists.firstIndex(where: { $0.name == likedPlaylistName }) else { return }
+        
+        if playlists[index].songIDs.contains(song.id) {
+            playlists[index].songIDs.removeAll { $0 == song.id }
+        } else {
+            playlists[index].songIDs.append(song.id)
+        }
+        playlists[index].modifiedAt = Date()
+        savePlaylists()
+    }
+    
+    /// Get all liked songs
+    var likedSongs: [Song] {
+        guard let liked = likedPlaylist else { return [] }
+        return songsInPlaylist(liked)
     }
 
     private var libraryCacheURL: URL? {

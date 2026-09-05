@@ -111,11 +111,39 @@ struct AudioQualityDetailView: View {
         .nativeGlass(cornerRadius: 24)
     }
 
+    // ✅ Decodificador: lossless solo si el formato lo es de verdad
+    private var isLossless: Bool {
+        guard let song = song else { return false }
+        let ext = song.url.pathExtension.uppercased()
+        return ["FLAC", "WAV", "WAVE", "AIFF", "AIF", "ALAC", "M4A"].contains(ext)
+    }
+
+    // ✅ Calidad honesta: lo que importa es el bitrate real, no solo el
+    // sample rate (antes todas las canciones digitaban "HI-RES"). Aproximamos
+    // el bitrate con sampleRate × bitDepth × canales (los lossless reales
+    // rondan ≥ 705 kbps para estéreo 16-bit/44.1 kHz).
     private var qualityBadge: String {
         guard let song = song else { return "—" }
-        if song.sampleRate > 48000 || song.bitDepth > 16 { return "HI-RES AUDIO" }
-        if song.sampleRate > 0 { return "CALIDAD LOSSLESS" }
-        return "CALIDAD ESTÁNDAR"
+        let rate = song.sampleRate
+        let bits = song.bitDepth
+        let bitrate = estimatedBitrateKBPS(song)
+        // Hi-Res: 24-bit/96 kHz o superior
+        if bits >= 24 && rate >= 96000 { return "HI-RES AUDIO" }
+        // Lossless: FLAC/ALAC/WAV/AIFF con bitrate alto (≥ 700 kbps estéreo)
+        if bitrate >= 700 { return "CALIDAD LOSSLESS" }
+        // Lossy comprimido: MP3/AAC por debajo de 700 kbps
+        if bitrate > 0 { return "CALIDAD COMPRIMIDA" }
+        // Sin datos fiables
+        if rate > 0 { return "CALIDAD ESTÁNDAR" }
+        return "CALIDAD DESCONOCIDA"
+    }
+
+    private func estimatedBitrateKBPS(_ song: Song) -> Int {
+        guard song.sampleRate > 0 && song.bitDepth > 0 && song.channelCount > 0 else {
+            // Fallback: usar el bitrate real del archivo si está disponible
+            return 0
+        }
+        return Int(song.sampleRate * Double(song.bitDepth) * Double(song.channelCount) / 1000)
     }
 
     // MARK: - Cadena de procesamiento
@@ -124,7 +152,8 @@ struct AudioQualityDetailView: View {
             VStack(spacing: 0) {
                 chainNode(icon: "doc.fill", title: "Archivo fuente", detail: fileSummary, color: .purple, isFirst: true)
                 chainArrow
-                chainNode(icon: "square.stack.3d.up.badge.down", title: "Decodificador", detail: "AVAudioFile · Lossless", color: .indigo)
+                // ✅ Icono válido (antes era un SF Symbol inexistente) + calidad real
+                chainNode(icon: "waveform", title: "Decodificador", detail: "AVAudioFile · \(isLossless ? "Lossless" : "Comprimido")", color: .indigo)
                 chainArrow
                 chainNode(icon: "engine.combustion", title: "Motor de audio", detail: "AVAudioEngine · \(Int(audioEngine.sampleRateDisplay / 1000)) kHz", color: .blue)
                 chainArrow

@@ -2,6 +2,7 @@ import SwiftUI
 
 struct PlayerBar: View {
     @ObservedObject var audioEngine: AudioEngine
+    @ObservedObject var fileAccessService: FileAccessService
     @State private var showingNowPlaying = false
 
     // ✅ Scrub optimizado: preview local a 60fps, seek real solo al soltar
@@ -13,6 +14,7 @@ struct PlayerBar: View {
 
     // ✅ Esquinas del artwork sincronizadas con el ajuste de Apariencia
     @AppStorage("com.aurora.artworkCorner") private var artworkCorner: Double = 22
+    @AppStorage("com.aurora.compactPlayerBar") private var compactPlayerBar = false
 
     private var progress: Double {
         if isScrubbing { return scrubPreviewProgress }
@@ -25,10 +27,10 @@ struct PlayerBar: View {
             if let song = audioEngine.currentSong {
                 VStack(spacing: 0) {
                     HStack(spacing: 12) {
-                        // Artwork con animación de reproducción suave
+                        // ✅ Artwork con mejor calidad y animación
                         artwork(for: song)
 
-                        // Song info con expanded tap target
+                        // ✅ Song info con tap target expandido
                         HStack(spacing: 10) {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(song.title)
@@ -43,7 +45,6 @@ struct PlayerBar: View {
                             }
 
                             // ✅ Mini visualizador junto al título cuando reproduce
-                            // (3 barras diminutas, costo GPU insignificante)
                             if audioEngine.isPlaying {
                                 HStack(spacing: 2.5) {
                                     ForEach(0..<3, id: \.self) { bar in
@@ -65,7 +66,20 @@ struct PlayerBar: View {
                             openNowPlaying()
                         }
 
-                        // Controles rediseñados con animaciones spring
+                        // ✅ Botón de me gusta en la barra de reproducción
+                        Button {
+                            Haptics.light()
+                            fileAccessService.toggleLike(song)
+                        } label: {
+                            Image(systemName: fileAccessService.isLiked(song) ? "heart.fill" : "heart")
+                                .font(.system(size: 14, weight: .medium))
+                                .foregroundStyle(fileAccessService.isLiked(song) ? .red : .secondary)
+                                .frame(width: 36, height: 36)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+
+                        // ✅ Controles rediseñados con mejor feedback visual
                         HStack(spacing: 2) {
                             // Previous
                             Button {
@@ -82,7 +96,7 @@ struct PlayerBar: View {
                             .buttonStyle(PressableButtonStyle(scale: 0.85))
                             .accessibilityLabel("Canción anterior")
 
-                            // Play/Pause con animación de escala
+                            // Play/Pause con animación de escala y halo
                             Button {
                                 Haptics.medium()
                                 animatePlayButton()
@@ -96,7 +110,7 @@ struct PlayerBar: View {
                                     Circle()
                                         .fill(Color.accentColor)
 
-                                    // Halo sutil cuando reproduce (animado con trigger discreto)
+                                    // ✅ Halo animado cuando reproduce
                                     Circle()
                                         .stroke(Color.accentColor.opacity(0.35), lineWidth: 2)
                                         .scaleEffect(audioEngine.isPlaying ? 1.12 : 1.0)
@@ -112,7 +126,7 @@ struct PlayerBar: View {
                                         .font(.system(size: 16, weight: .bold))
                                         .foregroundStyle(.white)
                                 }
-                                .frame(width: 44, height: 44)
+                                .frame(width: compactPlayerBar ? 40 : 44, height: compactPlayerBar ? 40 : 44)
                                 .shadow(color: Color.accentColor.opacity(0.35), radius: 8, x: 0, y: 3)
                                 .scaleEffect(playButtonScale)
                                 .contentShape(Circle())
@@ -138,15 +152,15 @@ struct PlayerBar: View {
                     }
                     .padding(.leading, 14)
                     .padding(.trailing, 10)
-                    .padding(.top, 12)
+                    .padding(.top, compactPlayerBar ? 8 : 12)
                     .padding(.bottom, 4)
 
-                    // Barra de progreso con touch área expandida
+                    // ✅ Barra de progreso mejorada con preview de scrub
                     GeometryReader { geometry in
                         ZStack(alignment: .leading) {
                             Capsule()
                                 .fill(Color.secondary.opacity(0.18))
-                                .frame(height: 4)
+                                .frame(height: compactPlayerBar ? 3 : 4)
 
                             Capsule()
                                 .fill(
@@ -156,9 +170,18 @@ struct PlayerBar: View {
                                         endPoint: .trailing
                                     )
                                 )
-                                .frame(width: max(4, geometry.size.width * progress), height: 4)
+                                .frame(width: max(4, geometry.size.width * progress), height: compactPlayerBar ? 3 : 4)
+
+                            // ✅ Indicador de posición al hacer scrub
+                            if isScrubbing {
+                                Circle()
+                                    .fill(Color.accentColor)
+                                    .frame(width: 10, height: 10)
+                                    .offset(x: geometry.size.width * scrubPreviewProgress - 5)
+                                    .shadow(color: .black.opacity(0.2), radius: 4, x: 0, y: 2)
+                            }
                         }
-                        .frame(height: 4)
+                        .frame(height: compactPlayerBar ? 3 : 4)
                         // ✅ FIX: el área táctil era enorme (maxHeight infinity +
                         // padding 14) y robaba los toques del artwork/título,
                         // impidiendo abrir NowPlayingView tras reanudar la app.
@@ -186,7 +209,7 @@ struct PlayerBar: View {
                                 }
                         )
                     }
-                    .frame(height: 4 + 12) // 4pt bar + 6pt padding top/bottom
+                    .frame(height: (compactPlayerBar ? 3 : 4) + 12)
                     .padding(.horizontal, 18)
                     .padding(.bottom, 8)
                 }
@@ -231,19 +254,19 @@ struct PlayerBar: View {
         showingNowPlaying = true
     }
 
-    // MARK: - Artwork (sin animación repeatForever constante = 60fps)
+    // MARK: - Artwork (calidad alta, animación sutil = 60fps)
     @ViewBuilder
     private func artwork(for song: Song) -> some View {
         if let art = song.artwork {
             Image(uiImage: art)
                 .resizable()
-                .interpolation(.medium)
+                .interpolation(.high) // ✅ Mejor calidad de interpolación
                 .scaledToFill()
                 .frame(width: 46, height: 46)
                 .clipShape(RoundedRectangle(cornerRadius: CGFloat(artworkCorner * (14.0 / 22.0)), style: .continuous))
                 .shadow(color: .black.opacity(0.15), radius: 4, x: 0, y: 2)
                 .overlay(
-                    // Indicador sutil de reproducción
+                    // ✅ Indicador de reproducción con animación suave
                     RoundedRectangle(cornerRadius: CGFloat(artworkCorner * (14.0 / 22.0)), style: .continuous)
                         .stroke(Color.accentColor.opacity(audioEngine.isPlaying ? 0.45 : 0.0), lineWidth: 1.5)
                         .animation(.easeInOut(duration: 0.35), value: audioEngine.isPlaying)

@@ -5,6 +5,8 @@ struct QueueView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var selectedTab: QueueTab = .nextUp
+    // ✅ Estado local editable de la cola "Siguiente" para reordenar/eliminar
+    @State private var editableQueue: [Song] = []
 
     enum QueueTab: String, CaseIterable {
         case nextUp = "Siguiente"
@@ -36,27 +38,50 @@ struct QueueView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(Color(UIColor.systemBackground).opacity(0.92), for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
-            .toolbar {
-                ToolbarItem(placement: .principal) {
-                    Text("Cola de Reproducción")
-                        .font(.system(size: 18, weight: .bold, design: .rounded))
-                        .foregroundStyle(
-                            LinearGradient(
-                                colors: [Color.accentColor, Color.accentColor.opacity(0.75)],
-                                startPoint: .leading, endPoint: .trailing
-                            )
-                        )
-                        .lineLimit(1).minimumScaleFactor(0.7)
-                        .accessibilityLabel("Cola de Reproducción")
-                }
+                    .toolbar {
+                        ToolbarItem(placement: .principal) {
+                            Text("Cola de Reproducción")
+                                .font(.system(size: 18, weight: .bold, design: .rounded))
+                                .foregroundStyle(
+                                    LinearGradient(
+                                        colors: [Color.accentColor, Color.accentColor.opacity(0.75)],
+                                        startPoint: .leading, endPoint: .trailing
+                                    )
+                                )
+                                .lineLimit(1).minimumScaleFactor(0.7)
+                                .accessibilityLabel("Cola de Reproducción")
+                        }
 
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Listo") { dismiss() }
-                        .foregroundStyle(Color.accentColor)
-                        .frame(width: 44, height: 44)
-                        .contentShape(Rectangle())
-                }
-            }
+                        ToolbarItem(placement: .topBarTrailing) {
+                            HStack(spacing: 8) {
+                                if selectedTab == .nextUp && editableQueue.count > 1 {
+                                    Button {
+                                        Haptics.light()
+                                        clearQueue()
+                                    } label: {
+                                        Image(systemName: "trash")
+                                            .font(.system(size: 15, weight: .semibold))
+                                            .foregroundStyle(.red)
+                                            .frame(width: 44, height: 44)
+                                            .contentShape(Rectangle())
+                                    }
+                                }
+                                Button("Listo") { dismiss() }
+                                    .foregroundStyle(Color.accentColor)
+                                    .frame(width: 44, height: 44)
+                                    .contentShape(Rectangle())
+                            }
+                        }
+                    }
+                    .onAppear {
+                        editableQueue = audioEngine.nextUpQueue
+                    }
+                    .onChange(of: audioEngine.nextUpQueue) { newQueue in
+                        // Sincronizar solo si no estamos editando activamente
+                        if editableQueue.map(\.id) != newQueue.map(\.id) {
+                            editableQueue = newQueue
+                        }
+                    }
         }
     }
 
@@ -138,7 +163,7 @@ struct QueueView: View {
             }
         }
 
-        if audioEngine.nextUpQueue.isEmpty {
+        if editableQueue.isEmpty {
             emptyState(icon: "music.note.list", title: "No hay canciones en cola", message: "Las próximas canciones aparecerán aquí")
         } else {
             VStack(alignment: .leading, spacing: 8) {
@@ -147,12 +172,42 @@ struct QueueView: View {
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 4)
 
-                ForEach(Array(audioEngine.nextUpQueue.enumerated()), id: \.element.id) { index, song in
+                // ✅ Lista editable: reordenar y eliminar con swipe
+                ForEach(Array(editableQueue.enumerated()), id: \.element.id) { index, song in
                     queueSongRow(song, index: index + 1)
+                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                            Button(role: .destructive) {
+                                Haptics.light()
+                                removeFromQueue(song)
+                            } label: {
+                                Label("Eliminar", systemImage: "trash")
+                            }
+                        }
+                }
+                .onMove { from, to in
+                    Haptics.light()
+                    moveQueueItem(from: from, to: to)
                 }
             }
             .padding(.top, 8)
         }
+    }
+
+    // ✅ Acciones de la cola editable
+    private func removeFromQueue(_ song: Song) {
+        guard let idx = editableQueue.firstIndex(where: { $0.id == song.id }) else { return }
+        editableQueue.remove(at: idx)
+        audioEngine.removeFromNextUpQueue(song)
+    }
+
+    private func moveQueueItem(from source: IndexSet, to destination: Int) {
+        editableQueue.move(fromOffsets: source, toOffset: destination)
+        audioEngine.reorderNextUpQueue(editableQueue)
+    }
+
+    private func clearQueue() {
+        editableQueue.removeAll()
+        audioEngine.clearNextUpQueue()
     }
 
     @ViewBuilder

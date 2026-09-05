@@ -1,4 +1,5 @@
 import SwiftUI
+import AVFoundation
 
 struct NowPlayingView: View {
     @ObservedObject var audioEngine: AudioEngine
@@ -15,9 +16,12 @@ struct NowPlayingView: View {
     @State private var showEqualizer = false
     @State private var showQueue = false
     @State private var showQualityDetail = false
+    @State private var showAirPlayPicker = false
     @State private var artworkScale: CGFloat = 1.0
     @State private var progressBarWidth: CGFloat = 0
     @State private var extractedColor: Color = Color.accentColor
+    // ✅ Guardamos el UIColor dominante crudo para calcular contraste
+    @State private var extractedUIColor: UIColor = UIColor.systemPurple
 
     // ✅ Scrub optimizado: preview local a 60fps, seek real solo al soltar
     @State private var isScrubbing = false
@@ -31,9 +35,10 @@ struct NowPlayingView: View {
     private var artworkSize: CGFloat {
         let screenWidth = UIScreen.main.bounds.width
         let screenHeight = UIScreen.main.bounds.height
-        let maxByWidth = screenWidth - 48
-        let maxByHeight = screenHeight * (isCompactScreen ? 0.30 : 0.38)
-        return min(300, maxByWidth, maxByHeight)
+        // ✅ MEJORADO: Portada más grande y mejor centrada
+        let maxByWidth = screenWidth - 40
+        let maxByHeight = screenHeight * (isCompactScreen ? 0.32 : 0.42)
+        return min(340, maxByWidth, maxByHeight)
     }
 
     private var progress: Double {
@@ -49,6 +54,9 @@ struct NowPlayingView: View {
         formatTime(isScrubbing ? scrubPreviewTime : audioEngine.currentTime)
     }
 
+    // ✅ Contraste: si el color dominante es claro → texto oscuro; si es oscuro → texto blanco
+    private var playIconColor: Color { AppTheme.contrastingText(on: extractedUIColor) }
+
     var body: some View {
         NavigationStack {
             ZStack {
@@ -60,7 +68,6 @@ struct NowPlayingView: View {
                     artworkView
                         .scaleEffect(artworkScale)
                         .animation(.spring(response: 0.5, dampingFraction: 0.82), value: audioEngine.isPlaying)
-                        // ✅ Transición suave al cambiar de canción
                         .animation(.easeInOut(duration: 0.25), value: audioEngine.currentSong?.id)
 
                     Spacer().frame(height: isCompactScreen ? 10 : 16)
@@ -98,8 +105,6 @@ struct NowPlayingView: View {
                 withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
                     artworkScale = 1.0
                 }
-                // ✅ keepScreenOn ahora lo gestiona el AudioEngine de forma
-                // centralizada (antes se apagaba al cerrar NowPlaying).
                 audioEngine.isKeepScreenOnEnabled = keepScreenOn
             }
             .onChange(of: audioEngine.isPlaying) { isPlaying in
@@ -195,20 +200,30 @@ struct NowPlayingView: View {
         }
     }
 
-    // MARK: - Artwork
+    // MARK: - Artwork (mejorado con mejor sombras y efectos)
     private var artworkView: some View {
         Group {
             if let artwork = audioEngine.currentSong?.artwork {
                 Image(uiImage: artwork)
                     .resizable()
-                    .interpolation(.medium)
+                    .interpolation(.high) // ✅ Mejor calidad de interpolación
                     .scaledToFill()
                     .frame(width: artworkSize, height: artworkSize)
                     .clipShape(RoundedRectangle(cornerRadius: CGFloat(artworkCorner), style: .continuous))
-                    .shadow(color: extractedColor.opacity(0.3), radius: 12, x: 0, y: 5)
+                    // ✅ Sombra doble para mayor profundidad
+                    .shadow(color: .black.opacity(0.25), radius: 20, x: 0, y: 10)
+                    .shadow(color: extractedColor.opacity(0.2), radius: 10, x: 0, y: 5)
                     .overlay(
+                        // ✅ Borde con brillo sutil
                         RoundedRectangle(cornerRadius: CGFloat(artworkCorner), style: .continuous)
-                            .stroke(extractedColor.opacity(0.2), lineWidth: 1)
+                            .stroke(
+                                LinearGradient(
+                                    colors: [.white.opacity(0.15), extractedColor.opacity(0.2), .clear],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                ),
+                                lineWidth: 1
+                            )
                     )
             } else {
                 ZStack {
@@ -223,28 +238,30 @@ struct NowPlayingView: View {
                         .frame(width: artworkSize, height: artworkSize)
 
                     Image(systemName: "music.note")
-                        .font(.system(size: 50, weight: .light))
+                        .font(.system(size: artworkSize * 0.15, weight: .light))
                         .foregroundStyle(extractedColor.opacity(0.8))
                 }
-                .shadow(color: extractedColor.opacity(0.2), radius: 10, x: 0, y: 4)
+                .shadow(color: .black.opacity(0.15), radius: 15, x: 0, y: 8)
+                .shadow(color: extractedColor.opacity(0.15), radius: 8, x: 0, y: 4)
             }
         }
     }
 
-    // MARK: - Song Info
+    // MARK: - Song Info (mejorado con mejor tipografía y espaciado)
     private var songInfoView: some View {
-        VStack(spacing: 6) {
+        VStack(spacing: 8) {
+            // ✅ Título con mejor tipografía
             Text(audioEngine.currentSong?.displayName ?? "Sin canción")
-                .font(.system(size: 20, weight: .bold))
+                .font(.system(size: 22, weight: .bold, design: .rounded))
                 .multilineTextAlignment(.center)
-                .foregroundStyle(.primary)
+                .foregroundStyle(playIconColor)
                 .lineLimit(2)
 
             Text(audioEngine.currentSong?.displaySubtitle ?? "—")
-                .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(.secondary)
+                .font(.system(size: 15, weight: .medium))
+                .foregroundStyle(AppTheme.contrastingText(on: extractedUIColor).opacity(0.8))
                 .lineLimit(1)
-                .padding(.horizontal, 16)
+                .padding(.horizontal, 20)
 
             if let song = audioEngine.currentSong, !song.audioQualityDescription.isEmpty {
                 Button {
@@ -262,11 +279,11 @@ struct NowPlayingView: View {
                             .font(.system(size: 7, weight: .bold))
                             .foregroundStyle(extractedColor.opacity(0.6))
                     }
-                    .foregroundStyle(extractedColor.opacity(0.9))
-                    .padding(.horizontal, 10)
+                    .foregroundStyle(playIconColor)
+                    .padding(.horizontal, 12)
                     .padding(.vertical, 8)
                     .background {
-                        Capsule().fill(extractedColor.opacity(0.12))
+                        Capsule().fill(extractedColor.opacity(0.2))
                     }
                     .contentShape(Rectangle())
                 }
@@ -324,7 +341,7 @@ struct NowPlayingView: View {
             HStack {
                 Text(scrubPreviewText)
                     .font(.system(size: 11, weight: isScrubbing ? .bold : .medium))
-                    .foregroundStyle(isScrubbing ? extractedColor : .secondary)
+                    .foregroundStyle(isScrubbing ? playIconColor : AppTheme.contrastingText(on: extractedUIColor).opacity(0.7))
                     .monospacedDigit()
                     .animation(.easeInOut(duration: 0.15), value: isScrubbing)
 
@@ -332,7 +349,7 @@ struct NowPlayingView: View {
 
                 Text(formatTime(audioEngine.duration))
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AppTheme.contrastingText(on: extractedUIColor).opacity(0.7))
                     .monospacedDigit()
             }
         }
@@ -348,12 +365,12 @@ struct NowPlayingView: View {
             } label: {
                 ZStack {
                     Capsule()
-                        .fill(audioEngine.isShuffleEnabled ? extractedColor.opacity(0.2) : Color.clear)
+                        .fill(audioEngine.isShuffleEnabled ? extractedColor.opacity(0.25) : Color.clear)
                         .frame(width: 46, height: 36)
 
                     Image(systemName: "shuffle")
                         .font(.system(size: 16, weight: audioEngine.isShuffleEnabled ? .bold : .semibold))
-                        .foregroundStyle(audioEngine.isShuffleEnabled ? extractedColor : .secondary)
+                        .foregroundStyle(audioEngine.isShuffleEnabled ? playIconColor : AppTheme.contrastingText(on: extractedUIColor).opacity(0.7))
                 }
                 .frame(width: 64, height: 64)
                 .contentShape(Rectangle())
@@ -369,14 +386,14 @@ struct NowPlayingView: View {
                     Circle().fill(controlBackground).frame(width: 48, height: 48)
                     Image(systemName: "backward.fill")
                         .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(.primary)
+                        .foregroundStyle(playIconColor)
                 }
                 .frame(width: 64, height: 64)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
 
-            // Play/Pause
+            // Play/Pause (icono con contraste)
             Button {
                 Haptics.medium()
                 if audioEngine.isPlaying {
@@ -389,7 +406,7 @@ struct NowPlayingView: View {
                     Circle().fill(extractedColor).frame(width: 66, height: 66)
                     Image(systemName: audioEngine.isPlaying ? "pause.fill" : "play.fill")
                         .font(.system(size: 24, weight: .bold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(playIconColor)
                 }
                 .shadow(color: extractedColor.opacity(0.35), radius: 8, x: 0, y: 3)
                 .frame(width: 84, height: 84)
@@ -406,7 +423,7 @@ struct NowPlayingView: View {
                     Circle().fill(controlBackground).frame(width: 48, height: 48)
                     Image(systemName: "forward.fill")
                         .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(.primary)
+                        .foregroundStyle(playIconColor)
                 }
                 .frame(width: 64, height: 64)
                 .contentShape(Rectangle())
@@ -420,12 +437,12 @@ struct NowPlayingView: View {
             } label: {
                 ZStack {
                     Capsule()
-                        .fill(audioEngine.repeatMode != .off ? extractedColor.opacity(0.2) : Color.clear)
+                        .fill(audioEngine.repeatMode != .off ? extractedColor.opacity(0.25) : Color.clear)
                         .frame(width: 46, height: 36)
 
                     Image(systemName: repeatIcon)
                         .font(.system(size: 16, weight: audioEngine.repeatMode != .off ? .bold : .semibold))
-                        .foregroundStyle(audioEngine.repeatMode != .off ? extractedColor : .secondary)
+                        .foregroundStyle(audioEngine.repeatMode != .off ? playIconColor : AppTheme.contrastingText(on: extractedUIColor).opacity(0.7))
                 }
                 .frame(width: 64, height: 64)
                 .contentShape(Rectangle())
@@ -436,7 +453,7 @@ struct NowPlayingView: View {
         .fixedSize()
     }
 
-    // MARK: - Feature Buttons (EQ · Letras · Cola en una sola línea)
+    // MARK: - Feature Buttons (EQ · Letras · Cola · AirPlay en una sola línea)
     private var featureButtonsView: some View {
         let buttonSize: CGFloat = isCompactScreen ? 56 : 64
         let capsuleWidth: CGFloat = isCompactScreen ? 42 : 46
@@ -451,12 +468,12 @@ struct NowPlayingView: View {
             } label: {
                 ZStack {
                     Capsule()
-                        .fill(audioEngine.isEQEnabled ? extractedColor.opacity(0.2) : Color.clear)
+                        .fill(audioEngine.isEQEnabled ? extractedColor.opacity(0.25) : Color.clear)
                         .frame(width: capsuleWidth, height: capsuleHeight)
 
                     Image(systemName: "slider.horizontal.3")
                         .font(.system(size: iconSize, weight: audioEngine.isEQEnabled ? .bold : .semibold))
-                        .foregroundStyle(audioEngine.isEQEnabled ? extractedColor : .secondary)
+                        .foregroundStyle(audioEngine.isEQEnabled ? playIconColor : AppTheme.contrastingText(on: extractedUIColor).opacity(0.7))
                 }
                 .frame(width: buttonSize, height: buttonSize)
                 .contentShape(Rectangle())
@@ -471,12 +488,12 @@ struct NowPlayingView: View {
             } label: {
                 ZStack {
                     Capsule()
-                        .fill(audioEngine.currentSong?.lyrics.isEmpty == false ? extractedColor.opacity(0.2) : Color.clear)
+                        .fill(audioEngine.currentSong?.lyrics.isEmpty == false ? extractedColor.opacity(0.25) : Color.clear)
                         .frame(width: capsuleWidth, height: capsuleHeight)
 
                     Image(systemName: audioEngine.currentSong?.lyrics.isEmpty == false ? "quote.bubble.fill" : "quote.bubble")
                         .font(.system(size: iconSize, weight: audioEngine.currentSong?.lyrics.isEmpty == false ? .bold : .semibold))
-                        .foregroundStyle(audioEngine.currentSong?.lyrics.isEmpty == false ? extractedColor : .secondary)
+                        .foregroundStyle(audioEngine.currentSong?.lyrics.isEmpty == false ? playIconColor : AppTheme.contrastingText(on: extractedUIColor).opacity(0.7))
                 }
                 .frame(width: buttonSize, height: buttonSize)
                 .contentShape(Rectangle())
@@ -491,18 +508,38 @@ struct NowPlayingView: View {
             } label: {
                 ZStack {
                     Capsule()
-                        .fill(audioEngine.nextUpQueue.isEmpty ? Color.clear : extractedColor.opacity(0.2))
+                        .fill(audioEngine.nextUpQueue.isEmpty ? Color.clear : extractedColor.opacity(0.25))
                         .frame(width: capsuleWidth, height: capsuleHeight)
 
                     Image(systemName: "list.bullet")
                         .font(.system(size: iconSize, weight: .semibold))
-                        .foregroundStyle(audioEngine.nextUpQueue.isEmpty ? .secondary : extractedColor)
+                        .foregroundStyle(audioEngine.nextUpQueue.isEmpty ? AppTheme.contrastingText(on: extractedUIColor).opacity(0.7) : playIconColor)
                 }
                 .frame(width: buttonSize, height: buttonSize)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Cola de reproducción")
+            
+            // ✅ AirPlay
+            Button {
+                Haptics.light()
+                showAirPlayPicker = true
+            } label: {
+                ZStack {
+                    Capsule()
+                        .fill(audioEngine.outputPortType == AVAudioSession.Port.airPlay.rawValue ? extractedColor.opacity(0.25) : Color.clear)
+                        .frame(width: capsuleWidth, height: capsuleHeight)
+
+                    Image(systemName: "airplayaudio")
+                        .font(.system(size: iconSize, weight: audioEngine.outputPortType == AVAudioSession.Port.airPlay.rawValue ? .bold : .semibold))
+                        .foregroundStyle(audioEngine.outputPortType == AVAudioSession.Port.airPlay.rawValue ? playIconColor : AppTheme.contrastingText(on: extractedUIColor).opacity(0.7))
+                }
+                .frame(width: buttonSize, height: buttonSize)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("AirPlay")
         }
         .frame(maxWidth: .infinity)
         .fixedSize()
@@ -565,8 +602,6 @@ struct NowPlayingView: View {
     }
 
     // MARK: - Helpers
-    // ✅ "Reducir transparencia": sustituye materiales por fondos opacos;
-    // si está desactivado, conserva el material de vidrio original.
     private var controlBackground: AnyShapeStyle {
         reduceTransparency
             ? AnyShapeStyle(Color(UIColor.secondarySystemBackground))
@@ -589,8 +624,7 @@ struct NowPlayingView: View {
     }
 
     private func extractColorFromArtwork() {
-        // ✅ FIX: respetar el ajuste "Color dinámico". Si está desactivado,
-        // usar siempre el color de acento elegido en Ajustes.
+        // ✅ FIX: respetar el ajuste "Color dinámico"
         guard dynamicColor else {
             extractedColor = AppTheme.accent
             return
@@ -601,71 +635,13 @@ struct NowPlayingView: View {
             return
         }
 
-        // ✅ FIX contraste: el color crudo del promedio puede ser casi negro
-        // o casi blanco y hacer invisibles textos/botones. Se normaliza.
-        var dominantUIColor: UIColor?
-
-        DispatchQueue.global(qos: .userInitiated).async {
-            let size = CGSize(width: 32, height: 32)
-            UIGraphicsBeginImageContextWithOptions(size, false, 1.0)
-            artwork.draw(in: CGRect(origin: .zero, size: size))
-            let image = UIGraphicsGetImageFromCurrentImageContext()
-            UIGraphicsEndImageContext()
-
-            guard let cgImage = image?.cgImage else { return }
-
-            let width = cgImage.width
-            let height = cgImage.height
-            let bytesPerPixel = 4
-            let bytesPerRow = bytesPerPixel * width
-            var pixelData = [UInt8](repeating: 0, count: height * bytesPerRow)
-
-            guard let context = CGContext(
-                data: &pixelData,
-                width: width,
-                height: height,
-                bitsPerComponent: 8,
-                bytesPerRow: bytesPerRow,
-                space: CGColorSpaceCreateDeviceRGB(),
-                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-            ) else { return }
-
-            context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
-
-            var totalRed: CGFloat = 0
-            var totalGreen: CGFloat = 0
-            var totalBlue: CGFloat = 0
-            var count: CGFloat = 0
-
-            for y in 0..<height {
-                for x in 0..<width {
-                    let offset = (y * bytesPerRow) + (x * bytesPerPixel)
-                    let r = CGFloat(pixelData[offset])
-                    let g = CGFloat(pixelData[offset + 1])
-                    let b = CGFloat(pixelData[offset + 2])
-                    let a = CGFloat(pixelData[offset + 3])
-
-                    if a > 128 {
-                        let maxVal = max(r, g, b)
-                        let minVal = min(r, g, b)
-                        if maxVal - minVal > 15 && maxVal < 240 {
-                            totalRed += r
-                            totalGreen += g
-                            totalBlue += b
-                            count += 1
-                        }
-                    }
-                }
-            }
-
+        // ✅ MEJORADO: color dominante VIVO vía histograma HSB (hilo de fondo)
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self else { return }
+            let dominant = AppTheme.dominantColor(from: artwork)
             DispatchQueue.main.async {
-                if count > 0 {
-                    let avgR = totalRed / count / 255.0
-                    let avgG = totalGreen / count / 255.0
-                    let avgB = totalBlue / count / 255.0
-                    dominantUIColor = UIColor(red: CGFloat(avgR), green: CGFloat(avgG), blue: CGFloat(avgB), alpha: 1)
-                }
-                extractedColor = AppTheme.readableColor(from: dominantUIColor)
+                self.extractedColor = AppTheme.readableColor(from: dominant)
+                self.extractedUIColor = dominant ?? UIColor.systemPurple
             }
         }
     }

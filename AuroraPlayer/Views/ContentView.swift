@@ -16,6 +16,10 @@ struct ContentView: View {
         LibraryCategory(rawValue: selectedCategoryRaw) ?? .songs
     }
     @State private var searchText = ""
+    
+    // ✅ Opciones de ordenamiento para categorías
+    @State private var sortOption: SortOption = .title
+    @State private var showSortMenu = false
 
     var body: some View {
         ZStack {
@@ -107,6 +111,8 @@ struct ContentView: View {
                     restoreLibraryIfNeeded()
                     // ✅ Sincronizar "Mantener pantalla encendida" con el engine
                     audioEngine.isKeepScreenOnEnabled = keepScreenOnUserDefaults
+                    // ✅ Crear playlist "Me Gusta" si no existe
+                    fileAccessService.ensureLikedPlaylistExists()
                     // ✅ Si el caché ya cargó antes de este onAppear, cerrar splash ya
                     if fileAccessService.isInitialLibraryLoaded {
                         withAnimation(.easeOut(duration: 0.3)) { isInitialLoad = false }
@@ -164,7 +170,7 @@ struct ContentView: View {
             }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            PlayerBar(audioEngine: audioEngine)
+            PlayerBar(audioEngine: audioEngine, fileAccessService: fileAccessService)
                 .padding(.horizontal, 10)
                 .padding(.bottom, 6)
         }
@@ -322,10 +328,48 @@ struct ContentView: View {
                     .listRowSeparator(.hidden)
                     .listRowBackground(Color.clear)
             }
+            // ✅ Botón de ordenamiento
+            sortButtonRow
+                .listRowSeparator(.hidden)
+                .listRowBackground(Color.clear)
             ForEach(currentFilteredSongs) { song in
                 songRow(song)
             }
         }
+    }
+    
+    // ✅ Botón de ordenamiento para canciones
+    private var sortButtonRow: some View {
+        Menu {
+            ForEach(SortOption.allCases, id: \.self) { option in
+                Button {
+                    sortOption = option
+                } label: {
+                    HStack {
+                        Label(option.title, systemImage: option.icon)
+                        if sortOption == option {
+                            Image(systemName: "checkmark")
+                        }
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: sortOption.icon)
+                    .font(.system(size: 11, weight: .semibold))
+                Text("Ordenar: \(sortOption.title)")
+                    .font(.system(size: 12, weight: .medium))
+            }
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background {
+                Capsule().fill(Color.secondary.opacity(0.1))
+            }
+        }
+        .buttonStyle(.plain)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 16)
     }
 
     // MARK: - Indexing Progress Cards
@@ -480,91 +524,157 @@ struct ContentView: View {
     @ViewBuilder
     private func songRow(_ song: Song) -> some View {
         let isCurrent = audioEngine.currentSong?.id == song.id
-
-        Button {
-            playSong(song)
-        } label: {
-            HStack(spacing: 14) {
-                artworkView(for: song)
-
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(song.displayName)
-                        .font(.system(size: 15, weight: .semibold, design: .rounded))
-                        .foregroundStyle(isCurrent ? Color.accentColor : .primary)
-                        .lineLimit(1)
-
-                    Text(song.displaySubtitle)
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-
-                    if !song.album.isEmpty {
-                        HStack(spacing: 4) {
-                            Image(systemName: "opticaldisc")
-                                .font(.system(size: 9))
-                                .foregroundStyle(.tertiary)
-                            Text(song.album)
-                                .font(.system(size: 11))
-                                .foregroundStyle(.tertiary)
-                                .lineLimit(1)
-                        }
-                    }
-                }
-
-                Spacer(minLength: 10)
-
-                if isCurrent {
-                    HStack(spacing: 2.5) {
-                        ForEach(0..<3, id: \.self) { bar in
-                            RoundedRectangle(cornerRadius: 1)
-                                .fill(Color.accentColor)
-                                .frame(width: 2.5, height: bar % 2 == 0 ? 12 : 7)
-                                .animation(
-                                    .easeInOut(duration: 0.4 + Double(bar) * 0.1).repeatForever(autoreverses: true),
-                                    value: isCurrent
-                                )
-                        }
-                    }
-                } else {
-                    Text(formatDuration(song.duration))
-                        .font(.system(size: 11, weight: .medium).monospacedDigit())
-                        .foregroundStyle(.tertiary)
-                }
-
-                Menu {
-                    if fileAccessService.playlists.isEmpty {
-                        Text("No hay listas disponibles")
-                    } else {
-                        ForEach(fileAccessService.playlists) { playlist in
-                            Button {
-                                fileAccessService.addSongToPlaylist(song, playlist: playlist)
-                            } label: {
-                                Label(playlist.name, systemImage: "music.note.list")
+        let isLiked = fileAccessService.isLiked(song)
+        
+        HStack(spacing: 14) {
+            // Botón de artwork que reproduce la canción
+            Button {
+                playSong(song)
+            } label: {
+                HStack(spacing: 14) {
+                    artworkView(for: song)
+                    
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(song.displayName)
+                            .font(.system(size: 15, weight: .semibold, design: .rounded))
+                            .foregroundStyle(isCurrent ? Color.accentColor : .primary)
+                            .lineLimit(1)
+                        
+                        Text(song.displaySubtitle)
+                            .font(.system(size: 12))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                        
+                        if !song.album.isEmpty {
+                            HStack(spacing: 4) {
+                                Image(systemName: "opticaldisc")
+                                    .font(.system(size: 9))
+                                    .foregroundStyle(.tertiary)
+                                Text(song.album)
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(.tertiary)
+                                    .lineLimit(1)
                             }
                         }
                     }
-                } label: {
-                    Image(systemName: "plus.circle")
-                        .font(.system(size: 15))
-                        .foregroundStyle(.tertiary)
-                        .frame(width: 40, height: 40)
-                        .contentShape(Rectangle())
+                    
+                    Spacer(minLength: 10)
+                    
+                    if isCurrent {
+                        HStack(spacing: 2.5) {
+                            ForEach(0..<3, id: \.self) { bar in
+                                RoundedRectangle(cornerRadius: 1)
+                                    .fill(Color.accentColor)
+                                    .frame(width: 2.5, height: bar % 2 == 0 ? 12 : 7)
+                                    .animation(
+                                        .easeInOut(duration: 0.4 + Double(bar) * 0.1).repeatForever(autoreverses: true),
+                                        value: isCurrent
+                                    )
+                            }
+                        }
+                    } else {
+                        Text(formatDuration(song.duration))
+                            .font(.system(size: 11, weight: .medium).monospacedDigit())
+                            .foregroundStyle(.tertiary)
+                    }
                 }
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
-            .background {
-                if isCurrent {
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(Color.accentColor.opacity(0.07))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                .strokeBorder(Color.accentColor.opacity(0.15), lineWidth: 0.5)
-                        )
+            .buttonStyle(.plain)
+            
+            // ✅ Botón de me gusta (separado del botón de reproducción)
+            Button {
+                Haptics.light()
+                fileAccessService.toggleLike(song)
+            } label: {
+                Image(systemName: isLiked ? "heart.fill" : "heart")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundStyle(isLiked ? .red : .tertiary)
+                    .frame(width: 36, height: 36)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            
+            // ✅ Menú de agregar a playlist (separado del botón de reproducción)
+            Menu {
+                if fileAccessService.playlists.isEmpty {
+                    Text("No hay listas disponibles")
+                } else {
+                    ForEach(fileAccessService.playlists) { playlist in
+                        Button {
+                            fileAccessService.addSongToPlaylist(song, playlist: playlist)
+                        } label: {
+                            Label(playlist.name, systemImage: "music.note.list")
+                        }
+                    }
                 }
+            } label: {
+                Image(systemName: "plus.circle")
+                    .font(.system(size: 15))
+                    .foregroundStyle(.tertiary)
+                    .frame(width: 36, height: 36)
+                    .contentShape(Rectangle())
             }
         }
-        .buttonStyle(.plain)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background {
+            if isCurrent {
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(Color.accentColor.opacity(0.07))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .strokeBorder(Color.accentColor.opacity(0.15), lineWidth: 0.5)
+                    )
+            }
+        }
+        // ✅ Menú contextual al mantener presionada una canción
+        .contextMenu {
+            Button {
+                playSong(song)
+            } label: {
+                Label("Reproducir", systemImage: "play.fill")
+            }
+            
+            Button {
+                Haptics.light()
+                fileAccessService.toggleLike(song)
+            } label: {
+                Label(isLiked ? "Quitar de Me Gusta" : "Me Gusta", systemImage: isLiked ? "heart.slash" : "heart")
+            }
+            
+            Menu {
+                if fileAccessService.playlists.isEmpty {
+                    Text("No hay listas disponibles")
+                } else {
+                    ForEach(fileAccessService.playlists) { playlist in
+                        Button {
+                            fileAccessService.addSongToPlaylist(song, playlist: playlist)
+                        } label: {
+                            Label(playlist.name, systemImage: "music.note.list")
+                        }
+                    }
+                }
+            } label: {
+                Label("Agregar a playlist", systemImage: "plus.circle")
+            }
+            
+            Button {
+                if let nextIndex = fileAccessService.songs.firstIndex(where: { $0.id == song.id }) {
+                    let playNextSongs = Array(fileAccessService.songs.suffix(from: min(nextIndex + 1, fileAccessService.songs.count)))
+                    if let nextSong = playNextSongs.first {
+                        audioEngine.play(song: nextSong, from: fileAccessService.songs)
+                    }
+                }
+            } label: {
+                Label("Reproducir siguiente", systemImage: "text.line.first.and.arrowtriangle.forward")
+            }
+            
+            Button {
+                audioEngine.play(song: song, from: fileAccessService.songs)
+            } label: {
+                Label("Reproducir ahora", systemImage: "play.circle.fill")
+            }
+        }
         .listRowInsets(EdgeInsets(top: 3, leading: 10, bottom: 3, trailing: 10))
         .listRowBackground(Color.clear)
     }
@@ -603,7 +713,7 @@ struct ContentView: View {
         }
     }
 
-    // MARK: - Filtering
+    // MARK: - Filtering & Sorting
     private var normalizedQuery: String {
         searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
@@ -611,11 +721,35 @@ struct ContentView: View {
     private var filteredSongs: [Song] {
         let songs = fileAccessService.songs
         let query = normalizedQuery
-        guard !query.isEmpty else { return songs }
-        return songs.filter {
-            $0.title.lowercased().contains(query) ||
-            $0.artist.lowercased().contains(query) ||
-            $0.album.lowercased().contains(query)
+        let filtered: [Song]
+        if query.isEmpty {
+            filtered = songs
+        } else {
+            filtered = songs.filter {
+                $0.title.lowercased().contains(query) ||
+                $0.artist.lowercased().contains(query) ||
+                $0.album.lowercased().contains(query)
+            }
+        }
+        // ✅ Aplicar ordenamiento seleccionado
+        return sortSongs(filtered)
+    }
+    
+    /// ✅ Ordenar canciones según la opción seleccionada
+    private func sortSongs(_ songs: [Song]) -> [Song] {
+        switch sortOption {
+        case .title:
+            return songs.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+        case .artist:
+            return songs.sorted { $0.artist.localizedCaseInsensitiveCompare($1.artist) == .orderedAscending }
+        case .album:
+            return songs.sorted { $0.album.localizedCaseInsensitiveCompare($1.album) == .orderedAscending }
+        case .duration:
+            return songs.sorted { $0.duration < $1.duration }
+        case .year:
+            return songs.sorted { ($0.releaseDate ?? Date.distantPast) > ($1.releaseDate ?? Date.distantPast) }
+        case .recentlyAdded:
+            return songs // Ya están en orden de indexación
         }
     }
 
@@ -684,9 +818,36 @@ enum LibraryCategory: String, CaseIterable {
     var title: String {
         switch self {
         case .songs: return "Canciones"
-        case .albums: return "Álbumes"
+        case .albums: return "Álbums"
         case .artists: return "Artistas"
         case .playlists: return "Listas"
+        }
+    }
+}
+
+// ✅ Opciones de ordenamiento para canciones
+enum SortOption: String, CaseIterable {
+    case title, artist, album, duration, year, recentlyAdded
+    
+    var title: String {
+        switch self {
+        case .title: return "Título"
+        case .artist: return "Artista"
+        case .album: return "Álbum"
+        case .duration: return "Duración"
+        case .year: return "Año"
+        case .recentlyAdded: return "Agregado recientemente"
+        }
+    }
+    
+    var icon: String {
+        switch self {
+        case .title: return "textformat.abc"
+        case .artist: return "person.fill"
+        case .album: return "square.stack"
+        case .duration: return "clock"
+        case .year: return "calendar"
+        case .recentlyAdded: return "clock.arrow.circlepath"
         }
     }
 }
