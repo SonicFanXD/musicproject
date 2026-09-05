@@ -168,6 +168,14 @@ enum Localization {
             "accessibility.nextSong": [.spanish: "Siguiente canción", .english: "Next song"],
             "accessibility.playPause": [.spanish: "Reproducir/Pausar", .english: "Play/Pause"],
 
+            // Equalizer
+            "equalizer.title": [.spanish: "Ecualizador", .english: "Equalizer"],
+            "equalizer.bandTitle": [.spanish: "Ecualizador de 10 Bandas", .english: "10-Band Equalizer"],
+            "equalizer.active": [.spanish: "Activo", .english: "Active"],
+            "equalizer.disabled": [.spanish: "Desactivado", .english: "Disabled"],
+            "equalizer.presets": [.spanish: "Presets", .english: "Presets"],
+            "equalizer.frequencies": [.spanish: "Frecuencias", .english: "Frequencies"],
+
             // Otros / Others
             "folders": [.spanish: "carpetas", .english: "folders"],
             "songs": [.spanish: "canciones", .english: "songs"],

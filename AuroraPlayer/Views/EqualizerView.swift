@@ -26,7 +26,7 @@ struct EqualizerView: View {
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .principal) {
-                    Text("Ecualizador")
+                    Text(Localization.localized("equalizer.title"))
                         .font(.system(size: 20, weight: .bold, design: .rounded))
                         .foregroundStyle(
                             LinearGradient(
@@ -35,11 +35,11 @@ struct EqualizerView: View {
                                 endPoint: .trailing
                             )
                         )
-                        .accessibilityLabel("Ecualizador")
+                        .accessibilityLabel(Localization.localized("equalizer.title"))
                 }
 
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Listo") { dismiss() }
+                    Button(Localization.localized("actions.done")) { dismiss() }
                         .foregroundStyle(Color.accentColor)
                         .frame(width: 44, height: 44)
                         .contentShape(Rectangle())
@@ -62,11 +62,11 @@ struct EqualizerView: View {
             }
 
             VStack(alignment: .leading, spacing: 4) {
-                Text("Ecualizador de 10 Bandas")
+                Text(Localization.localized("equalizer.bandTitle"))
                     .font(.system(size: 16, weight: .bold))
                     .foregroundStyle(.primary)
 
-                Text(audioEngine.isEQEnabled ? "Activo (\(audioEngine.eqPreset.displayName))" : "Desactivado")
+                Text(audioEngine.isEQEnabled ? "\(Localization.localized("equalizer.active")) (\(audioEngine.eqPreset.displayName))" : Localization.localized("equalizer.disabled"))
                     .font(.system(size: 13))
                     .foregroundStyle(.secondary)
             }
@@ -89,7 +89,7 @@ struct EqualizerView: View {
     // MARK: - Presets
     private var presetsSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Presets")
+            Text(Localization.localized("equalizer.presets"))
                 .font(.system(size: 16, weight: .semibold))
                 .foregroundStyle(.primary)
                 .padding(.horizontal, 4)
@@ -122,7 +122,7 @@ struct EqualizerView: View {
     // MARK: - Bands Sliders
     private var bandsSection: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Frecuencias")
+            Text(Localization.localized("equalizer.frequencies"))
                 .font(.system(size: 16, weight: .semibold))
                 .foregroundStyle(.primary)
                 .padding(.horizontal, 4)
