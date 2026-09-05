@@ -113,21 +113,21 @@ struct PlayerBar: View {
                                 .fill(Color.accentColor)
                                 .frame(width: geometry.size.width * progress, height: 5)
                         }
+                        .frame(height: 5)
+                        .padding(.vertical, 16) // Expanded touch area (10→16)
+                        .contentShape(Rectangle())
+                        .gesture(
+                            DragGesture(minimumDistance: 0)
+                                .onChanged { value in
+                                    guard audioEngine.duration > 0, geometry.size.width > 0 else { return }
+                                    // ✅ CORRECT: geometry.size.width is the actual bar width (already excludes padding)
+                                    let percentage = max(0, min(1, value.location.x / geometry.size.width))
+                                    audioEngine.seek(to: audioEngine.duration * percentage)
+                                }
+                        )
                     }
-                    .frame(height: 5)
+                    .frame(height: 5 + 32) // 5pt bar + 16pt top/bottom padding
                     .padding(.horizontal, 16)
-                    .padding(.vertical, 16) // Expanded touch area (10→16)
-                    .contentShape(Rectangle())
-                    .gesture(
-                        DragGesture(minimumDistance: 0)
-                            .onChanged { value in
-                                guard audioEngine.duration > 0, geometry.size.width > 0 else { return }
-                                // ✅ CORRECT: subtract horizontal padding (16pt) so location maps exactly to the bar
-                                let adjustedX = value.location.x - 16
-                                let percentage = max(0, min(1, adjustedX / geometry.size.width))
-                                audioEngine.seek(to: audioEngine.duration * percentage)
-                            }
-                    )
                     .padding(.bottom, 6)
                 }
                 .background {

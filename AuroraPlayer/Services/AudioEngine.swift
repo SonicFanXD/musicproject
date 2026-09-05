@@ -871,7 +871,7 @@ class AudioEngine: NSObject, ObservableObject {
             info[MPMediaItemPropertyArtist] = song.artist
             info[MPMediaItemPropertyAlbumTitle] = song.album
             if let art = song.artwork {
-                info[MPMediaItemPropertyArtwork] = MPMediaArtwork(boundsSize: art.size) { _ in art }
+                info[MPMediaItemPropertyArtwork] = MPMediaItemArtwork(boundsSize: art.size) { _ in art }
             }
         }
         info[MPNowPlayingInfoPropertyPlaybackRate] = isPlaying ? 1.0 : 0.0
