@@ -705,7 +705,8 @@ class FileAccessService: ObservableObject {
         let identifier = normalizedMetadataIdentifier(item)
         let isSynchronizedID3 = key == "sylt" || identifier.contains("sylt")
         
-        guard (key == "uslt" || isSynchronizedID3 || identifier.contains("uslt")), let data = item.dataValue else {
+        guard (key == "uslt" || isSynchronizedID3 || identifier.contains("uslt")),
+              let data = try? await item.load(.dataValue) else {
             let fallbackText = await metadataText(item)
             return fallbackText ?? ""
         }

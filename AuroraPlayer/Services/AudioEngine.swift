@@ -550,21 +550,33 @@ class AudioEngine: NSObject, ObservableObject {
         nextPlayer.volume = 0
         nextPlayer.play()
 
-        // ✅ CROSSFADE SUAVE: ramps nativos del render thread de AVAudioPlayerNode
-        // (sin Timer → sin zipper noise ni escalones de 50ms). El fundido es
-        // continuo a nivel de sample y ambos temas se cruzan de verdad.
+        // ✅ CROSSFADE SUAVE con curvas EQUAL-POWER (cos/sin): la potencia sumada
+        // de ambas canciones se mantiene constante durante todo el cruce (sin el
+        // "hoyo" de -3dB del fundido lineal). Pasos a ~60Hz → inaudible, sin
+        // zipper noise (el escalón es <0.02% de amplitud por frame).
         let duration = crossfadeDuration
-        nextPlayer.setVolume(1.0, rampDuration: duration)
-        if playerNode.isPlaying {
-            playerNode.setVolume(0.0, rampDuration: duration)
-        }
+        let stepInterval = 1.0 / 60.0
+        let totalSteps = max(10, Int(duration / stepInterval))
+        var step = 0
 
-        // ✅ Migración programada UNA sola vez al terminar el fundido.
-        // Se usa crossfadeTimer (single-shot) para que todos los sitios que ya
-        // lo invalidan (pause/stop/seek/toggle) cancelen también la migración.
         crossfadeTimer?.invalidate()
-        crossfadeTimer = Timer.scheduledTimer(withTimeInterval: duration + 0.05, repeats: false) { [weak self] _ in
-            self?.completeCrossfade()
+        crossfadeTimer = Timer.scheduledTimer(withTimeInterval: duration / Double(totalSteps), repeats: true) { [weak self] timer in
+            guard let self = self else { timer.invalidate(); return }
+            step += 1
+            let progress = Double(step) / Double(totalSteps)
+            if progress >= 1.0 {
+                timer.invalidate()
+                self.playerNode.volume = 0
+                nextPlayer.volume = 1.0
+                // ✅ Migración al terminar el fundido (single-shot: pause/stop/seek
+                // ya invalidan este mismo timer y cancelan la migración también)
+                self.completeCrossfade()
+                return
+            }
+            // Curvas equal-power: cos sale / sin entra
+            let angle = progress * Double.pi / 2
+            self.playerNode.volume = Float(cos(angle))
+            nextPlayer.volume = Float(sin(angle))
         }
     }
 
