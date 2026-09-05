@@ -348,7 +348,7 @@ struct ArtistDetailView: View {
                     .padding(.horizontal, 20).padding(.top, 18)
                 if !albums.isEmpty {
                     VStack(alignment: .leading, spacing: 14) {
-                        sectionHeader(icon: "square.stack", title: "Álbumes")
+                        sectionHeader(icon: "square.stack", title: Localization.localized("details.albums"))
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 14) {
                                 ForEach(albums) { album in
@@ -366,7 +366,7 @@ struct ArtistDetailView: View {
                     .padding(.top, 28)
                 }
                 VStack(spacing: 10) {
-                    sectionHeader(icon: "music.note.list", title: "Canciones")
+                    sectionHeader(icon: "music.note.list", title: Localization.localized("details.songs"))
                     ForEach(Array(songs.enumerated()), id: \.element.id) { index, song in
                         songRow(song, index: index)
                     }
@@ -449,9 +449,9 @@ struct ArtistDetailView: View {
                     .foregroundStyle(.primary)
                     .lineLimit(2)
                 HStack(spacing: 10) {
-                    statPill(icon: "music.note", text: "\(songs.count) canciones")
+                    statPill(icon: "music.note", text: "\(songs.count) \(Localization.localized("songs"))")
                     if !albums.isEmpty {
-                        statPill(icon: "square.stack", text: "\(albums.count) álbumes")
+                        statPill(icon: "square.stack", text: "\(albums.count) \(Localization.localized("details.albumsStat"))")
                     }
                     if totalDuration > 60 {
                         statPill(icon: "clock", text: formatLongDuration(totalDuration))

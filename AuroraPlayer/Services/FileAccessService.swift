@@ -35,8 +35,10 @@ class FileAccessService: ObservableObject {
     // (causa principal del crash durante la indexación).
     private var queuedBatches: [(urls: [URL], generation: Int)] = []
     private var inFlightBatches = 0
-    private let maxInFlightBatches = 3
-    private let metadataBatchSize = 40
+    private let maxInFlightBatches = 2 // Reducido para evitar sobrecarga
+    private let metadataBatchSize = 60 // Aumentado para procesar más en paralelo con menos actualizaciones de UI
+    private var lastUIUpdate: Date = Date()
+    private let uiUpdateInterval: TimeInterval = 0.05 // Actualizar UI cada 50ms máximo
 
     // Colecciones derivadas cacheadas: se recalculan solo cuando cambia `songs`,
     // no en cada render de la UI.
@@ -328,30 +330,45 @@ class FileAccessService: ObservableObject {
         let generation = batch.generation
 
         inFlightBatches += 1
-        Task { @MainActor in
-            defer { self.inFlightBatches -= 1 }
+
+        // ✅ Mover procesamiento a background thread para no bloquear UI
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self else { return }
 
             var foundSongs: [Song] = []
             for url in batch.urls {
-                let song = await makeSong(from: url)
+                let song = await self.makeSong(from: url)
                 foundSongs.append(song)
             }
 
-            guard generation == self.scanGeneration else {
-                self.processNextMetadataBatchIfNeeded()
-                return
-            }
+            // ✅ Throttling de actualizaciones de UI para evitar congelamiento
+            let shouldUpdateUI = Date().timeIntervalSince(self.lastUIUpdate) >= self.uiUpdateInterval
 
-            self.scanProcessed += batch.urls.count
-            let uniqueSongs = foundSongs.filter { self.indexedSongURLs.insert($0.url).inserted }
-            if !uniqueSongs.isEmpty {
-                // Acumular sin ordenar en cada lote (O(n log n) por lote es demasiado para 1254+ canciones)
-                self.pendingSongs.append(contentsOf: uniqueSongs)
-                self.scheduleSortAndCache()
-                AppLog.debug(.library, "Lote cargado: \(uniqueSongs.count); total: \(self.pendingSongs.count)")
+            DispatchQueue.main.async {
+                guard generation == self.scanGeneration else {
+                    self.inFlightBatches -= 1
+                    self.processNextMetadataBatchIfNeeded()
+                    return
+                }
+
+                self.scanProcessed += batch.urls.count
+                let uniqueSongs = foundSongs.filter { self.indexedSongURLs.insert($0.url).inserted }
+                if !uniqueSongs.isEmpty {
+                    // Acumular sin ordenar en cada lote (O(n log n) por lote es demasiado para 1254+ canciones)
+                    self.pendingSongs.append(contentsOf: uniqueSongs)
+                    self.scheduleSortAndCache()
+                    AppLog.debug(.library, "Lote cargado: \(uniqueSongs.count); total: \(self.pendingSongs.count)")
+                }
+
+                // ✅ Solo actualizar isScanning si pasó el intervalo para evitar spam de UI
+                if shouldUpdateUI {
+                    self.lastUIUpdate = Date()
+                    self.updateScanningState()
+                }
+
+                self.inFlightBatches -= 1
+                self.processNextMetadataBatchIfNeeded()
             }
-            self.updateScanningState()
-            self.processNextMetadataBatchIfNeeded()
         }
     }
 
@@ -360,19 +377,33 @@ class FileAccessService: ObservableObject {
         guard !isSortScheduled else { return }
         isSortScheduled = true
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+        // ✅ Mover ordenamiento a background thread para evitar congelamiento
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
-            self.isSortScheduled = false
 
-            // Only sort if we're not actively scanning more batches
-            if !self.isScanning || self.scanProcessed >= self.scanTotal {
-                // Merge with existing songs (from cache) before sorting
-                let allSongs = self.songs + self.pendingSongs
-                self.songs = allSongs.sorted {
-                    $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
+            // ✅ Pequeño delay para permitir que más lotes terminen antes de ordenar
+            Thread.sleep(forTimeInterval: 0.1)
+
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                self.isSortScheduled = false
+
+                // Only sort if we're not actively scanning more batches
+                if !self.isScanning || self.scanProcessed >= self.scanTotal {
+                    // ✅ Merge y sort en background para no bloquear UI
+                    let allSongs = self.songs + self.pendingSongs
+                    DispatchQueue.global(qos: .userInitiated).async {
+                        let sortedSongs = allSongs.sorted {
+                            $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
+                        }
+
+                        DispatchQueue.main.async {
+                            self.songs = sortedSongs
+                            self.pendingSongs.removeAll(keepingCapacity: true)
+                            self.scheduleCacheSave()
+                        }
+                    }
                 }
-                self.pendingSongs.removeAll(keepingCapacity: true)
-                self.scheduleCacheSave()
             }
         }
     }
@@ -386,14 +417,21 @@ class FileAccessService: ObservableObject {
     private func updateScanningState() {
         isScanning = activeDiscoveries > 0 || scanProcessed < scanTotal
         if !isScanning && !pendingSongs.isEmpty {
-            // Final sort when all batches are done (merge with existing cached songs)
+            // ✅ Final sort en background para evitar congelamiento
             let allSongs = songs + pendingSongs
-            songs = allSongs.sorted {
-                $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                guard let self = self else { return }
+                let sortedSongs = allSongs.sorted {
+                    $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
+                }
+
+                DispatchQueue.main.async {
+                    self.songs = sortedSongs
+                    self.pendingSongs.removeAll(keepingCapacity: true)
+                    self.scheduleCacheSave()
+                    AppLog.info(.library, "Indexación completada: \(self.songs.count) canciones")
+                }
             }
-            pendingSongs.removeAll(keepingCapacity: true)
-            scheduleCacheSave()
-            AppLog.info(.library, "Indexación completada: \(songs.count) canciones")
         }
     }
 
@@ -425,7 +463,7 @@ class FileAccessService: ObservableObject {
         let channelCount: Int
     }
 
-    // MARK: - readMetadata (OPTIMIZADO: una sola apertura de archivo, sin lecturas redundantes)
+    // MARK: - readMetadata (OPTIMIZADO: una sola apertura de archivo, sin lecturas redundantes, con timeout)
     private func readMetadata(from url: URL) async -> SongMetadata {
         let asset = AVAsset(url: url)
         var title: String?
@@ -439,10 +477,18 @@ class FileAccessService: ObservableObject {
         var releaseDate: Date?
         var duration: TimeInterval = 0
 
+        // ✅ Timeout para evitar que archivos corruptos congelen la indexación
+        let timeoutTask = Task {
+            try? await Task.sleep(nanoseconds: 5_000_000_000) // 5 segundos timeout
+        }
+
         do {
             // Cargar duración y metadata común en paralelo (una sola pasada)
             async let durationTask = asset.load(.duration)
             let commonMetadata = try await asset.load(.commonMetadata)
+
+            // ✅ Cancelar timeout si carga fue exitosa
+            timeoutTask.cancel()
 
             for item in commonMetadata {
                 switch item.commonKey?.rawValue {
@@ -540,7 +586,21 @@ class FileAccessService: ObservableObject {
             duration = assetDuration.isNumeric ? max(0, assetDuration.seconds) : 0
 
         } catch {
-            AppLog.error(.library, "Error cargando metadatos: \(error.localizedDescription)")
+            // ✅ Manejar timeout y errores sin interrumpir toda la indexación
+            timeoutTask.cancel()
+            AppLog.error(.library, "Error cargando metadatos: \(error.localizedDescription) - \(url.lastPathComponent)")
+
+            // ✅ Fallback básico para que el archivo no se pierda
+            if title == nil {
+                title = url.deletingPathExtension().lastPathComponent
+            }
+            if artist.isEmpty {
+                artist = Localization.localized("details.unknownArtist")
+            }
+            if album.isEmpty {
+                album = Localization.localized("details.unknownAlbum")
+            }
+        }
             // Fallback a métodos síncronos si falla la carga asíncrona
             return await readMetadataFallback(from: url)
         }

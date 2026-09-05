@@ -169,10 +169,13 @@ enum Localization {
 
             // Album/Artist Details
             "details.songs": [.spanish: "Canciones", .english: "Songs"],
+            "details.albums": [.spanish: "Álbumes", .english: "Albums"],
             "details.play": [.spanish: "Reproducir", .english: "Play"],
             "details.shuffle": [.spanish: "Aleatorio", .english: "Shuffle"],
             "details.disc": [.spanish: "Disco", .english: "Disc"],
             "details.unknownArtist": [.spanish: "Artista desconocido", .english: "Unknown Artist"],
+            "details.unknownAlbum": [.spanish: "Álbum desconocido", .english: "Unknown Album"],
+            "details.albumsStat": [.spanish: "álbumes", .english: "albums"],
 
             // Accessibility
             "accessibility.previousSong": [.spanish: "Canción anterior", .english: "Previous song"],
