@@ -332,7 +332,8 @@ class FileAccessService: ObservableObject {
         inFlightBatches += 1
 
         // ✅ Mover procesamiento a background thread para no bloquear UI
-        Task { @MainActor in
+        Task { @MainActor [weak self] in
+            guard let self = self else { return }
             defer { self.inFlightBatches -= 1 }
 
             var foundSongs: [Song] = []
