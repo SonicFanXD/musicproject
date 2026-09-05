@@ -19,7 +19,7 @@ enum Localization {
     static func localized(_ key: String) -> String {
         let strings: [String: [Language: String]] = [
             // Configuración / Settings
-            "settings.title": [.spanish: "Configuración", .english: "Settings"],
+            "settings.title": [.spanish: "Ajustes", .english: "Settings"],
             "settings.library": [.spanish: "Biblioteca", .english: "Library"],
             "settings.audio": [.spanish: "Audio", .english: "Audio"],
             "settings.appearance": [.spanish: "Apariencia", .english: "Appearance"],
@@ -75,7 +75,6 @@ enum Localization {
             "settings.compactPlayerBarSubtitle": [.spanish: "Reducir altura del player bar", .english: "Reduce player bar height"],
 
             // Acerca de / About
-            "settings.title": [.spanish: "Ajustes", .english: "Settings"],
             "settings.subtitle": [.spanish: "Configura Aurora Player a tu gusto", .english: "Customize Aurora Player"],
             "settings.description": [.spanish: "Reproductor de música Hi-Fi optimizado para iOS con soporte de alta fidelidad, ecualizador de 10 bandas, crossfade ajustable y gestión avanzada de carpetas locales.", .english: "Hi-Fi music player optimized for iOS with high-fidelity support, 10-band equalizer, adjustable crossfade and advanced local folder management."],
             "settings.version": [.spanish: "Versión", .english: "Version"],

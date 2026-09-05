@@ -332,8 +332,8 @@ class FileAccessService: ObservableObject {
         inFlightBatches += 1
 
         // ✅ Mover procesamiento a background thread para no bloquear UI
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            guard let self = self else { return }
+        Task { @MainActor in
+            defer { self.inFlightBatches -= 1 }
 
             var foundSongs: [Song] = []
             for url in batch.urls {
@@ -344,31 +344,27 @@ class FileAccessService: ObservableObject {
             // ✅ Throttling de actualizaciones de UI para evitar congelamiento
             let shouldUpdateUI = Date().timeIntervalSince(self.lastUIUpdate) >= self.uiUpdateInterval
 
-            DispatchQueue.main.async {
-                guard generation == self.scanGeneration else {
-                    self.inFlightBatches -= 1
-                    self.processNextMetadataBatchIfNeeded()
-                    return
-                }
-
-                self.scanProcessed += batch.urls.count
-                let uniqueSongs = foundSongs.filter { self.indexedSongURLs.insert($0.url).inserted }
-                if !uniqueSongs.isEmpty {
-                    // Acumular sin ordenar en cada lote (O(n log n) por lote es demasiado para 1254+ canciones)
-                    self.pendingSongs.append(contentsOf: uniqueSongs)
-                    self.scheduleSortAndCache()
-                    AppLog.debug(.library, "Lote cargado: \(uniqueSongs.count); total: \(self.pendingSongs.count)")
-                }
-
-                // ✅ Solo actualizar isScanning si pasó el intervalo para evitar spam de UI
-                if shouldUpdateUI {
-                    self.lastUIUpdate = Date()
-                    self.updateScanningState()
-                }
-
-                self.inFlightBatches -= 1
+            guard generation == self.scanGeneration else {
                 self.processNextMetadataBatchIfNeeded()
+                return
             }
+
+            self.scanProcessed += batch.urls.count
+            let uniqueSongs = foundSongs.filter { self.indexedSongURLs.insert($0.url).inserted }
+            if !uniqueSongs.isEmpty {
+                // Acumular sin ordenar en cada lote (O(n log n) por lote es demasiado para 1254+ canciones)
+                self.pendingSongs.append(contentsOf: uniqueSongs)
+                self.scheduleSortAndCache()
+                AppLog.debug(.library, "Lote cargado: \(uniqueSongs.count); total: \(self.pendingSongs.count)")
+            }
+
+            // ✅ Solo actualizar isScanning si pasó el intervalo para evitar spam de UI
+            if shouldUpdateUI {
+                self.lastUIUpdate = Date()
+                self.updateScanningState()
+            }
+
+            self.processNextMetadataBatchIfNeeded()
         }
     }
 
