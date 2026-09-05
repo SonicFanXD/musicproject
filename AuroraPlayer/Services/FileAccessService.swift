@@ -650,6 +650,7 @@ class FileAccessService: ObservableObject {
         let audioFile = try? AVAudioFile(forReading: url)
         let sampleRate = audioFile?.processingFormat.sampleRate ?? 0
         let bits = audioFile?.processingFormat.streamDescription.pointee.mBitsPerChannel ?? 0
+        let channels = audioFile?.processingFormat.channelCount ?? 0
         let formatDescription = [url.pathExtension.uppercased(), bits > 0 ? "\(bits) bits" : nil, sampleRate > 0 ? "\(Int(sampleRate / 1000)) kHz" : nil]
             .compactMap { $0 }
             .joined(separator: " · ")
@@ -665,7 +666,10 @@ class FileAccessService: ObservableObject {
             formatDescription: formatDescription,
             discNumber: discNumber,
             trackNumber: trackNumber,
-            releaseDate: releaseDate
+            releaseDate: releaseDate,
+            sampleRate: sampleRate,
+            bitDepth: Int(bits),
+            channelCount: Int(channels)
         )
     }
 

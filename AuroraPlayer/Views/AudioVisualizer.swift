@@ -12,7 +12,6 @@ struct AudioVisualizer: View {
         GeometryReader { geometry in
             HStack(spacing: 2) {
                 ForEach(0..<amplitudes.count, id: \.self) { index in
-                    let normalizedIndex = CGFloat(index) / CGFloat(amplitudes.count)
                     let phaseOffset = sin(phase + Double(index) * 0.3) * 0.15
                     let adjustedAmplitude = max(0.05, min(1.0, amplitudes[index] + CGFloat(phaseOffset)))
 
