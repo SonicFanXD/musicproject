@@ -19,6 +19,6 @@ enum Haptics {
 
     static func soft() {
         guard isEnabled else { return }
-        UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
     }
 }

@@ -891,7 +891,7 @@ struct ContentView: View {
     }
 
     private func playSong(_ song: Song) {
-        Haptics.soft()
+        Haptics.light()
         audioEngine.play(song: song, from: fileAccessService.songs)
     }
 
