@@ -226,7 +226,7 @@ struct PlayerBar: View {
                     artworkAppear()
                 }
                 .sheet(isPresented: $showingNowPlaying) {
-                    NowPlayingView(audioEngine: audioEngine)
+                    NowPlayingView(audioEngine: audioEngine, fileAccessService: fileAccessService)
                 }
             }
         }

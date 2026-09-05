@@ -261,7 +261,7 @@ enum ColorExtractor {
                 guard a > 0.5 else { continue }
 
                 let maxC = max(r, g, b)
-                let minC = min(r, g, b)
+                _ = min(r, g, b)
                 let brightness = maxC
 
                 guard brightness > 0.2, brightness < 0.95 else { continue }
