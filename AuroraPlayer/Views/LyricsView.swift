@@ -72,7 +72,7 @@ struct LyricsView: View {
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .principal) {
-                    Text("Letras")
+                    Text(Localization.localized("nowPlaying.lyrics"))
                         .font(.system(size: 20, weight: .bold, design: .rounded))
                         .foregroundStyle(
                             LinearGradient(
@@ -81,11 +81,11 @@ struct LyricsView: View {
                                 endPoint: .trailing
                             )
                         )
-                        .accessibilityLabel("Letras")
+                        .accessibilityLabel(Localization.localized("nowPlaying.lyrics"))
                 }
 
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Listo") { dismiss() }
+                    Button(Localization.localized("actions.done")) { dismiss() }
                         .foregroundStyle(Color.accentColor)
                         .frame(width: 44, height: 44)
                         .contentShape(Rectangle())
@@ -137,8 +137,8 @@ struct LyricsView: View {
                 Circle().fill(Color.accentColor.opacity(0.12)).frame(width: 100, height: 100)
                 Image(systemName: "quote.bubble").font(.system(size: 48, weight: .semibold)).foregroundStyle(Color.accentColor)
             }
-            Text("No hay letras disponibles").font(.system(size: 20, weight: .bold)).foregroundStyle(.primary)
-            Text("Esta canción no tiene información de letras en su metadata.")
+            Text(Localization.localized("lyrics.noLyrics")).font(.system(size: 20, weight: .bold)).foregroundStyle(.primary)
+            Text(Localization.localized("lyrics.noLyricsSubtitle"))
                 .font(.system(size: 15)).foregroundStyle(.secondary).multilineTextAlignment(.center).padding(.horizontal, 24)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity).padding(.vertical, 60)

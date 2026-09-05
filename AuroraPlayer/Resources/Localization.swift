@@ -75,6 +75,9 @@ enum Localization {
             "settings.compactPlayerBarSubtitle": [.spanish: "Reducir altura del player bar", .english: "Reduce player bar height"],
 
             // Acerca de / About
+            "settings.title": [.spanish: "Ajustes", .english: "Settings"],
+            "settings.subtitle": [.spanish: "Configura Aurora Player a tu gusto", .english: "Customize Aurora Player"],
+            "settings.description": [.spanish: "Reproductor de música Hi-Fi optimizado para iOS con soporte de alta fidelidad, ecualizador de 10 bandas, crossfade ajustable y gestión avanzada de carpetas locales.", .english: "Hi-Fi music player optimized for iOS with high-fidelity support, 10-band equalizer, adjustable crossfade and advanced local folder management."],
             "settings.version": [.spanish: "Versión", .english: "Version"],
             "settings.build": [.spanish: "Build", .english: "Build"],
             "settings.logs": [.spanish: "Registros", .english: "Logs"],
@@ -109,6 +112,45 @@ enum Localization {
             "library.sort": [.spanish: "Ordenar", .english: "Sort"],
             "library.sortAscending": [.spanish: "Ascendente", .english: "Ascending"],
             "library.sortDescending": [.spanish: "Descendente", .english: "Descending"],
+            "library.noPlaylists": [.spanish: "No hay listas disponibles", .english: "No playlists available"],
+
+            // App name
+            "app.name": [.spanish: "Aurora Player", .english: "Aurora Player"],
+
+            // Indexing / Escaneo
+            "indexing.updating": [.spanish: "Actualizando...", .english: "Updating..."],
+            "indexing.indexingLibrary": [.spanish: "Indexando tu biblioteca", .english: "Indexing your library"],
+            "indexing.progress": [.spanish: "de", .english: "of"],
+            "indexing.preparing": [.spanish: "Preparando tu música…", .english: "Preparing your music…"],
+            "indexing.processed": [.spanish: "Indexando…", .english: "Indexing…"],
+
+            // Actions
+            "actions.addFolder": [.spanish: "Agregar carpeta de música", .english: "Add music folder"],
+            "actions.done": [.spanish: "Listo", .english: "Done"],
+            "actions.clearQueue": [.spanish: "Limpiar cola", .english: "Clear queue"],
+
+            // Queue
+            "queue.title": [.spanish: "Cola de Reproducción", .english: "Play Queue"],
+            "queue.nextUp": [.spanish: "Siguiente", .english: "Next Up"],
+            "queue.history": [.spanish: "Historial", .english: "History"],
+            "queue.empty": [.spanish: "Cola vacía", .english: "Queue empty"],
+            "queue.emptyHistory": [.spanish: "Sin historial", .english: "No history"],
+
+            // Lyrics
+            "lyrics.noLyrics": [.spanish: "No hay letras disponibles", .english: "No lyrics available"],
+            "lyrics.noLyricsSubtitle": [.spanish: "Esta canción no tiene información de letras en su metadata.", .english: "This song has no lyrics information in its metadata."],
+
+            // Album/Artist Details
+            "details.songs": [.spanish: "Canciones", .english: "Songs"],
+            "details.play": [.spanish: "Reproducir", .english: "Play"],
+            "details.shuffle": [.spanish: "Aleatorio", .english: "Shuffle"],
+            "details.disc": [.spanish: "Disco", .english: "Disc"],
+            "details.unknownArtist": [.spanish: "Artista desconocido", .english: "Unknown Artist"],
+
+            // Accessibility
+            "accessibility.previousSong": [.spanish: "Canción anterior", .english: "Previous song"],
+            "accessibility.nextSong": [.spanish: "Siguiente canción", .english: "Next song"],
+            "accessibility.playPause": [.spanish: "Reproducir/Pausar", .english: "Play/Pause"],
 
             // Otros / Others
             "folders": [.spanish: "carpetas", .english: "folders"],

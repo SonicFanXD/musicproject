@@ -31,7 +31,7 @@ struct AlbumDetailView: View {
                 actionButtons
                     .padding(.horizontal, 20).padding(.top, 20)
                 VStack(spacing: 10) {
-                    sectionHeader(icon: "music.note.list", title: "Canciones")
+                    sectionHeader(icon: "music.note.list", title: Localization.localized("details.songs"))
                     if hasMultipleDiscs {
                         ForEach(songsByDisc, id: \.disc) { discGroup in
                             discSection(disc: discGroup.disc, songs: discGroup.songs)
@@ -184,7 +184,7 @@ struct AlbumDetailView: View {
             } label: {
                 HStack(spacing: 10) {
                     Image(systemName: "play.fill").font(.system(size: 16, weight: .bold))
-                    Text("Reproducir").font(.system(size: 16, weight: .bold, design: .rounded))
+                    Text(Localization.localized("details.play")).font(.system(size: 16, weight: .bold, design: .rounded))
                 }
                 .foregroundStyle(onTintColor).frame(maxWidth: .infinity).frame(height: 54)
                 .background {
@@ -222,7 +222,7 @@ struct AlbumDetailView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 Image(systemName: "opticaldisc").font(.system(size: 12, weight: .semibold)).foregroundStyle(tintColor.opacity(0.8))
-                Text("Disco \(disc)").font(.system(size: 14, weight: .semibold)).foregroundStyle(.secondary)
+                Text("\(Localization.localized("details.disc")) \(disc)").font(.system(size: 14, weight: .semibold)).foregroundStyle(.secondary)
             }
             .padding(.horizontal, 4).padding(.top, 6)
             ForEach(Array(songs.enumerated()), id: \.element.id) { index, song in

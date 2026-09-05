@@ -182,7 +182,7 @@ struct SettingsView: View {
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .principal) {
-                    Text("Ajustes")
+                    Text(Localization.localized("settings.title"))
                         .font(.system(size: 20, weight: .bold, design: .rounded))
                         .foregroundStyle(
                             LinearGradient(
@@ -191,11 +191,11 @@ struct SettingsView: View {
                                 endPoint: .trailing
                             )
                         )
-                        .accessibilityLabel("Ajustes")
+                        .accessibilityLabel(Localization.localized("settings.title"))
                 }
 
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Listo") { dismiss() }
+                    Button(Localization.localized("actions.done")) { dismiss() }
                         .foregroundStyle(Color.accentColor)
                         .frame(width: 44, height: 44)
                         .contentShape(Rectangle())
@@ -213,7 +213,7 @@ struct SettingsView: View {
             .alert("Aurora Player v\(appVersion)", isPresented: $showAbout) {
                 Button("OK", role: .cancel) {}
             } message: {
-                Text("Reproductor de música Hi-Fi optimizado para iOS con soporte de alta fidelidad, ecualizador de 10 bandas, crossfade ajustable y gestión avanzada de carpetas locales.")
+                Text(Localization.localized("settings.description"))
             }
         }
     }
@@ -273,11 +273,11 @@ struct SettingsView: View {
             }
 
             VStack(spacing: 4) {
-                Text("Ajustes")
+                Text(Localization.localized("settings.title"))
                     .font(.system(size: 24, weight: .bold, design: .rounded))
                     .foregroundStyle(.primary)
 
-                Text("Configura Aurora Player a tu gusto")
+                Text(Localization.localized("settings.subtitle"))
                     .font(.system(size: 13))
                     .foregroundStyle(.secondary)
             }

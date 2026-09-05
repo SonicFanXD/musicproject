@@ -129,7 +129,7 @@ struct NowPlayingView: View {
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .principal) {
-                    Text("Reproduciendo")
+                    Text(Localization.localized("nowPlaying.title"))
                         .font(.system(size: 20, weight: .bold, design: .rounded))
                         .foregroundStyle(
                             LinearGradient(
@@ -138,7 +138,7 @@ struct NowPlayingView: View {
                                 endPoint: .trailing
                             )
                         )
-                        .accessibilityLabel("Reproduciendo")
+                        .accessibilityLabel(Localization.localized("nowPlaying.title"))
                 }
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button {

@@ -38,7 +38,7 @@ struct PlayerBar: View {
                                     .foregroundStyle(.primary)
                                     .lineLimit(1)
 
-                                Text(song.artist.isEmpty ? "Artista desconocido" : song.artist)
+                                Text(song.artist.isEmpty ? Localization.localized("details.unknownArtist") : song.artist)
                                     .font(.system(size: 12))
                                     .foregroundStyle(.secondary)
                                     .lineLimit(1)
@@ -94,7 +94,7 @@ struct PlayerBar: View {
                                     .scaleEffect(playButtonScale)
                             }
                             .buttonStyle(PressableButtonStyle(scale: 0.85))
-                            .accessibilityLabel("Canción anterior")
+                            .accessibilityLabel(Localization.localized("accessibility.previousSong"))
 
                             // Play/Pause con animación de escala y halo
                             Button {
@@ -132,7 +132,7 @@ struct PlayerBar: View {
                                 .contentShape(Circle())
                             }
                             .buttonStyle(PressableButtonStyle(scale: 0.88))
-                            .accessibilityLabel(audioEngine.isPlaying ? "Pausar" : "Reproducir")
+                            .accessibilityLabel(Localization.localized("accessibility.playPause"))
 
                             // Next
                             Button {
@@ -147,7 +147,7 @@ struct PlayerBar: View {
                                     .scaleEffect(playButtonScale)
                             }
                             .buttonStyle(PressableButtonStyle(scale: 0.85))
-                            .accessibilityLabel("Siguiente canción")
+                            .accessibilityLabel(Localization.localized("accessibility.nextSong"))
                         }
                     }
                     .padding(.leading, 14)

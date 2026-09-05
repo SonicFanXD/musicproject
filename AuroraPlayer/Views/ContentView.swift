@@ -76,7 +76,7 @@ struct ContentView: View {
                 .toolbarBackground(.visible, for: .navigationBar)
                 .toolbar {
                     ToolbarItem(placement: .principal) {
-                        Text("Aurora Player")
+                        Text(Localization.localized("app.name"))
                             .font(.system(size: 22, weight: .bold, design: .rounded))
                             .foregroundStyle(
                                 LinearGradient(
@@ -85,7 +85,7 @@ struct ContentView: View {
                                     endPoint: .trailing
                                 )
                             )
-                            .accessibilityLabel("Aurora Player")
+                            .accessibilityLabel(Localization.localized("app.name"))
                     }
 
                     ToolbarItem(placement: .topBarTrailing) {
@@ -156,7 +156,7 @@ struct ContentView: View {
                             Spacer()
                             HStack(spacing: 8) {
                                 ProgressView().controlSize(.small)
-                                Text("Actualizando...")
+                                Text(Localization.localized("indexing.updating"))
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }

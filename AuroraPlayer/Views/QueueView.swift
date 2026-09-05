@@ -9,8 +9,15 @@ struct QueueView: View {
     @State private var editableQueue: [Song] = []
 
     enum QueueTab: String, CaseIterable {
-        case nextUp = "Siguiente"
-        case history = "Historial"
+        case nextUp
+        case history
+
+        var localizedTitle: String {
+            switch self {
+            case .nextUp: return Localization.localized("queue.nextUp")
+            case .history: return Localization.localized("queue.history")
+            }
+        }
     }
 
     var body: some View {
@@ -40,7 +47,7 @@ struct QueueView: View {
             .toolbarBackground(.visible, for: .navigationBar)
                     .toolbar {
                         ToolbarItem(placement: .principal) {
-                            Text("Cola de Reproducción")
+                            Text(Localization.localized("queue.title"))
                                 .font(.system(size: 18, weight: .bold, design: .rounded))
                                 .foregroundStyle(
                                     LinearGradient(
@@ -49,7 +56,7 @@ struct QueueView: View {
                                     )
                                 )
                                 .lineLimit(1).minimumScaleFactor(0.7)
-                                .accessibilityLabel("Cola de Reproducción")
+                                .accessibilityLabel(Localization.localized("queue.title"))
                         }
 
                         ToolbarItem(placement: .topBarTrailing) {
@@ -66,7 +73,7 @@ struct QueueView: View {
                                             .contentShape(Rectangle())
                                     }
                                 }
-                                Button("Listo") { dismiss() }
+                                Button(Localization.localized("actions.done")) { dismiss() }
                                     .foregroundStyle(Color.accentColor)
                                     .frame(width: 44, height: 44)
                                     .contentShape(Rectangle())
@@ -96,7 +103,7 @@ struct QueueView: View {
                     HStack(spacing: 6) {
                         Image(systemName: tab == .nextUp ? "list.number" : "clock.arrow.circlepath")
                             .font(.system(size: 12, weight: .semibold))
-                        Text(tab.rawValue)
+                        Text(tab.localizedTitle)
                             .font(.system(size: 14, weight: selectedTab == tab ? .semibold : .medium, design: .rounded))
                     }
                     .foregroundStyle(selectedTab == tab ? .white : .secondary)
