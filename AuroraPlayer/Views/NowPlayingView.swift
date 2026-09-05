@@ -1,5 +1,6 @@
 import SwiftUI
 import AVFoundation
+import AVKit
 
 struct NowPlayingView: View {
     @ObservedObject var audioEngine: AudioEngine
@@ -176,6 +177,10 @@ struct NowPlayingView: View {
             }
             .sheet(isPresented: $showQueue) {
                 QueueView(audioEngine: audioEngine)
+            }
+            .sheet(isPresented: $showAirPlayPicker) {
+                AirPlayRoutePickerView()
+                    .presentationDetents([.medium])
             }
             .overlay {
                 if showQualityDetail {
@@ -689,4 +694,22 @@ struct NowPlayingView: View {
             }
         }
     }
+}
+
+// MARK: - AirPlay Route Picker View (UIKit wrapper)
+struct AirPlayRoutePickerView: UIViewRepresentable {
+    typealias UIViewType = UIView
+
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView()
+        let picker = AVRoutePickerView()
+        picker.prioritizesVideoDevices = false
+        picker.tintColor = UIColor(Color.accentColor)
+        picker.frame = view.bounds
+        picker.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        view.addSubview(picker)
+        return view
+    }
+
+    func updateUIView(_ uiView: UIView, context: Context) {}
 }
