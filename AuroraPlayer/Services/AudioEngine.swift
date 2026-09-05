@@ -189,6 +189,8 @@ class AudioEngine: NSObject, ObservableObject {
             scheduleGeneration += 1
             let currentPosition = currentTime
             playerNode.stop()
+            // ✅ Mantener consistencia del reloj de display tras re-programar desde currentPosition
+            seekOffset = currentPosition
             crossfadeTimer?.invalidate()
             crossfadeTimer = nil
             isCrossfading = false
@@ -615,6 +617,10 @@ class AudioEngine: NSObject, ObservableObject {
 
         let clampedTime = max(0, min(time, duration))
         currentTime = clampedTime
+        // ✅ FIX CRÍTICO (letras reiniciaban al hacer tap): playerTime.sampleTime se reinicia
+        // a 0 tras stop()/play(), y el display timer calcula seekOffset + sampleTime/sampleRate.
+        // Sin actualizar seekOffset, currentTime volvía a ~0 y la letra saltaba al inicio.
+        seekOffset = clampedTime
         scheduleFile(file, from: clampedTime)
         if isPlaying {
             playerNode.play()
@@ -834,14 +840,51 @@ class AudioEngine: NSObject, ObservableObject {
         }
     }
 
+    // ✅ Auto-reanudación al conectar audífonos
+    private var wasPlayingBeforeRouteChange = false
+
     private func observeRouteChanges() {
         NotificationCenter.default.addObserver(
             forName: AVAudioSession.routeChangeNotification,
             object: nil,
             queue: .main
-        ) { [weak self] _ in
-            self?.updateRouteName()
-            self?.updateAudioQuality()
+        ) { [weak self] notification in
+            guard let self = self else { return }
+
+            let reasonRaw = notification.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt ?? 0
+            let reason = AVAudioSession.RouteChangeReason(rawValue: reasonRaw)
+
+            // ✅ FIX: cuando se conectan audífonos/BT (nuevo dispositivo disponible),
+            // reanudar la reproducción automáticamente si estaba sonando antes.
+            // Antes, al conectar audífonos el audio quedaba pausado/silencioso y
+            // el usuario tenía que dar play manualmente.
+            if reason == .newDeviceAvailable {
+                let wasPlaying = self.isPlaying || self.wasPlayingBeforeRouteChange
+                self.wasPlayingBeforeRouteChange = self.isPlaying
+
+                // Pequeño delay para que el sistema termine de estabilizar la ruta
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+                    guard let self = self else { return }
+                    let route = AVAudioSession.sharedInstance().currentRoute.outputs.first
+                    let isHeadphoneRoute = route.map { output in
+                        [.headphones, .bluetoothA2DP, .bluetoothLE, .bluetoothHFP, .airPlay, .carAudio]
+                            .contains(output.portType)
+                    } ?? false
+
+                    if wasPlaying && isHeadphoneRoute && !self.isPlaying {
+                        self.resume()
+                        AppLog.info(.playback, "Ruta cambiada a \(route?.portName ?? "?"): reproducción reanudada")
+                    }
+                }
+            } else if reason == .oldDeviceUnavailable {
+                // Al desconectar audífonos, recordar estado (el sistema pausa solo)
+                self.wasPlayingBeforeRouteChange = self.isPlaying
+            } else {
+                self.wasPlayingBeforeRouteChange = self.isPlaying
+            }
+
+            self.updateRouteName()
+            self.updateAudioQuality()
         }
     }
 

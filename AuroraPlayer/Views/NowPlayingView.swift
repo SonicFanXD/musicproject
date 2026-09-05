@@ -17,6 +17,14 @@ struct NowPlayingView: View {
     @State private var progressBarWidth: CGFloat = 0
     @State private var extractedColor: Color = Color.accentColor
 
+    // ✅ Scrub optimizado: preview local a 60fps, seek real solo al soltar
+    @State private var isScrubbing = false
+    @State private var scrubPreviewTime: TimeInterval = 0
+
+    // Personalización persistente
+    @AppStorage("com.aurora.artworkCorner") private var artworkCorner: Double = 22
+    @AppStorage("com.aurora.reduceTransparency") private var reduceTransparency = false
+
     // MARK: - Adaptive sizing for iOS 16 & iPhone 8 Plus
     private var isCompactScreen: Bool {
         UIScreen.main.bounds.height < 800
@@ -31,8 +39,17 @@ struct NowPlayingView: View {
     }
 
     private var progress: Double {
+        // ✅ Durante scrub se muestra el preview local (60fps) sin tocar el engine
+        if isScrubbing {
+            guard audioEngine.duration > 0 else { return 0 }
+            return min(max(scrubPreviewTime / audioEngine.duration, 0), 1)
+        }
         guard audioEngine.duration > 0 else { return 0 }
         return min(max(audioEngine.currentTime / audioEngine.duration, 0), 1)
+    }
+
+    private var scrubPreviewText: String {
+        formatTime(isScrubbing ? scrubPreviewTime : audioEngine.currentTime)
     }
 
     var body: some View {
@@ -170,17 +187,75 @@ struct NowPlayingView: View {
                 QueueView(audioEngine: audioEngine)
             }
             .sheet(isPresented: $showQualityDetail) {
-                AudioQualityDetailView(audioEngine: audioEngine)
-                    .presentationDetents([.medium, .large]) // Sheet compacto estilo preview
-                    .presentationDragIndicator(.visible)
+                qualityCardModal
             }
         }
     }
 
-    // MARK: - Background with hardware acceleration (.drawingGroup)
+    // MARK: - Modal centrado con X (mejorado, estilo ventana emergente)
+    private var qualityCardModal: some View {
+        ZStack {
+            // Fondo oscuro semitransparente que bloquea el NowPlaying detrás
+            Color.black.opacity(0.4)
+                .ignoresSafeArea()
+                .onTapGesture {
+                    showQualityDetail = false
+                }
+
+            // Tarjeta modal centrada
+            VStack(spacing: 0) {
+                // Barra superior con título y botón X
+                HStack(spacing: 12) {
+                    Image(systemName: "waveform.badge.magnifyingglass")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(Color.accentColor)
+
+                    Text("Calidad de audio")
+                        .font(.system(size: 17, weight: .bold, design: .rounded))
+                        .foregroundStyle(.primary)
+
+                    Spacer()
+
+                    // Botón X
+                    Button {
+                        Haptics.light()
+                        showQualityDetail = false
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 32, height: 32)
+                            .background {
+                                Circle()
+                                    .fill(Color.secondary.opacity(0.15))
+                            }
+                            .contentShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Cerrar")
+                }
+                .padding(.horizontal, 18)
+                .padding(.top, 16)
+                .padding(.bottom, 8)
+
+                // Contenido de calidad (modo embebido, scroll interno)
+                AudioQualityDetailView(audioEngine: audioEngine, embeddedInCard: true)
+            }
+            .frame(maxWidth: 480, maxHeight: 640) // Centrado, con límites
+            .background {
+                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                    .fill(Color(UIColor.systemBackground))
+                    .shadow(color: .black.opacity(0.3), radius: 24, x: 0, y: 12)
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+            .padding(.horizontal, 24)
+        }
+    }
+
+    // MARK: - Background (respeta "Reducir transparencia" para más rendimiento)
     private var backgroundView: some View {
         Group {
-            if let artwork = audioEngine.currentSong?.artwork {
+            if let artwork = audioEngine.currentSong?.artwork, !reduceTransparency {
                 GeometryReader { geometry in
                     ZStack {
                         Image(uiImage: artwork)
@@ -196,8 +271,9 @@ struct NowPlayingView: View {
                 }
                 .ignoresSafeArea()
                 .allowsHitTesting(false)
-                .drawingGroup(opaque: false) // Standard color mode — extendedLinear is unnecessary GPU cost on A11
+                .drawingGroup(opaque: false)
             } else {
+                // Modo "Reducir transparencia" o sin artwork: gradiente plano (cero GPU blur)
                 LinearGradient(
                     colors: [
                         Color(UIColor.systemBackground),
@@ -212,7 +288,7 @@ struct NowPlayingView: View {
         }
     }
 
-    // MARK: - Artwork with GPU optimization
+    // MARK: - Artwork with GPU optimization (respeta esquina personalizada)
     private var artworkView: some View {
         Group {
             if let artwork = audioEngine.currentSong?.artwork {
@@ -221,15 +297,15 @@ struct NowPlayingView: View {
                     .interpolation(.medium) // Medium interpolation ensures zero lag during scale animations on older A11 chips
                     .scaledToFill()
                     .frame(width: artworkSize, height: artworkSize)
-                    .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: CGFloat(artworkCorner), style: .continuous))
                     .shadow(color: extractedColor.opacity(0.3), radius: 12, x: 0, y: 5)
                     .overlay(
-                        RoundedRectangle(cornerRadius: 22, style: .continuous)
+                        RoundedRectangle(cornerRadius: CGFloat(artworkCorner), style: .continuous)
                             .stroke(extractedColor.opacity(0.2), lineWidth: 1)
                     )
             } else {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    RoundedRectangle(cornerRadius: CGFloat(artworkCorner), style: .continuous)
                         .fill(
                             LinearGradient(
                                 colors: [
@@ -299,7 +375,7 @@ struct NowPlayingView: View {
         .padding(.horizontal, 6)
     }
 
-    // MARK: - Progress View with expanded touch area
+    // MARK: - Progress View (scrub fluido a 60fps + seek real al soltar)
     private var progressView: some View {
         VStack(spacing: 6) {
             GeometryReader { geometry in
@@ -326,20 +402,32 @@ struct NowPlayingView: View {
                 }
             }
             .frame(height: 5)
-            .padding(.vertical, 18) // Generous touch target expansion (36pt total)
+            .padding(.vertical, 18)
             .contentShape(Rectangle())
             .gesture(
                 DragGesture(minimumDistance: 0)
                     .onChanged { value in
-                        handleScrub(value.location.x)
+                        // ✅ Preview local: solo actualiza @State (60fps, sin toques al engine)
+                        isScrubbing = true
+                        let percentage = max(0, min(1, value.location.x / progressBarWidth))
+                        scrubPreviewTime = audioEngine.duration * percentage
+                    }
+                    .onEnded { value in
+                        // ✅ Seek real UNA sola vez al soltar (evita miles de seeks por arrastre)
+                        let percentage = max(0, min(1, value.location.x / progressBarWidth))
+                        let newTime = audioEngine.duration * percentage
+                        isScrubbing = false
+                        audioEngine.seek(to: newTime)
                     }
             )
 
             HStack {
-                Text(formatTime(audioEngine.currentTime))
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.secondary)
+                // ✅ El tiempo izquierdo muestra el preview durante el scrub
+                Text(scrubPreviewText)
+                    .font(.system(size: 11, weight: isScrubbing ? .bold : .medium))
+                    .foregroundStyle(isScrubbing ? extractedColor : .secondary)
                     .monospacedDigit()
+                    .animation(.easeInOut(duration: 0.15), value: isScrubbing)
 
                 Spacer()
 
@@ -498,13 +586,6 @@ struct NowPlayingView: View {
         case .all: return "repeat"
         case .one: return "repeat.1"
         }
-    }
-
-    private func handleScrub(_ location: CGFloat) {
-        guard progressBarWidth > 0 else { return }
-        let percentage = max(0, min(1, location / progressBarWidth))
-        let newTime = audioEngine.duration * percentage
-        audioEngine.seek(to: newTime)
     }
 
     private func formatTime(_ time: TimeInterval) -> String {

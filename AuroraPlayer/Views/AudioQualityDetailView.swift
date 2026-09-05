@@ -3,13 +3,42 @@ import AVFoundation
 
 /// Ventana emergente estilo PowerAmp: muestra la calidad del archivo fuente
 /// y la cadena de procesamiento completa hasta la salida física (altavoz/BT/DAC).
+/// Puede presentarse como vista completa (con chrome) o embebida en una tarjeta
+/// modal centrada (embeddedInCard: true).
 struct AudioQualityDetailView: View {
     @ObservedObject var audioEngine: AudioEngine
+    var embeddedInCard: Bool = false
     @Environment(\.dismiss) private var dismiss
 
     private var song: Song? { audioEngine.currentSong }
 
     var body: some View {
+        if embeddedInCard {
+            // Modo embebido: solo el contenido, sin chrome (lo pone la tarjeta contenedora)
+            embeddedContent
+        } else {
+            chromeBody
+        }
+    }
+
+    // MARK: - Contenido embebido (para tarjeta modal centrada)
+    private var embeddedContent: some View {
+        ScrollView {
+            VStack(spacing: 20) {
+                headerCard
+                signalChainSection
+                fileDetailsSection
+                outputDetailsSection
+            }
+            .padding(.horizontal, 18)
+            .padding(.top, 14)
+            .padding(.bottom, 20)
+        }
+        .scrollIndicators(.hidden)
+    }
+
+    // MARK: - Cuerpo completo con chrome de navegación
+    private var chromeBody: some View {
         NavigationStack {
             ZStack {
                 // Fondo consistente con la app

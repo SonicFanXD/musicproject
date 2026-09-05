@@ -20,6 +20,7 @@ struct SettingsView: View {
     @AppStorage("com.aurora.crossfadeSeconds") private var crossfadeSeconds: Double = 3.0
     @AppStorage("com.aurora.artworkCorner") private var artworkCorner: Double = 22
     @AppStorage("com.aurora.dynamicColor") private var dynamicColor = true
+    @AppStorage("com.aurora.reduceTransparency") private var reduceTransparency = false
 
     private let themes = ["Sistema (claro/oscuro)", "Modo Claro", "Modo Oscuro"]
     private let accents = ["Morado (predeterminado)", "Azul Aurora", "Esmeralda", "Rosa Neón", "Ámbar Solar"]
@@ -193,6 +194,50 @@ struct SettingsView: View {
                                 icon: "wand.and.stars",
                                 color: .cyan,
                                 isOn: $dynamicColor
+                            )
+
+                            settingsDivider
+
+                            // Esquinas del artwork (slider personalizable)
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack {
+                                    HStack(spacing: 14) {
+                                        Image(systemName: "rounded.righthalf.filled")
+                                            .font(.system(size: 16, weight: .medium))
+                                            .foregroundStyle(Color.blue)
+                                            .frame(width: 32, height: 32)
+                                            .background {
+                                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                                    .fill(Color.blue.opacity(0.1))
+                                            }
+
+                                        Text("Esquinas del artwork")
+                                            .font(.system(size: 15, weight: .medium))
+                                            .foregroundStyle(.primary)
+                                    }
+
+                                    Spacer()
+
+                                    Text("\(Int(artworkCorner)) pt")
+                                        .font(.system(size: 13, weight: .bold).monospacedDigit())
+                                        .foregroundStyle(Color.blue)
+                                }
+
+                                Slider(value: $artworkCorner, in: 0...44, step: 2)
+                                    .tint(Color.blue)
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 12)
+
+                            settingsDivider
+
+                            // Reducir transparencia (mejora rendimiento en A11)
+                            settingsToggleRow(
+                                title: "Reducir transparencia",
+                                subtitle: "Menos desenfoques, más rendimiento",
+                                icon: "circle.slash",
+                                color: .gray,
+                                isOn: $reduceTransparency
                             )
                         }
 

@@ -71,7 +71,7 @@ struct AlbumDetailView: View {
     // MARK: - Hero (artwork grande sobre fondo desenfocado con tinte del color dominante)
     private var heroSection: some View {
         VStack(spacing: 18) {
-            // Artwork con marco sutil
+            // Artwork con marco sutil y animación de entrada optimizada
             Group {
                 if let artwork = album.artwork {
                     Image(uiImage: artwork)
@@ -79,12 +79,20 @@ struct AlbumDetailView: View {
                         .interpolation(.high)
                         .scaledToFill()
                         .frame(width: 240, height: 240)
-                        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
                         .overlay {
-                            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                                .strokeBorder(.white.opacity(0.12), lineWidth: 1)
+                            // Marco con degradado sutil (más premium)
+                            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                                .strokeBorder(
+                                    LinearGradient(
+                                        colors: [.white.opacity(0.25), .white.opacity(0.05)],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    ),
+                                    lineWidth: 1
+                                )
                         }
-                        .shadow(color: .black.opacity(0.3), radius: 24, x: 0, y: 14)
+                        .shadow(color: .black.opacity(0.35), radius: 28, x: 0, y: 16)
                 } else {
                     ZStack {
                         RoundedRectangle(cornerRadius: 20, style: .continuous)
@@ -120,7 +128,7 @@ struct AlbumDetailView: View {
             }
             .padding(.horizontal, 24)
 
-            // Estadísticas
+            // Estadísticas con animación de aparición
             HStack(spacing: 10) {
                 statPill(icon: "music.note", text: "\(songs.count) canciones")
 
@@ -128,6 +136,7 @@ struct AlbumDetailView: View {
                     statPill(icon: "clock", text: formatLongDuration(totalDuration))
                 }
             }
+            .transition(.opacity)
         }
         .frame(maxWidth: .infinity)
         .padding(.bottom, 4)
@@ -166,12 +175,12 @@ struct AlbumDetailView: View {
         }
     }
 
-    // MARK: - Botones de acción (Reproducir + Aleatorio) — color basado en carátula
+    // MARK: - Botones de acción (Reproducir + Aleatorio) — diseño mejorado con cápsulas
     private var actionButtons: some View {
         HStack(spacing: 12) {
             // Reproducir todo
             Button {
-                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                Haptics.medium()
                 if let firstSong = songs.first {
                     audioEngine.play(song: firstSong, from: songs)
                 }
@@ -180,22 +189,30 @@ struct AlbumDetailView: View {
                     Image(systemName: "play.fill")
                         .font(.system(size: 16, weight: .semibold))
                     Text("Reproducir")
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(.system(size: 16, weight: .semibold, design: .rounded))
                 }
                 .foregroundStyle(.white)
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 18) // Expanded touch target (15→18)
+                .frame(height: 52) // Cápsula uniforme
                 .background {
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(tintColor)
+                    // ✅ Cápsula con gradiente del color de portada (más premium)
+                    Capsule()
+                        .fill(
+                            LinearGradient(
+                                colors: [tintColor, tintColor.opacity(0.82)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
                 }
-                .contentShape(Rectangle())
-                .shadow(color: tintColor.opacity(0.4), radius: 10, x: 0, y: 5)
+                .contentShape(Capsule())
+                .shadow(color: tintColor.opacity(0.45), radius: 12, x: 0, y: 6)
             }
+            .buttonStyle(PressableButtonStyle(scale: 0.97))
 
             // Aleatorio
             Button {
-                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                Haptics.medium()
                 if !audioEngine.isShuffleEnabled {
                     audioEngine.toggleShuffle()
                 }
@@ -208,12 +225,13 @@ struct AlbumDetailView: View {
                     .foregroundStyle(tintColor)
                     .frame(width: 52, height: 52)
                     .background {
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        Circle()
                             .fill(tintColor.opacity(0.14))
                     }
                     .frame(width: 60, height: 60) // Bigger invisible touch target
-                    .contentShape(Rectangle())
+                    .contentShape(Circle())
             }
+            .buttonStyle(PressableButtonStyle(scale: 0.9))
         }
     }
 
@@ -512,11 +530,11 @@ struct ArtistDetailView: View {
         }
     }
 
-    // MARK: - Botones de acción del artista
+    // MARK: - Botones de acción del artista (cápsula premium consistente con álbum)
     private var artistActionButtons: some View {
         HStack(spacing: 12) {
             Button {
-                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                Haptics.medium()
                 if let firstSong = songs.first {
                     audioEngine.play(song: firstSong, from: songs)
                 }
@@ -525,21 +543,28 @@ struct ArtistDetailView: View {
                     Image(systemName: "play.fill")
                         .font(.system(size: 16, weight: .semibold))
                     Text("Reproducir")
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(.system(size: 16, weight: .semibold, design: .rounded))
                 }
                 .foregroundStyle(.white)
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 18) // Expanded touch target (15→18)
+                .frame(height: 52) // Cápsula uniforme
                 .background {
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(Color.accentColor)
+                    Capsule()
+                        .fill(
+                            LinearGradient(
+                                colors: [Color.accentColor, Color.accentColor.opacity(0.82)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
                 }
-                .contentShape(Rectangle())
-                .shadow(color: Color.accentColor.opacity(0.35), radius: 10, x: 0, y: 5)
+                .contentShape(Capsule())
+                .shadow(color: Color.accentColor.opacity(0.4), radius: 12, x: 0, y: 6)
             }
+            .buttonStyle(PressableButtonStyle(scale: 0.97))
 
             Button {
-                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                Haptics.medium()
                 if !audioEngine.isShuffleEnabled {
                     audioEngine.toggleShuffle()
                 }
@@ -552,12 +577,13 @@ struct ArtistDetailView: View {
                     .foregroundStyle(Color.accentColor)
                     .frame(width: 52, height: 52)
                     .background {
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        Circle()
                             .fill(Color.accentColor.opacity(0.14))
                     }
                     .frame(width: 60, height: 60) // Bigger invisible touch target
-                    .contentShape(Rectangle())
+                    .contentShape(Circle())
             }
+            .buttonStyle(PressableButtonStyle(scale: 0.9))
         }
     }
 

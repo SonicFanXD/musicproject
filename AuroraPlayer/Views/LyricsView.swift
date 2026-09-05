@@ -11,10 +11,13 @@ struct LyricsView: View {
     @State private var scrollTarget: Int? = nil
     @State private var wordProgress: [UUID: Double] = [:]
 
+    // ✅ OPTIMIZACIÓN: palabras agrupadas por línea UNA sola vez (O(n) al parsear),
+    // en lugar de filtrar O(n²) en cada frame de render como antes.
+    @State private var wordsByLine: [[LyricWord]] = []
+
     var body: some View {
         NavigationStack {
             ZStack {
-                // Fondo difuminado del artwork
                 blurredArtworkBackground
 
                 switch parsedLyrics {
@@ -34,7 +37,6 @@ struct LyricsView: View {
             .toolbarBackground(Color(UIColor.systemBackground).opacity(0.92), for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
-                // Título personalizado consistente con la app
                 ToolbarItem(placement: .principal) {
                     Text("Letras")
                         .font(.system(size: 20, weight: .bold, design: .rounded))
@@ -51,11 +53,13 @@ struct LyricsView: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Listo") { dismiss() }
                         .foregroundStyle(Color.accentColor)
-                        .frame(width: 44, height: 44) // Bigger invisible touch target
+                        .frame(width: 44, height: 44)
                         .contentShape(Rectangle())
                 }
             }
-            .onAppear { parseLyrics() }
+            .onAppear {
+                parseLyrics()
+            }
             .onChange(of: audioEngine.currentTime) { newTime in
                 updateCurrentLine(for: newTime)
                 updateWordProgress(for: newTime)
@@ -70,6 +74,7 @@ struct LyricsView: View {
                 if let artwork = song?.artwork {
                     Image(uiImage: artwork)
                         .resizable()
+                        .interpolation(.medium)
                         .scaledToFill()
                         .frame(width: geometry.size.width, height: geometry.size.height)
                         .blur(radius: 60)
@@ -85,6 +90,7 @@ struct LyricsView: View {
             }
         }
         .ignoresSafeArea()
+        .allowsHitTesting(false)
     }
 
     // MARK: - Empty Lyrics View
@@ -112,15 +118,15 @@ struct LyricsView: View {
     // MARK: - Synchronized Lyrics View (con tap-to-seek)
     private func synchronizedLyricsView(lyrics: SynchronizedLyrics) -> some View {
         ScrollViewReader { proxy in
+            // ✅ OPTIMIZACIÓN: LazyVStack solo crea las líneas visibles
             ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
+                LazyVStack(alignment: .leading, spacing: 18) {
                     ForEach(Array(lyrics.lines.enumerated()), id: \.element.id) { index, line in
                         lyricLineView(line: line, isActive: currentLineIndex == index)
                             .id(index)
+                            .contentShape(Rectangle())
                             .onTapGesture {
-                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                                audioEngine.seek(to: line.time)
-                                currentLineIndex = index
+                                seekToLine(index, time: line.time, proxy: proxy)
                             }
                     }
                 }
@@ -138,19 +144,17 @@ struct LyricsView: View {
     private func wordByWordLyricsView(lyrics: SynchronizedLyrics) -> some View {
         ScrollViewReader { proxy in
             ScrollView {
-                VStack(alignment: .leading, spacing: 22) {
+                LazyVStack(alignment: .leading, spacing: 22) {
                     ForEach(Array(lyrics.lines.enumerated()), id: \.element.id) { index, line in
-                        let wordsInLine = lyrics.words.filter { word in
-                            word.time >= line.time &&
-                            (index < lyrics.lines.count - 1 ? word.time < lyrics.lines[index + 1].time : true)
-                        }
+                        // ✅ OPTIMIZACIÓN: usa el array precalculado wordsByLine (O(1) por línea)
+                        // en vez de filtrar todas las palabras en cada render
+                        let wordsInLine = index < wordsByLine.count ? wordsByLine[index] : []
 
                         wordByWordLineView(line: line, words: wordsInLine, isActive: currentLineIndex == index)
                             .id(index)
+                            .contentShape(Rectangle())
                             .onTapGesture {
-                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                                audioEngine.seek(to: line.time)
-                                currentLineIndex = index
+                                seekToLine(index, time: line.time, proxy: proxy)
                             }
                             .background(
                                 currentLineIndex == index ?
@@ -166,6 +170,21 @@ struct LyricsView: View {
                     withAnimation(.easeInOut(duration: 0.5)) { proxy.scrollTo(target, anchor: .center) }
                 }
             }
+        }
+    }
+
+    // MARK: - Seek a línea (tap en letra)
+    // ✅ FIX del bug: tras el seek, el AudioEngine ahora mantiene el reloj consistente
+    // (seekOffset actualizado), así que la animación CONTINÚA desde la línea tocada
+    // en vez de reiniciar. Además marcamos la línea como activa inmediatamente
+    // y hacemos scroll para que el usuario vea el salto al instante.
+    private func seekToLine(_ index: Int, time: TimeInterval, proxy: ScrollViewProxy) {
+        Haptics.light()
+        audioEngine.seek(to: time)
+        currentLineIndex = index
+        // Scroll inmediato para feedback visual instantáneo
+        withAnimation(.easeInOut(duration: 0.4)) {
+            proxy.scrollTo(index, anchor: .center)
         }
     }
 
@@ -244,16 +263,13 @@ struct LyricsView: View {
 
             let timeDiff = time - word.time
             if let duration = word.duration, duration > 0 {
-                // Palabra con duración conocida: progreso suave 0→1
                 if timeDiff >= 0 && timeDiff <= duration {
                     newProgress[word.id] = min(1.0, max(0.0, timeDiff / duration))
                 } else if timeDiff > duration {
                     newProgress[word.id] = 1.0
                 }
             } else {
-                // Sin duración: estimación basada en tiempo hasta siguiente palabra
                 if timeDiff >= 0 {
-                    // Buscar siguiente palabra para estimar duración
                     let nextWordTime = startIndex + index + 1 < words.count ? words[startIndex + index + 1].time : word.time + 0.5
                     let estimatedDuration = nextWordTime - word.time
                     if estimatedDuration > 0 {
@@ -268,13 +284,49 @@ struct LyricsView: View {
         wordProgress = newProgress
     }
 
-    // MARK: - Parse Lyrics
+    // MARK: - Parse Lyrics (con precomputo de palabras por línea)
     private func parseLyrics() {
         guard let lyrics = song?.lyrics, !lyrics.isEmpty else {
             parsedLyrics = .none
+            wordsByLine = []
             return
         }
-        parsedLyrics = LyricsParser.parse(lyrics)
+        let parsed = LyricsParser.parse(lyrics)
+        parsedLyrics = parsed
+
+        // ✅ OPTIMIZACIÓN: agrupar palabras por línea UNA vez (O(n)) en lugar de
+        // filtrar en cada render (O(n²) por frame). También se hace en background
+        // para no bloquear el primer frame en canciones con muchas letras.
+        if case .synchronized(let syncLyrics) = parsed, syncLyrics.isWordByWord {
+            let lines = syncLyrics.lines
+            let words = syncLyrics.words
+            DispatchQueue.global(qos: .userInitiated).async {
+                var grouped: [[LyricWord]] = []
+                var wordIndex = 0
+
+                for (lineIndex, line) in lines.enumerated() {
+                    var lineWords: [LyricWord] = []
+                    let lineEnd = lineIndex < lines.count - 1 ? lines[lineIndex + 1].time : .infinity
+
+                    // Las palabras están ordenadas por tiempo: avance lineal
+                    while wordIndex < words.count, words[wordIndex].time < line.time {
+                        wordIndex += 1
+                    }
+                    while wordIndex < words.count, words[wordIndex].time < lineEnd {
+                        lineWords.append(words[wordIndex])
+                        wordIndex += 1
+                    }
+
+                    grouped.append(lineWords)
+                }
+
+                DispatchQueue.main.async {
+                    wordsByLine = grouped
+                }
+            }
+        } else {
+            wordsByLine = []
+        }
     }
 
     // MARK: - Update Current Line
