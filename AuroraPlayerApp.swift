@@ -2,13 +2,15 @@ import SwiftUI
 
 @main
 struct AuroraPlayerApp: App {
+    @StateObject private var theme = ThemeManager.shared
+
     var body: some Scene {
         WindowGroup {
             ContentView()
-                // El color de acento morado se define en Assets.xcassets/AccentColor,
-                // así Color.accentColor y .tint coinciden en TODA la app
-                // (antes .tint() era morado pero Color.accentColor caía al azul del sistema).
-                .tint(Color.accentColor)
+                // El acento elegido en Ajustes se aplica aquí: .tint() propaga
+                // el color al entorno, así Color.accentColor y .tint coinciden
+                // en TODA la app y reaccionan al cambiar el ajuste.
+                .tint(theme.accent)
                 .preferredColorScheme(nil) // Follow system appearance
         }
     }

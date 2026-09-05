@@ -25,6 +25,7 @@ struct AudioQualityDetailView: View {
                 signalChainSection
                 fileDetailsSection
                 outputDetailsSection
+                deviceSection
             }
             .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 16)
         }
@@ -46,6 +47,7 @@ struct AudioQualityDetailView: View {
                         signalChainSection
                         fileDetailsSection
                         outputDetailsSection
+                        deviceSection
                     }
                     .padding(.horizontal, 20).padding(.top, 12).padding(.bottom, 30)
                 }
@@ -83,7 +85,7 @@ struct AudioQualityDetailView: View {
                 Circle()
                     .fill(Color.accentColor.opacity(0.15))
                     .frame(width: 72, height: 72)
-                Image(systemName: "waveform.badge.magnifyingglass")
+                Image(systemName: outputIcon)
                     .font(.system(size: 30, weight: .semibold))
                     .foregroundStyle(Color.accentColor)
             }
@@ -151,12 +153,20 @@ struct AudioQualityDetailView: View {
         return parts.joined(separator: " · ")
     }
 
+    // ✅ Detección por portType (idioma-independiente). Antes se basaba en el
+    // nombre localizado de la ruta ("Altavoz"), que fallaba fuera de español
+    // y mostraba audífonos para el altavoz interno.
     private var outputIcon: String {
-        let route = audioEngine.currentRouteName.lowercased()
-        if route.contains("bluetooth") { return "airpods.pro" }
-        if route.contains("airplay") { return "airplayaudio" }
-        if route.contains("altavoz") || route.contains("speaker") { return "hifispeaker.fill" }
-        return "headphones"
+        switch audioEngine.outputPortType {
+        case AVAudioSession.Port.airPlay.rawValue: return "airplayaudio"
+        case AVAudioSession.Port.bluetoothA2DP.rawValue,
+             AVAudioSession.Port.bluetoothLE.rawValue,
+             AVAudioSession.Port.bluetoothHFP.rawValue: return "airpods.pro"
+        case AVAudioSession.Port.builtInSpeaker.rawValue: return "hifispeaker.fill"
+        case AVAudioSession.Port.usbAudio.rawValue: return "cable.connector"
+        case AVAudioSession.Port.carAudio.rawValue: return "car.fill"
+        default: return "headphones"
+        }
     }
 
     private var outputSummary: String {
@@ -186,6 +196,14 @@ struct AudioQualityDetailView: View {
             detailRow("Frecuencia de salida", audioEngine.outputSampleRate > 0 ? "\(Int(audioEngine.outputSampleRate)) Hz" : "—")
             detailRow("Canales de salida", audioEngine.outputChannelCount > 0 ? audioEngine.outputChannelCount.description : "—")
             detailRow("Tipo de ruta", outputTypeLabel)
+        }
+    }
+
+    // MARK: - Dispositivo (nuevo: modelo comercial real)
+    private var deviceSection: some View {
+        settingsSection(title: "Dispositivo", icon: "iphone") {
+            detailRow("Modelo", audioEngine.deviceModelName)
+            detailRow("Sistema", "\(UIDevice.current.systemName) \(UIDevice.current.systemVersion)")
         }
     }
 
@@ -240,14 +258,20 @@ struct AudioQualityDetailView: View {
         return "\(kbps) kbps"
     }
 
+    // ✅ Detección por portType, independiente del idioma del sistema
     private var outputTypeLabel: String {
-        let route = audioEngine.currentRouteName.lowercased()
-        if route.contains("bluetooth") { return "Inalámbrica (Bluetooth)" }
-        if route.contains("airplay") { return "Inalámbrica (AirPlay)" }
-        if route.contains("altavoz") || route.contains("speaker") { return "Interna (Altavoz)" }
-        if route.contains("audífonos") || route.contains("headphones") { return "Conectada (Audífonos)" }
-        if route.contains("usb") { return "Conectada (USB/DAC)" }
-        return "Interna"
+        switch audioEngine.outputPortType {
+        case AVAudioSession.Port.bluetoothA2DP.rawValue,
+             AVAudioSession.Port.bluetoothLE.rawValue,
+             AVAudioSession.Port.bluetoothHFP.rawValue: return "Inalámbrica (Bluetooth)"
+        case AVAudioSession.Port.airPlay.rawValue: return "Inalámbrica (AirPlay)"
+        case AVAudioSession.Port.builtInSpeaker.rawValue: return "Interna (Altavoz)"
+        case AVAudioSession.Port.builtInReceiver.rawValue: return "Interna (Auricular)"
+        case AVAudioSession.Port.headphones.rawValue: return "Conectada (Audífonos)"
+        case AVAudioSession.Port.usbAudio.rawValue: return "Conectada (USB/DAC)"
+        case AVAudioSession.Port.carAudio.rawValue: return "Inalámbrica (Auto)"
+        default: return "Interna"
+        }
     }
 
     // MARK: - Componentes reutilizables

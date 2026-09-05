@@ -10,12 +10,18 @@ class AudioEngine: NSObject, ObservableObject {
             if oldValue != isPlaying {
                 NotificationCenter.default.post(name: NSNotification.Name("PlaybackStateChanged"), object: nil)
             }
+            updateIdleTimer()
         }
     }
     @Published var currentTime: TimeInterval = 0
     @Published var duration: TimeInterval = 0
     @Published var currentSong: Song?
     @Published var currentRouteName: String = "Altavoz"
+    // ✅ Tipo de salida (idioma-independiente): la detección por nombre
+    // localizado ("Altavoz") fallaba fuera de español. Ahora usamos portType.
+    @Published var outputPortType: String = ""
+    // ✅ Modelo real del dispositivo (ej. "iPhone 13 Pro") en vez de "iPhone".
+    @Published var deviceModelName: String = AudioEngine.resolveDeviceModel()
 
     // MARK: - Propiedades para la vista de calidad de audio
     @Published var sourceSampleRate: Double = 0
@@ -50,7 +56,20 @@ class AudioEngine: NSObject, ObservableObject {
     private var isCrossfading = false
     private var nextPlayerNode: AVAudioPlayerNode?
     private var nextAudioFile: AVAudioFile?
-    @Published var isCrossfadeEnabled: Bool = true // Activado por defecto para que funcione de inmediato
+    // ✅ Persistido: recordar la preferencia del usuario entre sesiones
+    @Published var isCrossfadeEnabled: Bool = true {
+        didSet {
+            if oldValue != isCrossfadeEnabled {
+                UserDefaults.standard.set(isCrossfadeEnabled, forKey: "com.aurora.crossfadeEnabled")
+            }
+        }
+    }
+
+    // ✅ "Mantener pantalla encendida" gestionado aquí (centralizado):
+    // antes solo vivía en NowPlayingView y se perdía al cerrarla.
+    var isKeepScreenOnEnabled: Bool = false {
+        didSet { updateIdleTimer() }
+    }
 
     // MARK: - Equalizador
     private var equalizerNode: AVAudioUnitEQ?
@@ -77,6 +96,7 @@ class AudioEngine: NSObject, ObservableObject {
         super.init()
         // Cargar duración de crossfade persistida
         crossfadeDuration = UserDefaults.standard.object(forKey: "com.aurora.crossfadeDuration") as? TimeInterval ?? 3.0
+        isCrossfadeEnabled = UserDefaults.standard.object(forKey: "com.aurora.crossfadeEnabled") as? Bool ?? true
         setupSession()
         setupEngine()
         setupEqualizer()
@@ -85,7 +105,80 @@ class AudioEngine: NSObject, ObservableObject {
         setupRemoteCommandCenter()
         setupBackgroundNotification()
         setupPlaybackStateObserver()
+        observeEngineConfigurationChanges()
         loadPlaybackState()
+    }
+
+    // MARK: - Recuperación robusta del engine (fix de crashes en segundo plano)
+    // ✅ Cuando la app pasa a segundo plano sin reproducir, iOS puede desactivar
+    // la sesión de audio y detener el AVAudioEngine. Intentar reproducir en ese
+    // estado crasheaba la app. Este helper reactiva la sesión y reintenta el
+    // arranque del engine de forma segura.
+    private func startEngineSafely() throws {
+        let session = AVAudioSession.sharedInstance()
+
+        // 1. Reactivar la sesión si está inactiva
+        if !session.isOtherAudioPlaying {
+            do {
+                try session.setActive(true, options: [])
+            } catch {
+                AppLog.error(.playback, error, context: "startEngineSafely: reactivar sesión")
+            }
+        }
+
+        // 2. Arrancar el engine con un reintento tras reconectar el grafo
+        do {
+            try engine.start()
+        } catch {
+            AppLog.error(.playback, error, context: "startEngineSafely: primer intento, reconectando")
+            // Reintentar: reconectar el playerNode al mixer y arrancar de nuevo
+            if let file = audioFile {
+                reconnectPlayerNode(format: file.processingFormat)
+            } else {
+                reconnectPlayerNode(format: AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 2) ?? engine.outputNode.outputFormat(forBus: 0))
+            }
+            try engine.start()
+        }
+
+        // 3. Verificación final: si el engine sigue sin correr, es un error real
+        guard engine.isRunning else {
+            throw NSError(domain: "AuroraAudioEngine", code: -1,
+                          userInfo: [NSLocalizedDescriptionKey: "El motor de audio no pudo iniciarse"])
+        }
+    }
+
+    // ✅ iOS detiene/reconfigura el engine ante cambios de ruta o del sistema.
+    // Sin este observador, el engine quedaba muerto y la siguiente reproducción
+    // fallaba (o crasheaba). Lo reiniciamos proactivamente.
+    private func observeEngineConfigurationChanges() {
+        NotificationCenter.default.addObserver(
+            forName: .AVAudioEngineConfigurationChange,
+            object: engine,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self = self else { return }
+            AppLog.info(.playback, "Configuración del engine cambió; reconfigurando")
+            if !self.engine.isRunning {
+                do {
+                    try self.startEngineSafely()
+                    // Si había reproducción activa, retomarla desde la posición actual
+                    if self.isPlaying, let file = self.audioFile {
+                        let position = self.currentTime
+                        self.scheduleGeneration += 1
+                        self.seekOffset = position
+                        self.scheduleFile(file, from: position)
+                    }
+                } catch {
+                    AppLog.error(.playback, error, context: "observeEngineConfigurationChanges")
+                }
+            }
+        }
+    }
+
+    private func updateIdleTimer() {
+        DispatchQueue.main.async {
+            UIApplication.shared.isIdleTimerDisabled = self.isKeepScreenOnEnabled && self.isPlaying
+        }
     }
 
     private func setupSession() {
@@ -333,7 +426,9 @@ class AudioEngine: NSObject, ObservableObject {
             playerNode.stop()
             reconnectPlayerNode(format: file.processingFormat)
 
-            try engine.start()
+            // ✅ FIX crash en segundo plano: arranque robusto con reactivación
+            // de sesión y reintento (antes: try engine.start() directo)
+            try startEngineSafely()
 
             currentSong = song
             seekOffset = 0
@@ -480,7 +575,8 @@ class AudioEngine: NSObject, ObservableObject {
     }
 
     private func completeCrossfade() {
-        guard let nextPlayer = nextPlayerNode else { return }
+        // ✅ FIX: evitar doble invocación (timer del fade + completion del scheduleFile)
+        guard isCrossfading, let nextPlayer = nextPlayerNode else { return }
         guard let nextFile = nextAudioFile else {
             isCrossfading = false
             return
@@ -518,8 +614,13 @@ class AudioEngine: NSObject, ObservableObject {
         }
         playerNode.volume = 1.0
 
-        // Reprogramar el nuevo archivo desde el inicio en el playerNode principal
-        scheduleFile(nextFile, from: 0)
+        // ✅ FIX CRÍTICO del crossfade: el nextPlayer ya reprodujo ~crossfadeDuration
+        // segundos de la canción siguiente durante el fundido. Reprogramar desde 0
+        // hacía que la canción "reiniciara" y el crossfade sonara como un recorte
+        // de 3 segundos. Ahora continuamos desde donde quedó el fade.
+        let alreadyPlayed = crossfadeDuration
+        seekOffset = alreadyPlayed
+        scheduleFile(nextFile, from: alreadyPlayed)
 
         isPlaying = true
         startDisplayTimer()
@@ -549,9 +650,26 @@ class AudioEngine: NSObject, ObservableObject {
         if isUsingFallback {
             avPlayer?.play()
         } else {
-            playerNode.play()
-            if let nextNode = nextPlayerNode, isCrossfading {
-                nextNode.play()
+            // ✅ FIX: si la app estuvo en segundo plano sin reproducir, iOS puede
+            // haber detenido el engine. Reanudar a ciegas fallaba en silencio (o
+            // crasheaba). Reactivar sesión + engine antes de hacer play.
+            if !engine.isRunning {
+                do {
+                    try startEngineSafely()
+                    if let file = audioFile {
+                        let position = min(max(currentTime, 0), duration)
+                        scheduleGeneration += 1
+                        seekOffset = position
+                        scheduleFile(file, from: position)
+                    }
+                } catch {
+                    AppLog.error(.playback, error, context: "resume: reactivar engine")
+                }
+            } else {
+                playerNode.play()
+                if let nextNode = nextPlayerNode, isCrossfading {
+                    nextNode.play()
+                }
             }
         }
         isPlaying = true
@@ -843,7 +961,43 @@ class AudioEngine: NSObject, ObservableObject {
         guard let output = session.currentRoute.outputs.first else { return }
         DispatchQueue.main.async {
             self.currentRouteName = output.portName
+            self.outputPortType = output.portType.rawValue
         }
+    }
+
+    // ✅ Resuelve el nombre comercial del dispositivo desde el identificador
+    // de máquina (utsname.machine). Fallback genérico si no está en la tabla.
+    private static func resolveDeviceModel() -> String {
+        var systemInfo = utsname()
+        uname(&systemInfo)
+        let machine = withUnsafePointer(to: &systemInfo.machine) {
+            $0.withMemoryRebound(to: CChar.self, capacity: 1) {
+                String(cString: $0)
+            }
+        }
+
+        let knownModels: [String: String] = [
+            "iPhone15,2": "iPhone 14 Pro", "iPhone15,3": "iPhone 14 Pro Max",
+            "iPhone14,7": "iPhone 14", "iPhone14,8": "iPhone 14 Plus",
+            "iPhone14,4": "iPhone 13 mini", "iPhone14,5": "iPhone 13",
+            "iPhone14,2": "iPhone 13 Pro", "iPhone14,3": "iPhone 13 Pro Max",
+            "iPhone13,1": "iPhone 12 mini", "iPhone13,2": "iPhone 12",
+            "iPhone13,3": "iPhone 12 Pro", "iPhone13,4": "iPhone 12 Pro Max",
+            "iPhone12,8": "iPhone SE (2.ª gen.)", "iPhone14,6": "iPhone SE (3.ª gen.)",
+            "iPhone12,1": "iPhone 11", "iPhone12,3": "iPhone 11 Pro", "iPhone12,5": "iPhone 11 Pro Max",
+            "iPhone11,8": "iPhone XR", "iPhone11,2": "iPhone XS", "iPhone11,6": "iPhone XS Max",
+            "iPhone11,4": "iPhone XS Max", "iPhone10,1": "iPhone 8", "iPhone10,4": "iPhone 8",
+            "iPhone10,2": "iPhone 8 Plus", "iPhone10,5": "iPhone 8 Plus",
+            "iPhone10,3": "iPhone X", "iPhone10,6": "iPhone X",
+            "iPad13,16": "iPad (9.ª gen.)", "iPad13,18": "iPad (10.ª gen.)",
+            "iPad14,3": "iPad Pro 11\" (4.ª gen.)", "iPad14,4": "iPad Pro 12.9\" (6.ª gen.)",
+        ]
+        if let name = knownModels[machine] { return name }
+        // Fallback legible: "iPhone16,1" → "iPhone"
+        if machine.hasPrefix("iPhone") { return "iPhone" }
+        if machine.hasPrefix("iPad") { return "iPad" }
+        if machine.hasPrefix("iPod") { return "iPod touch" }
+        return machine
     }
 
     private func updateAudioQuality() {

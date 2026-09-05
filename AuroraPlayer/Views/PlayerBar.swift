@@ -11,6 +11,9 @@ struct PlayerBar: View {
     // Animaciones optimizadas (una sola @State, triggers discretos = 60fps)
     @State private var playButtonScale: CGFloat = 1.0
 
+    // ✅ Esquinas del artwork sincronizadas con el ajuste de Apariencia
+    @AppStorage("com.aurora.artworkCorner") private var artworkCorner: Double = 22
+
     private var progress: Double {
         if isScrubbing { return scrubPreviewProgress }
         guard audioEngine.duration > 0 else { return 0 }
@@ -26,16 +29,34 @@ struct PlayerBar: View {
                         artwork(for: song)
 
                         // Song info con expanded tap target
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(song.title)
-                                .font(.system(size: 14, weight: .semibold, design: .rounded))
-                                .foregroundStyle(.primary)
-                                .lineLimit(1)
+                        HStack(spacing: 10) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(song.title)
+                                    .font(.system(size: 14, weight: .semibold, design: .rounded))
+                                    .foregroundStyle(.primary)
+                                    .lineLimit(1)
 
-                            Text(song.artist.isEmpty ? "Artista desconocido" : song.artist)
-                                .font(.system(size: 12))
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
+                                Text(song.artist.isEmpty ? "Artista desconocido" : song.artist)
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                            }
+
+                            // ✅ Mini visualizador junto al título cuando reproduce
+                            // (3 barras diminutas, costo GPU insignificante)
+                            if audioEngine.isPlaying {
+                                HStack(spacing: 2.5) {
+                                    ForEach(0..<3, id: \.self) { bar in
+                                        RoundedRectangle(cornerRadius: 1)
+                                            .fill(Color.accentColor)
+                                            .frame(width: 2.5, height: bar % 2 == 0 ? 11 : 6)
+                                            .animation(
+                                                .easeInOut(duration: 0.4 + Double(bar) * 0.1).repeatForever(autoreverses: true),
+                                                value: audioEngine.isPlaying
+                                            )
+                                    }
+                                }
+                            }
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .contentShape(Rectangle())
@@ -59,6 +80,7 @@ struct PlayerBar: View {
                                     .scaleEffect(playButtonScale)
                             }
                             .buttonStyle(PressableButtonStyle(scale: 0.85))
+                            .accessibilityLabel("Canción anterior")
 
                             // Play/Pause con animación de escala
                             Button {
@@ -111,6 +133,7 @@ struct PlayerBar: View {
                                     .scaleEffect(playButtonScale)
                             }
                             .buttonStyle(PressableButtonStyle(scale: 0.85))
+                            .accessibilityLabel("Siguiente canción")
                         }
                     }
                     .padding(.leading, 14)
@@ -136,9 +159,16 @@ struct PlayerBar: View {
                                 .frame(width: max(4, geometry.size.width * progress), height: 4)
                         }
                         .frame(height: 4)
-                        .frame(maxHeight: .infinity) // centra verticalmente
-                        .padding(.vertical, 14)
+                        // ✅ FIX: el área táctil era enorme (maxHeight infinity +
+                        // padding 14) y robaba los toques del artwork/título,
+                        // impidiendo abrir NowPlayingView tras reanudar la app.
+                        // Ahora el gesto se limita a la barra (+6pt de margen)
+                        // y un toque simple (sin arrastre) abre NowPlaying.
+                        .padding(.vertical, 6)
                         .contentShape(Rectangle())
+                        .onTapGesture {
+                            openNowPlaying()
+                        }
                         .gesture(
                             DragGesture(minimumDistance: 0)
                                 .onChanged { value in
@@ -156,17 +186,17 @@ struct PlayerBar: View {
                                 }
                         )
                     }
-                    .frame(height: 4 + 28) // 4pt bar + 14pt padding top/bottom
+                    .frame(height: 4 + 12) // 4pt bar + 6pt padding top/bottom
                     .padding(.horizontal, 18)
                     .padding(.bottom, 8)
                 }
                 .background {
-                    // ✅ Más redondeada: cápsula continua 26pt con material premium
-                    RoundedRectangle(cornerRadius: 26, style: .continuous)
+                    // ✅ Esquinas muy redondeadas (34pt) con material premium
+                    RoundedRectangle(cornerRadius: 34, style: .continuous)
                         .fill(.regularMaterial)
                         .shadow(color: .black.opacity(0.14), radius: 16, x: 0, y: 6)
                     // Borde sutil superior para profundidad
-                    RoundedRectangle(cornerRadius: 26, style: .continuous)
+                    RoundedRectangle(cornerRadius: 34, style: .continuous)
                         .strokeBorder(Color.white.opacity(0.08), lineWidth: 0.5)
                 }
                 .onAppear {
@@ -197,9 +227,8 @@ struct PlayerBar: View {
     }
 
     private func openNowPlaying() {
-        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
-            showingNowPlaying = true
-        }
+        Haptics.light()
+        showingNowPlaying = true
     }
 
     // MARK: - Artwork (sin animación repeatForever constante = 60fps)
@@ -211,11 +240,11 @@ struct PlayerBar: View {
                 .interpolation(.medium)
                 .scaledToFill()
                 .frame(width: 46, height: 46)
-                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: CGFloat(artworkCorner * (14.0 / 22.0)), style: .continuous))
                 .shadow(color: .black.opacity(0.15), radius: 4, x: 0, y: 2)
                 .overlay(
                     // Indicador sutil de reproducción
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    RoundedRectangle(cornerRadius: CGFloat(artworkCorner * (14.0 / 22.0)), style: .continuous)
                         .stroke(Color.accentColor.opacity(audioEngine.isPlaying ? 0.45 : 0.0), lineWidth: 1.5)
                         .animation(.easeInOut(duration: 0.35), value: audioEngine.isPlaying)
                 )
@@ -225,7 +254,7 @@ struct PlayerBar: View {
                 }
         } else {
             ZStack {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                RoundedRectangle(cornerRadius: CGFloat(artworkCorner * (14.0 / 22.0)), style: .continuous)
                     .fill(
                         LinearGradient(
                             colors: [Color.accentColor.opacity(0.28), Color.accentColor.opacity(0.12)],

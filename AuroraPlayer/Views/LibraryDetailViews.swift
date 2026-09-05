@@ -13,7 +13,9 @@ struct AlbumDetailView: View {
         let grouped = Dictionary(grouping: songs) { $0.discNumber ?? 1 }
         return grouped.keys.sorted().map { ($0, grouped[$0]!.sorted { $0.trackNumber < $1.trackNumber }) }
     }
-    private var tintColor: Color { Color(album.dominantColor ?? UIColor.systemPurple) }
+    // ✅ FIX: normalizar el color dominante del álbum para que siempre sea
+    // legible (saturación/brillo adecuados) y concuerde con la portada.
+    private var tintColor: Color { AppTheme.readableColor(from: album.dominantColor) }
 
     var body: some View {
         ScrollView {
@@ -33,7 +35,10 @@ struct AlbumDetailView: View {
                         }
                     }
                 }
-                .padding(.horizontal, 20).padding(.top, 28).padding(.bottom, 30)
+                .padding(.horizontal, 20).padding(.top, 28)
+                // ✅ FIX: padding inferior amplio para que la última canción
+                // no quede oculta detrás del PlayerBar flotante.
+                .padding(.bottom, 130)
             }
         }
         .background(Color(UIColor.systemBackground).ignoresSafeArea())
@@ -305,7 +310,9 @@ struct ArtistDetailView: View {
                         songRow(song, index: index)
                     }
                 }
-                .padding(.horizontal, 20).padding(.top, 28).padding(.bottom, 30)
+                .padding(.horizontal, 20).padding(.top, 28)
+                // ✅ FIX: padding inferior amplio para el PlayerBar flotante
+                .padding(.bottom, 130)
             }
         }
         .background(Color(UIColor.systemBackground).ignoresSafeArea())

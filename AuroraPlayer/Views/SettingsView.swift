@@ -10,7 +10,7 @@ struct SettingsView: View {
     @State private var showAbout = false
     @State private var showEqualizerSheet = false
     @State private var selectedThemeIndex: Int
-    @State private var selectedAccentIndex: Int
+    @ObservedObject private var theme = ThemeManager.shared
 
     // Configuraciones persistentes
     @AppStorage("com.aurora.showVisualizer") private var showVisualizer = true
@@ -24,11 +24,10 @@ struct SettingsView: View {
     private let accents = ["Morado (predeterminado)", "Azul Aurora", "Esmeralda", "Rosa Neón", "Ámbar Solar"]
 
     private let themeDefaultsKey = "com.aurora.uiTheme"
-    private let accentDefaultsKey = "com.aurora.accentColor"
 
     private var appVersion: String {
-        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.2.0"
-        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "3"
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.3.1"
+        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "5"
         return "\(version) (\(build))"
     }
 
@@ -38,9 +37,6 @@ struct SettingsView: View {
 
         let savedTheme = UserDefaults.standard.integer(forKey: themeDefaultsKey)
         _selectedThemeIndex = State(initialValue: savedTheme >= 0 && savedTheme < 3 ? savedTheme : 0)
-
-        let savedAccent = UserDefaults.standard.integer(forKey: accentDefaultsKey)
-        _selectedAccentIndex = State(initialValue: savedAccent >= 0 && savedAccent < 5 ? savedAccent : 0)
     }
 
     var body: some View {
@@ -73,6 +69,18 @@ struct SettingsView: View {
                             settingsButton(title: "Crossfade", subtitle: audioEngine.isCrossfadeEnabled ? "Transición de \(Int(audioEngine.currentCrossfadeDuration))s" : "Desactivado", icon: "forward.end.fill", color: .teal) {
                                 audioEngine.toggleCrossfade()
                             }
+                            // ✅ Slider de crossfade: la API ya existía pero no
+                            // estaba expuesta en la UI (rango 1–12s, persistido).
+                            if audioEngine.isCrossfadeEnabled {
+                                settingsSliderRow(
+                                    title: "Duración del crossfade",
+                                    value: Binding(
+                                        get: { audioEngine.currentCrossfadeDuration },
+                                        set: { audioEngine.setCrossfadeDuration($0) }
+                                    ),
+                                    range: 1...12, step: 1, color: .teal, suffix: "s"
+                                )
+                            }
                         }
 
                         // Apariencia
@@ -82,9 +90,8 @@ struct SettingsView: View {
                                 UserDefaults.standard.set(index, forKey: themeDefaultsKey)
                             }
                             settingsDivider
-                            settingsMenuButton(title: "Color de acento", subtitle: accents[selectedAccentIndex], icon: "drop.fill", color: accentColorForIndex(selectedAccentIndex), options: accents, selection: $selectedAccentIndex) { index in
-                                selectedAccentIndex = index
-                                UserDefaults.standard.set(index, forKey: accentDefaultsKey)
+                            settingsMenuButton(title: "Color de acento", subtitle: accents[theme.accentIndex], icon: "drop.fill", color: theme.accent, options: accents, selection: $theme.accentIndex) { index in
+                                theme.setAccent(index)
                             }
                             settingsDivider
                             settingsToggleRow(title: "Color dinámico", subtitle: "Extrae el color dominante de la portada", icon: "wand.and.stars", color: .cyan, isOn: $dynamicColor)
@@ -102,6 +109,11 @@ struct SettingsView: View {
                             settingsDivider
                             settingsToggleRow(title: "Mantener pantalla encendida", subtitle: "Evita que se bloquee mientras se reproduce", icon: "sun.max.fill", color: .yellow, isOn: $keepScreenOn)
                         }
+                        // ✅ Sincronización en vivo con el engine (antes solo
+                        // se aplicaba al reiniciar ContentView)
+                        .onChange(of: keepScreenOn) { newValue in
+                            audioEngine.isKeepScreenOnEnabled = newValue
+                        }
 
                         // Rendimiento (info técnica)
                         settingsSection(icon: "gauge.open.with.needle", title: "Rendimiento", color: .indigo) {
@@ -109,7 +121,8 @@ struct SettingsView: View {
                             settingsDivider
                             settingsInfoRow(title: "Ruta de reproducción", value: audioEngine.currentRouteName, icon: "airplayaudio", color: .blue)
                             settingsDivider
-                            settingsInfoRow(title: "Dispositivo", value: UIDevice.current.model, icon: "iphone", color: .gray)
+                            // ✅ Modelo comercial real (ej. "iPhone 13 Pro") en vez de "iPhone"
+                            settingsInfoRow(title: "Dispositivo", value: audioEngine.deviceModelName, icon: "iphone", color: .gray)
                         }
 
                         // Estadísticas
@@ -209,17 +222,6 @@ struct SettingsView: View {
                     }
                 }
             }
-        }
-    }
-
-    private func accentColorForIndex(_ index: Int) -> Color {
-        switch index {
-        case 0: return Color.purple
-        case 1: return Color.blue
-        case 2: return Color.green
-        case 3: return Color.pink
-        case 4: return Color.orange
-        default: return Color.purple
         }
     }
 
@@ -375,6 +377,7 @@ struct SettingsView: View {
 
             Slider(value: value, in: range, step: step)
                 .tint(color)
+                .accessibilityLabel(title)
         }
         .padding(.horizontal, 16).padding(.vertical, 12)
         .contentShape(Rectangle())

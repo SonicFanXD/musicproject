@@ -8,8 +8,13 @@ struct ContentView: View {
     @State private var isInitialLoad = true
     @State private var showSettings = false
     @State private var showPlaylists = false
+    @State private var showFolderPicker = false
 
-    @State private var selectedCategory: LibraryCategory = .songs
+    // ✅ Categoría persistida: recordar la última pestaña usada
+    @AppStorage("com.aurora.selectedCategory") private var selectedCategoryRaw = LibraryCategory.songs.rawValue
+    private var selectedCategory: LibraryCategory {
+        LibraryCategory(rawValue: selectedCategoryRaw) ?? .songs
+    }
     @State private var searchText = ""
 
     var body: some View {
@@ -21,12 +26,32 @@ struct ContentView: View {
                     VStack(spacing: 0) {
                         categoryPicker
 
-                        List {
-                            libraryContent
-                                .id(selectedCategory)
+                        // ✅ Cada categoría tiene su propio List, así el scroll
+                        // es independiente: scrollear en Canciones no afecta
+                        // a Álbumes, Artistas ni Listas.
+                        Group {
+                            switch selectedCategory {
+                            case .songs:
+                                libraryList(id: "songs") { songsSection }
+                            case .albums:
+                                libraryList(id: "albums") { albumsSection }
+                            case .artists:
+                                libraryList(id: "artists") { artistsSection }
+                            case .playlists:
+                                libraryList(id: "playlists") { playlistsSection }
+                            }
                         }
-                        .listStyle(.plain)
-                        .scrollContentBackground(.hidden)
+                        // ✅ FIX: cambio de categoría instantáneo y limpio.
+                        // Sin esto, la animación spring heredada hacía que las
+                        // tarjetas/material (vacío o indexando) aparecieran con
+                        // un efecto feo al alternar secciones.
+                        .animation(nil, value: selectedCategory)
+                        // ✅ Pull-to-refresh para re-escanear la biblioteca
+                        .refreshable {
+                            fileAccessService.refreshAllFolders()
+                            // mantener el indicador visible un momento
+                            try? await Task.sleep(nanoseconds: 600_000_000)
+                        }
                         .searchable(
                             text: $searchText,
                             prompt: "Buscar en tu biblioteca"
@@ -80,14 +105,29 @@ struct ContentView: View {
                 }
                 .onAppear {
                     restoreLibraryIfNeeded()
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                        withAnimation(.easeOut(duration: 0.3)) {
-                            isInitialLoad = false
-                        }
+                    // ✅ Sincronizar "Mantener pantalla encendida" con el engine
+                    audioEngine.isKeepScreenOnEnabled = keepScreenOnUserDefaults
+                    // ✅ Si el caché ya cargó antes de este onAppear, cerrar splash ya
+                    if fileAccessService.isInitialLibraryLoaded {
+                        withAnimation(.easeOut(duration: 0.3)) { isInitialLoad = false }
                     }
                 }
-                .onChange(of: fileAccessService.songs.isEmpty) { songsEmpty in
-                    if !songsEmpty {
+                // ✅ Respaldo del splash con Task (antes dependía de una
+                // notificación que podía no llegar si la app ya estaba activa)
+                .task {
+                    try? await Task.sleep(nanoseconds: 8_000_000_000)
+                    if isInitialLoad {
+                        withAnimation(.easeOut(duration: 0.3)) { isInitialLoad = false }
+                    }
+                }
+                .sheet(isPresented: $showFolderPicker) {
+                    FolderPickerView(fileAccessService: fileAccessService)
+                }
+                // ✅ Splash inteligente: permanece hasta que el caché de la
+                // biblioteca termine de cargar, así la app muestra las canciones
+                // desde el primer frame en vez de una interfaz vacía.
+                .onChange(of: fileAccessService.isInitialLibraryLoaded) { loaded in
+                    if loaded {
                         hasRestored = false
                         restoreLibraryIfNeeded()
                         withAnimation(.easeOut(duration: 0.3)) {
@@ -131,15 +171,64 @@ struct ContentView: View {
         .animation(.easeInOut(duration: 0.35), value: fileAccessService.isScanning)
     }
 
+    // Acceso al ajuste de pantalla encendida para sincronizar con el engine
+    @AppStorage("com.aurora.keepScreenOn") private var keepScreenOnUserDefaults = false
+
+    // MARK: - Empty State con acción directa
+    @ViewBuilder
+    private func emptyLibraryView(icon: String, title: String, message: String) -> some View {
+        VStack(spacing: 18) {
+            ContentUnavailableLibraryView(icon: icon, title: title, message: message)
+            // ✅ Acción directa: agregar carpeta sin ir a Ajustes
+            if fileAccessService.folders.isEmpty && fileAccessService.files.isEmpty {
+                Button {
+                    Haptics.light()
+                    showFolderPicker = true
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "plus.circle.fill")
+                            .font(.system(size: 15, weight: .semibold))
+                        Text("Agregar carpeta de música")
+                            .font(.system(size: 15, weight: .semibold, design: .rounded))
+                    }
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 24)
+                    .padding(.vertical, 14)
+                    .background {
+                        Capsule().fill(Color.accentColor)
+                    }
+                    .shadow(color: Color.accentColor.opacity(0.35), radius: 10, x: 0, y: 5)
+                }
+                .buttonStyle(PressableButtonStyle(scale: 0.96))
+            }
+        }
+        .listRowSeparator(.hidden)
+        .listRowBackground(Color.clear)
+    }
+
+    // MARK: - Library List (uno por categoría → scroll independiente)
+    private func libraryList<Content: View>(
+        id: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        List {
+            content()
+                .id(id)
+        }
+        .id(id) // recrea el List al cambiar de categoría → scroll desde arriba
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+    }
+
     // MARK: - Category Picker (cápsulas premium con material)
     private var categoryPicker: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 10) {
                 ForEach(LibraryCategory.allCases, id: \.self) { category in
                     Button {
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                            selectedCategory = category
-                        }
+                        // ✅ Cambio directo sin animación: la nueva sección
+                        // aparece limpia, sin tarjetas "volando" al entrar.
+                        selectedCategoryRaw = category.rawValue
                     } label: {
                         HStack(spacing: 7) {
                             Image(systemName: categoryIcon(for: category))
@@ -212,11 +301,17 @@ struct ContentView: View {
                 indexingProgressCard
                     .listRowSeparator(.hidden)
                     .listRowBackground(Color.clear)
+            } else if searchText.isEmpty {
+                emptyLibraryView(
+                    icon: "music.note.list",
+                    title: "Tu biblioteca está vacía",
+                    message: "Agrega una carpeta con tu música para comenzar."
+                )
             } else {
                 ContentUnavailableLibraryView(
                     icon: "music.note.list",
-                    title: searchText.isEmpty ? "Tu biblioteca está vacía" : "No se encontraron canciones",
-                    message: searchText.isEmpty ? "Agrega una carpeta con tu música para comenzar." : "Prueba con otro término de búsqueda."
+                    title: "No se encontraron canciones",
+                    message: "Prueba con otro término de búsqueda."
                 )
                 .listRowSeparator(.hidden)
                 .listRowBackground(Color.clear)

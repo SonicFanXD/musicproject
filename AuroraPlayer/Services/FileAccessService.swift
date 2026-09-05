@@ -13,6 +13,9 @@ class FileAccessService: ObservableObject {
     @Published private(set) var scanTotal = 0
     @Published private(set) var scanProcessed = 0
     @Published private(set) var isScanning = false
+    // ✅ Splash: indica si el caché de biblioteca ya terminó de cargar,
+    // para que la UI muestre las canciones desde el primer frame.
+    @Published private(set) var isInitialLibraryLoaded = false
 
     private let defaultsKey = "com.aurora.musicFolders"
     private let filesDefaultsKey = "com.aurora.musicFiles"
@@ -180,6 +183,9 @@ class FileAccessService: ObservableObject {
         scanProcessed = 0
         activeDiscoveries = 0
         isScanning = !folders.isEmpty || !files.isEmpty
+        // ✅ Guardar el caché vacío inmediatamente: evita que un crash durante
+        // el re-escaneo deje un caché desincronizado (antes se guardaba 1s después).
+        saveCachedSongs()
         guard !folders.isEmpty || !files.isEmpty else {
             removeCachedSongs()
             return
@@ -1240,6 +1246,7 @@ class FileAccessService: ObservableObject {
 
     private func finishInitialLibraryLoad(with cachedSongs: [Song]) {
         songs = cachedSongs
+        isInitialLibraryLoaded = true
         indexedSongURLs = Set(cachedSongs.map(\.url))
         if cachedSongs.isEmpty && (!folders.isEmpty || !files.isEmpty) {
             rescanAllFolders()

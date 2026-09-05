@@ -31,9 +31,9 @@ struct NowPlayingView: View {
     private var artworkSize: CGFloat {
         let screenWidth = UIScreen.main.bounds.width
         let screenHeight = UIScreen.main.bounds.height
-        let maxByWidth = screenWidth - 64
-        let maxByHeight = screenHeight * (isCompactScreen ? 0.26 : 0.34)
-        return min(260, maxByWidth, maxByHeight)
+        let maxByWidth = screenWidth - 48
+        let maxByHeight = screenHeight * (isCompactScreen ? 0.30 : 0.38)
+        return min(300, maxByWidth, maxByHeight)
     }
 
     private var progress: Double {
@@ -60,18 +60,21 @@ struct NowPlayingView: View {
                     artworkView
                         .scaleEffect(artworkScale)
                         .animation(.spring(response: 0.5, dampingFraction: 0.82), value: audioEngine.isPlaying)
+                        // ✅ Transición suave al cambiar de canción
+                        .animation(.easeInOut(duration: 0.25), value: audioEngine.currentSong?.id)
 
                     Spacer().frame(height: isCompactScreen ? 10 : 16)
 
                     if audioEngine.isPlaying && showVisualizer {
                         AudioVisualizer(audioEngine: audioEngine, tintColor: extractedColor)
-                            .frame(height: isCompactScreen ? 22 : 32)
+                            .frame(height: isCompactScreen ? 30 : 44)
                             .padding(.horizontal, 40)
                     }
 
                     Spacer().frame(height: isCompactScreen ? 8 : 14)
 
                     songInfoView
+                        .animation(.easeInOut(duration: 0.25), value: audioEngine.currentSong?.id)
 
                     Spacer().frame(height: isCompactScreen ? 8 : 14)
 
@@ -85,10 +88,6 @@ struct NowPlayingView: View {
 
                     featureButtonsView
 
-                    Spacer().frame(height: isCompactScreen ? 8 : 14)
-
-                    queueButton
-
                     Spacer()
                 }
                 .padding(.horizontal, 24)
@@ -99,10 +98,9 @@ struct NowPlayingView: View {
                 withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
                     artworkScale = 1.0
                 }
-                UIApplication.shared.isIdleTimerDisabled = keepScreenOn && audioEngine.isPlaying
-            }
-            .onDisappear {
-                UIApplication.shared.isIdleTimerDisabled = false
+                // ✅ keepScreenOn ahora lo gestiona el AudioEngine de forma
+                // centralizada (antes se apagaba al cerrar NowPlaying).
+                audioEngine.isKeepScreenOnEnabled = keepScreenOn
             }
             .onChange(of: audioEngine.isPlaying) { isPlaying in
                 withAnimation(.spring(response: 0.45, dampingFraction: 0.8)) {
@@ -368,7 +366,7 @@ struct NowPlayingView: View {
                 audioEngine.playPrevious()
             } label: {
                 ZStack {
-                    Circle().fill(.ultraThinMaterial).frame(width: 48, height: 48)
+                    Circle().fill(controlBackground).frame(width: 48, height: 48)
                     Image(systemName: "backward.fill")
                         .font(.system(size: 17, weight: .semibold))
                         .foregroundStyle(.primary)
@@ -405,7 +403,7 @@ struct NowPlayingView: View {
                 audioEngine.playNext()
             } label: {
                 ZStack {
-                    Circle().fill(.ultraThinMaterial).frame(width: 48, height: 48)
+                    Circle().fill(controlBackground).frame(width: 48, height: 48)
                     Image(systemName: "forward.fill")
                         .font(.system(size: 17, weight: .semibold))
                         .foregroundStyle(.primary)
@@ -438,7 +436,7 @@ struct NowPlayingView: View {
         .fixedSize()
     }
 
-    // MARK: - Feature Buttons (Lyrics & EQ, mismo diseño que los controles)
+    // MARK: - Feature Buttons (EQ · Letras · Cola en una sola línea)
     private var featureButtonsView: some View {
         let buttonSize: CGFloat = isCompactScreen ? 56 : 64
         let capsuleWidth: CGFloat = isCompactScreen ? 42 : 46
@@ -485,36 +483,29 @@ struct NowPlayingView: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Letras")
+
+            // Cola
+            Button {
+                Haptics.light()
+                showQueue = true
+            } label: {
+                ZStack {
+                    Capsule()
+                        .fill(audioEngine.nextUpQueue.isEmpty ? Color.clear : extractedColor.opacity(0.2))
+                        .frame(width: capsuleWidth, height: capsuleHeight)
+
+                    Image(systemName: "list.bullet")
+                        .font(.system(size: iconSize, weight: .semibold))
+                        .foregroundStyle(audioEngine.nextUpQueue.isEmpty ? .secondary : extractedColor)
+                }
+                .frame(width: buttonSize, height: buttonSize)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Cola de reproducción")
         }
         .frame(maxWidth: .infinity)
         .fixedSize()
-    }
-
-    // MARK: - Queue Button
-    private var queueButton: some View {
-        Button {
-            showQueue = true
-        } label: {
-            HStack(spacing: 8) {
-                ZStack {
-                    Circle().fill(extractedColor.opacity(0.15)).frame(width: 26, height: 26)
-                    Image(systemName: "list.bullet")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(extractedColor)
-                }
-
-                Text("Cola: \(audioEngine.nextUpQueue.count)")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.secondary)
-            }
-            .padding(.horizontal, 16).padding(.vertical, 8)
-            .background {
-                RoundedRectangle(cornerRadius: 16, style: .continuous).fill(.regularMaterial)
-            }
-            .contentShape(Rectangle())
-            .padding(.vertical, 6)
-        }
-        .buttonStyle(.plain)
     }
 
     // MARK: - Modal centrado con X (ventana emergente sobre el NowPlaying)
@@ -574,6 +565,14 @@ struct NowPlayingView: View {
     }
 
     // MARK: - Helpers
+    // ✅ "Reducir transparencia": sustituye materiales por fondos opacos;
+    // si está desactivado, conserva el material de vidrio original.
+    private var controlBackground: AnyShapeStyle {
+        reduceTransparency
+            ? AnyShapeStyle(Color(UIColor.secondarySystemBackground))
+            : AnyShapeStyle(.ultraThinMaterial)
+    }
+
     private var repeatIcon: String {
         switch audioEngine.repeatMode {
         case .off: return "repeat"
@@ -590,10 +589,21 @@ struct NowPlayingView: View {
     }
 
     private func extractColorFromArtwork() {
-        guard let artwork = audioEngine.currentSong?.artwork else {
-            extractedColor = Color.accentColor
+        // ✅ FIX: respetar el ajuste "Color dinámico". Si está desactivado,
+        // usar siempre el color de acento elegido en Ajustes.
+        guard dynamicColor else {
+            extractedColor = AppTheme.accent
             return
         }
+
+        guard let artwork = audioEngine.currentSong?.artwork else {
+            extractedColor = AppTheme.accent
+            return
+        }
+
+        // ✅ FIX contraste: el color crudo del promedio puede ser casi negro
+        // o casi blanco y hacer invisibles textos/botones. Se normaliza.
+        var dominantUIColor: UIColor?
 
         DispatchQueue.global(qos: .userInitiated).async {
             let size = CGSize(width: 32, height: 32)
@@ -653,10 +663,9 @@ struct NowPlayingView: View {
                     let avgR = totalRed / count / 255.0
                     let avgG = totalGreen / count / 255.0
                     let avgB = totalBlue / count / 255.0
-                    extractedColor = Color(red: Double(avgR), green: Double(avgG), blue: Double(avgB))
-                } else {
-                    extractedColor = Color.accentColor
+                    dominantUIColor = UIColor(red: CGFloat(avgR), green: CGFloat(avgG), blue: CGFloat(avgB), alpha: 1)
                 }
+                extractedColor = AppTheme.readableColor(from: dominantUIColor)
             }
         }
     }
