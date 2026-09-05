@@ -17,24 +17,18 @@ struct QueueView: View {
                 AppBackground()
 
                 VStack(spacing: 0) {
-                    // Tab selector
                     tabSelector
 
-                    Divider()
-                        .background(Color.secondary.opacity(0.2))
+                    Divider().background(Color.secondary.opacity(0.2))
 
-                    // Content
                     ScrollView {
                         VStack(spacing: 12) {
                             switch selectedTab {
-                            case .nextUp:
-                                nextUpContent
-                            case .history:
-                                historyContent
+                            case .nextUp: nextUpContent
+                            case .history: historyContent
                             }
                         }
-                        .padding(.horizontal, 16)
-                        .padding(.top, 16)
+                        .padding(.horizontal, 16).padding(.top, 16)
                     }
                     .scrollIndicators(.hidden)
                 }
@@ -43,29 +37,24 @@ struct QueueView: View {
             .toolbarBackground(Color(UIColor.systemBackground).opacity(0.92), for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
-                // Título personalizado consistente con la app
                 ToolbarItem(placement: .principal) {
                     Text("Cola de Reproducción")
                         .font(.system(size: 18, weight: .bold, design: .rounded))
                         .foregroundStyle(
                             LinearGradient(
                                 colors: [Color.accentColor, Color.accentColor.opacity(0.75)],
-                                startPoint: .leading,
-                                endPoint: .trailing
+                                startPoint: .leading, endPoint: .trailing
                             )
                         )
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.7)
+                        .lineLimit(1).minimumScaleFactor(0.7)
                         .accessibilityLabel("Cola de Reproducción")
                 }
 
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Listo") {
-                        dismiss()
-                    }
-                    .foregroundStyle(Color.accentColor)
-                    .frame(width: 44, height: 44) // Bigger invisible touch target
-                    .contentShape(Rectangle())
+                    Button("Listo") { dismiss() }
+                        .foregroundStyle(Color.accentColor)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
                 }
             }
         }
@@ -74,101 +63,64 @@ struct QueueView: View {
     private var tabSelector: some View {
         HStack(spacing: 6) {
             ForEach(QueueTab.allCases, id: \.self) { tab in
-                    Button {
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                            selectedTab = tab
-                        }
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: tab == .nextUp ? "list.number" : "clock.arrow.circlepath")
-                                .font(.system(size: 12, weight: .semibold))
-                            Text(tab.rawValue)
-                                .font(.subheadline.weight(selectedTab == tab ? .semibold : .regular))
-                        }
-                        .foregroundStyle(selectedTab == tab ? .white : .secondary)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 14) // Expanded touch target (10→14)
+                Button {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                        selectedTab = tab
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: tab == .nextUp ? "list.number" : "clock.arrow.circlepath")
+                            .font(.system(size: 12, weight: .semibold))
+                        Text(tab.rawValue)
+                            .font(.system(size: 14, weight: selectedTab == tab ? .semibold : .medium, design: .rounded))
+                    }
+                    .foregroundStyle(selectedTab == tab ? .white : .secondary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
                     .background {
                         if selectedTab == tab {
-                            Capsule()
-                                .fill(Color.accentColor)
+                            Capsule().fill(Color.accentColor)
                                 .shadow(color: Color.accentColor.opacity(0.3), radius: 6, x: 0, y: 3)
                         } else {
-                            Capsule()
-                                .fill(Color.secondary.opacity(0.1))
+                            Capsule().fill(.regularMaterial)
                         }
                     }
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(PressableButtonStyle(scale: 0.95))
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
+        .padding(.horizontal, 16).padding(.vertical, 10)
     }
 
     @ViewBuilder
     private var nextUpContent: some View {
-        // Canción actual destacada
         if let current = audioEngine.currentSong {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Reproduciendo ahora")
-                    .font(.system(size: 14, weight: .medium))
+                    .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 4)
 
                 HStack(spacing: 12) {
-                    // Miniatura con ecualizador animado
-                    ZStack {
-                        if let artwork = current.artwork {
-                            Image(uiImage: artwork)
-                                .resizable()
-                                .scaledToFill()
-                                .frame(width: 48, height: 48)
-                                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                        } else {
-                            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                .fill(Color.accentColor.opacity(0.15))
-                                .frame(width: 48, height: 48)
-
-                            Image(systemName: "music.note")
-                                .font(.system(size: 18))
-                                .foregroundStyle(Color.accentColor)
-                        }
-
-                        if audioEngine.isPlaying {
-                            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                .fill(Color.black.opacity(0.35))
-                                .frame(width: 48, height: 48)
-
-                            Image(systemName: audioEngine.isPlaying ? "pause.fill" : "play.fill")
-                                .font(.system(size: 14))
-                                .foregroundStyle(.white)
-                        }
-                    }
+                    artworkMiniature(current.artwork, size: 48, corner: 10)
 
                     VStack(alignment: .leading, spacing: 3) {
                         Text(current.title)
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundStyle(Color.accentColor)
-                            .lineLimit(1)
-
+                            .font(.system(size: 16, weight: .semibold, design: .rounded))
+                            .foregroundStyle(Color.accentColor).lineLimit(1)
                         Text(current.displaySubtitle)
-                            .font(.system(size: 13))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
+                            .font(.system(size: 13)).foregroundStyle(.secondary).lineLimit(1)
                     }
 
                     Spacer()
 
-                    // Indicador animado
                     HStack(spacing: 2.5) {
                         ForEach(0..<3, id: \.self) { bar in
                             RoundedRectangle(cornerRadius: 1.5)
                                 .fill(Color.accentColor)
                                 .frame(width: 3, height: audioEngine.isPlaying ? (bar % 2 == 0 ? 14 : 9) : 6)
                                 .animation(
-                                    .easeInOut(duration: 0.45 + Double(bar) * 0.12)
-                                        .repeatForever(autoreverses: true),
+                                    .easeInOut(duration: 0.45 + Double(bar) * 0.12).repeatForever(autoreverses: true),
                                     value: audioEngine.isPlaying
                                 )
                         }
@@ -187,15 +139,11 @@ struct QueueView: View {
         }
 
         if audioEngine.nextUpQueue.isEmpty {
-            emptyState(
-                icon: "music.note.list",
-                title: "No hay canciones en cola",
-                message: "Las próximas canciones aparecerán aquí"
-            )
+            emptyState(icon: "music.note.list", title: "No hay canciones en cola", message: "Las próximas canciones aparecerán aquí")
         } else {
             VStack(alignment: .leading, spacing: 8) {
                 Text("A continuación")
-                    .font(.system(size: 14, weight: .medium))
+                    .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 4)
 
@@ -210,15 +158,11 @@ struct QueueView: View {
     @ViewBuilder
     private var historyContent: some View {
         if audioEngine.playHistory.isEmpty {
-            emptyState(
-                icon: "clock.arrow.circlepath",
-                title: "Sin historial",
-                message: "Las canciones reproducidas aparecerán aquí"
-            )
+            emptyState(icon: "clock.arrow.circlepath", title: "Sin historial", message: "Las canciones reproducidas aparecerán aquí")
         } else {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Historial de reproducción")
-                    .font(.system(size: 14, weight: .medium))
+                    .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 4)
 
@@ -230,53 +174,30 @@ struct QueueView: View {
     }
 
     private func queueSongRow(_ song: Song, index: Int) -> some View {
-        // Next-up songs are tappable to play immediately in the current queue context
         Button {
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            Haptics.light()
             audioEngine.play(song: song, from: audioEngine.playbackQueue)
         } label: {
             HStack(spacing: 12) {
-                // Miniatura de artwork
-                ZStack {
-                    if let artwork = song.artwork {
-                        Image(uiImage: artwork)
-                            .resizable()
-                            .scaledToFill()
-                            .frame(width: 44, height: 44)
-                            .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
-                    } else {
-                        RoundedRectangle(cornerRadius: 9, style: .continuous)
-                            .fill(Color.secondary.opacity(0.15))
-                            .frame(width: 44, height: 44)
-
-                        Image(systemName: "music.note")
-                            .font(.system(size: 15))
-                            .foregroundStyle(.secondary)
-                    }
-                }
+                artworkMiniature(song.artwork, size: 44, corner: 10)
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text(song.title)
-                        .font(.system(size: 15, weight: .medium))
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-
+                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                        .foregroundStyle(.primary).lineLimit(1)
                     Text(song.displaySubtitle)
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                        .font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
                 }
 
                 Spacer()
 
                 Text(formatDuration(song.duration))
-                    .font(.system(size: 12).monospacedDigit())
+                    .font(.system(size: 11, weight: .medium).monospacedDigit())
                     .foregroundStyle(.tertiary)
             }
-            .padding(12) // Expanded touch target (10→12)
+            .padding(.horizontal, 12).padding(.vertical, 10)
             .background {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(.regularMaterial)
+                RoundedRectangle(cornerRadius: 14, style: .continuous).fill(.regularMaterial)
             }
             .contentShape(Rectangle())
         }
@@ -285,64 +206,64 @@ struct QueueView: View {
 
     private func historySongRow(_ song: Song, index: Int) -> some View {
         Button {
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            Haptics.light()
             audioEngine.playFromHistory(song)
         } label: {
             HStack(spacing: 12) {
-                // Miniatura con ícono de replay
-                ZStack(alignment: .bottomTrailing) {
-                    if let artwork = song.artwork {
-                        Image(uiImage: artwork)
-                            .resizable()
-                            .scaledToFill()
-                            .frame(width: 44, height: 44)
-                            .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
-                    } else {
-                        RoundedRectangle(cornerRadius: 9, style: .continuous)
-                            .fill(Color.secondary.opacity(0.15))
-                            .frame(width: 44, height: 44)
-
-                        Image(systemName: "music.note")
-                            .font(.system(size: 15))
-                            .foregroundStyle(.secondary)
+                artworkMiniature(song.artwork, size: 44, corner: 10)
+                    .overlay(alignment: .bottomTrailing) {
+                        Image(systemName: "arrow.counterclockwise")
+                            .font(.system(size: 7, weight: .bold))
+                            .foregroundStyle(.white)
+                            .padding(3)
+                            .background { Circle().fill(Color.accentColor) }
+                            .offset(x: 3, y: 3)
                     }
-
-                    Image(systemName: "arrow.counterclockwise")
-                        .font(.system(size: 8, weight: .bold))
-                        .foregroundStyle(.white)
-                        .padding(4)
-                        .background {
-                            Circle().fill(Color.accentColor)
-                        }
-                        .offset(x: 4, y: 4)
-                }
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text(song.title)
-                        .font(.system(size: 15, weight: .medium))
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-
+                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                        .foregroundStyle(.primary).lineLimit(1)
                     Text(song.displaySubtitle)
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                        .font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
                 }
 
                 Spacer()
 
                 Image(systemName: "play.circle.fill")
-                    .font(.system(size: 26))
+                    .font(.system(size: 24))
                     .foregroundStyle(Color.accentColor)
             }
-            .padding(12) // Expanded touch target (10→12)
+            .padding(.horizontal, 12).padding(.vertical, 10)
             .background {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(.regularMaterial)
+                RoundedRectangle(cornerRadius: 14, style: .continuous).fill(.regularMaterial)
             }
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+    }
+
+    // ✅ Componente reutilizable para miniaturas de artwork
+    @ViewBuilder
+    private func artworkMiniature(_ artwork: UIImage?, size: CGFloat, corner: CGFloat) -> some View {
+        if let artwork = artwork {
+            Image(uiImage: artwork)
+                .resizable()
+                .interpolation(.medium)
+                .scaledToFill()
+                .frame(width: size, height: size)
+                .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
+                .shadow(color: .black.opacity(0.1), radius: 2, x: 0, y: 1)
+        } else {
+            RoundedRectangle(cornerRadius: corner, style: .continuous)
+                .fill(Color.secondary.opacity(0.12))
+                .frame(width: size, height: size)
+                .overlay {
+                    Image(systemName: "music.note")
+                        .font(.system(size: size * 0.32))
+                        .foregroundStyle(.secondary.opacity(0.5))
+                }
+        }
     }
 
     private func emptyState(icon: String, title: String, message: String) -> some View {
@@ -350,11 +271,9 @@ struct QueueView: View {
             Image(systemName: icon)
                 .font(.system(size: 48))
                 .foregroundStyle(.secondary.opacity(0.5))
-
             Text(title)
                 .font(.system(size: 18, weight: .semibold))
                 .foregroundStyle(.secondary)
-
             Text(message)
                 .font(.system(size: 14))
                 .foregroundStyle(.tertiary)
@@ -367,8 +286,6 @@ struct QueueView: View {
     private func formatDuration(_ seconds: TimeInterval) -> String {
         guard seconds.isFinite, seconds >= 0 else { return "0:00" }
         let totalSeconds = Int(seconds)
-        let minutes = totalSeconds / 60
-        let remainingSeconds = totalSeconds % 60
-        return String(format: "%d:%02d", minutes, remainingSeconds)
+        return String(format: "%d:%02d", totalSeconds / 60, totalSeconds % 60)
     }
 }

@@ -1,5 +1,4 @@
 import SwiftUI
-import UIKit
 
 struct EqualizerView: View {
     @ObservedObject var audioEngine: AudioEngine
@@ -12,13 +11,8 @@ struct EqualizerView: View {
 
                 ScrollView {
                     VStack(spacing: 24) {
-                        // Header Switch / Status Card
                         mainSwitchSection
-
-                        // Presets Section
                         presetsSection
-
-                        // Bands Sliders Section
                         bandsSection
                     }
                     .padding(.horizontal, 20)
@@ -31,7 +25,6 @@ struct EqualizerView: View {
             .toolbarBackground(Color(UIColor.systemBackground).opacity(0.92), for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
-                // Título personalizado consistente con la app
                 ToolbarItem(placement: .principal) {
                     Text("Ecualizador")
                         .font(.system(size: 20, weight: .bold, design: .rounded))
@@ -48,7 +41,7 @@ struct EqualizerView: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Listo") { dismiss() }
                         .foregroundStyle(Color.accentColor)
-                        .frame(width: 44, height: 44) // Bigger invisible touch target
+                        .frame(width: 44, height: 44)
                         .contentShape(Rectangle())
                 }
             }
@@ -105,7 +98,7 @@ struct EqualizerView: View {
                 HStack(spacing: 10) {
                     ForEach(EQPreset.allCases, id: \.self) { preset in
                         Button {
-                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                            Haptics.light()
                             audioEngine.setEQPreset(preset)
                         } label: {
                             Text(preset.displayName)
@@ -118,7 +111,7 @@ struct EqualizerView: View {
                                         .fill(audioEngine.eqPreset == preset && audioEngine.isEQEnabled ? Color.purple : Color.secondary.opacity(0.12))
                                 }
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(PressableButtonStyle(scale: 0.92))
                     }
                 }
                 .padding(.horizontal, 4)
@@ -126,7 +119,7 @@ struct EqualizerView: View {
         }
     }
 
-    // MARK: - Bands Sliders (Expanded touch area)
+    // MARK: - Bands Sliders
     private var bandsSection: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Frecuencias")
@@ -167,7 +160,6 @@ struct EqualizerView: View {
                     .monospacedDigit()
             }
 
-            // Slider with expanded vertical touch area wrapper
             Slider(
                 value: Binding(
                     get: { Double(currentGain) },
@@ -180,7 +172,7 @@ struct EqualizerView: View {
             )
             .tint(.purple)
             .disabled(!audioEngine.isEQEnabled)
-            .padding(.vertical, 6) // Generous touch target expansion
+            .padding(.vertical, 6)
         }
     }
 

@@ -30,7 +30,7 @@ struct AudioVisualizer: View {
                         )
                         .frame(width: max(2, geometry.size.width / CGFloat(amplitudes.count) - 2))
                         .frame(height: max(3, adjustedAmplitude * geometry.size.height))
-                        .shadow(color: tintColor.opacity(0.4), radius: 3, x: 0, y: 1)
+                        // ✅ OPTIMIZACIÓN: sombra removida — 24 barras con shadow = mucho offscreen rendering en A11
                         .animation(.spring(response: 0.15, dampingFraction: 0.7), value: adjustedAmplitude)
                 }
             }

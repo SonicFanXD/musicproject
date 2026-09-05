@@ -1,5 +1,4 @@
 import SwiftUI
-import UIKit
 
 struct ContentView: View {
     @StateObject private var audioEngine = AudioEngine()
@@ -38,7 +37,6 @@ struct ContentView: View {
                 .toolbarBackground(Color(UIColor.systemBackground).opacity(0.92), for: .navigationBar)
                 .toolbarBackground(.visible, for: .navigationBar)
                 .toolbar {
-                    // Título personalizado: fuente bonita, morada, sin borde de separación
                     ToolbarItem(placement: .principal) {
                         Text("Aurora Player")
                             .font(.system(size: 22, weight: .bold, design: .rounded))
@@ -59,7 +57,7 @@ struct ContentView: View {
                             } label: {
                                 Image(systemName: "music.note.list")
                                     .font(.system(size: 16, weight: .medium))
-                                    .frame(width: 44, height: 44) // Bigger invisible touch target
+                                    .frame(width: 44, height: 44)
                                     .contentShape(Rectangle())
                             }
 
@@ -68,7 +66,7 @@ struct ContentView: View {
                             } label: {
                                 Image(systemName: "gearshape.fill")
                                     .font(.system(size: 16, weight: .medium))
-                                    .frame(width: 44, height: 44) // Bigger invisible touch target
+                                    .frame(width: 44, height: 44)
                                     .contentShape(Rectangle())
                             }
                         }
@@ -82,7 +80,6 @@ struct ContentView: View {
                 }
                 .onAppear {
                     restoreLibraryIfNeeded()
-                    // Hide splash after initial load
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                         withAnimation(.easeOut(duration: 0.3)) {
                             isInitialLoad = false
@@ -100,12 +97,10 @@ struct ContentView: View {
                 }
                 .overlay {
                     if fileAccessService.isScanning && !fileAccessService.songs.isEmpty {
-                        // Mini scanning indicator when library exists
                         VStack {
                             Spacer()
                             HStack(spacing: 8) {
-                                ProgressView()
-                                    .controlSize(.small)
+                                ProgressView().controlSize(.small)
                                 Text("Actualizando...")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
@@ -113,8 +108,7 @@ struct ContentView: View {
                             .padding(.horizontal, 16)
                             .padding(.vertical, 8)
                             .background {
-                                Capsule()
-                                    .fill(.regularMaterial)
+                                Capsule().fill(.regularMaterial)
                             }
                             .padding(.bottom, 80)
                         }
@@ -123,7 +117,6 @@ struct ContentView: View {
                 }
             }
 
-            // Splash screen overlay
             if isInitialLoad {
                 SplashView()
                     .transition(.opacity)
@@ -138,54 +131,56 @@ struct ContentView: View {
         .animation(.easeInOut(duration: 0.35), value: fileAccessService.isScanning)
     }
 
-    // MARK: - Category Picker
+    // MARK: - Category Picker (cápsulas premium con material)
     private var categoryPicker: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 12) {
+            HStack(spacing: 10) {
                 ForEach(LibraryCategory.allCases, id: \.self) { category in
                     Button {
                         withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                             selectedCategory = category
                         }
                     } label: {
-                        HStack(spacing: 8) {
+                        HStack(spacing: 7) {
                             Image(systemName: categoryIcon(for: category))
-                                .font(.system(size: 14, weight: .semibold))
-
+                                .font(.system(size: 13, weight: .semibold))
                             Text(category.title)
-                                .font(.subheadline.weight(.semibold))
+                                .font(.system(size: 14, weight: .semibold, design: .rounded))
                         }
                         .foregroundStyle(selectedCategory == category ? .white : .secondary)
-                        .padding(.horizontal, 20)
-                        .padding(.vertical, 16) // Expanded touch target (12→16)
+                        .padding(.horizontal, 18)
+                        .padding(.vertical, 12)
                         .background {
                             if selectedCategory == category {
                                 ZStack {
-                                    RoundedRectangle(cornerRadius: 24, style: .continuous)
-                                        .fill(Color.accentColor)
-
-                                    RoundedRectangle(cornerRadius: 24, style: .continuous)
-                                        .fill(
-                                            LinearGradient(
-                                                colors: [.white.opacity(0.15), .clear],
-                                                startPoint: .topLeading,
-                                                endPoint: .bottomTrailing
-                                            )
+                                    Capsule().fill(
+                                        LinearGradient(
+                                            colors: [Color.accentColor, Color.accentColor.opacity(0.8)],
+                                            startPoint: .topLeading,
+                                            endPoint: .bottomTrailing
                                         )
+                                    )
+                                    Capsule().fill(
+                                        LinearGradient(
+                                            colors: [.white.opacity(0.2), .clear],
+                                            startPoint: .top,
+                                            endPoint: .bottom
+                                        )
+                                    )
                                 }
-                                .shadow(color: Color.accentColor.opacity(0.3), radius: 6, x: 0, y: 3)
+                                .shadow(color: Color.accentColor.opacity(0.35), radius: 8, x: 0, y: 4)
                             } else {
-                                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                                    .fill(Color.secondary.opacity(0.1))
+                                Capsule().fill(.regularMaterial)
+                                Capsule().strokeBorder(Color.secondary.opacity(0.1), lineWidth: 0.5)
                             }
                         }
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(PressableButtonStyle(scale: 0.95))
                 }
             }
             .padding(.horizontal, 16)
         }
-        .padding(.vertical, 12)
+        .padding(.vertical, 10)
     }
 
     private func categoryIcon(for category: LibraryCategory) -> String {
@@ -213,7 +208,6 @@ struct ContentView: View {
         let currentFilteredSongs = filteredSongs
 
         if currentFilteredSongs.isEmpty {
-            // Barra de progreso de indexación mientras se escanea una biblioteca vacía
             if fileAccessService.isScanning && fileAccessService.scanTotal > 0 {
                 indexingProgressCard
                     .listRowSeparator(.hidden)
@@ -228,7 +222,6 @@ struct ContentView: View {
                 .listRowBackground(Color.clear)
             }
         } else {
-            // Indicador compacto de indexación en curso sobre la lista
             if fileAccessService.isScanning {
                 compactIndexingRow
                     .listRowSeparator(.hidden)
@@ -244,10 +237,7 @@ struct ContentView: View {
     private var indexingProgressCard: some View {
         VStack(spacing: 16) {
             ZStack {
-                Circle()
-                    .fill(Color.accentColor.opacity(0.12))
-                    .frame(width: 70, height: 70)
-
+                Circle().fill(Color.accentColor.opacity(0.12)).frame(width: 70, height: 70)
                 Image(systemName: "square.stack.3d.up")
                     .font(.system(size: 30, weight: .semibold))
                     .foregroundStyle(Color.accentColor)
@@ -257,14 +247,11 @@ struct ContentView: View {
                 .font(.system(size: 18, weight: .bold, design: .rounded))
                 .foregroundStyle(.primary)
 
-            // Barra de progreso real
             VStack(spacing: 8) {
                 GeometryReader { geo in
                     ZStack(alignment: .leading) {
-                        Capsule()
-                            .fill(Color.secondary.opacity(0.15))
-                        Capsule()
-                            .fill(Color.accentColor)
+                        Capsule().fill(Color.secondary.opacity(0.15))
+                        Capsule().fill(Color.accentColor)
                             .frame(width: geo.size.width * indexingProgress)
                             .animation(.easeInOut(duration: 0.3), value: indexingProgress)
                     }
@@ -275,9 +262,7 @@ struct ContentView: View {
                     Text("\(fileAccessService.scanProcessed) de \(fileAccessService.scanTotal)")
                         .font(.system(size: 12, weight: .medium).monospacedDigit())
                         .foregroundStyle(.secondary)
-
                     Spacer()
-
                     Text("\(Int(indexingProgress * 100))%")
                         .font(.system(size: 12, weight: .bold).monospacedDigit())
                         .foregroundStyle(Color.accentColor)
@@ -297,22 +282,15 @@ struct ContentView: View {
 
     private var compactIndexingRow: some View {
         HStack(spacing: 10) {
-            ProgressView()
-                .controlSize(.small)
-
+            ProgressView().controlSize(.small)
             Text("Indexando… \(fileAccessService.scanProcessed)/\(fileAccessService.scanTotal)")
                 .font(.system(size: 12, weight: .medium).monospacedDigit())
                 .foregroundStyle(.secondary)
-
             Spacer()
-
-            // Mini barra de progreso
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
-                    Capsule()
-                        .fill(Color.secondary.opacity(0.15))
-                    Capsule()
-                        .fill(Color.accentColor)
+                    Capsule().fill(Color.secondary.opacity(0.15))
+                    Capsule().fill(Color.accentColor)
                         .frame(width: geo.size.width * indexingProgress)
                         .animation(.easeInOut(duration: 0.3), value: indexingProgress)
                 }
@@ -322,8 +300,7 @@ struct ContentView: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
         .background {
-            Capsule()
-                .fill(Color.secondary.opacity(0.06))
+            Capsule().fill(Color.secondary.opacity(0.06))
         }
         .padding(.horizontal, 12)
     }
@@ -336,15 +313,12 @@ struct ContentView: View {
     @ViewBuilder
     private var albumsSection: some View {
         let albums = filteredAlbums
-
         if albums.isEmpty {
             ContentUnavailableLibraryView(
-                icon: "square.stack",
-                title: "No hay álbumes",
+                icon: "square.stack", title: "No hay álbumes",
                 message: searchText.isEmpty ? "Tus álbumes aparecerán aquí." : "No se encontraron álbumes."
             )
-            .listRowSeparator(.hidden)
-            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden).listRowBackground(Color.clear)
         } else {
             ForEach(albums) { album in
                 NavigationLink {
@@ -352,9 +326,7 @@ struct ContentView: View {
                 } label: {
                     albumListRow(album)
                 }
-                .buttonStyle(.plain)
-                .listRowSeparator(.hidden)
-                .listRowBackground(Color.clear)
+                .buttonStyle(.plain).listRowSeparator(.hidden).listRowBackground(Color.clear)
                 .listRowInsets(EdgeInsets(top: 6, leading: 12, bottom: 6, trailing: 12))
             }
         }
@@ -363,15 +335,12 @@ struct ContentView: View {
     @ViewBuilder
     private var artistsSection: some View {
         let artists = filteredArtists
-
         if artists.isEmpty {
             ContentUnavailableLibraryView(
-                icon: "person.2",
-                title: "No hay artistas",
+                icon: "person.2", title: "No hay artistas",
                 message: searchText.isEmpty ? "Tus artistas aparecerán aquí." : "No se encontraron artistas."
             )
-            .listRowSeparator(.hidden)
-            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden).listRowBackground(Color.clear)
         } else {
             ForEach(artists) { artist in
                 NavigationLink {
@@ -379,9 +348,7 @@ struct ContentView: View {
                 } label: {
                     artistListRow(artist)
                 }
-                .buttonStyle(.plain)
-                .listRowSeparator(.hidden)
-                .listRowBackground(Color.clear)
+                .buttonStyle(.plain).listRowSeparator(.hidden).listRowBackground(Color.clear)
                 .listRowInsets(EdgeInsets(top: 6, leading: 12, bottom: 6, trailing: 12))
             }
         }
@@ -390,15 +357,12 @@ struct ContentView: View {
     @ViewBuilder
     private var playlistsSection: some View {
         let playlists = fileAccessService.playlists
-
         if playlists.isEmpty {
             ContentUnavailableLibraryView(
-                icon: "music.note.list",
-                title: "Sin listas",
+                icon: "music.note.list", title: "Sin listas",
                 message: "Crea tu primera lista de reproducción para organizar tu música."
             )
-            .listRowSeparator(.hidden)
-            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden).listRowBackground(Color.clear)
         } else {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 16) {
@@ -413,8 +377,7 @@ struct ContentView: View {
                 }
                 .padding(.horizontal, 20)
             }
-            .listRowSeparator(.hidden)
-            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden).listRowBackground(Color.clear)
             .listRowInsets(EdgeInsets(top: 16, leading: 0, bottom: 16, trailing: 0))
         }
     }
@@ -426,49 +389,51 @@ struct ContentView: View {
         Button {
             playSong(song)
         } label: {
-            HStack(spacing: 16) {
+            HStack(spacing: 14) {
                 artworkView(for: song)
 
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 3) {
                     Text(song.displayName)
-                        .font(.body.weight(.medium))
+                        .font(.system(size: 15, weight: .semibold, design: .rounded))
                         .foregroundStyle(isCurrent ? Color.accentColor : .primary)
                         .lineLimit(1)
 
                     Text(song.displaySubtitle)
-                        .font(.caption)
+                        .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
 
                     if !song.album.isEmpty {
                         HStack(spacing: 4) {
                             Image(systemName: "opticaldisc")
-                                .font(.caption2)
+                                .font(.system(size: 9))
                                 .foregroundStyle(.tertiary)
                             Text(song.album)
-                                .font(.caption2)
+                                .font(.system(size: 11))
                                 .foregroundStyle(.tertiary)
                                 .lineLimit(1)
                         }
                     }
                 }
 
-                Spacer(minLength: 12)
+                Spacer(minLength: 10)
 
                 if isCurrent {
-                    HStack(spacing: 3) {
-                        ForEach(0..<3, id: \.self) { _ in
-                            RoundedRectangle(cornerRadius: 1.5)
+                    HStack(spacing: 2.5) {
+                        ForEach(0..<3, id: \.self) { bar in
+                            RoundedRectangle(cornerRadius: 1)
                                 .fill(Color.accentColor)
-                                .frame(width: 3, height: 14)
-                                .animation(.easeInOut(duration: 0.4).repeatForever(autoreverses: true), value: isCurrent)
+                                .frame(width: 2.5, height: bar % 2 == 0 ? 12 : 7)
+                                .animation(
+                                    .easeInOut(duration: 0.4 + Double(bar) * 0.1).repeatForever(autoreverses: true),
+                                    value: isCurrent
+                                )
                         }
                     }
                 } else {
                     Text(formatDuration(song.duration))
-                        .font(.caption)
+                        .font(.system(size: 11, weight: .medium).monospacedDigit())
                         .foregroundStyle(.tertiary)
-                        .monospacedDigit()
                 }
 
                 Menu {
@@ -485,23 +450,27 @@ struct ContentView: View {
                     }
                 } label: {
                     Image(systemName: "plus.circle")
-                        .font(.system(size: 16))
+                        .font(.system(size: 15))
                         .foregroundStyle(.tertiary)
-                        .frame(width: 44, height: 44) // Bigger invisible touch target
+                        .frame(width: 40, height: 40)
                         .contentShape(Rectangle())
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 14) // Expanded touch target (10→14)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
             .background {
                 if isCurrent {
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(Color.accentColor.opacity(0.08))
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(Color.accentColor.opacity(0.07))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                .strokeBorder(Color.accentColor.opacity(0.15), lineWidth: 0.5)
+                        )
                 }
             }
         }
         .buttonStyle(.plain)
-        .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12))
+        .listRowInsets(EdgeInsets(top: 3, leading: 10, bottom: 3, trailing: 10))
         .listRowBackground(Color.clear)
     }
 
@@ -516,17 +485,25 @@ struct ContentView: View {
         if let artwork = song.artwork {
             Image(uiImage: artwork)
                 .resizable()
+                .interpolation(.medium)
                 .scaledToFill()
-                .frame(width: 52, height: 52)
+                .frame(width: 48, height: 48)
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .shadow(color: .black.opacity(0.1), radius: 3, x: 0, y: 1.5)
         } else {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color.secondary.opacity(0.15))
-                .frame(width: 52, height: 52)
+                .fill(
+                    LinearGradient(
+                        colors: [Color.accentColor.opacity(0.15), Color.accentColor.opacity(0.05)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .frame(width: 48, height: 48)
                 .overlay {
                     Image(systemName: "music.note")
-                        .font(.system(size: 18))
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundStyle(Color.accentColor.opacity(0.6))
                 }
         }
     }
@@ -565,7 +542,7 @@ struct ContentView: View {
     }
 
     private func playSong(_ song: Song) {
-        UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+        Haptics.soft()
         audioEngine.play(song: song, from: fileAccessService.songs)
     }
 
@@ -582,17 +559,13 @@ struct SplashView: View {
 
     var body: some View {
         ZStack {
-            // Dark background
             Color.black.ignoresSafeArea()
-
             VStack(spacing: 24) {
-                // App icon with pulse animation
                 Image(systemName: "music.note")
                     .font(.system(size: 60, weight: .light))
                     .foregroundStyle(Color.accentColor)
                     .scaleEffect(isAnimating ? 1.1 : 0.95)
                     .animation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true), value: isAnimating)
-
                 Text("Aurora Player")
                     .font(.system(size: 26, weight: .bold, design: .rounded))
                     .foregroundStyle(
@@ -602,15 +575,10 @@ struct SplashView: View {
                             endPoint: .trailing
                         )
                     )
-
-                ProgressView()
-                    .controlSize(.small)
-                    .tint(Color.accentColor)
+                ProgressView().controlSize(.small).tint(Color.accentColor)
             }
         }
-        .onAppear {
-            isAnimating = true
-        }
+        .onAppear { isAnimating = true }
     }
 }
 
@@ -630,100 +598,86 @@ enum LibraryCategory: String, CaseIterable {
 
 // MARK: - Album List Row
 private func albumListRow(_ album: Album) -> some View {
-    HStack(spacing: 16) {
+    HStack(spacing: 14) {
         Group {
             if let artwork = album.artwork {
                 Image(uiImage: artwork)
-                    .resizable()
-                    .scaledToFill()
-                    .frame(width: 56, height: 56)
+                    .resizable().interpolation(.medium).scaledToFill()
+                    .frame(width: 52, height: 52)
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .shadow(color: .black.opacity(0.1), radius: 3, x: 0, y: 1.5)
             } else {
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(Color.secondary.opacity(0.15))
-                    .frame(width: 56, height: 56)
+                    .fill(Color.secondary.opacity(0.12))
+                    .frame(width: 52, height: 52)
                     .overlay {
                         Image(systemName: "square.stack")
-                            .font(.system(size: 20))
-                            .foregroundStyle(.secondary)
+                            .font(.system(size: 18))
+                            .foregroundStyle(.secondary.opacity(0.6))
                     }
             }
         }
 
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 3) {
             Text(album.name)
-                .font(.body.weight(.medium))
-                .foregroundStyle(.primary)
-                .lineLimit(1)
-
+                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                .foregroundStyle(.primary).lineLimit(1)
             Text(album.artist)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-
+                .font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
             Text("\(album.songs.count) canciones")
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
+                .font(.system(size: 11)).foregroundStyle(.tertiary)
         }
 
         Spacer()
-
         Image(systemName: "chevron.right")
-            .font(.caption)
+            .font(.system(size: 12, weight: .semibold))
             .foregroundStyle(.tertiary)
     }
-    .padding(.horizontal, 16)
-    .padding(.vertical, 12)
+    .padding(.horizontal, 14).padding(.vertical, 12)
     .background {
-        RoundedRectangle(cornerRadius: 14, style: .continuous)
-            .fill(Color.secondary.opacity(0.04))
+        RoundedRectangle(cornerRadius: 16, style: .continuous)
+            .fill(.regularMaterial)
     }
 }
 
 // MARK: - Artist List Row
 private func artistListRow(_ artist: Artist) -> some View {
-    HStack(spacing: 16) {
+    HStack(spacing: 14) {
         Group {
             if let artwork = artist.artwork {
                 Image(uiImage: artwork)
-                    .resizable()
-                    .scaledToFill()
-                    .frame(width: 56, height: 56)
+                    .resizable().interpolation(.medium).scaledToFill()
+                    .frame(width: 52, height: 52)
                     .clipShape(Circle())
+                    .shadow(color: .black.opacity(0.1), radius: 3, x: 0, y: 1.5)
             } else {
-                Circle()
-                    .fill(Color.secondary.opacity(0.15))
-                    .frame(width: 56, height: 56)
+                Circle().fill(Color.secondary.opacity(0.12))
+                    .frame(width: 52, height: 52)
                     .overlay {
                         Image(systemName: "person.fill")
-                            .font(.system(size: 20))
-                            .foregroundStyle(.secondary)
+                            .font(.system(size: 18))
+                            .foregroundStyle(.secondary.opacity(0.6))
                     }
             }
         }
 
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 3) {
             Text(artist.name)
-                .font(.body.weight(.medium))
-                .foregroundStyle(.primary)
-                .lineLimit(1)
-
+                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                .foregroundStyle(.primary).lineLimit(1)
             Text("\(artist.songs.count) canciones")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .font(.system(size: 12)).foregroundStyle(.secondary)
         }
 
         Spacer()
-
         Image(systemName: "chevron.right")
-            .font(.caption)
+            .font(.system(size: 12, weight: .semibold))
             .foregroundStyle(.tertiary)
     }
-    .padding(.horizontal, 16)
-    .padding(.vertical, 12)
+    .padding(.horizontal, 14).padding(.vertical, 12)
     .background {
-        RoundedRectangle(cornerRadius: 14, style: .continuous)
-            .fill(Color.secondary.opacity(0.04))
+        RoundedRectangle(cornerRadius: 16, style: .continuous)
+            .fill(.regularMaterial)
     }
 }
 
@@ -736,19 +690,14 @@ struct ContentUnavailableLibraryView: View {
     var body: some View {
         VStack(spacing: 16) {
             ZStack {
-                Circle()
-                    .fill(Color.accentColor.opacity(0.1))
-                    .frame(width: 80, height: 80)
-
+                Circle().fill(Color.accentColor.opacity(0.1)).frame(width: 80, height: 80)
                 Image(systemName: icon)
                     .font(.system(size: 36, weight: .semibold))
                     .foregroundStyle(Color.accentColor)
             }
-
             Text(title)
-                .font(.system(size: 20, weight: .bold))
+                .font(.system(size: 20, weight: .bold, design: .rounded))
                 .foregroundStyle(.primary)
-
             Text(message)
                 .font(.system(size: 15))
                 .foregroundStyle(.secondary)
@@ -766,26 +715,24 @@ struct playlistLibraryCard: View {
     let playlist: Playlist
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 10) {
             Group {
                 if let artwork = playlist.artwork {
                     Image(uiImage: artwork)
-                        .resizable()
-                        .scaledToFill()
+                        .resizable().scaledToFill()
                         .frame(width: 140, height: 140)
                         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .shadow(color: .black.opacity(0.15), radius: 8, x: 0, y: 4)
                 } else {
                     ZStack {
                         RoundedRectangle(cornerRadius: 16, style: .continuous)
                             .fill(
                                 LinearGradient(
                                     colors: [Color.accentColor.opacity(0.25), Color.accentColor.opacity(0.1)],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
+                                    startPoint: .topLeading, endPoint: .bottomTrailing
                                 )
                             )
                             .frame(width: 140, height: 140)
-
                         Image(systemName: "music.note.list")
                             .font(.system(size: 35))
                             .foregroundStyle(.white.opacity(0.8))
@@ -793,19 +740,15 @@ struct playlistLibraryCard: View {
                 }
             }
 
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 3) {
                 Text(playlist.name)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-
+                    .font(.system(size: 14, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.primary).lineLimit(1)
                 Text("\(playlist.songIDs.count) canciones")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 12)).foregroundStyle(.secondary)
             }
         }
-        .frame(width: 140)
-        .padding(.vertical, 8)
+        .frame(width: 140).padding(.vertical, 8)
     }
 }
 
@@ -814,12 +757,11 @@ struct AlbumLibraryRow: View {
     let album: Album
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 10) {
             Group {
                 if let artwork = album.artwork {
                     Image(uiImage: artwork)
-                        .resizable()
-                        .scaledToFill()
+                        .resizable().scaledToFill()
                         .frame(width: 140, height: 140)
                         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                 } else {
@@ -834,24 +776,17 @@ struct AlbumLibraryRow: View {
                 }
             }
 
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 3) {
                 Text(album.name)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(.primary).lineLimit(1)
                 Text(album.artist)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-
+                    .font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
                 Text("\(album.songs.count) canciones")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
+                    .font(.system(size: 11)).foregroundStyle(.tertiary)
             }
         }
-        .frame(width: 140)
-        .padding(.vertical, 8)
+        .frame(width: 140).padding(.vertical, 8)
     }
 }
 
@@ -860,17 +795,15 @@ struct ArtistLibraryRow: View {
     let artist: Artist
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 10) {
             Group {
                 if let artwork = artist.artwork {
                     Image(uiImage: artwork)
-                        .resizable()
-                        .scaledToFill()
+                        .resizable().scaledToFill()
                         .frame(width: 140, height: 140)
                         .clipShape(Circle())
                 } else {
-                    Circle()
-                        .fill(Color.secondary.opacity(0.15))
+                    Circle().fill(Color.secondary.opacity(0.15))
                         .frame(width: 140, height: 140)
                         .overlay {
                             Image(systemName: "person.fill")
@@ -880,18 +813,14 @@ struct ArtistLibraryRow: View {
                 }
             }
 
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 3) {
                 Text(artist.name)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(.primary).lineLimit(1)
                 Text("\(artist.songs.count) canciones")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 12)).foregroundStyle(.secondary)
             }
         }
-        .frame(width: 140)
-        .padding(.vertical, 8)
+        .frame(width: 140).padding(.vertical, 8)
     }
 }
