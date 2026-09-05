@@ -156,6 +156,9 @@ struct PlayerBar: View {
                     .padding(.bottom, 4)
 
                     // ✅ Barra de progreso mejorada con preview de scrub
+                    // ✅ FIX: .frame(maxWidth: .infinity) para que el GeometryReader
+                    // se expanda al ancho completo disponible. Sin esto, el ancho
+                    // podía colapsar y la barra quedaba desalineada/estrecha.
                     GeometryReader { geometry in
                         ZStack(alignment: .leading) {
                             Capsule()
@@ -209,6 +212,7 @@ struct PlayerBar: View {
                                 }
                         )
                     }
+                    .frame(maxWidth: .infinity)
                     .frame(height: (compactPlayerBar ? 3 : 4) + 12)
                     .padding(.horizontal, 18)
                     .padding(.bottom, 8)

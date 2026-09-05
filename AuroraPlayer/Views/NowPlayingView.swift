@@ -331,6 +331,10 @@ struct NowPlayingView: View {
     // MARK: - Progress View (scrub fluido a 60fps)
     private var progressView: some View {
         VStack(spacing: 8) {
+            // ✅ FIX: .frame(maxWidth: .infinity) para que el GeometryReader
+            // se expanda al ancho completo disponible. El gesture usa
+            // geometry.size.width directamente (no progressBarWidth que
+            // podía quedar desactualizado tras rotación/cambio de tamaño).
             GeometryReader { geometry in
                 // ✅ Feedback táctil: la barra engrosa al hacer scrub
                 // (animación de frame → GPU, sin costo de calidad)
@@ -368,6 +372,7 @@ struct NowPlayingView: View {
                     progressBarWidth = newWidth
                 }
             }
+            .frame(maxWidth: .infinity)
             .frame(height: 10)
             .padding(.vertical, 16)
             .contentShape(Rectangle())
@@ -376,11 +381,11 @@ struct NowPlayingView: View {
                 DragGesture(minimumDistance: 0)
                     .onChanged { value in
                         isScrubbing = true
-                        let percentage = max(0, min(1, value.location.x / progressBarWidth))
+                        let percentage = max(0, min(1, value.location.x / geometry.size.width))
                         scrubPreviewTime = audioEngine.duration * percentage
                     }
                     .onEnded { value in
-                        let percentage = max(0, min(1, value.location.x / progressBarWidth))
+                        let percentage = max(0, min(1, value.location.x / geometry.size.width))
                         let newTime = audioEngine.duration * percentage
                         isScrubbing = false
                         audioEngine.seek(to: newTime)
