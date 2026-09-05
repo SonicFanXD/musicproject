@@ -7,7 +7,6 @@ struct SettingsView: View {
 
     @State private var showFolderPicker = false
     @State private var showLogs = false
-    @State private var showDeleteConfirmation = false
 
     var body: some View {
         NavigationStack {
@@ -77,7 +76,7 @@ struct SettingsView: View {
 
                             settingsButton(
                                 title: "Calidad de salida",
-                                subtitle: "\(Int(audioEngine.outputSampleRate / 1000)) kHz · \(audioEngine.outputChannelCount) canales",
+                                subtitle: audioEngine.audioQualityInfo.isEmpty ? "\(Int(audioEngine.outputSampleRate / 1000)) kHz · \(audioEngine.outputChannelCount) canales" : audioEngine.audioQualityInfo,
                                 icon: "speaker.wave.2.fill",
                                 color: .indigo
                             ) {}
@@ -238,7 +237,7 @@ struct SettingsView: View {
         }
     }
 
-    // MARK: - Button Row
+    // MARK: - Button Row with expanded touch target
     @ViewBuilder
     private func settingsButton(
         title: String,
@@ -275,12 +274,13 @@ struct SettingsView: View {
                     .foregroundStyle(.tertiary)
             }
             .padding(.horizontal, 16)
-            .padding(.vertical, 12)
+            .padding(.vertical, 14) // Expanded vertical padding for a larger touch target without changing layout
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
 
-    // MARK: - Stat Row
+    // MARK: - Stat Row with expanded touch target area
     private func statRow(title: String, value: String) -> some View {
         HStack {
             Text(title)
@@ -295,7 +295,8 @@ struct SettingsView: View {
                 .monospacedDigit()
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.vertical, 14)
+        .contentShape(Rectangle())
     }
 
     // MARK: - Divider

@@ -4,281 +4,176 @@ struct EqualizerView: View {
     @ObservedObject var audioEngine: AudioEngine
     @Environment(\.dismiss) private var dismiss
 
-    @State private var selectedBand: Int = 0
-    @State private var currentGain: Float = 0
-
-    let frequencies: [String] = ["32", "64", "125", "250", "500", "1k", "2k", "4k", "8k", "16k"]
-    let bandDescriptions: [String] = ["Sub-bass", "Bass", "Low-mid", "Mid", "Upper-mid", "Presence", "High-mid", "Treble", "High", "Ultra-high"]
-
     var body: some View {
         NavigationStack {
             ZStack {
                 AppBackground()
 
                 ScrollView {
-                    VStack(spacing: 28) {
-                        headerSection
+                    VStack(spacing: 24) {
+                        // Header Switch / Status Card
+                        mainSwitchSection
 
-                        if audioEngine.isEQEnabled {
-                            VStack(spacing: 24) {
-                                presetSelector
-                                equalizerSliders
-                                customBandControl
-                            }
-                        } else {
-                            disabledEQView
-                        }
+                        // Presets Section
+                        presetsSection
+
+                        // Bands Sliders Section
+                        bandsSection
                     }
-                    .padding(.horizontal, 24)
+                    .padding(.horizontal, 20)
                     .padding(.top, 12)
+                    .padding(.bottom, 32)
                 }
                 .scrollIndicators(.hidden)
             }
-            .navigationTitle("Equalizador")
+            .navigationTitle("Ecualizador")
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button {
-                        audioEngine.toggleEQ()
-                    } label: {
-                        Image(systemName: audioEngine.isEQEnabled ? "power.circle.fill" : "power.circle")
-                            .foregroundStyle(audioEngine.isEQEnabled ? Color.accentColor : .secondary)
-                    }
-                }
-
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Listo") {
-                        dismiss()
-                    }
-                    .foregroundStyle(Color.accentColor)
+                    Button("Listo") { dismiss() }
+                        .foregroundStyle(Color.accentColor)
                 }
             }
         }
     }
 
-    private var headerSection: some View {
-        VStack(spacing: 14) {
+    // MARK: - Main Switch Card
+    private var mainSwitchSection: some View {
+        HStack(spacing: 16) {
             ZStack {
                 Circle()
-                    .fill(Color.accentColor.opacity(0.18))
-                    .frame(width: 75, height: 75)
+                    .fill(Color.purple.opacity(0.15))
+                    .frame(width: 50, height: 50)
 
-                Image(systemName: audioEngine.isEQEnabled ? "slider.horizontal.3" : "power")
-                    .font(.system(size: 30, weight: .semibold))
-                    .foregroundStyle(audioEngine.isEQEnabled ? Color.accentColor : .secondary)
+                Image(systemName: "slider.horizontal.3")
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(.purple)
             }
 
-            Text("Equalizador")
-                .font(.system(size: 24, weight: .bold))
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Ecualizador de 10 Bandas")
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundStyle(.primary)
 
-            Text(audioEngine.isEQEnabled ? "Personaliza el sonido de tu música" : "Activa el equalizador para personalizar el sonido")
-                .font(.system(size: 15))
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
+                Text(audioEngine.isEQEnabled ? "Activo (\(audioEngine.eqPreset.displayName))" : "Desactivado")
+                    .font(.system(size: 13))
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+
+            Toggle("", isOn: Binding(
+                get: { audioEngine.isEQEnabled },
+                set: { _ in audioEngine.toggleEQ() }
+            ))
+            .labelsHidden()
+            .tint(.purple)
         }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 24)
-        .nativeGlass(cornerRadius: 26)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .nativeGlass(cornerRadius: 20)
+        .contentShape(Rectangle())
     }
 
-    private var presetSelector: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                Image(systemName: "music.note.list")
-                    .foregroundStyle(Color.accentColor)
-
-                Text("Presets")
-                    .font(.system(size: 18, weight: .semibold))
-            }
-            .padding(.horizontal, 4)
+    // MARK: - Presets
+    private var presetsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Presets")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(.primary)
+                .padding(.horizontal, 4)
 
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 12) {
+                HStack(spacing: 10) {
                     ForEach(EQPreset.allCases, id: \.self) { preset in
                         Button {
+                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
                             audioEngine.setEQPreset(preset)
-                            updateCurrentGain()
                         } label: {
                             Text(preset.displayName)
-                                .font(.system(size: 14, weight: audioEngine.eqPreset == preset ? .semibold : .regular))
-                                .foregroundStyle(audioEngine.eqPreset == preset ? .white : .secondary)
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(audioEngine.eqPreset == preset && audioEngine.isEQEnabled ? .white : .primary)
                                 .padding(.horizontal, 16)
                                 .padding(.vertical, 10)
                                 .background {
-                                    if audioEngine.eqPreset == preset {
-                                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                            .fill(Color.accentColor)
-                                    } else {
-                                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                            .fill(Color.secondary.opacity(0.12))
-                                    }
+                                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                        .fill(audioEngine.eqPreset == preset && audioEngine.isEQEnabled ? Color.purple : Color.secondary.opacity(0.12))
                                 }
                         }
+                        .buttonStyle(.plain)
                     }
                 }
                 .padding(.horizontal, 4)
             }
         }
-        .padding(.vertical, 16)
-        .background {
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(.ultraThinMaterial)
-        }
     }
 
-    private var equalizerSliders: some View {
+    // MARK: - Bands Sliders (Expanded touch area)
+    private var bandsSection: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                Image(systemName: "slider.horizontal.below.rectangle")
-                    .foregroundStyle(Color.accentColor)
-
-                Text("Bandas de frecuencia")
-                    .font(.system(size: 18, weight: .semibold))
-            }
-            .padding(.horizontal, 4)
+            Text("Frecuencias")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(.primary)
+                .padding(.horizontal, 4)
 
             VStack(spacing: 16) {
-                ForEach(0..<10, id: \.self) { index in
-                    HStack(spacing: 12) {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(frequencies[index])
-                                .font(.system(size: 13, weight: .semibold))
-                                .foregroundStyle(.primary)
-                            Text(bandDescriptions[index])
-                                .font(.system(size: 11))
-                                .foregroundStyle(.secondary)
-                        }
-                        .frame(width: 60, alignment: .leading)
-
-                        Slider(
-                            value: Binding(
-                                get: { audioEngine.getEQGain(for: index) },
-                                set: { audioEngine.setEQGain(for: index, gain: $0) }
-                            ),
-                            in: -12...12,
-                            step: 1
-                        )
-                        .tint(Color.accentColor)
-
-                        Text(String(format: "%.0f dB", audioEngine.getEQGain(for: index)))
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(.secondary)
-                            .frame(width: 50, alignment: .trailing)
-                    }
+                ForEach(0..<10, id: \.self) { bandIndex in
+                    bandSliderRow(bandIndex: bandIndex)
                 }
             }
-            .padding(.horizontal, 8)
-        }
-        .padding(.vertical, 16)
-        .background {
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(.ultraThinMaterial)
+            .padding(18)
+            .background {
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .fill(.ultraThinMaterial)
+            }
         }
     }
 
-    private var customBandControl: some View {
-        VStack(alignment: .leading, spacing: 14) {
+    @ViewBuilder
+    private func bandSliderRow(bandIndex: Int) -> some View {
+        let frequencyName = bandFrequencyName(bandIndex)
+        let currentGain = audioEngine.getEQGain(for: bandIndex)
+
+        VStack(spacing: 6) {
             HStack {
-                Image(systemName: "tuningfork")
-                    .foregroundStyle(Color.accentColor)
+                Text(frequencyName)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.primary)
+                    .monospacedDigit()
 
-                Text("Control personalizado")
-                    .font(.system(size: 18, weight: .semibold))
+                Spacer()
+
+                Text(String(format: "%+.1f dB", currentGain))
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(audioEngine.isEQEnabled ? .purple : .secondary)
+                    .monospacedDigit()
             }
-            .padding(.horizontal, 4)
 
-            VStack(spacing: 16) {
-                HStack {
-                    Text("Banda seleccionada")
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundStyle(.secondary)
-
-                    Spacer()
-
-                    Picker("Banda", selection: $selectedBand) {
-                        ForEach(0..<10, id: \.self) { index in
-                            Text("\(frequencies[index]) Hz")
-                                .tag(index)
-                        }
+            // Slider with expanded vertical touch area wrapper
+            Slider(
+                value: Binding(
+                    get: { Double(currentGain) },
+                    set: { newVal in
+                        audioEngine.setEQGain(for: bandIndex, gain: Float(newVal))
                     }
-                    .pickerStyle(.menu)
-                    .frame(width: 100)
-                }
-
-                VStack(spacing: 8) {
-                    Text("Ganancia: \(String(format: "%.1f dB", currentGain))")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(.primary)
-
-                    Slider(
-                        value: $currentGain,
-                        in: -12...12,
-                        step: 0.5
-                    ) { _ in
-                        audioEngine.setEQGain(for: selectedBand, gain: currentGain)
-                    }
-                    .tint(Color.accentColor)
-
-                    HStack {
-                        Text("-12 dB")
-                            .font(.system(size: 12))
-                            .foregroundStyle(.tertiary)
-
-                        Spacer()
-
-                        Text("0 dB")
-                            .font(.system(size: 12))
-                            .foregroundStyle(.tertiary)
-
-                        Spacer()
-
-                        Text("+12 dB")
-                            .font(.system(size: 12))
-                            .foregroundStyle(.tertiary)
-                    }
-                }
-            }
-            .padding(.horizontal, 8)
-        }
-        .padding(.vertical, 16)
-        .background {
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(.ultraThinMaterial)
-        }
-        .onAppear {
-            updateCurrentGain()
-        }
-        .onChange(of: selectedBand) { _ in
-            updateCurrentGain()
+                ),
+                in: -12...12,
+                step: 0.5
+            )
+            .tint(.purple)
+            .disabled(!audioEngine.isEQEnabled)
+            .padding(.vertical, 6) // Generous touch target expansion
         }
     }
 
-    private var disabledEQView: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "power.slash")
-                .font(.system(size: 40))
-                .foregroundStyle(.secondary.opacity(0.5))
-
-            Text("Equalizador desactivado")
-                .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(.secondary)
-
-            Text("Activa el equalizador desde el botón en la esquina superior izquierda para personalizar el sonido.")
-                .font(.system(size: 14))
-                .foregroundStyle(.tertiary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 20)
-        }
-        .padding(.vertical, 32)
-        .background {
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(.ultraThinMaterial)
-        }
+    private func bandFrequencyName(_ index: Int) -> String {
+        let names = ["32 Hz", "64 Hz", "125 Hz", "250 Hz", "500 Hz", "1 kHz", "2 kHz", "4 kHz", "8 kHz", "16 kHz"]
+        return index < names.count ? names[index] : "\(index)"
     }
+}
 
-    private func updateCurrentGain() {
-        currentGain = audioEngine.getEQGain(for: selectedBand)
-    }
+#Preview {
+    EqualizerView(audioEngine: AudioEngine())
 }

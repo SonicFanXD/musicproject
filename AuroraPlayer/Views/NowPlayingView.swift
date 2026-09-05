@@ -10,7 +10,6 @@ struct NowPlayingView: View {
     @State private var artworkScale: CGFloat = 1.0
     @State private var progressBarWidth: CGFloat = 0
     @State private var extractedColor: Color = Color.accentColor
-    @State private var dragOffset: CGFloat = 0
 
     // MARK: - Adaptive sizing
     private var isCompactScreen: Bool {
@@ -21,8 +20,8 @@ struct NowPlayingView: View {
         let screenWidth = UIScreen.main.bounds.width
         let screenHeight = UIScreen.main.bounds.height
         let maxByWidth = screenWidth - 64
-        let maxByHeight = screenHeight * (isCompactScreen ? 0.30 : 0.38)
-        return min(300, maxByWidth, maxByHeight)
+        let maxByHeight = screenHeight * (isCompactScreen ? 0.28 : 0.36)
+        return min(280, maxByWidth, maxByHeight)
     }
 
     private var progress: Double {
@@ -36,49 +35,47 @@ struct NowPlayingView: View {
                 // Dynamic background based on artwork
                 backgroundView
 
-                // Content
-                ScrollView {
-                    VStack(spacing: 0) {
-                        Spacer().frame(height: 20)
+                // Content - fixed layout to prevent aspect ratio issues & overflow on iPhone 8 Plus
+                VStack(spacing: 0) {
+                    Spacer().frame(height: 12)
 
-                        // Artwork with dynamic glow
-                        artworkView
-                            .scaleEffect(artworkScale)
-                            .animation(.spring(response: 0.6, dampingFraction: 0.8), value: audioEngine.isPlaying)
+                    // Artwork with dynamic glow
+                    artworkView
+                        .scaleEffect(artworkScale)
+                        .animation(.spring(response: 0.6, dampingFraction: 0.8), value: audioEngine.isPlaying)
 
-                        Spacer().frame(height: 28)
+                    Spacer().frame(height: 20)
 
-                        // Audio visualizer with dynamic color
-                        if audioEngine.isPlaying {
-                            AudioVisualizer(audioEngine: audioEngine, tintColor: extractedColor)
-                                .frame(height: 40)
-                                .padding(.horizontal, 40)
-                        }
-
-                        Spacer().frame(height: 24)
-
-                        // Song info
-                        songInfoView
-
-                        Spacer().frame(height: 20)
-
-                        // Progress bar
-                        progressView
-
-                        Spacer().frame(height: 28)
-
-                        // Controls
-                        controlsView
-
-                        Spacer().frame(height: 20)
-
-                        // Queue button
-                        queueButton
-
-                        Spacer().frame(height: 30)
+                    // Audio visualizer with dynamic color
+                    if audioEngine.isPlaying {
+                        AudioVisualizer(audioEngine: audioEngine, tintColor: extractedColor)
+                            .frame(height: 36)
+                            .padding(.horizontal, 40)
                     }
-                    .padding(.horizontal, 24)
+
+                    Spacer().frame(height: 16)
+
+                    // Song info
+                    songInfoView
+
+                    Spacer().frame(height: 16)
+
+                    // Progress bar
+                    progressView
+
+                    Spacer().frame(height: 20)
+
+                    // Controls
+                    controlsView
+
+                    Spacer().frame(height: 16)
+
+                    // Queue button
+                    queueButton
+
+                    Spacer()
                 }
+                .padding(.horizontal, 24)
             }
             .onAppear {
                 extractColorFromArtwork()
@@ -106,17 +103,21 @@ struct NowPlayingView: View {
                         Image(systemName: "chevron.down")
                             .foregroundStyle(.primary)
                             .font(.system(size: 16, weight: .semibold))
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
                     }
                 }
 
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    HStack(spacing: 18) {
+                    HStack(spacing: 14) {
                         Button {
                             showEqualizer = true
                         } label: {
                             Image(systemName: "slider.horizontal.3")
                                 .foregroundStyle(.primary)
                                 .font(.system(size: 16, weight: .medium))
+                                .frame(width: 44, height: 44)
+                                .contentShape(Rectangle())
                         }
 
                         Button {
@@ -125,6 +126,8 @@ struct NowPlayingView: View {
                             Image(systemName: audioEngine.currentSong?.lyrics.isEmpty == false ? "quote.bubble.fill" : "quote.bubble")
                                 .foregroundStyle(.primary)
                                 .font(.system(size: 16, weight: .medium))
+                                .frame(width: 44, height: 44)
+                                .contentShape(Rectangle())
                         }
                     }
                 }
@@ -142,6 +145,8 @@ struct NowPlayingView: View {
     }
 
     // MARK: - Background with dynamic color
+    /// `allowsHitTesting(false)` prevents background from intercepting touch gestures.
+    /// `scaledToFit` prevents artwork expansion on non-standard aspect ratios.
     private var backgroundView: some View {
         Group {
             if let artwork = audioEngine.currentSong?.artwork {
@@ -149,16 +154,16 @@ struct NowPlayingView: View {
                     ZStack {
                         Image(uiImage: artwork)
                             .resizable()
-                            .scaledToFill()
+                            .scaledToFit()
                             .frame(width: geometry.size.width, height: geometry.size.height)
-                            .blur(radius: 60)
+                            .blur(radius: 30)
                             .opacity(0.5)
 
-                        // Color overlay based on extracted color
                         extractedColor.opacity(0.15)
                     }
                 }
                 .ignoresSafeArea()
+                .allowsHitTesting(false)
             } else {
                 LinearGradient(
                     colors: [
@@ -169,6 +174,7 @@ struct NowPlayingView: View {
                     endPoint: .bottom
                 )
                 .ignoresSafeArea()
+                .allowsHitTesting(false)
             }
         }
     }
@@ -182,15 +188,15 @@ struct NowPlayingView: View {
                     .interpolation(.high)
                     .scaledToFill()
                     .frame(width: artworkSize, height: artworkSize)
-                    .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
-                    .shadow(color: extractedColor.opacity(0.4), radius: 20, x: 0, y: 10)
+                    .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+                    .shadow(color: extractedColor.opacity(0.35), radius: 14, x: 0, y: 6)
                     .overlay(
-                        RoundedRectangle(cornerRadius: 28, style: .continuous)
+                        RoundedRectangle(cornerRadius: 24, style: .continuous)
                             .stroke(extractedColor.opacity(0.2), lineWidth: 1)
                     )
             } else {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 28, style: .continuous)
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
                         .fill(
                             LinearGradient(
                                 colors: [
@@ -204,24 +210,25 @@ struct NowPlayingView: View {
                         .frame(width: artworkSize, height: artworkSize)
 
                     Image(systemName: "music.note")
-                        .font(.system(size: 70, weight: .light))
+                        .font(.system(size: 60, weight: .light))
                         .foregroundStyle(extractedColor.opacity(0.8))
                 }
+                .shadow(color: extractedColor.opacity(0.25), radius: 12, x: 0, y: 5)
             }
         }
     }
 
     // MARK: - Song Info
     private var songInfoView: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 8) {
             Text(audioEngine.currentSong?.displayName ?? "Sin canción")
-                .font(.system(size: 24, weight: .bold))
+                .font(.system(size: 22, weight: .bold))
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.primary)
                 .lineLimit(2)
 
             Text(audioEngine.currentSong?.displaySubtitle ?? "—")
-                .font(.system(size: 16, weight: .medium))
+                .font(.system(size: 15, weight: .medium))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .padding(.horizontal, 16)
@@ -236,8 +243,8 @@ struct NowPlayingView: View {
                         .font(.system(size: 11, weight: .medium).monospacedDigit())
                 }
                 .foregroundStyle(extractedColor.opacity(0.9))
-                .padding(.horizontal, 14)
-                .padding(.vertical, 6)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 5)
                 .background {
                     Capsule()
                         .fill(extractedColor.opacity(0.12))
@@ -247,14 +254,14 @@ struct NowPlayingView: View {
         .padding(.horizontal, 6)
     }
 
-    // MARK: - Progress View
+    // MARK: - Progress View with expanded touch area
     private var progressView: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 8) {
             GeometryReader { geometry in
                 ZStack(alignment: .leading) {
                     RoundedRectangle(cornerRadius: 3, style: .continuous)
                         .fill(Color.secondary.opacity(0.15))
-                        .frame(height: 5)
+                        .frame(height: 6)
 
                     RoundedRectangle(cornerRadius: 3, style: .continuous)
                         .fill(
@@ -264,7 +271,7 @@ struct NowPlayingView: View {
                                 endPoint: .trailing
                             )
                         )
-                        .frame(width: geometry.size.width * progress, height: 5)
+                        .frame(width: geometry.size.width * progress, height: 6)
                 }
                 .onAppear {
                     progressBarWidth = geometry.size.width
@@ -273,7 +280,8 @@ struct NowPlayingView: View {
                     progressBarWidth = newWidth
                 }
             }
-            .frame(height: 5)
+            .frame(height: 6)
+            .padding(.vertical, 14) // Expands the hit-test / touch area significantly without changing visual bar height
             .contentShape(Rectangle())
             .gesture(
                 DragGesture(minimumDistance: 0)
@@ -298,24 +306,27 @@ struct NowPlayingView: View {
         }
     }
 
-    // MARK: - Controls
+    // MARK: - Controls (Optimized Shuffle & Repeat buttons + expanded touch target)
     private var controlsView: some View {
-        HStack(spacing: 20) {
-            // Shuffle
+        HStack(spacing: 16) {
+            // Shuffle Button with clean iOS style active pill/capsule design
             Button {
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 audioEngine.toggleShuffle()
             } label: {
                 ZStack {
-                    Circle()
-                        .fill(audioEngine.isShuffleEnabled ? extractedColor.opacity(0.15) : Color.secondary.opacity(0.08))
-                        .frame(width: 44, height: 44)
+                    Capsule()
+                        .fill(audioEngine.isShuffleEnabled ? extractedColor.opacity(0.2) : Color.clear)
+                        .frame(width: 48, height: 38)
 
-                    Image(systemName: audioEngine.isShuffleEnabled ? "shuffle.circle.fill" : "shuffle")
-                        .font(.system(size: 18, weight: .semibold))
+                    Image(systemName: audioEngine.isShuffleEnabled ? "shuffle" : "shuffle")
+                        .font(.system(size: 17, weight: audioEngine.isShuffleEnabled ? .bold : .semibold))
                         .foregroundStyle(audioEngine.isShuffleEnabled ? extractedColor : .secondary)
                 }
+                .frame(width: 52, height: 52)
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
 
             // Previous
             Button {
@@ -325,13 +336,16 @@ struct NowPlayingView: View {
                 ZStack {
                     Circle()
                         .fill(.ultraThinMaterial)
-                        .frame(width: 52, height: 52)
+                        .frame(width: 50, height: 50)
 
                     Image(systemName: "backward.fill")
-                        .font(.system(size: 20, weight: .semibold))
+                        .font(.system(size: 18, weight: .semibold))
                         .foregroundStyle(.primary)
                 }
+                .frame(width: 56, height: 56)
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
 
             // Play/Pause
             Button {
@@ -345,14 +359,17 @@ struct NowPlayingView: View {
                 ZStack {
                     Circle()
                         .fill(extractedColor)
-                        .frame(width: 72, height: 72)
+                        .frame(width: 70, height: 70)
 
                     Image(systemName: audioEngine.isPlaying ? "pause.fill" : "play.fill")
-                        .font(.system(size: 28, weight: .bold))
+                        .font(.system(size: 26, weight: .bold))
                         .foregroundStyle(.white)
                 }
-                .shadow(color: extractedColor.opacity(0.4), radius: 12, x: 0, y: 5)
+                .shadow(color: extractedColor.opacity(0.4), radius: 10, x: 0, y: 4)
+                .frame(width: 78, height: 78)
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
 
             // Next
             Button {
@@ -362,29 +379,35 @@ struct NowPlayingView: View {
                 ZStack {
                     Circle()
                         .fill(.ultraThinMaterial)
-                        .frame(width: 52, height: 52)
+                        .frame(width: 50, height: 50)
 
                     Image(systemName: "forward.fill")
-                        .font(.system(size: 20, weight: .semibold))
+                        .font(.system(size: 18, weight: .semibold))
                         .foregroundStyle(.primary)
                 }
+                .frame(width: 56, height: 56)
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
 
-            // Repeat
+            // Repeat Button with clean iOS style active pill/capsule design
             Button {
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 audioEngine.cycleRepeatMode()
             } label: {
                 ZStack {
-                    Circle()
-                        .fill(audioEngine.repeatMode != .off ? extractedColor.opacity(0.15) : Color.secondary.opacity(0.08))
-                        .frame(width: 44, height: 44)
+                    Capsule()
+                        .fill(audioEngine.repeatMode != .off ? extractedColor.opacity(0.2) : Color.clear)
+                        .frame(width: 48, height: 38)
 
                     Image(systemName: repeatIcon)
-                        .font(.system(size: 18, weight: .semibold))
+                        .font(.system(size: 17, weight: audioEngine.repeatMode != .off ? .bold : .semibold))
                         .foregroundStyle(audioEngine.repeatMode != .off ? extractedColor : .secondary)
                 }
+                .frame(width: 52, height: 52)
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
         }
     }
 
@@ -397,32 +420,33 @@ struct NowPlayingView: View {
                 ZStack {
                     Circle()
                         .fill(extractedColor.opacity(0.15))
-                        .frame(width: 30, height: 30)
+                        .frame(width: 28, height: 28)
 
                     Image(systemName: "list.bullet")
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(extractedColor)
                 }
 
                 Text("Cola: \(audioEngine.nextUpQueue.count)")
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(.secondary)
             }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 12)
+            .padding(.horizontal, 18)
+            .padding(.vertical, 10)
             .background {
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
                     .fill(.regularMaterial)
             }
         }
+        .buttonStyle(.plain)
     }
 
     // MARK: - Helpers
     private var repeatIcon: String {
         switch audioEngine.repeatMode {
         case .off: return "repeat"
-        case .all: return "repeat.circle.fill"
-        case .one: return "repeat.1.circle.fill"
+        case .all: return "repeat"
+        case .one: return "repeat.1"
         }
     }
 
@@ -433,12 +457,11 @@ struct NowPlayingView: View {
         audioEngine.seek(to: newTime)
     }
 
-    private func formatTime(_ seconds: TimeInterval) -> String {
-        guard seconds.isFinite, seconds >= 0 else { return "0:00" }
-        let totalSeconds = Int(seconds)
-        let minutes = totalSeconds / 60
-        let remainingSeconds = totalSeconds % 60
-        return String(format: "%d:%02d", minutes, remainingSeconds)
+    private func formatTime(_ time: TimeInterval) -> String {
+        guard !time.isNaN && time.isFinite else { return "0:00" }
+        let minutes = Int(time) / 60
+        let seconds = Int(time) % 60
+        return String(format: "%d:%02d", minutes, seconds)
     }
 
     private func extractColorFromArtwork() {
@@ -447,177 +470,71 @@ struct NowPlayingView: View {
             return
         }
 
-        // Use the existing ColorExtractor from Models.swift
-        if let uiColor = ColorExtractor.dominantColor(from: artwork) {
-            extractedColor = Color(uiColor)
-        } else {
-            extractedColor = Color.accentColor
-        }
-    }
-}
+        // Fast dominant color extraction using thumbnail context
+        DispatchQueue.global(qos: .userInitiated).async {
+            let size = CGSize(width: 40, height: 40)
+            UIGraphicsBeginImageContextWithOptions(size, false, 1.0)
+            artwork.draw(in: CGRect(origin: .zero, size: size))
+            let image = UIGraphicsGetImageFromCurrentImageContext()
+            UIGraphicsEndImageContext()
 
-// MARK: - Audio Info View
-struct AudioInfoView: View {
-    @ObservedObject var audioEngine: AudioEngine
-    @Environment(\.dismiss) private var dismiss
+            guard let cgImage = image?.cgImage else { return }
 
-    var body: some View {
-        NavigationStack {
-            ZStack {
-                AppBackground()
+            let width = cgImage.width
+            let height = cgImage.height
+            let bytesPerPixel = 4
+            let bytesPerRow = bytesPerPixel * width
+            var pixelData = [UInt8](repeating: 0, count: height * bytesPerRow)
 
-                ScrollView {
-                    VStack(spacing: 24) {
-                        headerSection
+            guard let context = CGContext(
+                data: &pixelData,
+                width: width,
+                height: height,
+                bitsPerComponent: 8,
+                bytesPerRow: bytesPerRow,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ) else { return }
 
-                        VStack(spacing: 20) {
-                            audioQualitySection
-                            formatInfoSection
-                            playbackInfoSection
+            context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+
+            var totalRed: CGFloat = 0
+            var totalGreen: CGFloat = 0
+            var totalBlue: CGFloat = 0
+            var count: CGFloat = 0
+
+            for y in 0..<height {
+                for x in 0..<width {
+                    let offset = (y * bytesPerRow) + (x * bytesPerPixel)
+                    let r = CGFloat(pixelData[offset])
+                    let g = CGFloat(pixelData[offset + 1])
+                    let b = CGFloat(pixelData[offset + 2])
+                    let a = CGFloat(pixelData[offset + 3])
+
+                    if a > 128 {
+                        // Exclude pure black / pure white extremes for rich accent colors
+                        let maxVal = max(r, g, b)
+                        let minVal = min(r, g, b)
+                        if maxVal - minVal > 15 && maxVal < 240 {
+                            totalRed += r
+                            totalGreen += g
+                            totalBlue += b
+                            count += 1
                         }
                     }
-                    .padding(.horizontal, 24)
-                    .padding(.top, 12)
                 }
-                .scrollIndicators(.hidden)
             }
-            .navigationTitle("Información de Audio")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
-            .toolbarBackground(.visible, for: .navigationBar)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Listo") { dismiss() }
-                        .foregroundStyle(Color.accentColor)
+
+            DispatchQueue.main.async {
+                if count > 0 {
+                    let avgR = totalRed / count / 255.0
+                    let avgG = totalGreen / count / 255.0
+                    let avgB = totalBlue / count / 255.0
+                    extractedColor = Color(red: Double(avgR), green: Double(avgG), blue: Double(avgB))
+                } else {
+                    extractedColor = Color.accentColor
                 }
             }
         }
-    }
-
-    private var headerSection: some View {
-        VStack(spacing: 14) {
-            ZStack {
-                Circle()
-                    .fill(Color.accentColor.opacity(0.18))
-                    .frame(width: 75, height: 75)
-
-                Image(systemName: "waveform")
-                    .font(.system(size: 30, weight: .semibold))
-                    .foregroundStyle(Color.accentColor)
-            }
-
-            Text("Calidad de Audio")
-                .font(.system(size: 24, weight: .bold))
-
-            Text("Información técnica de la reproducción actual")
-                .font(.system(size: 15))
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 24)
-        .nativeGlass(cornerRadius: 26)
-    }
-
-    private var audioQualitySection: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                Image(systemName: "speaker.wave.2")
-                    .foregroundStyle(Color.accentColor)
-                Text("Calidad de Salida")
-                    .font(.system(size: 18, weight: .semibold))
-            }
-            .padding(.horizontal, 4)
-
-            VStack(spacing: 0) {
-                infoRow(title: "Sample Rate", value: "\(Int(audioEngine.outputSampleRate / 1000)) kHz")
-                divider
-                infoRow(title: "Canales", value: "\(audioEngine.outputChannelCount) canales")
-                divider
-                infoRow(title: "Sample Rate Fuente", value: "\(Int(audioEngine.sourceSampleRate / 1000)) kHz")
-            }
-            .background {
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .fill(.ultraThinMaterial)
-            }
-        }
-    }
-
-    private var formatInfoSection: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                Image(systemName: "doc.text")
-                    .foregroundStyle(Color.accentColor)
-                Text("Formato")
-                    .font(.system(size: 18, weight: .semibold))
-            }
-            .padding(.horizontal, 4)
-
-            VStack(spacing: 0) {
-                if let song = audioEngine.currentSong {
-                    infoRow(title: "Formato", value: song.formatDescription.isEmpty ? "Desconocido" : song.formatDescription)
-                    divider
-                    infoRow(title: "Duración", value: formatTime(audioEngine.duration))
-                    divider
-                    infoRow(title: "Álbum", value: song.album.isEmpty ? "Desconocido" : song.album)
-                }
-            }
-            .background {
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .fill(.ultraThinMaterial)
-            }
-        }
-    }
-
-    private var playbackInfoSection: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                Image(systemName: "play.circle")
-                    .foregroundStyle(Color.accentColor)
-                Text("Reproducción")
-                    .font(.system(size: 18, weight: .semibold))
-            }
-            .padding(.horizontal, 4)
-
-            VStack(spacing: 0) {
-                infoRow(title: "Estado", value: audioEngine.isPlaying ? "Reproduciendo" : "Pausado")
-                divider
-                infoRow(title: "Tiempo Actual", value: formatTime(audioEngine.currentTime))
-                divider
-                infoRow(title: "Tiempo Total", value: formatTime(audioEngine.duration))
-            }
-            .background {
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .fill(.ultraThinMaterial)
-            }
-        }
-    }
-
-    private func infoRow(title: String, value: String) -> some View {
-        HStack {
-            Text(title)
-                .font(.system(size: 15, weight: .medium))
-                .foregroundStyle(.secondary)
-            Spacer()
-            Text(value)
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(.primary)
-        }
-        .padding(.horizontal, 18)
-        .padding(.vertical, 15)
-    }
-
-    private var divider: some View {
-        Divider()
-            .opacity(0.14)
-            .padding(.leading, 72)
-    }
-
-    private func formatTime(_ seconds: TimeInterval) -> String {
-        guard seconds.isFinite, seconds >= 0 else { return "0:00" }
-        let totalSeconds = Int(seconds)
-        let minutes = totalSeconds / 60
-        let remainingSeconds = totalSeconds % 60
-        return String(format: "%d:%02d", minutes, remainingSeconds)
     }
 }
