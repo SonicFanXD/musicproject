@@ -141,15 +141,20 @@ enum AppTheme {
                 let a = CGFloat(data[off + 3]) / 255
                 guard a > 0.5 else { continue }
                 let ui = UIColor(red: r, green: g, blue: b, alpha: 1)
-                var h: CGFloat = 0, s: CGFloat = 0, br: CGFloat = 0, _: CGFloat = 0
-                guard ui.getHue(&h, saturation: &s, brightness: &br, alpha: &_) else { continue }
+                var h: CGFloat = 0
+                var s: CGFloat = 0
+                var br: CGFloat = 0
+                var alpha: CGFloat = 0
+                guard ui.getHue(&h, saturation: &s, brightness: &br, alpha: &alpha) else { continue }
                 // Ignorar grises (poco útiles como acento)
                 guard s >= 0.15 && br >= 0.15 else { continue }
                 let hi = min(23, Int(h * 24))
                 let si = min(4, Int(s * 5))
                 let bi = min(4, Int(br * 5))
                 // Peso: saturación² × distancia del brillo de 0.6 (colores vivos, no demasiado oscuros/claros)
-                let weight = Float(s * s) * (1 - abs(br - 0.6) * 1.2)
+                let saturationWeight = Float(s * s)
+                let brightnessDistance = abs(br - 0.6) * 1.2
+                let weight = saturationWeight * (1.0 - brightnessDistance)
                 buckets[(bi * 5 + si) * 24 + hi] += max(weight, 0)
             }
         }

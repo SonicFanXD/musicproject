@@ -377,11 +377,11 @@ struct ArtistDetailView: View {
             }
             // ✅ Extraer color del primer álbum
             if let artwork = artist.artwork {
-                DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                DispatchQueue.global(qos: .userInitiated).async {
                     let dominant = AppTheme.dominantColor(from: artwork)
                     DispatchQueue.main.async {
                         withAnimation(.easeInOut(duration: 0.3)) {
-                            self?.liveDominantColor = dominant
+                            self.liveDominantColor = dominant
                         }
                     }
                 }

@@ -636,8 +636,7 @@ struct NowPlayingView: View {
         }
 
         // ✅ MEJORADO: color dominante VIVO vía histograma HSB (hilo de fondo)
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            guard let self else { return }
+        DispatchQueue.global(qos: .userInitiated).async {
             let dominant = AppTheme.dominantColor(from: artwork)
             DispatchQueue.main.async {
                 self.extractedColor = AppTheme.readableColor(from: dominant)
