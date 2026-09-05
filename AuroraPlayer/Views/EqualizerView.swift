@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct EqualizerView: View {
     @ObservedObject var audioEngine: AudioEngine
@@ -26,14 +27,29 @@ struct EqualizerView: View {
                 }
                 .scrollIndicators(.hidden)
             }
-            .navigationTitle("Ecualizador")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+            .toolbarBackground(Color(UIColor.systemBackground).opacity(0.92), for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
+                // Título personalizado consistente con la app
+                ToolbarItem(placement: .principal) {
+                    Text("Ecualizador")
+                        .font(.system(size: 20, weight: .bold, design: .rounded))
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: [Color.accentColor, Color.accentColor.opacity(0.75)],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .accessibilityLabel("Ecualizador")
+                }
+
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Listo") { dismiss() }
                         .foregroundStyle(Color.accentColor)
+                        .frame(width: 44, height: 44) // Bigger invisible touch target
+                        .contentShape(Rectangle())
                 }
             }
         }

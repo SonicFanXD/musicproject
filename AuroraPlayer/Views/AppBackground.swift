@@ -2,7 +2,6 @@ import SwiftUI
 
 struct AppBackground: View {
     var body: some View {
-        // Full-bleed gradient that extends behind navigation bars
         LinearGradient(
             colors: [
                 Color(UIColor.systemBackground),
@@ -12,5 +11,6 @@ struct AppBackground: View {
             endPoint: .bottom
         )
         .ignoresSafeArea()
+        .drawingGroup(opaque: true)
     }
 }

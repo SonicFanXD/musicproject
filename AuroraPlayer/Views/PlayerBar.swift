@@ -14,7 +14,7 @@ struct PlayerBar: View {
         Group {
             if let song = audioEngine.currentSong {
                 VStack(spacing: 0) {
-                    HStack(spacing: 14) {
+                    HStack(spacing: 10) {
                         // Artwork with subtle scale animation
                         artwork(for: song)
                             .scaleEffect(artworkScale)
@@ -34,14 +34,15 @@ struct PlayerBar: View {
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .contentShape(Rectangle())
+                        .padding(.vertical, 4) // Invisible expansion for easier tap
                         .onTapGesture {
                             withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
                                 showingNowPlaying = true
                             }
                         }
 
-                        // Native controls with generous touch targets
-                        HStack(spacing: 6) {
+                        // Native controls with generous touch targets (invisible 44pt+ frames)
+                        HStack(spacing: 0) {
                             Button {
                                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
                                 audioEngine.playPrevious()
@@ -54,6 +55,8 @@ struct PlayerBar: View {
                                         Circle()
                                             .fill(.regularMaterial)
                                     }
+                                    .frame(width: 44, height: 44) // Bigger invisible touch target
+                                    .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
 
@@ -73,6 +76,8 @@ struct PlayerBar: View {
                                         Circle()
                                             .fill(Color.accentColor.opacity(0.15))
                                     }
+                                    .frame(width: 48, height: 48) // Bigger invisible touch target
+                                    .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
 
@@ -88,6 +93,8 @@ struct PlayerBar: View {
                                         Circle()
                                             .fill(.regularMaterial)
                                     }
+                                    .frame(width: 44, height: 44) // Bigger invisible touch target
+                                    .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
                         }
@@ -109,14 +116,15 @@ struct PlayerBar: View {
                     }
                     .frame(height: 5)
                     .padding(.horizontal, 16)
-                    .padding(.vertical, 10) // Expands touch area without changing visual height
+                    .padding(.vertical, 16) // Expanded touch area (10→16)
                     .contentShape(Rectangle())
                     .gesture(
                         DragGesture(minimumDistance: 0)
                             .onChanged { value in
-                                guard audioEngine.duration > 0 else { return }
-                                let width = UIScreen.main.bounds.width - 32
-                                let percentage = max(0, min(1, value.location.x / width))
+                                guard audioEngine.duration > 0, geometry.size.width > 0 else { return }
+                                // ✅ CORRECT: subtract horizontal padding (16pt) so location maps exactly to the bar
+                                let adjustedX = value.location.x - 16
+                                let percentage = max(0, min(1, adjustedX / geometry.size.width))
                                 audioEngine.seek(to: audioEngine.duration * percentage)
                             }
                     )
@@ -127,6 +135,7 @@ struct PlayerBar: View {
                         .fill(.ultraThinMaterial)
                         .shadow(color: .black.opacity(0.12), radius: 14, x: 0, y: 5)
                 }
+                .drawingGroup(opaque: false) // Hardware-accelerated 60fps rendering
                 .onAppear {
                     artworkScale = 1.05
                 }
@@ -142,7 +151,7 @@ struct PlayerBar: View {
         if let art = song.artwork {
             Image(uiImage: art)
                 .resizable()
-                .interpolation(.high)
+                .interpolation(.medium)
                 .scaledToFill()
                 .frame(width: 44, height: 44)
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))

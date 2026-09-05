@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct SettingsView: View {
     @ObservedObject var audioEngine: AudioEngine
@@ -7,11 +8,34 @@ struct SettingsView: View {
 
     @State private var showFolderPicker = false
     @State private var showLogs = false
+    @State private var showAbout = false
+    @State private var showEqualizerSheet = false
+    @State private var selectedThemeIndex: Int
+    @State private var selectedAccentIndex: Int
+
+    private let themes = ["Sistema (claro/oscuro)", "Modo Claro", "Modo Oscuro"]
+    private let accents = ["Morado (predeterminado)", "Azul Aurora", "Esmeralda", "Rosa Neón", "Ámbar Solar"]
+
+    // Keys de persistencia
+    private let themeDefaultsKey = "com.aurora.uiTheme"
+    private let accentDefaultsKey = "com.aurora.accentColor"
+
+    init(audioEngine: AudioEngine, fileAccessService: FileAccessService) {
+        self.audioEngine = audioEngine
+        self.fileAccessService = fileAccessService
+
+        let savedTheme = UserDefaults.standard.integer(forKey: themeDefaultsKey)
+        _selectedThemeIndex = State(initialValue: savedTheme >= 0 && savedTheme < 3 ? savedTheme : 0)
+
+        let savedAccent = UserDefaults.standard.integer(forKey: accentDefaultsKey)
+        _selectedAccentIndex = State(initialValue: savedAccent >= 0 && savedAccent < 5 ? savedAccent : 0)
+    }
 
     var body: some View {
         NavigationStack {
             ZStack {
-                AppBackground()
+                // Fondo adaptativo al modo claro/oscuro (el valor se lee al aparecer)
+                applyThemeBackground()
 
                 ScrollView {
                     VStack(spacing: 24) {
@@ -54,10 +78,11 @@ struct SettingsView: View {
                         ) {
                             settingsButton(
                                 title: "Equalizador",
-                                subtitle: audioEngine.isEQEnabled ? audioEngine.eqPreset.displayName : "Desactivado",
+                                subtitle: audioEngine.isEQEnabled ? "Activado (\(audioEngine.eqPreset.displayName))" : "Desactivado",
                                 icon: "slider.horizontal.3",
                                 color: .purple
                             ) {
+                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
                                 audioEngine.toggleEQ()
                             }
 
@@ -69,17 +94,21 @@ struct SettingsView: View {
                                 icon: "forward.end.fill",
                                 color: .teal
                             ) {
+                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
                                 audioEngine.toggleCrossfade()
                             }
 
                             settingsDivider
 
+                            // Navegar al Equalizador para ajustar bandas y presets
                             settingsButton(
-                                title: "Calidad de salida",
-                                subtitle: audioEngine.audioQualityInfo.isEmpty ? "\(Int(audioEngine.outputSampleRate / 1000)) kHz · \(audioEngine.outputChannelCount) canales" : audioEngine.audioQualityInfo,
-                                icon: "speaker.wave.2.fill",
+                                title: "Ajustar Equalizador",
+                                subtitle: "Presets y 10 bandas de frecuencia",
+                                icon: "slider.vertical.3",
                                 color: .indigo
-                            ) {}
+                            ) {
+                                showEqualizerSheet = true
+                            }
                         }
 
                         // Visual Section
@@ -88,21 +117,35 @@ struct SettingsView: View {
                             title: "Apariencia",
                             color: .pink
                         ) {
-                            settingsButton(
+                            // Theme picker action — se aplica de inmediato
+                            settingsMenuButton(
                                 title: "Tema",
-                                subtitle: "Sistema (claro/oscuro)",
+                                subtitle: themes[selectedThemeIndex],
                                 icon: "circle.lefthalf.filled",
-                                color: .gray
-                            ) {}
+                                color: .gray,
+                                options: themes,
+                                selection: $selectedThemeIndex
+                            ) { index in
+                                selectedThemeIndex = index
+                                UserDefaults.standard.set(index, forKey: themeDefaultsKey)
+                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                            }
 
                             settingsDivider
 
-                            settingsButton(
+                            // Accent color picker action — se aplica de inmediato
+                            settingsMenuButton(
                                 title: "Color de acento",
-                                subtitle: "Morado (predeterminado)",
+                                subtitle: accents[selectedAccentIndex],
                                 icon: "drop.fill",
-                                color: .accentColor
-                            ) {}
+                                color: accentColorForIndex(selectedAccentIndex),
+                                options: accents,
+                                selection: $selectedAccentIndex
+                            ) { index in
+                                selectedAccentIndex = index
+                                UserDefaults.standard.set(index, forKey: accentDefaultsKey)
+                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                            }
                         }
 
                         // Stats Section
@@ -140,7 +183,9 @@ struct SettingsView: View {
                                 subtitle: "Aurora Player v1.0",
                                 icon: "info.circle.fill",
                                 color: .blue
-                            ) {}
+                            ) {
+                                showAbout = true
+                            }
                         }
                     }
                     .padding(.horizontal, 20)
@@ -149,14 +194,29 @@ struct SettingsView: View {
                 }
                 .scrollIndicators(.hidden)
             }
-            .navigationTitle("Ajustes")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+            .toolbarBackground(Color(UIColor.systemBackground).opacity(0.92), for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
+                // Título personalizado consistente con la app
+                ToolbarItem(placement: .principal) {
+                    Text("Ajustes")
+                        .font(.system(size: 20, weight: .bold, design: .rounded))
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: [Color.accentColor, Color.accentColor.opacity(0.75)],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .accessibilityLabel("Ajustes")
+                }
+
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Listo") { dismiss() }
                         .foregroundStyle(Color.accentColor)
+                        .frame(width: 44, height: 44) // Bigger touch target
+                        .contentShape(Rectangle())
                 }
             }
             .sheet(isPresented: $showFolderPicker) {
@@ -165,6 +225,67 @@ struct SettingsView: View {
             .sheet(isPresented: $showLogs) {
                 LogsView()
             }
+            .sheet(isPresented: $showEqualizerSheet) {
+                EqualizerView(audioEngine: audioEngine)
+            }
+            .alert("Aurora Player v1.0", isPresented: $showAbout) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text("Reproductor de música Hi-Fi optimizado para iOS con soporte de alta fidelidad, ecualizador de 10 bandas y gestión avanzada de carpetas locales.")
+            }
+        }
+    }
+
+    // MARK: - Apply Theme & Accent Color (persistente)
+    private func applyThemeBackground() -> some View {
+        Group {
+            if selectedThemeIndex == 1 {
+                // Modo Claro forzado
+                Color(UIColor.white).ignoresSafeArea()
+                    .onAppear {
+                        if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+                           let window = scene.windows.first {
+                            window.overrideUserInterfaceStyle = .light
+                        }
+                    }
+            } else if selectedThemeIndex == 2 {
+                // Modo Oscuro forzado
+                Color(UIColor.black).ignoresSafeArea()
+                    .onAppear {
+                        if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+                           let window = scene.windows.first {
+                            window.overrideUserInterfaceStyle = .dark
+                        }
+                    }
+            } else {
+                // Sistema
+                LinearGradient(
+                    colors: [
+                        Color(UIColor.systemBackground),
+                        Color(UIColor.secondarySystemBackground)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .ignoresSafeArea()
+                .onAppear {
+                    if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+                       let window = scene.windows.first {
+                        window.overrideUserInterfaceStyle = .unspecified
+                    }
+                }
+            }
+        }
+    }
+
+    private func accentColorForIndex(_ index: Int) -> Color {
+        switch index {
+        case 0: return Color.purple
+        case 1: return Color.blue
+        case 2: return Color.green
+        case 3: return Color.pink
+        case 4: return Color.orange
+        default: return Color.purple
         }
     }
 
@@ -237,7 +358,7 @@ struct SettingsView: View {
         }
     }
 
-    // MARK: - Button Row with expanded touch target
+    // MARK: - Standard Button Row with expanded touch target (min 44pt)
     @ViewBuilder
     private func settingsButton(
         title: String,
@@ -274,7 +395,65 @@ struct SettingsView: View {
                     .foregroundStyle(.tertiary)
             }
             .padding(.horizontal, 16)
-            .padding(.vertical, 14) // Expanded vertical padding for a larger touch target without changing layout
+            .padding(.vertical, 16) // Expanded touch target (≥44pt en total)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - Menu Picker Button Row (For Theme & Accent Color) with fully interactive Menu
+    @ViewBuilder
+    private func settingsMenuButton(
+        title: String,
+        subtitle: String,
+        icon: String,
+        color: Color,
+        options: [String],
+        selection: Binding<Int>,
+        onChange: @escaping (Int) -> Void
+    ) -> some View {
+        Menu {
+            ForEach(0..<options.count, id: \.self) { index in
+                Button {
+                    onChange(index)
+                } label: {
+                    HStack {
+                        Text(options[index])
+                        if selection.wrappedValue == index {
+                            Image(systemName: "checkmark")
+                        }
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 14) {
+                Image(systemName: icon)
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundStyle(color)
+                    .frame(width: 32, height: 32)
+                    .background {
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(color.opacity(0.1))
+                    }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundStyle(.primary)
+
+                    Text(subtitle)
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 16) // Expanded touch target (≥44pt en total)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -295,7 +474,7 @@ struct SettingsView: View {
                 .monospacedDigit()
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 14)
+        .padding(.vertical, 16) // Expanded touch target
         .contentShape(Rectangle())
     }
 

@@ -83,11 +83,24 @@ struct LogsView: View {
                     .transition(.opacity)
                 }
             }
-            .navigationTitle("Registros")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+            .toolbarBackground(Color(UIColor.systemBackground).opacity(0.92), for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
+                // Título personalizado consistente con la app
+                ToolbarItem(placement: .principal) {
+                    Text("Registros")
+                        .font(.system(size: 20, weight: .bold, design: .rounded))
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: [Color.accentColor, Color.accentColor.opacity(0.75)],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .accessibilityLabel("Registros")
+                }
+
                 ToolbarItem(placement: .topBarLeading) {
                     Menu {
                         Button {
@@ -111,6 +124,8 @@ struct LogsView: View {
                         }
                     } label: {
                         Image(systemName: "ellipsis.circle")
+                            .frame(width: 44, height: 44) // Bigger invisible touch target
+                            .contentShape(Rectangle())
                     }
                 }
 
@@ -118,6 +133,8 @@ struct LogsView: View {
                     Button("Listo") {
                         dismiss()
                     }
+                    .frame(width: 44, height: 44) // Bigger invisible touch target
+                    .contentShape(Rectangle())
                 }
             }
             .searchable(

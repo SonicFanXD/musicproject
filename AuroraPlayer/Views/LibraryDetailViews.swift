@@ -62,9 +62,9 @@ struct AlbumDetailView: View {
         .background(
             Color(UIColor.systemBackground).ignoresSafeArea()
         )
-        .navigationTitle(album.name)
+        .navigationTitle(album.name) // Needed for back button label
         .navigationBarTitleDisplayMode(.inline)
-        .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+        .toolbarBackground(Color(UIColor.systemBackground).opacity(0.92), for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
     }
 
@@ -184,11 +184,12 @@ struct AlbumDetailView: View {
                 }
                 .foregroundStyle(.white)
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 15)
+                .padding(.vertical, 18) // Expanded touch target (15→18)
                 .background {
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
                         .fill(tintColor)
                 }
+                .contentShape(Rectangle())
                 .shadow(color: tintColor.opacity(0.4), radius: 10, x: 0, y: 5)
             }
 
@@ -210,6 +211,8 @@ struct AlbumDetailView: View {
                         RoundedRectangle(cornerRadius: 16, style: .continuous)
                             .fill(tintColor.opacity(0.14))
                     }
+                    .frame(width: 60, height: 60) // Bigger invisible touch target
+                    .contentShape(Rectangle())
             }
         }
     }
@@ -285,11 +288,12 @@ struct AlbumDetailView: View {
                     .foregroundStyle(.tertiary)
             }
             .padding(.horizontal, 14)
-            .padding(.vertical, 12)
+            .padding(.vertical, 14) // Expanded touch target (12→14)
             .background {
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .fill(isCurrent ? tintColor.opacity(0.1) : Color.secondary.opacity(0.05))
             }
+            .contentShape(Rectangle())
             .overlay {
                 if isCurrent {
                     RoundedRectangle(cornerRadius: 14, style: .continuous)
@@ -418,9 +422,9 @@ struct ArtistDetailView: View {
         .background(
             Color(UIColor.systemBackground).ignoresSafeArea()
         )
-        .navigationTitle(artist.name)
+        .navigationTitle(artist.name) // Needed for back button label
         .navigationBarTitleDisplayMode(.inline)
-        .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+        .toolbarBackground(Color(UIColor.systemBackground).opacity(0.92), for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
     }
 
@@ -525,11 +529,12 @@ struct ArtistDetailView: View {
                 }
                 .foregroundStyle(.white)
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 15)
+                .padding(.vertical, 18) // Expanded touch target (15→18)
                 .background {
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
                         .fill(Color.accentColor)
                 }
+                .contentShape(Rectangle())
                 .shadow(color: Color.accentColor.opacity(0.35), radius: 10, x: 0, y: 5)
             }
 
@@ -550,6 +555,8 @@ struct ArtistDetailView: View {
                         RoundedRectangle(cornerRadius: 16, style: .continuous)
                             .fill(Color.accentColor.opacity(0.14))
                     }
+                    .frame(width: 60, height: 60) // Bigger invisible touch target
+                    .contentShape(Rectangle())
             }
         }
     }
@@ -651,11 +658,12 @@ struct ArtistDetailView: View {
                     .foregroundStyle(.tertiary)
             }
             .padding(.horizontal, 14)
-            .padding(.vertical, 12)
+            .padding(.vertical, 14) // Expanded touch target (12→14)
             .background {
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .fill(isCurrent ? Color.accentColor.opacity(0.1) : Color.secondary.opacity(0.05))
             }
+            .contentShape(Rectangle())
             .overlay {
                 if isCurrent {
                     RoundedRectangle(cornerRadius: 14, style: .continuous)

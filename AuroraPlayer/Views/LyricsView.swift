@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct LyricsView: View {
     let song: Song?
@@ -29,14 +30,29 @@ struct LyricsView: View {
                     }
                 }
             }
-            .navigationTitle("Letras")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+            .toolbarBackground(Color(UIColor.systemBackground).opacity(0.92), for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
+                // Título personalizado consistente con la app
+                ToolbarItem(placement: .principal) {
+                    Text("Letras")
+                        .font(.system(size: 20, weight: .bold, design: .rounded))
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: [Color.accentColor, Color.accentColor.opacity(0.75)],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .accessibilityLabel("Letras")
+                }
+
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Listo") { dismiss() }
                         .foregroundStyle(Color.accentColor)
+                        .frame(width: 44, height: 44) // Bigger invisible touch target
+                        .contentShape(Rectangle())
                 }
             }
             .onAppear { parseLyrics() }

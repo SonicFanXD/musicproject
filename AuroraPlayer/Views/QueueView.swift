@@ -39,16 +39,33 @@ struct QueueView: View {
                     .scrollIndicators(.hidden)
                 }
             }
-            .navigationTitle("Cola de Reproducción")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+            .toolbarBackground(Color(UIColor.systemBackground).opacity(0.92), for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
+                // Título personalizado consistente con la app
+                ToolbarItem(placement: .principal) {
+                    Text("Cola de Reproducción")
+                        .font(.system(size: 18, weight: .bold, design: .rounded))
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: [Color.accentColor, Color.accentColor.opacity(0.75)],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                        .accessibilityLabel("Cola de Reproducción")
+                }
+
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Listo") {
                         dismiss()
                     }
                     .foregroundStyle(Color.accentColor)
+                    .frame(width: 44, height: 44) // Bigger invisible touch target
+                    .contentShape(Rectangle())
                 }
             }
         }
@@ -57,20 +74,20 @@ struct QueueView: View {
     private var tabSelector: some View {
         HStack(spacing: 6) {
             ForEach(QueueTab.allCases, id: \.self) { tab in
-                Button {
-                    withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                        selectedTab = tab
-                    }
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: tab == .nextUp ? "list.number" : "clock.arrow.circlepath")
-                            .font(.system(size: 12, weight: .semibold))
-                        Text(tab.rawValue)
-                            .font(.subheadline.weight(selectedTab == tab ? .semibold : .regular))
-                    }
-                    .foregroundStyle(selectedTab == tab ? .white : .secondary)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 10)
+                    Button {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                            selectedTab = tab
+                        }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: tab == .nextUp ? "list.number" : "clock.arrow.circlepath")
+                                .font(.system(size: 12, weight: .semibold))
+                            Text(tab.rawValue)
+                                .font(.subheadline.weight(selectedTab == tab ? .semibold : .regular))
+                        }
+                        .foregroundStyle(selectedTab == tab ? .white : .secondary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14) // Expanded touch target (10→14)
                     .background {
                         if selectedTab == tab {
                             Capsule()
@@ -213,49 +230,57 @@ struct QueueView: View {
     }
 
     private func queueSongRow(_ song: Song, index: Int) -> some View {
-        HStack(spacing: 12) {
-            // Miniatura de artwork
-            ZStack {
-                if let artwork = song.artwork {
-                    Image(uiImage: artwork)
-                        .resizable()
-                        .scaledToFill()
-                        .frame(width: 44, height: 44)
-                        .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
-                } else {
-                    RoundedRectangle(cornerRadius: 9, style: .continuous)
-                        .fill(Color.secondary.opacity(0.15))
-                        .frame(width: 44, height: 44)
+        // Next-up songs are tappable to play immediately in the current queue context
+        Button {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            audioEngine.play(song: song, from: audioEngine.playbackQueue)
+        } label: {
+            HStack(spacing: 12) {
+                // Miniatura de artwork
+                ZStack {
+                    if let artwork = song.artwork {
+                        Image(uiImage: artwork)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: 44, height: 44)
+                            .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+                    } else {
+                        RoundedRectangle(cornerRadius: 9, style: .continuous)
+                            .fill(Color.secondary.opacity(0.15))
+                            .frame(width: 44, height: 44)
 
-                    Image(systemName: "music.note")
-                        .font(.system(size: 15))
-                        .foregroundStyle(.secondary)
+                        Image(systemName: "music.note")
+                            .font(.system(size: 15))
+                            .foregroundStyle(.secondary)
+                    }
                 }
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(song.title)
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+
+                    Text(song.displaySubtitle)
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+
+                Spacer()
+
+                Text(formatDuration(song.duration))
+                    .font(.system(size: 12).monospacedDigit())
+                    .foregroundStyle(.tertiary)
             }
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text(song.title)
-                    .font(.system(size: 15, weight: .medium))
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-
-                Text(song.displaySubtitle)
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+            .padding(12) // Expanded touch target (10→12)
+            .background {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(.regularMaterial)
             }
-
-            Spacer()
-
-            Text(formatDuration(song.duration))
-                .font(.system(size: 12).monospacedDigit())
-                .foregroundStyle(.tertiary)
+            .contentShape(Rectangle())
         }
-        .padding(10)
-        .background {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(.regularMaterial)
-        }
+        .buttonStyle(.plain)
     }
 
     private func historySongRow(_ song: Song, index: Int) -> some View {
@@ -310,11 +335,12 @@ struct QueueView: View {
                     .font(.system(size: 26))
                     .foregroundStyle(Color.accentColor)
             }
-            .padding(10)
+            .padding(12) // Expanded touch target (10→12)
             .background {
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .fill(.regularMaterial)
             }
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }

@@ -29,17 +29,33 @@ struct PlaylistsView: View {
                 }
                 .scrollIndicators(.hidden)
             }
-            .navigationTitle("Listas de Reproducción")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+            .toolbarBackground(Color(UIColor.systemBackground).opacity(0.92), for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
+                // Título personalizado consistente con la app
+                ToolbarItem(placement: .principal) {
+                    Text("Listas de Reproducción")
+                        .font(.system(size: 18, weight: .bold, design: .rounded))
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: [Color.accentColor, Color.accentColor.opacity(0.75)],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                        .accessibilityLabel("Listas de Reproducción")
+                }
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button {
                         dismiss()
                     } label: {
                         Image(systemName: "chevron.down")
                             .foregroundStyle(.primary)
+                            .frame(width: 44, height: 44) // Bigger invisible touch target
+                            .contentShape(Rectangle())
                     }
                 }
 
@@ -49,6 +65,8 @@ struct PlaylistsView: View {
                     } label: {
                         Image(systemName: "plus")
                             .foregroundStyle(Color.accentColor)
+                            .frame(width: 44, height: 44) // Bigger invisible touch target
+                            .contentShape(Rectangle())
                     }
                 }
             }
@@ -265,7 +283,7 @@ struct PlaylistsView: View {
                             }
                             .foregroundStyle(.white)
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 16)
+                            .padding(.vertical, 18) // Expanded touch target (16→18)
                             .background {
                                 ZStack {
                                     RoundedRectangle(cornerRadius: 16, style: .continuous)
@@ -285,6 +303,7 @@ struct PlaylistsView: View {
                                         )
                                 }
                             }
+                            .contentShape(Rectangle())
                             .shadow(color: Color.accentColor.opacity(0.5), radius: 16, x: 0, y: 8)
                         }
                         .disabled(newPlaylistName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -294,9 +313,8 @@ struct PlaylistsView: View {
                 }
                 .scrollIndicators(.hidden)
             }
-            .navigationTitle("Crear Lista")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+            .toolbarBackground(Color(UIColor.systemBackground).opacity(0.92), for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
@@ -304,6 +322,8 @@ struct PlaylistsView: View {
                         showCreatePlaylist = false
                     }
                     .foregroundStyle(.secondary)
+                    .frame(width: 44, height: 44) // Bigger invisible touch target
+                    .contentShape(Rectangle())
                 }
             }
         }
@@ -369,9 +389,9 @@ struct PlaylistDetailView: View {
                 }
             }
         }
-        .navigationTitle(playlist.name)
+        .navigationTitle(playlist.name) // Needed for back button label
         .navigationBarTitleDisplayMode(.inline)
-        .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+        .toolbarBackground(Color(UIColor.systemBackground).opacity(0.92), for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -392,6 +412,8 @@ struct PlaylistDetailView: View {
                 } label: {
                     Image(systemName: "ellipsis.circle")
                         .foregroundStyle(.primary)
+                        .frame(width: 44, height: 44) // Bigger invisible touch target
+                        .contentShape(Rectangle())
                 }
             }
         }
@@ -493,11 +515,12 @@ struct PlaylistDetailView: View {
                         }
                         .foregroundStyle(.white)
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 15)
+                        .padding(.vertical, 18) // Expanded touch target (15→18)
                         .background {
                             RoundedRectangle(cornerRadius: 16, style: .continuous)
                                 .fill(Color.accentColor)
                         }
+                        .contentShape(Rectangle())
                         .shadow(color: Color.accentColor.opacity(0.35), radius: 10, x: 0, y: 5)
                     }
 
@@ -518,6 +541,8 @@ struct PlaylistDetailView: View {
                                 RoundedRectangle(cornerRadius: 16, style: .continuous)
                                     .fill(Color.accentColor.opacity(0.14))
                             }
+                            .frame(width: 60, height: 60) // Bigger invisible touch target
+                            .contentShape(Rectangle())
                     }
                 }
                 .padding(.horizontal, 20)
@@ -637,6 +662,8 @@ struct PlaylistDetailView: View {
                 Image(systemName: "minus.circle.fill")
                     .font(.system(size: 20))
                     .foregroundStyle(.red.opacity(0.7))
+                    .frame(width: 44, height: 44) // Bigger invisible touch target
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Quitar de la lista")
@@ -726,9 +753,8 @@ struct PlaylistDetailView: View {
                 }
                 .scrollIndicators(.hidden)
             }
-            .navigationTitle("Editar Lista")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+            .toolbarBackground(Color(UIColor.systemBackground).opacity(0.92), for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
@@ -736,6 +762,8 @@ struct PlaylistDetailView: View {
                         showEditPlaylist = false
                     }
                     .foregroundStyle(.secondary)
+                    .frame(width: 44, height: 44) // Bigger invisible touch target
+                    .contentShape(Rectangle())
                 }
             }
         }

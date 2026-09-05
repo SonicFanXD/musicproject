@@ -36,15 +36,30 @@ struct FolderPickerView: View {
                 }
                 .scrollIndicators(.hidden)
             }
-            .navigationTitle("Biblioteca")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+            .toolbarBackground(Color(UIColor.systemBackground).opacity(0.92), for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
+                // Título personalizado consistente con la app
+                ToolbarItem(placement: .principal) {
+                    Text("Biblioteca")
+                        .font(.system(size: 20, weight: .bold, design: .rounded))
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: [Color.accentColor, Color.accentColor.opacity(0.75)],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .accessibilityLabel("Biblioteca")
+                }
+
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Listo") {
                         dismiss()
                     }
+                    .frame(width: 44, height: 44) // Bigger invisible touch target
+                    .contentShape(Rectangle())
                 }
             }
             .fileImporter(
@@ -120,11 +135,12 @@ struct FolderPickerView: View {
                         .foregroundStyle(.tertiary)
                 }
                 .padding(.horizontal, 16)
-                .padding(.vertical, 12)
+                .padding(.vertical, 16) // Expanded touch target
                 .background {
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
                         .fill(.ultraThinMaterial)
                 }
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
 
@@ -160,11 +176,12 @@ struct FolderPickerView: View {
                         .foregroundStyle(.tertiary)
                 }
                 .padding(.horizontal, 16)
-                .padding(.vertical, 12)
+                .padding(.vertical, 16) // Expanded touch target
                 .background {
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
                         .fill(.ultraThinMaterial)
                 }
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
 
@@ -199,11 +216,12 @@ struct FolderPickerView: View {
                         .foregroundStyle(.tertiary)
                 }
                 .padding(.horizontal, 16)
-                .padding(.vertical, 12)
+                .padding(.vertical, 16) // Expanded touch target
                 .background {
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
                         .fill(.ultraThinMaterial)
                 }
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .disabled(fileAccessService.isScanning)
@@ -278,6 +296,8 @@ struct FolderPickerView: View {
                                 } label: {
                                     Image(systemName: "trash.fill")
                                         .font(.caption)
+                                        .frame(width: 44, height: 44) // Bigger invisible touch target
+                                        .contentShape(Rectangle())
                                 }
                             }
                             .padding(.horizontal, 15)
@@ -337,6 +357,8 @@ struct FolderPickerView: View {
                                 } label: {
                                     Image(systemName: "trash.fill")
                                         .font(.caption)
+                                        .frame(width: 44, height: 44) // Bigger invisible touch target
+                                        .contentShape(Rectangle())
                                 }
                             }
                             .padding(.horizontal, 15)

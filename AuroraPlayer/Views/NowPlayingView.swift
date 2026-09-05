@@ -11,7 +11,7 @@ struct NowPlayingView: View {
     @State private var progressBarWidth: CGFloat = 0
     @State private var extractedColor: Color = Color.accentColor
 
-    // MARK: - Adaptive sizing
+    // MARK: - Adaptive sizing for iOS 16 & iPhone 8 Plus
     private var isCompactScreen: Bool {
         UIScreen.main.bounds.height < 800
     }
@@ -20,8 +20,8 @@ struct NowPlayingView: View {
         let screenWidth = UIScreen.main.bounds.width
         let screenHeight = UIScreen.main.bounds.height
         let maxByWidth = screenWidth - 64
-        let maxByHeight = screenHeight * (isCompactScreen ? 0.28 : 0.36)
-        return min(280, maxByWidth, maxByHeight)
+        let maxByHeight = screenHeight * (isCompactScreen ? 0.26 : 0.34)
+        return min(260, maxByWidth, maxByHeight)
     }
 
     private var progress: Double {
@@ -32,43 +32,45 @@ struct NowPlayingView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                // Dynamic background based on artwork
+                // Dynamic background - rendered with optimized drawingGroup for buttery smooth 60fps on iPhone 8 Plus
                 backgroundView
 
-                // Content - fixed layout to prevent aspect ratio issues & overflow on iPhone 8 Plus
+                // Content - fixed layout preventing any jank or aspect ratio drift.
+                // .fixedSize(horizontal: false, vertical: true) prevents the sheet's
+                // drag-to-dismiss gesture from compressing/redesigning the controls.
                 VStack(spacing: 0) {
-                    Spacer().frame(height: 12)
+                    Spacer().frame(height: 10)
 
-                    // Artwork with dynamic glow
+                    // Artwork with smooth spring animation
                     artworkView
                         .scaleEffect(artworkScale)
-                        .animation(.spring(response: 0.6, dampingFraction: 0.8), value: audioEngine.isPlaying)
+                        .animation(.spring(response: 0.5, dampingFraction: 0.82), value: audioEngine.isPlaying)
 
-                    Spacer().frame(height: 20)
+                    Spacer().frame(height: 16)
 
-                    // Audio visualizer with dynamic color
+                    // Audio visualizer with clean tint color
                     if audioEngine.isPlaying {
                         AudioVisualizer(audioEngine: audioEngine, tintColor: extractedColor)
-                            .frame(height: 36)
+                            .frame(height: 32)
                             .padding(.horizontal, 40)
                     }
 
-                    Spacer().frame(height: 16)
+                    Spacer().frame(height: 14)
 
                     // Song info
                     songInfoView
 
-                    Spacer().frame(height: 16)
+                    Spacer().frame(height: 14)
 
-                    // Progress bar
+                    // Progress bar with generous touch area
                     progressView
 
-                    Spacer().frame(height: 20)
+                    Spacer().frame(height: 18)
 
                     // Controls
                     controlsView
 
-                    Spacer().frame(height: 16)
+                    Spacer().frame(height: 14)
 
                     // Queue button
                     queueButton
@@ -76,6 +78,7 @@ struct NowPlayingView: View {
                     Spacer()
                 }
                 .padding(.horizontal, 24)
+                .fixedSize(horizontal: false, vertical: true)
             }
             .onAppear {
                 extractColorFromArtwork()
@@ -84,18 +87,31 @@ struct NowPlayingView: View {
                 }
             }
             .onChange(of: audioEngine.isPlaying) { isPlaying in
-                withAnimation(.spring(response: 0.5, dampingFraction: 0.8)) {
-                    artworkScale = isPlaying ? 1.03 : 1.0
+                withAnimation(.spring(response: 0.45, dampingFraction: 0.8)) {
+                    artworkScale = isPlaying ? 1.02 : 1.0
                 }
             }
             .onChange(of: audioEngine.currentSong?.id) { _ in
                 extractColorFromArtwork()
             }
-            .navigationTitle("Reproduciendo")
+            .presentationDetents([.large]) // Locks the sheet to full screen — no swipe-drift, no layout shift
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+            .toolbarBackground(Color(UIColor.systemBackground).opacity(0.92), for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
+                // Título personalizado consistente con la app
+                ToolbarItem(placement: .principal) {
+                    Text("Reproduciendo")
+                        .font(.system(size: 20, weight: .bold, design: .rounded))
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: [extractedColor, extractedColor.opacity(0.75)],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .accessibilityLabel("Reproduciendo")
+                }
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button {
                         dismiss()
@@ -144,9 +160,7 @@ struct NowPlayingView: View {
         }
     }
 
-    // MARK: - Background with dynamic color
-    /// `allowsHitTesting(false)` prevents background from intercepting touch gestures.
-    /// `scaledToFit` prevents artwork expansion on non-standard aspect ratios.
+    // MARK: - Background with hardware acceleration (.drawingGroup)
     private var backgroundView: some View {
         Group {
             if let artwork = audioEngine.currentSong?.artwork {
@@ -154,16 +168,18 @@ struct NowPlayingView: View {
                     ZStack {
                         Image(uiImage: artwork)
                             .resizable()
+                            .interpolation(.medium) // Medium interpolation is faster than .high on A11
                             .scaledToFit()
                             .frame(width: geometry.size.width, height: geometry.size.height)
-                            .blur(radius: 30)
-                            .opacity(0.5)
+                            .blur(radius: 25)
+                            .opacity(0.45)
 
-                        extractedColor.opacity(0.15)
+                        extractedColor.opacity(0.12)
                     }
                 }
                 .ignoresSafeArea()
                 .allowsHitTesting(false)
+                .drawingGroup(opaque: false) // Standard color mode — extendedLinear is unnecessary GPU cost on A11
             } else {
                 LinearGradient(
                     colors: [
@@ -179,24 +195,24 @@ struct NowPlayingView: View {
         }
     }
 
-    // MARK: - Artwork with dynamic glow
+    // MARK: - Artwork with GPU optimization
     private var artworkView: some View {
         Group {
             if let artwork = audioEngine.currentSong?.artwork {
                 Image(uiImage: artwork)
                     .resizable()
-                    .interpolation(.high)
+                    .interpolation(.medium) // Medium interpolation ensures zero lag during scale animations on older A11 chips
                     .scaledToFill()
                     .frame(width: artworkSize, height: artworkSize)
-                    .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-                    .shadow(color: extractedColor.opacity(0.35), radius: 14, x: 0, y: 6)
+                    .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+                    .shadow(color: extractedColor.opacity(0.3), radius: 12, x: 0, y: 5)
                     .overlay(
-                        RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        RoundedRectangle(cornerRadius: 22, style: .continuous)
                             .stroke(extractedColor.opacity(0.2), lineWidth: 1)
                     )
             } else {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    RoundedRectangle(cornerRadius: 22, style: .continuous)
                         .fill(
                             LinearGradient(
                                 colors: [
@@ -210,41 +226,41 @@ struct NowPlayingView: View {
                         .frame(width: artworkSize, height: artworkSize)
 
                     Image(systemName: "music.note")
-                        .font(.system(size: 60, weight: .light))
+                        .font(.system(size: 50, weight: .light))
                         .foregroundStyle(extractedColor.opacity(0.8))
                 }
-                .shadow(color: extractedColor.opacity(0.25), radius: 12, x: 0, y: 5)
+                .shadow(color: extractedColor.opacity(0.2), radius: 10, x: 0, y: 4)
             }
         }
     }
 
     // MARK: - Song Info
     private var songInfoView: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 6) {
             Text(audioEngine.currentSong?.displayName ?? "Sin canción")
-                .font(.system(size: 22, weight: .bold))
+                .font(.system(size: 20, weight: .bold))
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.primary)
                 .lineLimit(2)
 
             Text(audioEngine.currentSong?.displaySubtitle ?? "—")
-                .font(.system(size: 15, weight: .medium))
+                .font(.system(size: 14, weight: .medium))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .padding(.horizontal, 16)
 
-            // Audio quality badge with dynamic color
+            // Audio quality badge
             if let song = audioEngine.currentSong, !song.audioQualityDescription.isEmpty {
-                HStack(spacing: 6) {
+                HStack(spacing: 5) {
                     Image(systemName: "waveform.circle.fill")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.system(size: 10, weight: .semibold))
 
                     Text(song.audioQualityDescription)
-                        .font(.system(size: 11, weight: .medium).monospacedDigit())
+                        .font(.system(size: 10, weight: .medium).monospacedDigit())
                 }
                 .foregroundStyle(extractedColor.opacity(0.9))
-                .padding(.horizontal, 12)
-                .padding(.vertical, 5)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
                 .background {
                     Capsule()
                         .fill(extractedColor.opacity(0.12))
@@ -256,12 +272,12 @@ struct NowPlayingView: View {
 
     // MARK: - Progress View with expanded touch area
     private var progressView: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 6) {
             GeometryReader { geometry in
                 ZStack(alignment: .leading) {
                     RoundedRectangle(cornerRadius: 3, style: .continuous)
                         .fill(Color.secondary.opacity(0.15))
-                        .frame(height: 6)
+                        .frame(height: 5)
 
                     RoundedRectangle(cornerRadius: 3, style: .continuous)
                         .fill(
@@ -271,7 +287,7 @@ struct NowPlayingView: View {
                                 endPoint: .trailing
                             )
                         )
-                        .frame(width: geometry.size.width * progress, height: 6)
+                        .frame(width: geometry.size.width * progress, height: 5)
                 }
                 .onAppear {
                     progressBarWidth = geometry.size.width
@@ -280,8 +296,8 @@ struct NowPlayingView: View {
                     progressBarWidth = newWidth
                 }
             }
-            .frame(height: 6)
-            .padding(.vertical, 14) // Expands the hit-test / touch area significantly without changing visual bar height
+            .frame(height: 5)
+            .padding(.vertical, 18) // Generous touch target expansion (36pt total)
             .contentShape(Rectangle())
             .gesture(
                 DragGesture(minimumDistance: 0)
@@ -292,24 +308,24 @@ struct NowPlayingView: View {
 
             HStack {
                 Text(formatTime(audioEngine.currentTime))
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
 
                 Spacer()
 
                 Text(formatTime(audioEngine.duration))
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
             }
         }
     }
 
-    // MARK: - Controls (Optimized Shuffle & Repeat buttons + expanded touch target)
+    // MARK: - Controls (Fixed layout - no redesign on swipe. Expanded touch targets without visual change)
     private var controlsView: some View {
-        HStack(spacing: 16) {
-            // Shuffle Button with clean iOS style active pill/capsule design
+        HStack(spacing: 12) {
+            // Shuffle — 64pt invisible touch frame around 46×36 visual capsule
             Button {
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 audioEngine.toggleShuffle()
@@ -317,18 +333,18 @@ struct NowPlayingView: View {
                 ZStack {
                     Capsule()
                         .fill(audioEngine.isShuffleEnabled ? extractedColor.opacity(0.2) : Color.clear)
-                        .frame(width: 48, height: 38)
+                        .frame(width: 46, height: 36)
 
-                    Image(systemName: audioEngine.isShuffleEnabled ? "shuffle" : "shuffle")
-                        .font(.system(size: 17, weight: audioEngine.isShuffleEnabled ? .bold : .semibold))
+                    Image(systemName: "shuffle")
+                        .font(.system(size: 16, weight: audioEngine.isShuffleEnabled ? .bold : .semibold))
                         .foregroundStyle(audioEngine.isShuffleEnabled ? extractedColor : .secondary)
                 }
-                .frame(width: 52, height: 52)
+                .frame(width: 64, height: 64) // Bigger invisible touch target
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
 
-            // Previous
+            // Previous — 64pt invisible touch frame around 48×48 circle
             Button {
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 audioEngine.playPrevious()
@@ -336,18 +352,18 @@ struct NowPlayingView: View {
                 ZStack {
                     Circle()
                         .fill(.ultraThinMaterial)
-                        .frame(width: 50, height: 50)
+                        .frame(width: 48, height: 48)
 
                     Image(systemName: "backward.fill")
-                        .font(.system(size: 18, weight: .semibold))
+                        .font(.system(size: 17, weight: .semibold))
                         .foregroundStyle(.primary)
                 }
-                .frame(width: 56, height: 56)
+                .frame(width: 64, height: 64) // Bigger invisible touch target
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
 
-            // Play/Pause
+            // Play/Pause — 84pt invisible touch frame around 66×66 circle
             Button {
                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                 if audioEngine.isPlaying {
@@ -359,19 +375,19 @@ struct NowPlayingView: View {
                 ZStack {
                     Circle()
                         .fill(extractedColor)
-                        .frame(width: 70, height: 70)
+                        .frame(width: 66, height: 66)
 
                     Image(systemName: audioEngine.isPlaying ? "pause.fill" : "play.fill")
-                        .font(.system(size: 26, weight: .bold))
+                        .font(.system(size: 24, weight: .bold))
                         .foregroundStyle(.white)
                 }
-                .shadow(color: extractedColor.opacity(0.4), radius: 10, x: 0, y: 4)
-                .frame(width: 78, height: 78)
+                .shadow(color: extractedColor.opacity(0.35), radius: 8, x: 0, y: 3)
+                .frame(width: 84, height: 84) // Bigger invisible touch target
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
 
-            // Next
+            // Next — 64pt invisible touch frame around 48×48 circle
             Button {
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 audioEngine.playNext()
@@ -379,18 +395,18 @@ struct NowPlayingView: View {
                 ZStack {
                     Circle()
                         .fill(.ultraThinMaterial)
-                        .frame(width: 50, height: 50)
+                        .frame(width: 48, height: 48)
 
                     Image(systemName: "forward.fill")
-                        .font(.system(size: 18, weight: .semibold))
+                        .font(.system(size: 17, weight: .semibold))
                         .foregroundStyle(.primary)
                 }
-                .frame(width: 56, height: 56)
+                .frame(width: 64, height: 64) // Bigger invisible touch target
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
 
-            // Repeat Button with clean iOS style active pill/capsule design
+            // Repeat — 64pt invisible touch frame around 46×36 visual capsule
             Button {
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 audioEngine.cycleRepeatMode()
@@ -398,17 +414,20 @@ struct NowPlayingView: View {
                 ZStack {
                     Capsule()
                         .fill(audioEngine.repeatMode != .off ? extractedColor.opacity(0.2) : Color.clear)
-                        .frame(width: 48, height: 38)
+                        .frame(width: 46, height: 36)
 
                     Image(systemName: repeatIcon)
-                        .font(.system(size: 17, weight: audioEngine.repeatMode != .off ? .bold : .semibold))
+                        .font(.system(size: 16, weight: audioEngine.repeatMode != .off ? .bold : .semibold))
                         .foregroundStyle(audioEngine.repeatMode != .off ? extractedColor : .secondary)
                 }
-                .frame(width: 52, height: 52)
+                .frame(width: 64, height: 64) // Bigger invisible touch target
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
         }
+        // Use fixed ideal size so the row can never be squeezed by sheet dragging
+        .frame(maxWidth: .infinity)
+        .fixedSize()
     }
 
     // MARK: - Queue Button
@@ -416,27 +435,29 @@ struct NowPlayingView: View {
         Button {
             showQueue = true
         } label: {
-            HStack(spacing: 10) {
+            HStack(spacing: 8) {
                 ZStack {
                     Circle()
                         .fill(extractedColor.opacity(0.15))
-                        .frame(width: 28, height: 28)
+                        .frame(width: 26, height: 26)
 
                     Image(systemName: "list.bullet")
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(extractedColor)
                 }
 
                 Text("Cola: \(audioEngine.nextUpQueue.count)")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(.secondary)
             }
-            .padding(.horizontal, 18)
-            .padding(.vertical, 10)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
             .background {
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .fill(.regularMaterial)
             }
+            .contentShape(Rectangle())
+            .padding(.vertical, 6) // Invisible expansion for bigger tap area (44pt+ min)
         }
         .buttonStyle(.plain)
     }
@@ -470,9 +491,9 @@ struct NowPlayingView: View {
             return
         }
 
-        // Fast dominant color extraction using thumbnail context
+        // Fast dominant color extraction using lightweight thumbnail context
         DispatchQueue.global(qos: .userInitiated).async {
-            let size = CGSize(width: 40, height: 40)
+            let size = CGSize(width: 32, height: 32)
             UIGraphicsBeginImageContextWithOptions(size, false, 1.0)
             artwork.draw(in: CGRect(origin: .zero, size: size))
             let image = UIGraphicsGetImageFromCurrentImageContext()
@@ -512,7 +533,6 @@ struct NowPlayingView: View {
                     let a = CGFloat(pixelData[offset + 3])
 
                     if a > 128 {
-                        // Exclude pure black / pure white extremes for rich accent colors
                         let maxVal = max(r, g, b)
                         let minVal = min(r, g, b)
                         if maxVal - minVal > 15 && maxVal < 240 {

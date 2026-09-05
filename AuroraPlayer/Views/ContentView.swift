@@ -34,18 +34,33 @@ struct ContentView: View {
                         )
                     }
                 }
-                .navigationTitle("Aurora Player")
-                .navigationBarTitleDisplayMode(.large)
-                .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbarBackground(Color(UIColor.systemBackground).opacity(0.92), for: .navigationBar)
                 .toolbarBackground(.visible, for: .navigationBar)
                 .toolbar {
+                    // Título personalizado: fuente bonita, morada, sin borde de separación
+                    ToolbarItem(placement: .principal) {
+                        Text("Aurora Player")
+                            .font(.system(size: 22, weight: .bold, design: .rounded))
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: [Color.accentColor, Color.accentColor.opacity(0.75)],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                            )
+                            .accessibilityLabel("Aurora Player")
+                    }
+
                     ToolbarItem(placement: .topBarTrailing) {
-                        HStack(spacing: 14) {
+                        HStack(spacing: 6) {
                             Button {
                                 showPlaylists = true
                             } label: {
                                 Image(systemName: "music.note.list")
                                     .font(.system(size: 16, weight: .medium))
+                                    .frame(width: 44, height: 44) // Bigger invisible touch target
+                                    .contentShape(Rectangle())
                             }
 
                             Button {
@@ -53,6 +68,8 @@ struct ContentView: View {
                             } label: {
                                 Image(systemName: "gearshape.fill")
                                     .font(.system(size: 16, weight: .medium))
+                                    .frame(width: 44, height: 44) // Bigger invisible touch target
+                                    .contentShape(Rectangle())
                             }
                         }
                     }
@@ -140,7 +157,7 @@ struct ContentView: View {
                         }
                         .foregroundStyle(selectedCategory == category ? .white : .secondary)
                         .padding(.horizontal, 20)
-                        .padding(.vertical, 12)
+                        .padding(.vertical, 16) // Expanded touch target (12→16)
                         .background {
                             if selectedCategory == category {
                                 ZStack {
@@ -364,10 +381,12 @@ struct ContentView: View {
                     Image(systemName: "plus.circle")
                         .font(.system(size: 16))
                         .foregroundStyle(.tertiary)
+                        .frame(width: 44, height: 44) // Bigger invisible touch target
+                        .contentShape(Rectangle())
                 }
             }
             .padding(.horizontal, 16)
-            .padding(.vertical, 10)
+            .padding(.vertical, 14) // Expanded touch target (10→14)
             .background {
                 if isCurrent {
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
@@ -469,8 +488,14 @@ struct SplashView: View {
                     .animation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true), value: isAnimating)
 
                 Text("Aurora Player")
-                    .font(.system(size: 24, weight: .bold))
-                    .foregroundStyle(.white)
+                    .font(.system(size: 26, weight: .bold, design: .rounded))
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [Color.accentColor, Color.accentColor.opacity(0.7)],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
 
                 ProgressView()
                     .controlSize(.small)
