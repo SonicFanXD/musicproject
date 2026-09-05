@@ -1,5 +1,4 @@
 import SwiftUI
-import UIKit
 
 struct SettingsView: View {
     @ObservedObject var audioEngine: AudioEngine
@@ -13,11 +12,10 @@ struct SettingsView: View {
     @State private var selectedThemeIndex: Int
     @State private var selectedAccentIndex: Int
 
-    // Nuevas configuraciones técnicas/visuales
+    // Configuraciones persistentes
     @AppStorage("com.aurora.showVisualizer") private var showVisualizer = true
     @AppStorage("com.aurora.enableHaptics") private var enableHaptics = true
     @AppStorage("com.aurora.keepScreenOn") private var keepScreenOn = false
-    @AppStorage("com.aurora.crossfadeSeconds") private var crossfadeSeconds: Double = 3.0
     @AppStorage("com.aurora.artworkCorner") private var artworkCorner: Double = 22
     @AppStorage("com.aurora.dynamicColor") private var dynamicColor = true
     @AppStorage("com.aurora.reduceTransparency") private var reduceTransparency = false
@@ -25,14 +23,12 @@ struct SettingsView: View {
     private let themes = ["Sistema (claro/oscuro)", "Modo Claro", "Modo Oscuro"]
     private let accents = ["Morado (predeterminado)", "Azul Aurora", "Esmeralda", "Rosa Neón", "Ámbar Solar"]
 
-    // Keys de persistencia
     private let themeDefaultsKey = "com.aurora.uiTheme"
     private let accentDefaultsKey = "com.aurora.accentColor"
 
-    // Versión dinámica desde Info.plist
     private var appVersion: String {
-        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.1"
-        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "2"
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.2.0"
+        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "3"
         return "\(version) (\(build))"
     }
 
@@ -53,275 +49,71 @@ struct SettingsView: View {
                 applyThemeBackground()
 
                 ScrollView {
-                    VStack(spacing: 24) {
+                    VStack(spacing: 22) {
                         headerSection
 
-                        // Library Section
-                        settingsSection(
-                            icon: "folder.fill",
-                            title: "Biblioteca",
-                            color: .blue
-                        ) {
-                            settingsButton(
-                                title: "Carpetas de música",
-                                subtitle: "\(fileAccessService.folders.count) carpetas",
-                                icon: "folder.fill",
-                                color: .blue
-                            ) {
+                        // Biblioteca
+                        settingsSection(icon: "folder.fill", title: "Biblioteca", color: .blue) {
+                            settingsButton(title: "Carpetas de música", subtitle: "\(fileAccessService.folders.count) carpetas", icon: "folder.fill", color: .blue) {
                                 showFolderPicker = true
                             }
-
                             settingsDivider
-
-                            settingsButton(
-                                title: "Actualizar biblioteca",
-                                subtitle: fileAccessService.isScanning ? "Escaneando..." : "Rescanear carpetas",
-                                icon: "arrow.clockwise",
-                                color: .orange
-                            ) {
+                            settingsButton(title: "Actualizar biblioteca", subtitle: fileAccessService.isScanning ? "Escaneando..." : "Rescanear carpetas", icon: "arrow.clockwise", color: .orange) {
                                 fileAccessService.refreshAllFolders()
                             }
                             .disabled(fileAccessService.isScanning)
                         }
 
-                        // Audio Section
-                        settingsSection(
-                            icon: "waveform",
-                            title: "Audio",
-                            color: .purple
-                        ) {
-                            settingsButton(
-                                title: "Equalizador",
-                                subtitle: audioEngine.isEQEnabled ? "Activado (\(audioEngine.eqPreset.displayName))" : "Desactivado",
-                                icon: "slider.horizontal.3",
-                                color: .purple
-                            ) {
-                                audioEngine.toggleEQ()
-                            }
-
-                            settingsDivider
-
-                            // Crossfade con switch + slider de duración
-                            settingsToggleRow(
-                                title: "Crossfade",
-                                subtitle: audioEngine.isCrossfadeEnabled ? "Transición de \(Int(audioEngine.currentCrossfadeDuration))s" : "Desactivado",
-                                icon: "forward.end.fill",
-                                color: .teal,
-                                isOn: Binding(
-                                    get: { audioEngine.isCrossfadeEnabled },
-                                    set: { _ in audioEngine.toggleCrossfade() }
-                                )
-                            )
-
-                            if audioEngine.isCrossfadeEnabled {
-                                VStack(alignment: .leading, spacing: 8) {
-                                    HStack {
-                                        Text("Duración del crossfade")
-                                            .font(.system(size: 13, weight: .medium))
-                                            .foregroundStyle(.secondary)
-                                        Spacer()
-                                        Text("\(Int(audioEngine.currentCrossfadeDuration)) s")
-                                            .font(.system(size: 13, weight: .bold).monospacedDigit())
-                                            .foregroundStyle(.teal)
-                                    }
-
-                                    // El slider refleja el valor actual del motor de audio
-                                    Slider(
-                                        value: Binding(
-                                            get: { audioEngine.currentCrossfadeDuration },
-                                            set: { audioEngine.setCrossfadeDuration($0) }
-                                        ),
-                                        in: 1...12,
-                                        step: 1
-                                    )
-                                    .tint(.teal)
-                                }
-                                .padding(.horizontal, 16)
-                                .padding(.bottom, 14)
-                            }
-
-                            settingsDivider
-
-                            // Botón para abrir el ecualizador completo
-                            settingsButton(
-                                title: "Ajustar Equalizador",
-                                subtitle: "Presets y 10 bandas de frecuencia",
-                                icon: "slider.vertical.3",
-                                color: .indigo
-                            ) {
+                        // Audio
+                        settingsSection(icon: "waveform", title: "Audio", color: .purple) {
+                            settingsButton(title: "Equalizador", subtitle: audioEngine.isEQEnabled ? "Activado (\(audioEngine.eqPreset.displayName))" : "Desactivado", icon: "slider.horizontal.3", color: .purple) {
                                 showEqualizerSheet = true
+                            }
+                            settingsDivider
+                            settingsButton(title: "Crossfade", subtitle: audioEngine.isCrossfadeEnabled ? "Transición de \(Int(audioEngine.currentCrossfadeDuration))s" : "Desactivado", icon: "forward.end.fill", color: .teal) {
+                                audioEngine.toggleCrossfade()
                             }
                         }
 
-                        // Visual Section — Tema, color y personalización visual
-                        settingsSection(
-                            icon: "paintbrush.fill",
-                            title: "Apariencia",
-                            color: .pink
-                        ) {
-                            settingsMenuButton(
-                                title: "Tema",
-                                subtitle: themes[selectedThemeIndex],
-                                icon: "circle.lefthalf.filled",
-                                color: .gray,
-                                options: themes,
-                                selection: $selectedThemeIndex
-                            ) { index in
+                        // Apariencia
+                        settingsSection(icon: "paintbrush.fill", title: "Apariencia", color: .pink) {
+                            settingsMenuButton(title: "Tema", subtitle: themes[selectedThemeIndex], icon: "circle.lefthalf.filled", color: .gray, options: themes, selection: $selectedThemeIndex) { index in
                                 selectedThemeIndex = index
                                 UserDefaults.standard.set(index, forKey: themeDefaultsKey)
                             }
-
                             settingsDivider
-
-                            settingsMenuButton(
-                                title: "Color de acento",
-                                subtitle: accents[selectedAccentIndex],
-                                icon: "drop.fill",
-                                color: accentColorForIndex(selectedAccentIndex),
-                                options: accents,
-                                selection: $selectedAccentIndex
-                            ) { index in
+                            settingsMenuButton(title: "Color de acento", subtitle: accents[selectedAccentIndex], icon: "drop.fill", color: accentColorForIndex(selectedAccentIndex), options: accents, selection: $selectedAccentIndex) { index in
                                 selectedAccentIndex = index
                                 UserDefaults.standard.set(index, forKey: accentDefaultsKey)
                             }
-
                             settingsDivider
-
-                            // Color dinámico del artwork
-                            settingsToggleRow(
-                                title: "Color dinámico",
-                                subtitle: "Extrae el color dominante de la portada",
-                                icon: "wand.and.stars",
-                                color: .cyan,
-                                isOn: $dynamicColor
-                            )
-
+                            settingsToggleRow(title: "Color dinámico", subtitle: "Extrae el color dominante de la portada", icon: "wand.and.stars", color: .cyan, isOn: $dynamicColor)
                             settingsDivider
-
-                            // Esquinas del artwork (slider personalizable)
-                            VStack(alignment: .leading, spacing: 8) {
-                                HStack {
-                                    HStack(spacing: 14) {
-                                        Image(systemName: "rounded.righthalf.filled")
-                                            .font(.system(size: 16, weight: .medium))
-                                            .foregroundStyle(Color.blue)
-                                            .frame(width: 32, height: 32)
-                                            .background {
-                                                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                                    .fill(Color.blue.opacity(0.1))
-                                            }
-
-                                        Text("Esquinas del artwork")
-                                            .font(.system(size: 15, weight: .medium))
-                                            .foregroundStyle(.primary)
-                                    }
-
-                                    Spacer()
-
-                                    Text("\(Int(artworkCorner)) pt")
-                                        .font(.system(size: 13, weight: .bold).monospacedDigit())
-                                        .foregroundStyle(Color.blue)
-                                }
-
-                                Slider(value: $artworkCorner, in: 0...44, step: 2)
-                                    .tint(Color.blue)
-                            }
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 12)
-
+                            settingsSliderRow(title: "Esquinas del artwork", value: $artworkCorner, range: 0...44, step: 2, color: .blue, suffix: "pt")
                             settingsDivider
-
-                            // Reducir transparencia (mejora rendimiento en A11)
-                            settingsToggleRow(
-                                title: "Reducir transparencia",
-                                subtitle: "Menos desenfoques, más rendimiento",
-                                icon: "circle.slash",
-                                color: .gray,
-                                isOn: $reduceTransparency
-                            )
+                            settingsToggleRow(title: "Reducir transparencia", subtitle: "Menos desenfoques, más rendimiento", icon: "circle.slash", color: .gray, isOn: $reduceTransparency)
                         }
 
-                        // NEW: Reproducción / Comportamiento
-                        settingsSection(
-                            icon: "dial.max.fill",
-                            title: "Reproducción",
-                            color: .orange
-                        ) {
-                            // Visualizador
-                            settingsToggleRow(
-                                title: "Visualizador de audio",
-                                subtitle: "Animación de barras en Reproduciendo",
-                                icon: "waveform.path.ecg",
-                                color: .pink,
-                                isOn: $showVisualizer
-                            )
-
+                        // Reproducción
+                        settingsSection(icon: "dial.max.fill", title: "Reproducción", color: .orange) {
+                            settingsToggleRow(title: "Visualizador de audio", subtitle: "Animación de barras en Reproduciendo", icon: "waveform.path.ecg", color: .pink, isOn: $showVisualizer)
                             settingsDivider
-
-                            // Haptics
-                            settingsToggleRow(
-                                title: "Respuesta táctil",
-                                subtitle: "Vibración al tocar los controles",
-                                icon: "iphone.radiowaves.left.and.right",
-                                color: .mint,
-                                isOn: $enableHaptics
-                            )
-
+                            settingsToggleRow(title: "Respuesta táctil", subtitle: "Vibración al tocar los controles", icon: "iphone.radiowaves.left.and.right", color: .mint, isOn: $enableHaptics)
                             settingsDivider
-
-                            // Mantener pantalla encendida en Now Playing
-                            settingsToggleRow(
-                                title: "Mantener pantalla encendida",
-                                subtitle: "Evita que se bloquee mientras se reproduce",
-                                icon: "sun.max.fill",
-                                color: .yellow,
-                                isOn: $keepScreenOn
-                            )
+                            settingsToggleRow(title: "Mantener pantalla encendida", subtitle: "Evita que se bloquee mientras se reproduce", icon: "sun.max.fill", color: .yellow, isOn: $keepScreenOn)
                         }
 
-                        // NEW: Reproducción / Comportamiento (ya fusionado arriba)
-
-                        // NEW: Tecnica / Rendimiento
-                        settingsSection(
-                            icon: "gauge.open.with.needle",
-                            title: "Rendimiento",
-                            color: .indigo
-                        ) {
-                            // Info técnica
-                            settingsInfoRow(
-                                title: "Salida de audio",
-                                value: audioEngine.audioQualityInfo.isEmpty
-                                    ? "\(Int(audioEngine.outputSampleRate / 1000)) kHz · \(audioEngine.outputChannelCount) canales"
-                                    : audioEngine.audioQualityInfo,
-                                icon: "speaker.wave.2.fill",
-                                color: .indigo
-                            )
-
+                        // Rendimiento (info técnica)
+                        settingsSection(icon: "gauge.open.with.needle", title: "Rendimiento", color: .indigo) {
+                            settingsInfoRow(title: "Salida de audio", value: audioEngine.audioQualityInfo.isEmpty ? "\(Int(audioEngine.outputSampleRate / 1000)) kHz · \(audioEngine.outputChannelCount) canales" : audioEngine.audioQualityInfo, icon: "speaker.wave.2.fill", color: .indigo)
                             settingsDivider
-
-                            settingsInfoRow(
-                                title: "Ruta de reproducción",
-                                value: audioEngine.currentRouteName,
-                                icon: "airplayaudio",
-                                color: .blue
-                            )
-
+                            settingsInfoRow(title: "Ruta de reproducción", value: audioEngine.currentRouteName, icon: "airplayaudio", color: .blue)
                             settingsDivider
-
-                            settingsInfoRow(
-                                title: "Dispositivo",
-                                value: UIDevice.current.model,
-                                icon: "iphone",
-                                color: .gray
-                            )
+                            settingsInfoRow(title: "Dispositivo", value: UIDevice.current.model, icon: "iphone", color: .gray)
                         }
 
-                        // Stats Section
-                        settingsSection(
-                            icon: "chart.bar.fill",
-                            title: "Estadísticas",
-                            color: .green
-                        ) {
+                        // Estadísticas
+                        settingsSection(icon: "chart.bar.fill", title: "Estadísticas", color: .green) {
                             statRow(title: "Canciones", value: "\(fileAccessService.songs.count)")
                             settingsDivider
                             statRow(title: "Álbumes", value: "\(fileAccessService.albums.count)")
@@ -329,36 +121,18 @@ struct SettingsView: View {
                             statRow(title: "Artistas", value: "\(fileAccessService.artists.count)")
                         }
 
-                        // Advanced Section
-                        settingsSection(
-                            icon: "wrench.and.screwdriver.fill",
-                            title: "Avanzado",
-                            color: .orange
-                        ) {
-                            settingsButton(
-                                title: "Registros",
-                                subtitle: "Ver logs de la app",
-                                icon: "doc.text.magnifyingglass",
-                                color: .gray
-                            ) {
+                        // Avanzado
+                        settingsSection(icon: "wrench.and.screwdriver.fill", title: "Avanzado", color: .orange) {
+                            settingsButton(title: "Registros", subtitle: "Ver logs de la app", icon: "doc.text.magnifyingglass", color: .gray) {
                                 showLogs = true
                             }
-
                             settingsDivider
-
-                            settingsButton(
-                                title: "Acerca de",
-                                subtitle: "Aurora Player v\(appVersion)",
-                                icon: "info.circle.fill",
-                                color: .blue
-                            ) {
+                            settingsButton(title: "Acerca de", subtitle: "Aurora Player v\(appVersion)", icon: "info.circle.fill", color: .blue) {
                                 showAbout = true
                             }
                         }
                     }
-                    .padding(.horizontal, 20)
-                    .padding(.top, 8)
-                    .padding(.bottom, 30)
+                    .padding(.horizontal, 20).padding(.top, 8).padding(.bottom, 30)
                 }
                 .scrollIndicators(.hidden)
             }
@@ -403,7 +177,7 @@ struct SettingsView: View {
         }
     }
 
-    // MARK: - Apply Theme & Accent Color (persistente)
+    // MARK: - Theme Background
     private func applyThemeBackground() -> some View {
         Group {
             if selectedThemeIndex == 1 {
@@ -424,12 +198,8 @@ struct SettingsView: View {
                     }
             } else {
                 LinearGradient(
-                    colors: [
-                        Color(UIColor.systemBackground),
-                        Color(UIColor.secondarySystemBackground)
-                    ],
-                    startPoint: .top,
-                    endPoint: .bottom
+                    colors: [Color(UIColor.systemBackground), Color(UIColor.secondarySystemBackground)],
+                    startPoint: .top, endPoint: .bottom
                 )
                 .ignoresSafeArea()
                 .onAppear {
@@ -455,7 +225,7 @@ struct SettingsView: View {
 
     // MARK: - Header
     private var headerSection: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 14) {
             ZStack {
                 Circle()
                     .fill(
@@ -465,49 +235,47 @@ struct SettingsView: View {
                             endPoint: .bottomTrailing
                         )
                     )
-                    .frame(width: 90, height: 90)
+                    .frame(width: 80, height: 80)
 
                 Image(systemName: "gearshape.fill")
-                    .font(.system(size: 36, weight: .medium))
+                    .font(.system(size: 32, weight: .medium))
                     .foregroundStyle(Color.accentColor)
             }
 
             VStack(spacing: 4) {
                 Text("Ajustes")
-                    .font(.system(size: 26, weight: .bold, design: .rounded))
+                    .font(.system(size: 24, weight: .bold, design: .rounded))
                     .foregroundStyle(.primary)
 
                 Text("Configura Aurora Player a tu gusto")
-                    .font(.system(size: 14))
+                    .font(.system(size: 13))
                     .foregroundStyle(.secondary)
             }
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 20)
+        .padding(.vertical, 18)
         .nativeGlass(cornerRadius: 24)
     }
 
     // MARK: - Section Builder
     @ViewBuilder
     private func settingsSection<Content: View>(
-        icon: String,
-        title: String,
-        color: Color,
+        icon: String, title: String, color: Color,
         @ViewBuilder content: () -> Content
     ) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
                 Image(systemName: icon)
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(color)
-                    .frame(width: 28, height: 28)
+                    .frame(width: 26, height: 26)
                     .background {
                         RoundedRectangle(cornerRadius: 8, style: .continuous)
                             .fill(color.opacity(0.12))
                     }
 
                 Text(title)
-                    .font(.system(size: 18, weight: .semibold))
+                    .font(.system(size: 17, weight: .semibold))
                     .foregroundStyle(.primary)
             }
             .padding(.horizontal, 4)
@@ -522,13 +290,10 @@ struct SettingsView: View {
         }
     }
 
-    // MARK: - Standard Button Row
+    // MARK: - Button Row
     @ViewBuilder
     private func settingsButton(
-        title: String,
-        subtitle: String,
-        icon: String,
-        color: Color,
+        title: String, subtitle: String, icon: String, color: Color,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
@@ -551,20 +316,16 @@ struct SettingsView: View {
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(.tertiary)
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 16)
+            .padding(.horizontal, 16).padding(.vertical, 14)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
 
-    // MARK: - Toggle Row (Switch integrado — funcional)
+    // MARK: - Toggle Row
     @ViewBuilder
     private func settingsToggleRow(
-        title: String,
-        subtitle: String,
-        icon: String,
-        color: Color,
+        title: String, subtitle: String, icon: String, color: Color,
         isOn: Binding<Bool>
     ) -> some View {
         HStack(spacing: 14) {
@@ -586,21 +347,43 @@ struct SettingsView: View {
                 .labelsHidden()
                 .tint(color)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.horizontal, 16).padding(.vertical, 12)
         .contentShape(Rectangle())
         .onTapGesture {
             isOn.wrappedValue.toggle()
         }
     }
 
-    // MARK: - Info Row (sin interacción — solo lectura)
+    // MARK: - Slider Row
+    @ViewBuilder
+    private func settingsSliderRow(
+        title: String, value: Binding<Double>, range: ClosedRange<Double>, step: Double,
+        color: Color, suffix: String
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(title)
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(.primary)
+
+                Spacer()
+
+                Text("\(Int(value.wrappedValue)) \(suffix)")
+                    .font(.system(size: 13, weight: .bold).monospacedDigit())
+                    .foregroundStyle(color)
+            }
+
+            Slider(value: value, in: range, step: step)
+                .tint(color)
+        }
+        .padding(.horizontal, 16).padding(.vertical, 12)
+        .contentShape(Rectangle())
+    }
+
+    // MARK: - Info Row
     @ViewBuilder
     private func settingsInfoRow(
-        title: String,
-        value: String,
-        icon: String,
-        color: Color
+        title: String, value: String, icon: String, color: Color
     ) -> some View {
         HStack(spacing: 14) {
             iconView(icon: icon, color: color)
@@ -619,17 +402,16 @@ struct SettingsView: View {
 
             Spacer()
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 16)
+        .padding(.horizontal, 16).padding(.vertical, 14)
         .contentShape(Rectangle())
     }
 
-    // MARK: - Icon (reutilizable)
+    // MARK: - Icon
     private func iconView(icon: String, color: Color) -> some View {
         Image(systemName: icon)
-            .font(.system(size: 16, weight: .medium))
+            .font(.system(size: 15, weight: .medium))
             .foregroundStyle(color)
-            .frame(width: 32, height: 32)
+            .frame(width: 30, height: 30)
             .background {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .fill(color.opacity(0.1))
@@ -639,12 +421,8 @@ struct SettingsView: View {
     // MARK: - Menu Picker Button Row
     @ViewBuilder
     private func settingsMenuButton(
-        title: String,
-        subtitle: String,
-        icon: String,
-        color: Color,
-        options: [String],
-        selection: Binding<Int>,
+        title: String, subtitle: String, icon: String, color: Color,
+        options: [String], selection: Binding<Int>,
         onChange: @escaping (Int) -> Void
     ) -> some View {
         Menu {
@@ -680,8 +458,7 @@ struct SettingsView: View {
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(.tertiary)
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 16)
+            .padding(.horizontal, 16).padding(.vertical, 14)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -701,8 +478,7 @@ struct SettingsView: View {
                 .foregroundStyle(.primary)
                 .monospacedDigit()
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 16)
+        .padding(.horizontal, 16).padding(.vertical, 14)
         .contentShape(Rectangle())
     }
 
@@ -710,7 +486,7 @@ struct SettingsView: View {
     private var settingsDivider: some View {
         Divider()
             .opacity(0.1)
-            .padding(.leading, 64)
+            .padding(.leading, 60)
     }
 }
 

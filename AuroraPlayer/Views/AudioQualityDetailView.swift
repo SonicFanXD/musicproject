@@ -1,10 +1,7 @@
 import SwiftUI
-import AVFoundation
 
 /// Ventana emergente estilo PowerAmp: muestra la calidad del archivo fuente
-/// y la cadena de procesamiento completa hasta la salida física (altavoz/BT/DAC).
-/// Puede presentarse como vista completa (con chrome) o embebida en una tarjeta
-/// modal centrada (embeddedInCard: true).
+/// y la cadena de procesamiento completa hasta la salida física.
 struct AudioQualityDetailView: View {
     @ObservedObject var audioEngine: AudioEngine
     var embeddedInCard: Bool = false
@@ -14,61 +11,43 @@ struct AudioQualityDetailView: View {
 
     var body: some View {
         if embeddedInCard {
-            // Modo embebido: solo el contenido, sin chrome (lo pone la tarjeta contenedora)
             embeddedContent
         } else {
-            chromeBody
+            fullScreenContent
         }
     }
 
-    // MARK: - Contenido embebido (para tarjeta modal centrada)
+    // MARK: - Contenido embebido (para tarjeta modal)
     private var embeddedContent: some View {
         ScrollView {
-            VStack(spacing: 20) {
+            VStack(spacing: 18) {
                 headerCard
                 signalChainSection
                 fileDetailsSection
                 outputDetailsSection
             }
-            .padding(.horizontal, 18)
-            .padding(.top, 14)
-            .padding(.bottom, 20)
+            .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 16)
         }
         .scrollIndicators(.hidden)
     }
 
     // MARK: - Cuerpo completo con chrome de navegación
-    private var chromeBody: some View {
+    private var fullScreenContent: some View {
         NavigationStack {
             ZStack {
-                // Fondo consistente con la app
                 LinearGradient(
-                    colors: [
-                        Color(UIColor.systemBackground),
-                        Color(UIColor.secondarySystemBackground)
-                    ],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-                .ignoresSafeArea()
+                    colors: [Color(UIColor.systemBackground), Color(UIColor.secondarySystemBackground)],
+                    startPoint: .top, endPoint: .bottom
+                ).ignoresSafeArea()
 
                 ScrollView {
                     VStack(spacing: 20) {
-                        // Encabezado con calidad resumida
                         headerCard
-
-                        // Cadena de procesamiento (File → Decode → Engine → EQ → Crossfade → Output)
                         signalChainSection
-
-                        // Detalles técnicos del archivo
                         fileDetailsSection
-
-                        // Detalles de la salida
                         outputDetailsSection
                     }
-                    .padding(.horizontal, 20)
-                    .padding(.top, 12)
-                    .padding(.bottom, 30)
+                    .padding(.horizontal, 20).padding(.top, 12).padding(.bottom, 30)
                 }
                 .scrollIndicators(.hidden)
             }
@@ -82,13 +61,11 @@ struct AudioQualityDetailView: View {
                         .foregroundStyle(
                             LinearGradient(
                                 colors: [Color.accentColor, Color.accentColor.opacity(0.75)],
-                                startPoint: .leading,
-                                endPoint: .trailing
+                                startPoint: .leading, endPoint: .trailing
                             )
                         )
                         .accessibilityLabel("Calidad de audio")
                 }
-
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Listo") { dismiss() }
                         .foregroundStyle(Color.accentColor)
@@ -105,38 +82,29 @@ struct AudioQualityDetailView: View {
             ZStack {
                 Circle()
                     .fill(Color.accentColor.opacity(0.15))
-                    .frame(width: 76, height: 76)
-
+                    .frame(width: 72, height: 72)
                 Image(systemName: "waveform.badge.magnifyingglass")
-                    .font(.system(size: 32, weight: .semibold))
+                    .font(.system(size: 30, weight: .semibold))
                     .foregroundStyle(Color.accentColor)
             }
 
-            // Insignia grande Hi-Res / Estándar
             Text(qualityBadge)
                 .font(.system(size: 22, weight: .bold, design: .rounded))
                 .foregroundStyle(
                     LinearGradient(
                         colors: [Color.accentColor, Color.accentColor.opacity(0.7)],
-                        startPoint: .leading,
-                        endPoint: .trailing
+                        startPoint: .leading, endPoint: .trailing
                     )
                 )
 
             Text(song?.title ?? "Sin canción")
                 .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(.primary)
-                .lineLimit(2)
-                .multilineTextAlignment(.center)
+                .foregroundStyle(.primary).lineLimit(2).multilineTextAlignment(.center)
 
             Text(song?.displaySubtitle ?? "—")
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
+                .font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
         }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 22)
-        .padding(.horizontal, 16)
+        .frame(maxWidth: .infinity).padding(.vertical, 20)
         .nativeGlass(cornerRadius: 24)
     }
 
@@ -151,69 +119,17 @@ struct AudioQualityDetailView: View {
     private var signalChainSection: some View {
         settingsSection(title: "Cadena de procesamiento", icon: "arrow.triangle.branch") {
             VStack(spacing: 0) {
-                // 1. Archivo fuente
-                chainNode(
-                    icon: "doc.fill",
-                    title: "Archivo fuente",
-                    detail: fileSummary,
-                    color: .purple,
-                    isFirst: true
-                )
-
+                chainNode(icon: "doc.fill", title: "Archivo fuente", detail: fileSummary, color: .purple, isFirst: true)
                 chainArrow
-
-                // 2. Decodificador
-                chainNode(
-                    icon: "square.stack.3d.up.badge.down",
-                    title: "Decodificador",
-                    detail: "AVAudioFile · Lossless",
-                    color: .indigo
-                )
-
+                chainNode(icon: "square.stack.3d.up.badge.down", title: "Decodificador", detail: "AVAudioFile · Lossless", color: .indigo)
                 chainArrow
-
-                // 3. Motor de audio
-                chainNode(
-                    icon: "engine.combustion",
-                    title: "Motor de audio",
-                    detail: "AVAudioEngine · \(Int(audioEngine.sampleRateDisplay / 1000)) kHz",
-                    color: .blue
-                )
-
+                chainNode(icon: "engine.combustion", title: "Motor de audio", detail: "AVAudioEngine · \(Int(audioEngine.sampleRateDisplay / 1000)) kHz", color: .blue)
                 chainArrow
-
-                // 4. Ecualizador
-                chainNode(
-                    icon: "slider.horizontal.3",
-                    title: "Ecualizador",
-                    detail: audioEngine.isEQEnabled
-                        ? "Activo · \(audioEngine.eqPreset.displayName) · 10 bandas"
-                        : "Bypass · 10 bandas",
-                    color: audioEngine.isEQEnabled ? .pink : .gray
-                )
-
+                chainNode(icon: "slider.horizontal.3", title: "Ecualizador", detail: audioEngine.isEQEnabled ? "Activo · \(audioEngine.eqPreset.displayName) · 10 bandas" : "Bypass · 10 bandas", color: audioEngine.isEQEnabled ? .pink : .gray)
                 chainArrow
-
-                // 5. Crossfade
-                chainNode(
-                    icon: "forward.end.fill",
-                    title: "Crossfade",
-                    detail: audioEngine.isCrossfadeEnabled
-                        ? "Activo · \(Int(audioEngine.currentCrossfadeDuration)) s"
-                        : "Desactivado",
-                    color: audioEngine.isCrossfadeEnabled ? .teal : .gray
-                )
-
+                chainNode(icon: "forward.end.fill", title: "Crossfade", detail: audioEngine.isCrossfadeEnabled ? "Activo · \(Int(audioEngine.currentCrossfadeDuration)) s" : "Desactivado", color: audioEngine.isCrossfadeEnabled ? .teal : .gray)
                 chainArrow
-
-                // 6. Salida física
-                chainNode(
-                    icon: outputIcon,
-                    title: "Salida",
-                    detail: outputSummary,
-                    color: .orange,
-                    isLast: true
-                )
+                chainNode(icon: outputIcon, title: "Salida", detail: outputSummary, color: .orange, isLast: true)
             }
         }
     }
@@ -222,24 +138,16 @@ struct AudioQualityDetailView: View {
         Image(systemName: "arrow.down")
             .font(.system(size: 11, weight: .bold))
             .foregroundStyle(Color.secondary.opacity(0.5))
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 2)
+            .frame(maxWidth: .infinity).padding(.vertical, 2)
     }
 
     private var fileSummary: String {
         guard let song = song else { return "—" }
         var parts: [String] = []
-        let format = song.formatDescription.isEmpty
-            ? song.url.pathExtension.uppercased()
-            : song.formatDescription
+        let format = song.formatDescription.isEmpty ? song.url.pathExtension.uppercased() : song.formatDescription
         parts.append(format)
-
         if song.bitDepth > 0 { parts.append("\(song.bitDepth)-bit") }
-        if song.sampleRate > 0 {
-            parts.append(song.sampleRate >= 48000
-                ? "\(Int(song.sampleRate / 1000)) kHz"
-                : "\(Int(song.sampleRate)) Hz")
-        }
+        if song.sampleRate > 0 { parts.append(song.sampleRate >= 48000 ? "\(Int(song.sampleRate / 1000)) kHz" : "\(Int(song.sampleRate)) Hz") }
         return parts.joined(separator: " · ")
     }
 
@@ -253,12 +161,8 @@ struct AudioQualityDetailView: View {
 
     private var outputSummary: String {
         var parts: [String] = [audioEngine.currentRouteName]
-        if audioEngine.outputSampleRate > 0 {
-            parts.append("\(Int(audioEngine.outputSampleRate / 1000)) kHz")
-        }
-        if audioEngine.outputChannelCount > 0 {
-            parts.append(audioEngine.outputChannelCount >= 2 ? "Estéreo" : "Mono")
-        }
+        if audioEngine.outputSampleRate > 0 { parts.append("\(Int(audioEngine.outputSampleRate / 1000)) kHz") }
+        if audioEngine.outputChannelCount > 0 { parts.append(audioEngine.outputChannelCount >= 2 ? "Estéreo" : "Mono") }
         return parts.joined(separator: " · ")
     }
 
@@ -279,10 +183,8 @@ struct AudioQualityDetailView: View {
     private var outputDetailsSection: some View {
         settingsSection(title: "Salida", icon: "hifispeaker") {
             detailRow("Ruta", audioEngine.currentRouteName)
-            detailRow("Frecuencia de salida", audioEngine.outputSampleRate > 0
-                ? "\(Int(audioEngine.outputSampleRate)) Hz" : "—")
-            detailRow("Canales de salida", audioEngine.outputChannelCount > 0
-                ? audioEngine.outputChannelCount.description : "—")
+            detailRow("Frecuencia de salida", audioEngine.outputSampleRate > 0 ? "\(Int(audioEngine.outputSampleRate)) Hz" : "—")
+            detailRow("Canales de salida", audioEngine.outputChannelCount > 0 ? audioEngine.outputChannelCount.description : "—")
             detailRow("Tipo de ruta", outputTypeLabel)
         }
     }
@@ -304,9 +206,7 @@ struct AudioQualityDetailView: View {
 
     private var sampleRateLabel: String {
         guard let song = song, song.sampleRate > 0 else { return "—" }
-        return song.sampleRate >= 48000
-            ? "\(Int(song.sampleRate / 1000)) kHz (Hi-Res)"
-            : "\(Int(song.sampleRate)) Hz"
+        return song.sampleRate >= 48000 ? "\(Int(song.sampleRate / 1000)) kHz (Hi-Res)" : "\(Int(song.sampleRate)) Hz"
     }
 
     private var channelsLabel: String {
@@ -329,9 +229,7 @@ struct AudioQualityDetailView: View {
         guard let song = song else { return "—" }
         let size = (try? FileManager.default.attributesOfItem(atPath: song.url.path)[.size] as? Int) ?? 0
         guard size > 0 else { return "—" }
-        if size > 1_048_576 {
-            return String(format: "%.1f MB", Double(size) / 1_048_576)
-        }
+        if size > 1_048_576 { return String(format: "%.1f MB", Double(size) / 1_048_576) }
         return String(format: "%.0f KB", Double(size) / 1024)
     }
 
@@ -361,55 +259,32 @@ struct AudioQualityDetailView: View {
                 .foregroundStyle(color)
                 .frame(width: 34, height: 34)
                 .background {
-                    RoundedRectangle(cornerRadius: 9, style: .continuous)
-                        .fill(color.opacity(0.12))
+                    RoundedRectangle(cornerRadius: 9, style: .continuous).fill(color.opacity(0.12))
                 }
 
             VStack(alignment: .leading, spacing: 1) {
-                Text(title)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(.primary)
-
-                Text(detail)
-                    .font(.system(size: 11, weight: .medium).monospacedDigit())
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.85)
+                Text(title).font(.system(size: 14, weight: .semibold)).foregroundStyle(.primary)
+                Text(detail).font(.system(size: 11, weight: .medium).monospacedDigit()).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.85)
             }
 
             Spacer()
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, isFirst || isLast ? 14 : 12)
+        .padding(.horizontal, 14).padding(.vertical, isFirst || isLast ? 14 : 12)
     }
 
     @ViewBuilder
     private func detailRow(_ title: String, _ value: String) -> some View {
         HStack(alignment: .firstTextBaseline) {
-            Text(title)
-                .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(.secondary)
-
+            Text(title).font(.system(size: 14, weight: .medium)).foregroundStyle(.secondary)
             Spacer()
-
-            Text(value)
-                .font(.system(size: 13, weight: .semibold).monospacedDigit())
-                .foregroundStyle(.primary)
-                .multilineTextAlignment(.trailing)
-                .lineLimit(2)
+            Text(value).font(.system(size: 13, weight: .semibold).monospacedDigit()).foregroundStyle(.primary).multilineTextAlignment(.trailing).lineLimit(2)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-        .contentShape(Rectangle())
+        .padding(.horizontal, 16).padding(.vertical, 12).contentShape(Rectangle())
     }
 
-    // MARK: - Section Builder (estilo consistente)
+    // MARK: - Section Builder
     @ViewBuilder
-    private func settingsSection<Content: View>(
-        title: String,
-        icon: String,
-        @ViewBuilder content: () -> Content
-    ) -> some View {
+    private func settingsSection<Content: View>(title: String, icon: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
                 Image(systemName: icon)
@@ -417,13 +292,9 @@ struct AudioQualityDetailView: View {
                     .foregroundStyle(Color.accentColor)
                     .frame(width: 28, height: 28)
                     .background {
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .fill(Color.accentColor.opacity(0.12))
+                        RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.accentColor.opacity(0.12))
                     }
-
-                Text(title)
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(.primary)
+                Text(title).font(.system(size: 17, weight: .semibold)).foregroundStyle(.primary)
             }
             .padding(.horizontal, 4)
 
@@ -431,8 +302,7 @@ struct AudioQualityDetailView: View {
                 content()
             }
             .background {
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(.ultraThinMaterial)
+                RoundedRectangle(cornerRadius: 18, style: .continuous).fill(.ultraThinMaterial)
             }
         }
     }

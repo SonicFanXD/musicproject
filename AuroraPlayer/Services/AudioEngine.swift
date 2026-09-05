@@ -96,10 +96,25 @@ class AudioEngine: NSObject, ObservableObject {
                 mode: .default,
                 options: [.allowBluetoothHFP, .allowBluetoothA2DP, .allowAirPlay]
             )
-            // ✅ FIX: setPreferredIOBufferDuration(0.02) causa error -50 (paramErr)
-            // en varios dispositivos iOS 16. Usamos 0.05s (50ms) que es estable
-            // en iPhone 8 Plus y la mayoría de hardware, sin perder latencia perceptible.
-            try session.setPreferredIOBufferDuration(0.05)
+
+            // ✅ Mejor calidad con latencia mínima: probamos buffers cortos en
+            // orden descendente con fallback robusto. iOS 16 en A11 (iPhone 8)
+            // devuelve error -50 (paramErr) con 0.02, así que vamos bajando
+            // hasta encontrar el menor soportado por el hardware/DAC actual.
+            let bufferDurations: [TimeInterval] = [0.02, 0.03, 0.04, 0.05]
+            for duration in bufferDurations {
+                do {
+                    try session.setPreferredIOBufferDuration(duration)
+                    AppLog.debug(.playback, "Buffer I/O óptimo: \(duration * 1000)ms")
+                    break
+                } catch {
+                    AppLog.debug(.playback, "Buffer \(Int(duration * 1000))ms no soportado, probando siguiente")
+                }
+            }
+
+            // Mantener el sample rate nativo del motor: el remuestreo final lo
+            // hace iOS en la salida física (DAC/BT/altavoz). NO forzamos
+            // preferredSampleRate para preservar bit-perfect hasta el último paso.
             try session.setActive(true, options: .notifyOthersOnDeactivation)
             updateRouteName()
             updateAudioQuality()
