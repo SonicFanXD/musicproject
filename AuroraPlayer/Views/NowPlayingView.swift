@@ -276,10 +276,10 @@ struct NowPlayingView: View {
 
     // MARK: - Song Info (mejorado con mejor tipografía y espaciado)
     private var songInfoView: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 6) {
             // ✅ Título con gradiente sutil del color extraído (mejor tipografía)
             Text(audioEngine.currentSong?.displayName ?? "Sin canción")
-                .font(.system(size: 22, weight: .bold, design: .rounded))
+                .font(.system(size: isCompactScreen ? 20 : 24, weight: .bold, design: .rounded))
                 .multilineTextAlignment(.center)
                 .foregroundStyle(
                     LinearGradient(
@@ -289,10 +289,11 @@ struct NowPlayingView: View {
                     )
                 )
                 .lineLimit(2)
+                .shadow(color: playIconColor.opacity(0.3), radius: 3, x: 0, y: 1)
 
             Text(audioEngine.currentSong?.displaySubtitle ?? "—")
-                .font(.system(size: 15, weight: .medium))
-                .foregroundStyle(AppTheme.contrastingText(on: extractedUIColor).opacity(0.8))
+                .font(.system(size: isCompactScreen ? 14 : 16, weight: .medium))
+                .foregroundStyle(AppTheme.contrastingText(on: extractedUIColor).opacity(0.75))
                 .lineLimit(1)
                 .padding(.horizontal, 20)
 
@@ -329,27 +330,36 @@ struct NowPlayingView: View {
 
     // MARK: - Progress View (scrub fluido a 60fps)
     private var progressView: some View {
-        VStack(spacing: 6) {
+        VStack(spacing: 8) {
             GeometryReader { geometry in
                 // ✅ Feedback táctil: la barra engrosa al hacer scrub
                 // (animación de frame → GPU, sin costo de calidad)
-                let barHeight: CGFloat = isScrubbing ? 9 : 5
+                let barHeight: CGFloat = isScrubbing ? 10 : 6
                 ZStack(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: 4, style: .continuous)
-                        .fill(Color.secondary.opacity(0.15))
+                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                        .fill(Color.secondary.opacity(0.2))
                         .frame(height: barHeight)
 
-                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    RoundedRectangle(cornerRadius: 5, style: .continuous)
                         .fill(
                             LinearGradient(
-                                colors: [extractedColor.opacity(0.8), extractedColor],
+                                colors: [extractedColor.opacity(0.85), extractedColor],
                                 startPoint: .leading,
                                 endPoint: .trailing
                             )
                         )
                         .frame(width: geometry.size.width * progress, height: barHeight)
-                        // ✅ Glow sutil mientras se arrastra
-                        .shadow(color: isScrubbing ? extractedColor.opacity(0.5) : .clear, radius: 5, x: 0, y: 0)
+                        // ✅ Glow más notorio mientras se arrastra
+                        .shadow(color: isScrubbing ? extractedColor.opacity(0.6) : extractedColor.opacity(0.3), radius: isScrubbing ? 8 : 4, x: 0, y: 0)
+                        // ✅ Indicador circular al final de la barra
+                        .overlay {
+                            Circle()
+                                .fill(.white)
+                                .frame(width: isScrubbing ? 14 : 10, height: isScrubbing ? 14 : 10)
+                                .shadow(color: .black.opacity(0.2), radius: 3, x: 0, y: 1)
+                                .offset(x: (geometry.size.width * progress) - (isScrubbing ? 7 : 5))
+                                .opacity(progress > 0 && progress < 1 ? 1 : 0)
+                        }
                 }
                 .onAppear {
                     progressBarWidth = geometry.size.width
@@ -358,8 +368,8 @@ struct NowPlayingView: View {
                     progressBarWidth = newWidth
                 }
             }
-            .frame(height: 9)
-            .padding(.vertical, 18)
+            .frame(height: 10)
+            .padding(.vertical, 16)
             .contentShape(Rectangle())
             .animation(.spring(response: 0.3, dampingFraction: 0.8), value: isScrubbing)
             .gesture(
@@ -379,16 +389,16 @@ struct NowPlayingView: View {
 
             HStack {
                 Text(scrubPreviewText)
-                    .font(.system(size: 11, weight: isScrubbing ? .bold : .medium))
-                    .foregroundStyle(isScrubbing ? playIconColor : AppTheme.contrastingText(on: extractedUIColor).opacity(0.7))
+                    .font(.system(size: isCompactScreen ? 12 : 13, weight: isScrubbing ? .bold : .medium))
+                    .foregroundStyle(isScrubbing ? playIconColor : AppTheme.contrastingText(on: extractedUIColor).opacity(0.75))
                     .monospacedDigit()
                     .animation(.easeInOut(duration: 0.15), value: isScrubbing)
 
                 Spacer()
 
                 Text(formatTime(audioEngine.duration))
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(AppTheme.contrastingText(on: extractedUIColor).opacity(0.7))
+                    .font(.system(size: isCompactScreen ? 12 : 13, weight: .medium))
+                    .foregroundStyle(AppTheme.contrastingText(on: extractedUIColor).opacity(0.75))
                     .monospacedDigit()
             }
         }
@@ -396,7 +406,7 @@ struct NowPlayingView: View {
 
     // MARK: - Controls
     private var controlsView: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: isCompactScreen ? 8 : 14) {
             // Shuffle
             Button {
                 Haptics.light()
@@ -405,13 +415,13 @@ struct NowPlayingView: View {
                 ZStack {
                     Capsule()
                         .fill(audioEngine.isShuffleEnabled ? extractedColor.opacity(0.25) : Color.clear)
-                        .frame(width: 46, height: 36)
+                        .frame(width: isCompactScreen ? 42 : 46, height: isCompactScreen ? 30 : 36)
 
                     Image(systemName: "shuffle")
-                        .font(.system(size: 16, weight: audioEngine.isShuffleEnabled ? .bold : .semibold))
+                        .font(.system(size: isCompactScreen ? 15 : 17, weight: audioEngine.isShuffleEnabled ? .bold : .semibold))
                         .foregroundStyle(audioEngine.isShuffleEnabled ? playIconColor : AppTheme.contrastingText(on: extractedUIColor).opacity(0.7))
                 }
-                .frame(width: 64, height: 64)
+                .frame(width: isCompactScreen ? 56 : 64, height: isCompactScreen ? 56 : 64)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -422,12 +432,12 @@ struct NowPlayingView: View {
                 audioEngine.playPrevious()
             } label: {
                 ZStack {
-                    Circle().fill(controlBackground).frame(width: 48, height: 48)
+                    Circle().fill(controlBackground).frame(width: isCompactScreen ? 44 : 50, height: isCompactScreen ? 44 : 50)
                     Image(systemName: "backward.fill")
-                        .font(.system(size: 17, weight: .semibold))
+                        .font(.system(size: isCompactScreen ? 16 : 18, weight: .semibold))
                         .foregroundStyle(playIconColor)
                 }
-                .frame(width: 64, height: 64)
+                .frame(width: isCompactScreen ? 56 : 64, height: isCompactScreen ? 56 : 64)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -442,17 +452,17 @@ struct NowPlayingView: View {
                 }
             } label: {
                 ZStack {
-                    Circle().fill(extractedColor).frame(width: 66, height: 66)
+                    Circle().fill(extractedColor).frame(width: isCompactScreen ? 62 : 72, height: isCompactScreen ? 62 : 72)
                     Image(systemName: audioEngine.isPlaying ? "pause.fill" : "play.fill")
-                        .font(.system(size: 24, weight: .bold))
+                        .font(.system(size: isCompactScreen ? 22 : 26, weight: .bold))
                         .foregroundStyle(playIconColor)
                         // ✅ Micro-animación del icono al cambiar estado (GPU)
                         .scaleEffect(audioEngine.isPlaying ? 1.0 : 1.08)
                         .animation(.spring(response: 0.3, dampingFraction: 0.7), value: audioEngine.isPlaying)
                 }
-                .shadow(color: extractedColor.opacity(audioEngine.isPlaying ? 0.35 : 0.2), radius: audioEngine.isPlaying ? 10 : 7, x: 0, y: 3)
+                .shadow(color: extractedColor.opacity(audioEngine.isPlaying ? 0.4 : 0.25), radius: audioEngine.isPlaying ? 12 : 8, x: 0, y: 4)
                 .animation(.easeInOut(duration: 0.3), value: audioEngine.isPlaying)
-                .frame(width: 84, height: 84)
+                .frame(width: isCompactScreen ? 76 : 88, height: isCompactScreen ? 76 : 88)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -463,12 +473,12 @@ struct NowPlayingView: View {
                 audioEngine.playNext()
             } label: {
                 ZStack {
-                    Circle().fill(controlBackground).frame(width: 48, height: 48)
+                    Circle().fill(controlBackground).frame(width: isCompactScreen ? 44 : 50, height: isCompactScreen ? 44 : 50)
                     Image(systemName: "forward.fill")
-                        .font(.system(size: 17, weight: .semibold))
+                        .font(.system(size: isCompactScreen ? 16 : 18, weight: .semibold))
                         .foregroundStyle(playIconColor)
                 }
-                .frame(width: 64, height: 64)
+                .frame(width: isCompactScreen ? 56 : 64, height: isCompactScreen ? 56 : 64)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -481,13 +491,13 @@ struct NowPlayingView: View {
                 ZStack {
                     Capsule()
                         .fill(audioEngine.repeatMode != .off ? extractedColor.opacity(0.25) : Color.clear)
-                        .frame(width: 46, height: 36)
+                        .frame(width: isCompactScreen ? 42 : 46, height: isCompactScreen ? 30 : 36)
 
                     Image(systemName: repeatIcon)
-                        .font(.system(size: 16, weight: audioEngine.repeatMode != .off ? .bold : .semibold))
+                        .font(.system(size: isCompactScreen ? 15 : 17, weight: audioEngine.repeatMode != .off ? .bold : .semibold))
                         .foregroundStyle(audioEngine.repeatMode != .off ? playIconColor : AppTheme.contrastingText(on: extractedUIColor).opacity(0.7))
                 }
-                .frame(width: 64, height: 64)
+                .frame(width: isCompactScreen ? 56 : 64, height: isCompactScreen ? 56 : 64)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -498,12 +508,12 @@ struct NowPlayingView: View {
 
     // MARK: - Feature Buttons (EQ · Letras · Cola · AirPlay en una sola línea)
     private var featureButtonsView: some View {
-        let buttonSize: CGFloat = isCompactScreen ? 56 : 64
-        let capsuleWidth: CGFloat = isCompactScreen ? 42 : 46
-        let capsuleHeight: CGFloat = isCompactScreen ? 33 : 36
-        let iconSize: CGFloat = isCompactScreen ? 14 : 16
+        let buttonSize: CGFloat = isCompactScreen ? 60 : 68
+        let capsuleWidth: CGFloat = isCompactScreen ? 44 : 50
+        let capsuleHeight: CGFloat = isCompactScreen ? 34 : 38
+        let iconSize: CGFloat = isCompactScreen ? 15 : 17
 
-        return HStack(spacing: 12) {
+        return HStack(spacing: isCompactScreen ? 10 : 14) {
             // Equalizador
             Button {
                 Haptics.light()
@@ -563,7 +573,7 @@ struct NowPlayingView: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Cola de reproducción")
-            
+
             // ✅ AirPlay
             Button {
                 Haptics.light()

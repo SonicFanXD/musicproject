@@ -26,9 +26,11 @@ struct SettingsView: View {
     @AppStorage("com.aurora.autoPlayOnStart") private var autoPlayOnStart = false
     @AppStorage("com.aurora.showVisualizerInBar") private var showVisualizerInBar = true
     @AppStorage("com.aurora.compactPlayerBar") private var compactPlayerBar = false
+    @AppStorage("com.aurora.language") private var selectedLanguage = 0 // 0 = español, 1 = inglés
 
     private let themes = ["Sistema (claro/oscuro)", "Modo Claro", "Modo Oscuro"]
     private let accents = ["Morado (predeterminado)", "Azul Aurora", "Esmeralda", "Rosa Neón", "Ámbar Solar"]
+    private let languages = ["Español", "English"]
 
     private let themeDefaultsKey = "com.aurora.uiTheme"
 
@@ -106,6 +108,10 @@ struct SettingsView: View {
                             settingsSliderRow(title: "Esquinas del artwork", value: $artworkCorner, range: 0...44, step: 2, color: .blue, suffix: "pt")
                             settingsDivider
                             settingsToggleRow(title: "Reducir transparencia", subtitle: "Menos desenfoques, más rendimiento", icon: "circle.slash", color: .gray, isOn: $reduceTransparency)
+                            settingsDivider
+                            settingsMenuButton(title: "Idioma / Language", subtitle: languages[selectedLanguage], icon: "globe", color: .blue, options: languages, selection: $selectedLanguage) { index in
+                                selectedLanguage = index
+                            }
                         }
 
                         // Reproducción

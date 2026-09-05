@@ -746,6 +746,8 @@ class AudioEngine: NSObject, ObservableObject {
     }
 
     func playNext() {
+        // ✅ FIX CRÍTICO: Evitar crash si estamos en medio de un crossfade
+        guard !isCrossfading else { return }
         guard !playlist.isEmpty else { return }
         if isShuffleEnabled {
             currentIndex = Int.random(in: 0..<playlist.count)
