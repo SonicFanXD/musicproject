@@ -13,12 +13,27 @@ struct SettingsView: View {
     @State private var selectedThemeIndex: Int
     @State private var selectedAccentIndex: Int
 
+    // Nuevas configuraciones técnicas/visuales
+    @AppStorage("com.aurora.showVisualizer") private var showVisualizer = true
+    @AppStorage("com.aurora.enableHaptics") private var enableHaptics = true
+    @AppStorage("com.aurora.keepScreenOn") private var keepScreenOn = false
+    @AppStorage("com.aurora.crossfadeSeconds") private var crossfadeSeconds: Double = 3.0
+    @AppStorage("com.aurora.artworkCorner") private var artworkCorner: Double = 22
+    @AppStorage("com.aurora.dynamicColor") private var dynamicColor = true
+
     private let themes = ["Sistema (claro/oscuro)", "Modo Claro", "Modo Oscuro"]
     private let accents = ["Morado (predeterminado)", "Azul Aurora", "Esmeralda", "Rosa Neón", "Ámbar Solar"]
 
     // Keys de persistencia
     private let themeDefaultsKey = "com.aurora.uiTheme"
     private let accentDefaultsKey = "com.aurora.accentColor"
+
+    // Versión dinámica desde Info.plist
+    private var appVersion: String {
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.1"
+        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "2"
+        return "\(version) (\(build))"
+    }
 
     init(audioEngine: AudioEngine, fileAccessService: FileAccessService) {
         self.audioEngine = audioEngine
@@ -34,12 +49,10 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                // Fondo adaptativo al modo claro/oscuro (el valor se lee al aparecer)
                 applyThemeBackground()
 
                 ScrollView {
                     VStack(spacing: 24) {
-                        // Header
                         headerSection
 
                         // Library Section
@@ -82,25 +95,53 @@ struct SettingsView: View {
                                 icon: "slider.horizontal.3",
                                 color: .purple
                             ) {
-                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
                                 audioEngine.toggleEQ()
                             }
 
                             settingsDivider
 
-                            settingsButton(
+                            // Crossfade con switch + slider de duración
+                            settingsToggleRow(
                                 title: "Crossfade",
-                                subtitle: audioEngine.isCrossfadeEnabled ? "Activado" : "Desactivado",
+                                subtitle: audioEngine.isCrossfadeEnabled ? "Transición de \(Int(audioEngine.currentCrossfadeDuration))s" : "Desactivado",
                                 icon: "forward.end.fill",
-                                color: .teal
-                            ) {
-                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                                audioEngine.toggleCrossfade()
+                                color: .teal,
+                                isOn: Binding(
+                                    get: { audioEngine.isCrossfadeEnabled },
+                                    set: { _ in audioEngine.toggleCrossfade() }
+                                )
+                            )
+
+                            if audioEngine.isCrossfadeEnabled {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    HStack {
+                                        Text("Duración del crossfade")
+                                            .font(.system(size: 13, weight: .medium))
+                                            .foregroundStyle(.secondary)
+                                        Spacer()
+                                        Text("\(Int(audioEngine.currentCrossfadeDuration)) s")
+                                            .font(.system(size: 13, weight: .bold).monospacedDigit())
+                                            .foregroundStyle(.teal)
+                                    }
+
+                                    // El slider refleja el valor actual del motor de audio
+                                    Slider(
+                                        value: Binding(
+                                            get: { audioEngine.currentCrossfadeDuration },
+                                            set: { audioEngine.setCrossfadeDuration($0) }
+                                        ),
+                                        in: 1...12,
+                                        step: 1
+                                    )
+                                    .tint(.teal)
+                                }
+                                .padding(.horizontal, 16)
+                                .padding(.bottom, 14)
                             }
 
                             settingsDivider
 
-                            // Navegar al Equalizador para ajustar bandas y presets
+                            // Botón para abrir el ecualizador completo
                             settingsButton(
                                 title: "Ajustar Equalizador",
                                 subtitle: "Presets y 10 bandas de frecuencia",
@@ -111,13 +152,12 @@ struct SettingsView: View {
                             }
                         }
 
-                        // Visual Section
+                        // Visual Section — Tema y color de acento
                         settingsSection(
                             icon: "paintbrush.fill",
                             title: "Apariencia",
                             color: .pink
                         ) {
-                            // Theme picker action — se aplica de inmediato
                             settingsMenuButton(
                                 title: "Tema",
                                 subtitle: themes[selectedThemeIndex],
@@ -128,12 +168,10 @@ struct SettingsView: View {
                             ) { index in
                                 selectedThemeIndex = index
                                 UserDefaults.standard.set(index, forKey: themeDefaultsKey)
-                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
                             }
 
                             settingsDivider
 
-                            // Accent color picker action — se aplica de inmediato
                             settingsMenuButton(
                                 title: "Color de acento",
                                 subtitle: accents[selectedAccentIndex],
@@ -144,8 +182,91 @@ struct SettingsView: View {
                             ) { index in
                                 selectedAccentIndex = index
                                 UserDefaults.standard.set(index, forKey: accentDefaultsKey)
-                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
                             }
+
+                            settingsDivider
+
+                            // Color dinámico del artwork
+                            settingsToggleRow(
+                                title: "Color dinámico",
+                                subtitle: "Extrae el color dominante de la portada",
+                                icon: "wand.and.stars",
+                                color: .cyan,
+                                isOn: $dynamicColor
+                            )
+                        }
+
+                        // NEW: Reproducción / Comportamiento
+                        settingsSection(
+                            icon: "dial.max.fill",
+                            title: "Reproducción",
+                            color: .orange
+                        ) {
+                            // Visualizador
+                            settingsToggleRow(
+                                title: "Visualizador de audio",
+                                subtitle: "Animación de barras en Reproduciendo",
+                                icon: "waveform.path.ecg",
+                                color: .pink,
+                                isOn: $showVisualizer
+                            )
+
+                            settingsDivider
+
+                            // Haptics
+                            settingsToggleRow(
+                                title: "Respuesta táctil",
+                                subtitle: "Vibración al tocar los controles",
+                                icon: "iphone.radiowaves.left.and.right",
+                                color: .mint,
+                                isOn: $enableHaptics
+                            )
+
+                            settingsDivider
+
+                            // Mantener pantalla encendida en Now Playing
+                            settingsToggleRow(
+                                title: "Mantener pantalla encendida",
+                                subtitle: "Evita que se bloquee mientras se reproduce",
+                                icon: "sun.max.fill",
+                                color: .yellow,
+                                isOn: $keepScreenOn
+                            )
+                        }
+
+                        // NEW: Tecnica / Rendimiento
+                        settingsSection(
+                            icon: "gauge.open.with.needle",
+                            title: "Rendimiento",
+                            color: .indigo
+                        ) {
+                            // Info técnica
+                            settingsInfoRow(
+                                title: "Salida de audio",
+                                value: audioEngine.audioQualityInfo.isEmpty
+                                    ? "\(Int(audioEngine.outputSampleRate / 1000)) kHz · \(audioEngine.outputChannelCount) canales"
+                                    : audioEngine.audioQualityInfo,
+                                icon: "speaker.wave.2.fill",
+                                color: .indigo
+                            )
+
+                            settingsDivider
+
+                            settingsInfoRow(
+                                title: "Ruta de reproducción",
+                                value: audioEngine.currentRouteName,
+                                icon: "airplayaudio",
+                                color: .blue
+                            )
+
+                            settingsDivider
+
+                            settingsInfoRow(
+                                title: "Dispositivo",
+                                value: UIDevice.current.model,
+                                icon: "iphone",
+                                color: .gray
+                            )
                         }
 
                         // Stats Section
@@ -180,7 +301,7 @@ struct SettingsView: View {
 
                             settingsButton(
                                 title: "Acerca de",
-                                subtitle: "Aurora Player v1.0",
+                                subtitle: "Aurora Player v\(appVersion)",
                                 icon: "info.circle.fill",
                                 color: .blue
                             ) {
@@ -198,7 +319,6 @@ struct SettingsView: View {
             .toolbarBackground(Color(UIColor.systemBackground).opacity(0.92), for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
-                // Título personalizado consistente con la app
                 ToolbarItem(placement: .principal) {
                     Text("Ajustes")
                         .font(.system(size: 20, weight: .bold, design: .rounded))
@@ -215,7 +335,7 @@ struct SettingsView: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Listo") { dismiss() }
                         .foregroundStyle(Color.accentColor)
-                        .frame(width: 44, height: 44) // Bigger touch target
+                        .frame(width: 44, height: 44)
                         .contentShape(Rectangle())
                 }
             }
@@ -228,10 +348,10 @@ struct SettingsView: View {
             .sheet(isPresented: $showEqualizerSheet) {
                 EqualizerView(audioEngine: audioEngine)
             }
-            .alert("Aurora Player v1.0", isPresented: $showAbout) {
+            .alert("Aurora Player v\(appVersion)", isPresented: $showAbout) {
                 Button("OK", role: .cancel) {}
             } message: {
-                Text("Reproductor de música Hi-Fi optimizado para iOS con soporte de alta fidelidad, ecualizador de 10 bandas y gestión avanzada de carpetas locales.")
+                Text("Reproductor de música Hi-Fi optimizado para iOS con soporte de alta fidelidad, ecualizador de 10 bandas, crossfade ajustable y gestión avanzada de carpetas locales.")
             }
         }
     }
@@ -240,7 +360,6 @@ struct SettingsView: View {
     private func applyThemeBackground() -> some View {
         Group {
             if selectedThemeIndex == 1 {
-                // Modo Claro forzado
                 Color(UIColor.white).ignoresSafeArea()
                     .onAppear {
                         if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
@@ -249,7 +368,6 @@ struct SettingsView: View {
                         }
                     }
             } else if selectedThemeIndex == 2 {
-                // Modo Oscuro forzado
                 Color(UIColor.black).ignoresSafeArea()
                     .onAppear {
                         if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
@@ -258,7 +376,6 @@ struct SettingsView: View {
                         }
                     }
             } else {
-                // Sistema
                 LinearGradient(
                     colors: [
                         Color(UIColor.systemBackground),
@@ -310,7 +427,7 @@ struct SettingsView: View {
 
             VStack(spacing: 4) {
                 Text("Ajustes")
-                    .font(.system(size: 26, weight: .bold))
+                    .font(.system(size: 26, weight: .bold, design: .rounded))
                     .foregroundStyle(.primary)
 
                 Text("Configura Aurora Player a tu gusto")
@@ -358,7 +475,7 @@ struct SettingsView: View {
         }
     }
 
-    // MARK: - Standard Button Row with expanded touch target (min 44pt)
+    // MARK: - Standard Button Row
     @ViewBuilder
     private func settingsButton(
         title: String,
@@ -369,14 +486,7 @@ struct SettingsView: View {
     ) -> some View {
         Button(action: action) {
             HStack(spacing: 14) {
-                Image(systemName: icon)
-                    .font(.system(size: 16, weight: .medium))
-                    .foregroundStyle(color)
-                    .frame(width: 32, height: 32)
-                    .background {
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .fill(color.opacity(0.1))
-                    }
+                iconView(icon: icon, color: color)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
@@ -395,13 +505,91 @@ struct SettingsView: View {
                     .foregroundStyle(.tertiary)
             }
             .padding(.horizontal, 16)
-            .padding(.vertical, 16) // Expanded touch target (≥44pt en total)
+            .padding(.vertical, 16)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
 
-    // MARK: - Menu Picker Button Row (For Theme & Accent Color) with fully interactive Menu
+    // MARK: - Toggle Row (Switch integrado — funcional)
+    @ViewBuilder
+    private func settingsToggleRow(
+        title: String,
+        subtitle: String,
+        icon: String,
+        color: Color,
+        isOn: Binding<Bool>
+    ) -> some View {
+        HStack(spacing: 14) {
+            iconView(icon: icon, color: color)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(.primary)
+
+                Text(subtitle)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+
+            Toggle("", isOn: isOn)
+                .labelsHidden()
+                .tint(color)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            isOn.wrappedValue.toggle()
+        }
+    }
+
+    // MARK: - Info Row (sin interacción — solo lectura)
+    @ViewBuilder
+    private func settingsInfoRow(
+        title: String,
+        value: String,
+        icon: String,
+        color: Color
+    ) -> some View {
+        HStack(spacing: 14) {
+            iconView(icon: icon, color: color)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(.primary)
+
+                Text(value)
+                    .font(.system(size: 12, weight: .semibold).monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+
+            Spacer()
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 16)
+        .contentShape(Rectangle())
+    }
+
+    // MARK: - Icon (reutilizable)
+    private func iconView(icon: String, color: Color) -> some View {
+        Image(systemName: icon)
+            .font(.system(size: 16, weight: .medium))
+            .foregroundStyle(color)
+            .frame(width: 32, height: 32)
+            .background {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(color.opacity(0.1))
+            }
+    }
+
+    // MARK: - Menu Picker Button Row
     @ViewBuilder
     private func settingsMenuButton(
         title: String,
@@ -427,14 +615,7 @@ struct SettingsView: View {
             }
         } label: {
             HStack(spacing: 14) {
-                Image(systemName: icon)
-                    .font(.system(size: 16, weight: .medium))
-                    .foregroundStyle(color)
-                    .frame(width: 32, height: 32)
-                    .background {
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .fill(color.opacity(0.1))
-                    }
+                iconView(icon: icon, color: color)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
@@ -453,13 +634,13 @@ struct SettingsView: View {
                     .foregroundStyle(.tertiary)
             }
             .padding(.horizontal, 16)
-            .padding(.vertical, 16) // Expanded touch target (≥44pt en total)
+            .padding(.vertical, 16)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
 
-    // MARK: - Stat Row with expanded touch target area
+    // MARK: - Stat Row
     private func statRow(title: String, value: String) -> some View {
         HStack {
             Text(title)
@@ -474,7 +655,7 @@ struct SettingsView: View {
                 .monospacedDigit()
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 16) // Expanded touch target
+        .padding(.vertical, 16)
         .contentShape(Rectangle())
     }
 

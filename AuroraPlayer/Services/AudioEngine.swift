@@ -75,6 +75,8 @@ class AudioEngine: NSObject, ObservableObject {
 
     override init() {
         super.init()
+        // Cargar duración de crossfade persistida
+        crossfadeDuration = UserDefaults.standard.object(forKey: "com.aurora.crossfadeDuration") as? TimeInterval ?? 3.0
         setupSession()
         setupEngine()
         setupEqualizer()
@@ -182,6 +184,9 @@ class AudioEngine: NSObject, ObservableObject {
         // Asegurar que el cambio se aplique al playback activo sin perder posición
         if isPlaying, playerNode.isPlaying, let file = audioFile {
             // Reiniciar reproducción desde la posición actual para que el EQ se aplique de inmediato
+            // ⚠️ CRÍTICO: incrementar scheduleGeneration ANTES de stop() para que el completion
+            // handler del segmento anterior quede obsoleto y NO dispare playNext()
+            scheduleGeneration += 1
             let currentPosition = currentTime
             playerNode.stop()
             crossfadeTimer?.invalidate()
@@ -212,6 +217,21 @@ class AudioEngine: NSObject, ObservableObject {
     func setEQGain(for band: Int, gain: Float) {
         guard let eq = equalizerNode, band >= 0 && band < eq.bands.count else { return }
         eq.bands[band].gain = gain
+    }
+
+    /// Sample rate del motor de audio para UI (publicado para que las vistas se actualicen)
+    var sampleRateDisplay: Double {
+        sampleRate
+    }
+
+    /// Configura la duración del crossfade (1–12 segundos) y la persiste
+    func setCrossfadeDuration(_ seconds: TimeInterval) {
+        crossfadeDuration = max(1.0, min(12.0, seconds))
+        UserDefaults.standard.set(crossfadeDuration, forKey: "com.aurora.crossfadeDuration")
+    }
+
+    var currentCrossfadeDuration: TimeInterval {
+        crossfadeDuration
     }
 
     func getEQGain(for band: Int) -> Float {
@@ -472,6 +492,8 @@ class AudioEngine: NSObject, ObservableObject {
         isCrossfading = false
 
         // Reutilizar el playerNode principal con el nuevo archivo
+        // ⚠️ Incrementar generación antes de stop() para que el handler obsoleto no dispare playNext()
+        scheduleGeneration += 1
         if playerNode.isPlaying {
             playerNode.stop()
         }
@@ -581,6 +603,11 @@ class AudioEngine: NSObject, ObservableObject {
             return
         }
 
+        // ⚠️ CRÍTICO: incrementar scheduleGeneration ANTES de stop().
+        // playerNode.stop() invoca los completion handlers de los segmentos programados;
+        // sin esto, el handler obsoleto llamaba a handlePlaybackFinished() → playNext()
+        // y SALTABA DE CANCIÓN al tocar/arrastrar la barra de progreso o las letras.
+        scheduleGeneration += 1
         playerNode.stop()
         crossfadeTimer?.invalidate()
         crossfadeTimer = nil

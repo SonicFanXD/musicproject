@@ -4,9 +4,15 @@ struct NowPlayingView: View {
     @ObservedObject var audioEngine: AudioEngine
     @Environment(\.dismiss) private var dismiss
 
+    // Configuraciones de personalización
+    @AppStorage("com.aurora.showVisualizer") private var showVisualizer = true
+    @AppStorage("com.aurora.keepScreenOn") private var keepScreenOn = false
+    @AppStorage("com.aurora.dynamicColor") private var dynamicColor = true
+
     @State private var showLyrics = false
     @State private var showEqualizer = false
     @State private var showQueue = false
+    @State private var showQualityDetail = false
     @State private var artworkScale: CGFloat = 1.0
     @State private var progressBarWidth: CGFloat = 0
     @State private var extractedColor: Color = Color.accentColor
@@ -48,8 +54,8 @@ struct NowPlayingView: View {
 
                     Spacer().frame(height: 16)
 
-                    // Audio visualizer with clean tint color
-                    if audioEngine.isPlaying {
+                    // Audio visualizer with clean tint color (respeta la configuración del usuario)
+                    if audioEngine.isPlaying && showVisualizer {
                         AudioVisualizer(audioEngine: audioEngine, tintColor: extractedColor)
                             .frame(height: 32)
                             .padding(.horizontal, 40)
@@ -85,11 +91,17 @@ struct NowPlayingView: View {
                 withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
                     artworkScale = 1.0
                 }
+                // Mantener pantalla encendida mientras se reproduce (configuración del usuario)
+                UIApplication.shared.isIdleTimerDisabled = keepScreenOn && audioEngine.isPlaying
+            }
+            .onDisappear {
+                UIApplication.shared.isIdleTimerDisabled = false
             }
             .onChange(of: audioEngine.isPlaying) { isPlaying in
                 withAnimation(.spring(response: 0.45, dampingFraction: 0.8)) {
                     artworkScale = isPlaying ? 1.02 : 1.0
                 }
+                UIApplication.shared.isIdleTimerDisabled = keepScreenOn && isPlaying
             }
             .onChange(of: audioEngine.currentSong?.id) { _ in
                 extractColorFromArtwork()
@@ -156,6 +168,11 @@ struct NowPlayingView: View {
             }
             .sheet(isPresented: $showQueue) {
                 QueueView(audioEngine: audioEngine)
+            }
+            .sheet(isPresented: $showQualityDetail) {
+                AudioQualityDetailView(audioEngine: audioEngine)
+                    .presentationDetents([.medium, .large]) // Sheet compacto estilo preview
+                    .presentationDragIndicator(.visible)
             }
         }
     }
@@ -249,22 +266,34 @@ struct NowPlayingView: View {
                 .lineLimit(1)
                 .padding(.horizontal, 16)
 
-            // Audio quality badge
+            // Audio quality badge (tappable → abre detalle estilo PowerAmp)
             if let song = audioEngine.currentSong, !song.audioQualityDescription.isEmpty {
-                HStack(spacing: 5) {
-                    Image(systemName: "waveform.circle.fill")
-                        .font(.system(size: 10, weight: .semibold))
+                Button {
+                    Haptics.light()
+                    showQualityDetail = true
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "waveform.circle.fill")
+                            .font(.system(size: 10, weight: .semibold))
 
-                    Text(song.audioQualityDescription)
-                        .font(.system(size: 10, weight: .medium).monospacedDigit())
+                        Text(song.audioQualityDescription)
+                            .font(.system(size: 10, weight: .medium).monospacedDigit())
+
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 7, weight: .bold))
+                            .foregroundStyle(extractedColor.opacity(0.6))
+                    }
+                    .foregroundStyle(extractedColor.opacity(0.9))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 8) // Expanded touch target (invisible)
+                    .background {
+                        Capsule()
+                            .fill(extractedColor.opacity(0.12))
+                    }
+                    .contentShape(Rectangle())
                 }
-                .foregroundStyle(extractedColor.opacity(0.9))
-                .padding(.horizontal, 10)
-                .padding(.vertical, 4)
-                .background {
-                    Capsule()
-                        .fill(extractedColor.opacity(0.12))
-                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Ver detalles de calidad de audio")
             }
         }
         .padding(.horizontal, 6)
@@ -327,7 +356,7 @@ struct NowPlayingView: View {
         HStack(spacing: 12) {
             // Shuffle — 64pt invisible touch frame around 46×36 visual capsule
             Button {
-                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                Haptics.light()
                 audioEngine.toggleShuffle()
             } label: {
                 ZStack {
@@ -346,7 +375,7 @@ struct NowPlayingView: View {
 
             // Previous — 64pt invisible touch frame around 48×48 circle
             Button {
-                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                Haptics.light()
                 audioEngine.playPrevious()
             } label: {
                 ZStack {
@@ -365,7 +394,7 @@ struct NowPlayingView: View {
 
             // Play/Pause — 84pt invisible touch frame around 66×66 circle
             Button {
-                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                Haptics.medium()
                 if audioEngine.isPlaying {
                     audioEngine.pause()
                 } else {
@@ -389,7 +418,7 @@ struct NowPlayingView: View {
 
             // Next — 64pt invisible touch frame around 48×48 circle
             Button {
-                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                Haptics.light()
                 audioEngine.playNext()
             } label: {
                 ZStack {
@@ -408,7 +437,7 @@ struct NowPlayingView: View {
 
             // Repeat — 64pt invisible touch frame around 46×36 visual capsule
             Button {
-                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                Haptics.light()
                 audioEngine.cycleRepeatMode()
             } label: {
                 ZStack {

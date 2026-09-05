@@ -213,18 +213,124 @@ struct ContentView: View {
         let currentFilteredSongs = filteredSongs
 
         if currentFilteredSongs.isEmpty {
-            ContentUnavailableLibraryView(
-                icon: "music.note.list",
-                title: searchText.isEmpty ? "Tu biblioteca está vacía" : "No se encontraron canciones",
-                message: searchText.isEmpty ? "Agrega una carpeta con tu música para comenzar." : "Prueba con otro término de búsqueda."
-            )
-            .listRowSeparator(.hidden)
-            .listRowBackground(Color.clear)
+            // Barra de progreso de indexación mientras se escanea una biblioteca vacía
+            if fileAccessService.isScanning && fileAccessService.scanTotal > 0 {
+                indexingProgressCard
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+            } else {
+                ContentUnavailableLibraryView(
+                    icon: "music.note.list",
+                    title: searchText.isEmpty ? "Tu biblioteca está vacía" : "No se encontraron canciones",
+                    message: searchText.isEmpty ? "Agrega una carpeta con tu música para comenzar." : "Prueba con otro término de búsqueda."
+                )
+                .listRowSeparator(.hidden)
+                .listRowBackground(Color.clear)
+            }
         } else {
+            // Indicador compacto de indexación en curso sobre la lista
+            if fileAccessService.isScanning {
+                compactIndexingRow
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+            }
             ForEach(currentFilteredSongs) { song in
                 songRow(song)
             }
         }
+    }
+
+    // MARK: - Indexing Progress Cards
+    private var indexingProgressCard: some View {
+        VStack(spacing: 16) {
+            ZStack {
+                Circle()
+                    .fill(Color.accentColor.opacity(0.12))
+                    .frame(width: 70, height: 70)
+
+                Image(systemName: "square.stack.3d.up")
+                    .font(.system(size: 30, weight: .semibold))
+                    .foregroundStyle(Color.accentColor)
+            }
+
+            Text("Indexando tu biblioteca")
+                .font(.system(size: 18, weight: .bold, design: .rounded))
+                .foregroundStyle(.primary)
+
+            // Barra de progreso real
+            VStack(spacing: 8) {
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        Capsule()
+                            .fill(Color.secondary.opacity(0.15))
+                        Capsule()
+                            .fill(Color.accentColor)
+                            .frame(width: geo.size.width * indexingProgress)
+                            .animation(.easeInOut(duration: 0.3), value: indexingProgress)
+                    }
+                }
+                .frame(height: 8)
+
+                HStack {
+                    Text("\(fileAccessService.scanProcessed) de \(fileAccessService.scanTotal)")
+                        .font(.system(size: 12, weight: .medium).monospacedDigit())
+                        .foregroundStyle(.secondary)
+
+                    Spacer()
+
+                    Text("\(Int(indexingProgress * 100))%")
+                        .font(.system(size: 12, weight: .bold).monospacedDigit())
+                        .foregroundStyle(Color.accentColor)
+                }
+            }
+            .padding(.horizontal, 8)
+
+            Text("Preparando tu música…")
+                .font(.system(size: 13))
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 28)
+        .padding(.horizontal, 16)
+        .enhancedGlass(cornerRadius: 24)
+    }
+
+    private var compactIndexingRow: some View {
+        HStack(spacing: 10) {
+            ProgressView()
+                .controlSize(.small)
+
+            Text("Indexando… \(fileAccessService.scanProcessed)/\(fileAccessService.scanTotal)")
+                .font(.system(size: 12, weight: .medium).monospacedDigit())
+                .foregroundStyle(.secondary)
+
+            Spacer()
+
+            // Mini barra de progreso
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(Color.secondary.opacity(0.15))
+                    Capsule()
+                        .fill(Color.accentColor)
+                        .frame(width: geo.size.width * indexingProgress)
+                        .animation(.easeInOut(duration: 0.3), value: indexingProgress)
+                }
+            }
+            .frame(width: 60, height: 4)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .background {
+            Capsule()
+                .fill(Color.secondary.opacity(0.06))
+        }
+        .padding(.horizontal, 12)
+    }
+
+    private var indexingProgress: Double {
+        guard fileAccessService.scanTotal > 0 else { return 0 }
+        return min(1.0, Double(fileAccessService.scanProcessed) / Double(fileAccessService.scanTotal))
     }
 
     @ViewBuilder
