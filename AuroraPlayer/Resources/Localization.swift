@@ -144,6 +144,11 @@ enum Localization {
             "actions.addFolder": [.spanish: "Agregar carpeta de música", .english: "Add music folder"],
             "actions.done": [.spanish: "Listo", .english: "Done"],
             "actions.clearQueue": [.spanish: "Limpiar cola", .english: "Clear queue"],
+            "actions.play": [.spanish: "Reproducir", .english: "Play"],
+            "actions.like": [.spanish: "Me Gusta", .english: "Like"],
+            "actions.unlike": [.spanish: "Quitar de Me Gusta", .english: "Remove from Likes"],
+            "actions.addToQueue": [.spanish: "Añadir a cola", .english: "Add to Queue"],
+            "actions.addToPlaylist": [.spanish: "Añadir a lista", .english: "Add to Playlist"],
 
             // Queue
             "queue.title": [.spanish: "Cola de Reproducción", .english: "Play Queue"],
@@ -151,6 +156,12 @@ enum Localization {
             "queue.history": [.spanish: "Historial", .english: "History"],
             "queue.empty": [.spanish: "Cola vacía", .english: "Queue empty"],
             "queue.emptyHistory": [.spanish: "Sin historial", .english: "No history"],
+            "queue.nowPlaying": [.spanish: "Reproduciendo ahora", .english: "Now Playing"],
+            "queue.emptyQueue": [.spanish: "No hay canciones en cola", .english: "No songs in queue"],
+            "queue.emptyQueueMessage": [.spanish: "Las próximas canciones aparecerán aquí", .english: "Upcoming songs will appear here"],
+            "queue.upNext": [.spanish: "A continuación", .english: "Up Next"],
+            "queue.remove": [.spanish: "Eliminar", .english: "Remove"],
+            "queue.historyTitle": [.spanish: "Historial de reproducción", .english: "Playback History"],
 
             // Lyrics
             "lyrics.noLyrics": [.spanish: "No hay letras disponibles", .english: "No lyrics available"],

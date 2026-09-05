@@ -203,7 +203,7 @@ struct ContentView: View {
                     HStack(spacing: 8) {
                         Image(systemName: "plus.circle.fill")
                             .font(.system(size: 15, weight: .semibold))
-                        Text("Agregar carpeta de música")
+                        Text(Localization.localized("actions.addFolder"))
                             .font(.system(size: 15, weight: .semibold, design: .rounded))
                     }
                     .foregroundStyle(.white)
@@ -454,7 +454,7 @@ struct ContentView: View {
                     .foregroundStyle(Color.accentColor)
             }
 
-            Text("Indexando tu biblioteca")
+            Text(Localization.localized("indexing.indexingLibrary"))
                 .font(.system(size: 18, weight: .bold, design: .rounded))
                 .foregroundStyle(.primary)
 
@@ -470,7 +470,7 @@ struct ContentView: View {
                 .frame(height: 8)
 
                 HStack {
-                    Text("\(fileAccessService.scanProcessed) de \(fileAccessService.scanTotal)")
+                    Text("\(fileAccessService.scanProcessed) \(Localization.localized("indexing.progress")) \(fileAccessService.scanTotal)")
                         .font(.system(size: 12, weight: .medium).monospacedDigit())
                         .foregroundStyle(.secondary)
                     Spacer()
@@ -481,7 +481,7 @@ struct ContentView: View {
             }
             .padding(.horizontal, 8)
 
-            Text("Preparando tu música…")
+            Text(Localization.localized("indexing.preparing"))
                 .font(.system(size: 13))
                 .foregroundStyle(.secondary)
         }
@@ -494,7 +494,7 @@ struct ContentView: View {
     private var compactIndexingRow: some View {
         HStack(spacing: 10) {
             ProgressView().controlSize(.small)
-            Text("Indexando… \(fileAccessService.scanProcessed)/\(fileAccessService.scanTotal)")
+            Text("\(Localization.localized("indexing.processed")) \(fileAccessService.scanProcessed)/\(fileAccessService.scanTotal)")
                 .font(.system(size: 12, weight: .medium).monospacedDigit())
                 .foregroundStyle(.secondary)
             Spacer()
@@ -673,7 +673,7 @@ struct ContentView: View {
             // ✅ Menú de agregar a playlist (separado del botón de reproducción)
             Menu {
                 if fileAccessService.playlists.isEmpty {
-                    Text("No hay listas disponibles")
+                    Text(Localization.localized("library.noPlaylists"))
                 } else {
                     ForEach(fileAccessService.playlists) { playlist in
                         Button {
@@ -708,14 +708,14 @@ struct ContentView: View {
             Button {
                 playSong(song)
             } label: {
-                Label("Reproducir", systemImage: "play.fill")
+                Label(Localization.localized("actions.play"), systemImage: "play.fill")
             }
-            
+
             Button {
                 Haptics.light()
                 fileAccessService.toggleLike(song)
             } label: {
-                Label(isLiked ? "Quitar de Me Gusta" : "Me Gusta", systemImage: isLiked ? "heart.slash" : "heart")
+                Label(isLiked ? Localization.localized("actions.unlike") : Localization.localized("actions.like"), systemImage: isLiked ? "heart.slash" : "heart")
             }
             
             Menu {

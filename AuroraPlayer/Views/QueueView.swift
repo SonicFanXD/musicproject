@@ -128,7 +128,7 @@ struct QueueView: View {
     private var nextUpContent: some View {
         if let current = audioEngine.currentSong {
             VStack(alignment: .leading, spacing: 8) {
-                Text("Reproduciendo ahora")
+                Text(Localization.localized("queue.nowPlaying"))
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 4)
@@ -171,10 +171,10 @@ struct QueueView: View {
         }
 
         if editableQueue.isEmpty {
-            emptyState(icon: "music.note.list", title: "No hay canciones en cola", message: "Las próximas canciones aparecerán aquí")
+            emptyState(icon: "music.note.list", title: Localization.localized("queue.emptyQueue"), message: Localization.localized("queue.emptyQueueMessage"))
         } else {
             VStack(alignment: .leading, spacing: 8) {
-                Text("A continuación")
+                Text(Localization.localized("queue.upNext"))
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 4)
@@ -187,7 +187,7 @@ struct QueueView: View {
                                 Haptics.light()
                                 removeFromQueue(song)
                             } label: {
-                                Label("Eliminar", systemImage: "trash")
+                                Label(Localization.localized("queue.remove"), systemImage: "trash")
                             }
                         }
                 }
@@ -220,10 +220,10 @@ struct QueueView: View {
     @ViewBuilder
     private var historyContent: some View {
         if audioEngine.playHistory.isEmpty {
-            emptyState(icon: "clock.arrow.circlepath", title: "Sin historial", message: "Las canciones reproducidas aparecerán aquí")
+            emptyState(icon: "clock.arrow.circlepath", title: Localization.localized("queue.emptyHistory"), message: Localization.localized("queue.emptyQueueMessage"))
         } else {
             VStack(alignment: .leading, spacing: 8) {
-                Text("Historial de reproducción")
+                Text(Localization.localized("queue.historyTitle"))
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 4)
