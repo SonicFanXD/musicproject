@@ -601,9 +601,6 @@ class FileAccessService: ObservableObject {
                 album = Localization.localized("details.unknownAlbum")
             }
         }
-            // Fallback a métodos síncronos si falla la carga asíncrona
-            return await readMetadataFallback(from: url)
-        }
 
         // Formato: usar solo la extensión (evita abrir AVAudioFile innecesariamente)
         let formatDescription = url.pathExtension.uppercased()
