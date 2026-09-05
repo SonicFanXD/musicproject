@@ -1,0 +1,90 @@
+# Codemagic CI/CD para AuroraPlayer
+# Build sin firma (unsigned IPA) — misma configuración que el workflow anterior de GitHub Actions.
+#
+# Configuración en Codemagic:
+#   1. Conecta el repositorio (https://codemagic.io → Add application)
+#   2. Selecciona este workflow: "build-unsigned-ipa"
+#   3. El IPA aparece en "Artifacts" al terminar el build.
+#
+# Notas:
+#   - No requiere credenciales de firma (APP_STORE_CONNECT_*) porque el IPA es unsigned.
+#   - El IPA unsigned se firma localmente (AltStore, Sideloadly, etc.) o con
+#     la opción "Automatic code signing" de Codemagic si más adelante lo necesitas.
+
+workflows:
+  build-unsigned-ipa:
+    name: Build AuroraPlayer (unsigned IPA)
+    # Instancia macOS con Xcode; M1/M2 (instance_type: mac_mini_m2) compila más rápido
+    instance_type: mac_mini_m2
+    max_build_duration: 30
+
+    # Ejecutar en cada push a main y en builds manuales desde el dashboard
+    triggering:
+      events:
+        - push
+        - pull_request
+      branch_patterns:
+        - pattern: main
+          include: true
+          source: true
+      # Evita builds duplicados por pushes consecutivos
+      cancel_previous_builds: true
+
+    environment:
+      # Xcode 16+ (compatible con iOS 16 deployment target)
+      xcode: latest
+      cocoapods: default
+      vars:
+        BUNDLE_ID: com.aurora.player
+        XCODE_PROJECT: "AuroraPlayer.xcodeproj"
+        SCHEME: "AuroraPlayer"
+        CONFIGURATION: "Release"
+
+    scripts:
+      # 1. Generar el proyecto Xcode desde project.yml (XcodeGen)
+      - name: Generate Xcode project (XcodeGen)
+        script: |
+          brew install xcodegen
+          xcodegen generate
+
+      # 2. Build para dispositivo iOS sin firma de código
+      - name: Build for iOS Device (no code signing)
+        script: |
+          xcodebuild clean build \
+            -project "$XCODE_PROJECT" \
+            -scheme "$SCHEME" \
+            -configuration "$CONFIGURATION" \
+            -destination 'generic/platform=iOS' \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            ONLY_ACTIVE_ARCH=NO \
+            | xcpretty
+
+      # 3. Empaquetar el .app en un .ipa unsigned
+      - name: Create unsigned .ipa
+        script: |
+          APP_PATH=$(find ~/Library/Developer/Xcode/DerivedData -name "*.app" -path "*Release-iphoneos*" | head -1)
+          if [ -z "$APP_PATH" ]; then
+            echo "❌ No se encontró el .app compilado"
+            exit 1
+          fi
+          echo "📦 Empaquetando: $APP_PATH"
+          mkdir -p Payload
+          cp -R "$APP_PATH" Payload/
+          zip -qry AuroraPlayer_unsigned.ipa Payload
+          rm -rf Payload
+          echo "✅ IPA creado: AuroraPlayer_unsigned.ipa ($(du -h AuroraPlayer_unsigned.ipa | cut -f1))"
+
+    artifacts:
+      - AuroraPlayer_unsigned.ipa
+
+    # Publicación: solo artifacts (sin App Store, ya que es unsigned)
+    publishing:
+      email:
+        recipients:
+          # ✏️ Reemplaza con tu correo para recibir notificaciones de build
+          - tu-correo@ejemplo.com
+        notify:
+          success: true
+          failure: true
