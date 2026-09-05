@@ -380,8 +380,9 @@ struct ContentView: View {
             HStack(spacing: 6) {
                 Image(systemName: sortOption.icon)
                     .font(.system(size: 11, weight: .semibold))
-                Text("Ordenar: \(sortOption.title) \(songSortAscending ? "↑" : "↓")")
+                Text("Ordenar: \(sortOption.title)")
                     .font(.system(size: 12, weight: .medium))
+                    .lineLimit(1)
             }
             .foregroundStyle(.secondary)
             .padding(.horizontal, 12)
@@ -427,8 +428,9 @@ struct ContentView: View {
             HStack(spacing: 6) {
                 Image(systemName: albumSort.icon)
                     .font(.system(size: 11, weight: .semibold))
-                Text("Ordenar: \(albumSort.title) \(albumSortAscending ? "↑" : "↓")")
+                Text("Ordenar: \(albumSort.title)")
                     .font(.system(size: 12, weight: .medium))
+                    .lineLimit(1)
             }
             .foregroundStyle(.secondary)
             .padding(.horizontal, 12)
