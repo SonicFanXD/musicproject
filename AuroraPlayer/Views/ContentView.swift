@@ -3,6 +3,8 @@ import SwiftUI
 struct ContentView: View {
     @StateObject private var audioEngine = AudioEngine()
     @StateObject private var fileAccessService = FileAccessService()
+    // ✅ Observar el idioma: al cambiar, esta vista se re-renderiza al instante
+    @ObservedObject private var localization = Localization.shared
 
     @State private var hasRestored = false
     @State private var isInitialLoad = true
@@ -122,6 +124,18 @@ struct ContentView: View {
                     audioEngine.isKeepScreenOnEnabled = keepScreenOnUserDefaults
                     // ✅ Crear playlist "Me Gusta" si no existe
                     fileAccessService.ensureLikedPlaylistExists()
+                    // ✅ Ajuste "Reproducir al iniciar" (antes no se aplicaba):
+                    // reanudar la reproducción si la app arranca con una pista
+                    // restaurada en pausa.
+                    if autoPlayOnStart,
+                       audioEngine.currentSong != nil,
+                       !audioEngine.isPlaying {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                            if audioEngine.currentSong != nil, !audioEngine.isPlaying {
+                                audioEngine.resume()
+                            }
+                        }
+                    }
                     // ✅ Si el caché ya cargó antes de este onAppear, cerrar splash ya
                     if fileAccessService.isInitialLibraryLoaded {
                         withAnimation(.easeOut(duration: 0.3)) { isInitialLoad = false }
@@ -188,6 +202,8 @@ struct ContentView: View {
 
     // Acceso al ajuste de pantalla encendida para sincronizar con el engine
     @AppStorage("com.aurora.keepScreenOn") private var keepScreenOnUserDefaults = false
+    // ✅ Ajuste "Reproducir al iniciar" (antes solo existía en Ajustes sin efecto)
+    @AppStorage("com.aurora.autoPlayOnStart") private var autoPlayOnStart = false
 
     // MARK: - Empty State con acción directa
     @ViewBuilder

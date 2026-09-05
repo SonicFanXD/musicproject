@@ -3,6 +3,8 @@ import SwiftUI
 struct PlayerBar: View {
     @ObservedObject var audioEngine: AudioEngine
     @ObservedObject var fileAccessService: FileAccessService
+    // ✅ Observar el idioma: al cambiar, esta vista se re-renderiza al instante
+    @ObservedObject private var localization = Localization.shared
     @State private var showingNowPlaying = false
 
     // ✅ Scrub optimizado: preview local a 60fps, seek real solo al soltar
@@ -15,6 +17,8 @@ struct PlayerBar: View {
     // ✅ Esquinas del artwork sincronizadas con el ajuste de Apariencia
     @AppStorage("com.aurora.artworkCorner") private var artworkCorner: Double = 22
     @AppStorage("com.aurora.compactPlayerBar") private var compactPlayerBar = false
+    // ✅ Ajuste "Visualizador en barra" (antes no se aplicaba)
+    @AppStorage("com.aurora.showVisualizerInBar") private var showVisualizerInBar = true
 
     private var progress: Double {
         if isScrubbing { return scrubPreviewProgress }
@@ -45,7 +49,8 @@ struct PlayerBar: View {
                             }
 
                             // ✅ Mini visualizador junto al título cuando reproduce
-                            if audioEngine.isPlaying {
+                            // (respeta el ajuste "Visualizador en barra")
+                            if audioEngine.isPlaying && showVisualizerInBar {
                                 HStack(spacing: 2.5) {
                                     ForEach(0..<3, id: \.self) { bar in
                                         RoundedRectangle(cornerRadius: 1)

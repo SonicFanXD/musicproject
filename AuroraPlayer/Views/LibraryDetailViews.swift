@@ -74,6 +74,8 @@ struct AlbumDetailView: View {
     private var heroSection: some View {
         VStack(spacing: 20) {
             // ✅ Artwork con animación de entrada y brillo sutil
+            // ✅ 60fps: sombra ÚNICA consolidada (la doble sombra = 2 pasadas
+            // de offscreen rendering por frame en A11; visualmente equivalente).
             Group {
                 if let artwork = album.artwork {
                     Image(uiImage: artwork)
@@ -91,8 +93,7 @@ struct AlbumDetailView: View {
                                     lineWidth: 1.2
                                 )
                         }
-                        .shadow(color: .black.opacity(0.4), radius: 30, x: 0, y: 18)
-                        .shadow(color: tintColor.opacity(0.2), radius: 15, x: 0, y: 5)
+                        .shadow(color: .black.opacity(0.35), radius: 22, x: 0, y: 12)
                 } else {
                     ZStack {
                         RoundedRectangle(cornerRadius: 26, style: .continuous)
@@ -418,8 +419,8 @@ struct ArtistDetailView: View {
                                 lineWidth: 3
                             )
                         }
-                        .shadow(color: tintColor.opacity(0.3), radius: 20, x: 0, y: 10)
-                        .shadow(color: .black.opacity(0.2), radius: 15, x: 0, y: 5)
+                        // ✅ 60fps: sombra única consolidada (antes: doble)
+                        .shadow(color: tintColor.opacity(0.25), radius: 18, x: 0, y: 8)
                 } else {
                     ZStack {
                         Circle().fill(

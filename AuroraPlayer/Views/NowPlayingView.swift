@@ -5,6 +5,8 @@ import AVKit
 struct NowPlayingView: View {
     @ObservedObject var audioEngine: AudioEngine
     @ObservedObject var fileAccessService: FileAccessService
+    // ✅ Observar el idioma: al cambiar, esta vista se re-renderiza al instante
+    @ObservedObject private var localization = Localization.shared
     @Environment(\.dismiss) private var dismiss
 
     // Configuraciones de personalización
@@ -13,6 +15,8 @@ struct NowPlayingView: View {
     @AppStorage("com.aurora.dynamicColor") private var dynamicColor = true
     @AppStorage("com.aurora.artworkCorner") private var artworkCorner: Double = 22
     @AppStorage("com.aurora.reduceTransparency") private var reduceTransparency = false
+    // ✅ Ajuste "Mostrar letras" (antes no se aplicaba)
+    @AppStorage("com.aurora.showLyricsByDefault") private var showLyricsByDefault = false
 
     @State private var showLyrics = false
     @State private var showEqualizer = false
@@ -69,40 +73,45 @@ struct NowPlayingView: View {
             ZStack {
                 backgroundView
 
+                // ✅ DISEÑO MEJORADO: distribución equilibrada con Spacers
+                // flexibles (la proporción se adapta a cualquier pantalla,
+                // iPhone 8 Plus incluido) en lugar de espaciados fijos.
                 VStack(spacing: 0) {
-                    Spacer().frame(height: isCompactScreen ? 4 : 10)
+                    Spacer(minLength: isCompactScreen ? 4 : 10)
 
                     artworkView
                         .scaleEffect(artworkScale)
                         .animation(.spring(response: 0.5, dampingFraction: 0.82), value: audioEngine.isPlaying)
                         .animation(.easeInOut(duration: 0.25), value: audioEngine.currentSong?.id)
 
-                    Spacer().frame(height: isCompactScreen ? 10 : 16)
+                    Spacer(minLength: isCompactScreen ? 10 : 16)
 
                     if audioEngine.isPlaying && showVisualizer {
                         AudioVisualizer(audioEngine: audioEngine, tintColor: extractedColor)
                             .frame(height: isCompactScreen ? 30 : 44)
                             .padding(.horizontal, 40)
+                            // ✅ 60fps: rasteriza las 24 barras en la GPU una vez
+                            .drawingGroup()
                     }
 
-                    Spacer().frame(height: isCompactScreen ? 8 : 14)
+                    Spacer(minLength: isCompactScreen ? 8 : 14)
 
                     songInfoView
                         .animation(.easeInOut(duration: 0.25), value: audioEngine.currentSong?.id)
 
-                    Spacer().frame(height: isCompactScreen ? 8 : 14)
+                    Spacer(minLength: isCompactScreen ? 8 : 14)
 
                     progressView
 
-                    Spacer().frame(height: isCompactScreen ? 10 : 18)
+                    Spacer(minLength: isCompactScreen ? 10 : 18)
 
                     controlsView
 
-                    Spacer().frame(height: isCompactScreen ? 8 : 14)
+                    Spacer(minLength: isCompactScreen ? 8 : 14)
 
                     featureButtonsView
 
-                    Spacer()
+                    Spacer(minLength: 0)
                 }
                 .padding(.horizontal, 24)
                 .fixedSize(horizontal: false, vertical: true)
@@ -113,6 +122,11 @@ struct NowPlayingView: View {
                     artworkScale = 1.0
                 }
                 audioEngine.isKeepScreenOnEnabled = keepScreenOn
+                // ✅ Abrir letras automáticamente si el ajuste está activado
+                // y la canción tiene letras sincronizadas/plain
+                if showLyricsByDefault, audioEngine.currentSong?.lyrics.isEmpty == false, !showLyrics {
+                    showLyrics = true
+                }
             }
             .onChange(of: audioEngine.isPlaying) { isPlaying in
                 withAnimation(.spring(response: 0.45, dampingFraction: 0.8)) {
@@ -237,9 +251,10 @@ struct NowPlayingView: View {
                     .scaledToFill()
                     .frame(width: artworkSize, height: artworkSize)
                     .clipShape(RoundedRectangle(cornerRadius: CGFloat(artworkCorner), style: .continuous))
-                    // ✅ Sombra doble para mayor profundidad
-                    .shadow(color: .black.opacity(0.25), radius: 20, x: 0, y: 10)
-                    .shadow(color: extractedColor.opacity(0.2), radius: 10, x: 0, y: 5)
+                    // ✅ 60fps: sombra ÚNICA consolidada (la doble sombra forzaba
+                    // 2 pasadas de offscreen rendering por frame; visualmente
+                    // equivalente con radius medio + borde luminoso).
+                    .shadow(color: .black.opacity(0.3), radius: 16, x: 0, y: 8)
                     .overlay(
                         // ✅ Borde con brillo sutil
                         RoundedRectangle(cornerRadius: CGFloat(artworkCorner), style: .continuous)
@@ -278,6 +293,8 @@ struct NowPlayingView: View {
     private var songInfoView: some View {
         VStack(spacing: 6) {
             // ✅ Título con gradiente sutil del color extraído (mejor tipografía)
+            // ✅ 60fps: shadow removido del texto con gradiente (forzaba blur
+            // offscreen por frame; el gradiente ya da suficiente profundidad).
             Text(audioEngine.currentSong?.displayName ?? "Sin canción")
                 .font(.system(size: isCompactScreen ? 20 : 24, weight: .bold, design: .rounded))
                 .multilineTextAlignment(.center)
@@ -289,7 +306,6 @@ struct NowPlayingView: View {
                     )
                 )
                 .lineLimit(2)
-                .shadow(color: playIconColor.opacity(0.3), radius: 3, x: 0, y: 1)
 
             Text(audioEngine.currentSong?.displaySubtitle ?? "—")
                 .font(.system(size: isCompactScreen ? 14 : 16, weight: .medium))

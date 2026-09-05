@@ -80,32 +80,50 @@ struct AudioQualityDetailView: View {
     }
 
     // MARK: - Header (resumen de calidad)
+    // ✅ DISEÑO MEJORADO: badge en cápsula con gradiente (jerarquía clara),
+    // icono de salida con anillo decorativo, y orden: salida → calidad → pista.
     private var headerCard: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 14) {
             ZStack {
+                // Anillo decorativo sutil (CPU gratis: formas estáticas)
+                Circle()
+                    .stroke(Color.accentColor.opacity(0.18), lineWidth: 1.5)
+                    .frame(width: 78, height: 78)
                 Circle()
                     .fill(Color.accentColor.opacity(0.15))
-                    .frame(width: 72, height: 72)
+                    .frame(width: 68, height: 68)
                 Image(systemName: outputIcon)
-                    .font(.system(size: 30, weight: .semibold))
+                    .font(.system(size: 28, weight: .semibold))
                     .foregroundStyle(Color.accentColor)
             }
 
             Text(qualityBadge)
-                .font(.system(size: 22, weight: .bold, design: .rounded))
-                .foregroundStyle(
-                    LinearGradient(
-                        colors: [Color.accentColor, Color.accentColor.opacity(0.7)],
-                        startPoint: .leading, endPoint: .trailing
+                .font(.system(size: 13, weight: .bold, design: .rounded))
+                .tracking(1.2)
+                .foregroundStyle(.white)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .background {
+                    Capsule().fill(
+                        LinearGradient(
+                            colors: [Color.accentColor, Color.accentColor.opacity(0.75)],
+                            startPoint: .leading, endPoint: .trailing
+                        )
                     )
-                )
+                }
 
-            Text(song?.title ?? "Sin canción")
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(.primary).lineLimit(2).multilineTextAlignment(.center)
+            VStack(spacing: 4) {
+                Text(song?.title ?? "Sin canción")
+                    .font(.system(size: 16, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.primary)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.center)
 
-            Text(song?.displaySubtitle ?? "—")
-                .font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
+                Text(song?.displaySubtitle ?? "—")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
         }
         .frame(maxWidth: .infinity).padding(.vertical, 20)
         .nativeGlass(cornerRadius: 24)

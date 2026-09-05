@@ -1,19 +1,29 @@
 import Foundation
 
-enum Localization {
+/// Gestor central de idioma. Es un ObservableObject para que las vistas
+/// se re-rendericen automáticamente al cambiar el idioma (antes solo se
+/// aplicaba al reiniciar la app).
+final class Localization: ObservableObject {
+    static let shared = Localization()
+
     enum Language: Int {
         case spanish = 0
         case english = 1
     }
 
-    static var currentLanguage: Language {
-        get {
-            let lang = UserDefaults.standard.integer(forKey: "com.aurora.language")
-            return Language(rawValue: lang) ?? .spanish
+    /// Idioma actual publicado: al cambiar, todas las vistas que observan
+    /// este objeto se re-renderizan y los textos se actualizan al instante.
+    @Published var currentLanguage: Language {
+        didSet {
+            if oldValue != currentLanguage {
+                UserDefaults.standard.set(currentLanguage.rawValue, forKey: "com.aurora.language")
+            }
         }
-        set {
-            UserDefaults.standard.set(newValue.rawValue, forKey: "com.aurora.language")
-        }
+    }
+
+    private init() {
+        let saved = UserDefaults.standard.integer(forKey: "com.aurora.language")
+        currentLanguage = Language(rawValue: saved) ?? .spanish
     }
 
     static func localized(_ key: String) -> String {
@@ -198,7 +208,7 @@ enum Localization {
             "emptyLibrarySubtitle": [.spanish: "Añade carpetas de música para comenzar", .english: "Add music folders to get started"],
         ]
 
-        if let langStrings = strings[key], let translation = langStrings[currentLanguage] {
+        if let langStrings = strings[key], let translation = langStrings[Localization.shared.currentLanguage] {
             return translation
         }
         return key

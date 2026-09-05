@@ -11,6 +11,8 @@ struct SettingsView: View {
     @State private var showEqualizerSheet = false
     @State private var selectedThemeIndex: Int
     @ObservedObject private var theme = ThemeManager.shared
+    // ✅ Observar el idioma: al cambiar, esta vista se re-renderiza al instante
+    @ObservedObject private var localization = Localization.shared
 
     // Configuraciones persistentes
     @AppStorage("com.aurora.showVisualizer") private var showVisualizer = true
@@ -19,8 +21,6 @@ struct SettingsView: View {
     @AppStorage("com.aurora.artworkCorner") private var artworkCorner: Double = 22
     @AppStorage("com.aurora.dynamicColor") private var dynamicColor = true
     @AppStorage("com.aurora.reduceTransparency") private var reduceTransparency = false
-    @AppStorage("com.aurora.progressBarStyle") private var progressBarStyle = 0
-    @AppStorage("com.aurora.animationSpeed") private var animationSpeed: Double = 1.0
     @AppStorage("com.aurora.hapticIntensity") private var hapticIntensity: Double = 1.0
     @AppStorage("com.aurora.showLyricsByDefault") private var showLyricsByDefault = false
     @AppStorage("com.aurora.autoPlayOnStart") private var autoPlayOnStart = false
@@ -111,6 +111,8 @@ struct SettingsView: View {
                             settingsDivider
                             settingsMenuButton(title: "Idioma / Language", subtitle: languages[selectedLanguage], icon: "globe", color: .blue, options: languages, selection: $selectedLanguage) { index in
                                 selectedLanguage = index
+                                // ✅ Aplicar el idioma al instante en toda la app
+                                Localization.shared.currentLanguage = Localization.Language(rawValue: index) ?? .spanish
                             }
                         }
 
@@ -127,8 +129,6 @@ struct SettingsView: View {
                         
                         // ✅ Personalización avanzada
                         settingsSection(icon: "wand.and.rays", title: "Personalización", color: .indigo) {
-                            settingsSliderRow(title: "Velocidad de animación", value: $animationSpeed, range: 0.5...2.0, step: 0.1, color: .indigo, suffix: "x")
-                            settingsDivider
                             settingsSliderRow(title: "Intensidad táctil", value: $hapticIntensity, range: 0.0...1.0, step: 0.1, color: .mint, suffix: "")
                             settingsDivider
                             settingsToggleRow(title: "Visualizador en barra", subtitle: "Mostrar barras en la barra de reproducción", icon: "waveform", color: .purple, isOn: $showVisualizerInBar)

@@ -3,6 +3,8 @@ import SwiftUI
 @main
 struct AuroraPlayerApp: App {
     @StateObject private var theme = ThemeManager.shared
+    // ✅ Observar el idioma: al cambiar, toda la app se re-renderiza al instante
+    @ObservedObject private var localization = Localization.shared
 
     var body: some Scene {
         WindowGroup {
