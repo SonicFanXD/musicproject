@@ -3,7 +3,7 @@ import os
 import UIKit
 
 enum LogCategory: String, CaseIterable {
-    case playback, library, metadata, interface, system
+    case playback, library, metadata, interface, system, network, equalizer, artwork
 
     var displayName: String {
         switch self {
@@ -12,6 +12,9 @@ enum LogCategory: String, CaseIterable {
         case .metadata: return "Metadatos"
         case .interface: return "Interfaz"
         case .system: return "Sistema"
+        case .network: return "Red"
+        case .equalizer: return "Ecualizador"
+        case .artwork: return "Portadas"
         }
     }
 }

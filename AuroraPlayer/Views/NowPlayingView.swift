@@ -3,6 +3,7 @@ import AVFoundation
 
 struct NowPlayingView: View {
     @ObservedObject var audioEngine: AudioEngine
+    @ObservedObject var fileAccessService: FileAccessService
     @Environment(\.dismiss) private var dismiss
 
     // Configuraciones de personalización
@@ -17,6 +18,7 @@ struct NowPlayingView: View {
     @State private var showQueue = false
     @State private var showQualityDetail = false
     @State private var showAirPlayPicker = false
+    @State private var isAirPlayAvailable = false
     @State private var artworkScale: CGFloat = 1.0
     @State private var progressBarWidth: CGFloat = 0
     @State private var extractedColor: Color = Color.accentColor
@@ -138,13 +140,29 @@ struct NowPlayingView: View {
                         dismiss()
                     } label: {
                         Image(systemName: "chevron.down")
-                            .foregroundStyle(.primary)
-                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(extractedColor)
+                            .font(.system(size: 17, weight: .semibold))
                             .frame(width: 44, height: 44)
                             .contentShape(Rectangle())
                     }
                 }
-
+                // ✅ Botón de me gusta en la barra de navegación
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    if let song = audioEngine.currentSong {
+                        Button {
+                            Haptics.light()
+                            fileAccessService.toggleLike(song)
+                        } label: {
+                            Image(systemName: fileAccessService.isLiked(song) ? "heart.fill" : "heart")
+                                .font(.system(size: 17, weight: .semibold))
+                                .foregroundStyle(fileAccessService.isLiked(song) ? .red : playIconColor)
+                                .frame(width: 44, height: 44)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .transition(.scale.combined(with: .opacity))
+                    }
+                }
             }
             .sheet(isPresented: $showLyrics) {
                 LyricsView(song: audioEngine.currentSong, audioEngine: audioEngine)
@@ -250,11 +268,17 @@ struct NowPlayingView: View {
     // MARK: - Song Info (mejorado con mejor tipografía y espaciado)
     private var songInfoView: some View {
         VStack(spacing: 8) {
-            // ✅ Título con mejor tipografía
+            // ✅ Título con gradiente sutil del color extraído (mejor tipografía)
             Text(audioEngine.currentSong?.displayName ?? "Sin canción")
                 .font(.system(size: 22, weight: .bold, design: .rounded))
                 .multilineTextAlignment(.center)
-                .foregroundStyle(playIconColor)
+                .foregroundStyle(
+                    LinearGradient(
+                        colors: [playIconColor, playIconColor.opacity(0.85)],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
                 .lineLimit(2)
 
             Text(audioEngine.currentSong?.displaySubtitle ?? "—")
@@ -298,12 +322,15 @@ struct NowPlayingView: View {
     private var progressView: some View {
         VStack(spacing: 6) {
             GeometryReader { geometry in
+                // ✅ Feedback táctil: la barra engrosa al hacer scrub
+                // (animación de frame → GPU, sin costo de calidad)
+                let barHeight: CGFloat = isScrubbing ? 9 : 5
                 ZStack(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: 3, style: .continuous)
+                    RoundedRectangle(cornerRadius: 4, style: .continuous)
                         .fill(Color.secondary.opacity(0.15))
-                        .frame(height: 5)
+                        .frame(height: barHeight)
 
-                    RoundedRectangle(cornerRadius: 3, style: .continuous)
+                    RoundedRectangle(cornerRadius: 4, style: .continuous)
                         .fill(
                             LinearGradient(
                                 colors: [extractedColor.opacity(0.8), extractedColor],
@@ -311,7 +338,9 @@ struct NowPlayingView: View {
                                 endPoint: .trailing
                             )
                         )
-                        .frame(width: geometry.size.width * progress, height: 5)
+                        .frame(width: geometry.size.width * progress, height: barHeight)
+                        // ✅ Glow sutil mientras se arrastra
+                        .shadow(color: isScrubbing ? extractedColor.opacity(0.5) : .clear, radius: 5, x: 0, y: 0)
                 }
                 .onAppear {
                     progressBarWidth = geometry.size.width
@@ -320,9 +349,10 @@ struct NowPlayingView: View {
                     progressBarWidth = newWidth
                 }
             }
-            .frame(height: 5)
+            .frame(height: 9)
             .padding(.vertical, 18)
             .contentShape(Rectangle())
+            .animation(.spring(response: 0.3, dampingFraction: 0.8), value: isScrubbing)
             .gesture(
                 DragGesture(minimumDistance: 0)
                     .onChanged { value in
@@ -407,8 +437,12 @@ struct NowPlayingView: View {
                     Image(systemName: audioEngine.isPlaying ? "pause.fill" : "play.fill")
                         .font(.system(size: 24, weight: .bold))
                         .foregroundStyle(playIconColor)
+                        // ✅ Micro-animación del icono al cambiar estado (GPU)
+                        .scaleEffect(audioEngine.isPlaying ? 1.0 : 1.08)
+                        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: audioEngine.isPlaying)
                 }
-                .shadow(color: extractedColor.opacity(0.35), radius: 8, x: 0, y: 3)
+                .shadow(color: extractedColor.opacity(audioEngine.isPlaying ? 0.35 : 0.2), radius: audioEngine.isPlaying ? 10 : 7, x: 0, y: 3)
+                .animation(.easeInOut(duration: 0.3), value: audioEngine.isPlaying)
                 .frame(width: 84, height: 84)
                 .contentShape(Rectangle())
             }

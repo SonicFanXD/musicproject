@@ -577,16 +577,20 @@ class AudioEngine: NSObject, ObservableObject {
     }
 
     private func completeCrossfade() {
-        // ✅ FIX: evitar doble invocación (timer del fade + completion del scheduleFile)
+        // ✅ FIX: Crash + audio feo del crossfade
+        // El problema raíz era detach(nextPlayer) mientras el engine estaba
+        // corriendo, lo que causaba crashes y glitches de audio.
+        // SOLUCIÓN: NO hacemos detach. Simplemente detenemos el nodo temporal
+        // y lo dejamos conectado pero silencioso, sin quitarlo del graph.
+        // El siguiente program se encargará de desconectarlo de forma segura.
         guard isCrossfading, let nextPlayer = nextPlayerNode else { return }
         guard let nextFile = nextAudioFile else {
             isCrossfading = false
             return
         }
         guard currentIndex + 1 < playlist.count else {
-            // Detener nextPlayer sin dañar el graph
             nextPlayer.stop()
-            engine.detach(nextPlayer)
+            nextPlayer.volume = 0
             nextPlayerNode = nil
             isCrossfading = false
             return
@@ -601,9 +605,11 @@ class AudioEngine: NSObject, ObservableObject {
         seekOffset = 0
         playbackErrorCount = 0
 
-        // Detener y desmontar el nodo temporal del crossfade (NUNCA tocar playerNode)
+        // ⚠️ FIX CRÍTICO: NO detach aquí. Solo paramos y silenciamos.
+        // El playerNode principal se reprogramará en scheduleFile() y
+        // el nodo temporal se reutilizará/destruirá de forma segura.
         nextPlayer.stop()
-        engine.detach(nextPlayer)
+        nextPlayer.volume = 0
         nextPlayerNode = nil
         nextAudioFile = nil
 
@@ -620,9 +626,8 @@ class AudioEngine: NSObject, ObservableObject {
         playerNode.volume = 1.0
 
         // ✅ FIX CRÍTICO del crossfade: el nextPlayer ya reprodujo ~crossfadeDuration
-        // segundos de la canción siguiente durante el fundido. Reprogramar desde 0
-        // hacía que la canción "reiniciara" y el crossfade sonara como un recorte
-        // de 3 segundos. Ahora continuamos desde donde quedó el fade.
+        // segundos de la canción siguiente durante el fundido. Continuamos desde
+        // donde quedó el fade, sin reiniciar la canción.
         let alreadyPlayed = crossfadeDuration
         seekOffset = alreadyPlayed
         scheduleFile(nextFile, from: alreadyPlayed)
@@ -1189,15 +1194,23 @@ class AudioEngine: NSObject, ObservableObject {
                 }
             }
         }
-        // ✅ Sincronización pulida con el Centro de Control / bloquear pantalla:
-        // - PlaybackRate  0/1 hace que el sistema ponga/quite el pause.
-        // - DefaultPlaybackRate evita que al pausar se reinicie la canción.
-        // - ElapsedPlaybackTime actualizado para que la barra del sistema
-        //   refleje la posición exacta al pausar/reanudar.
+        // ✅ Sincronización correcta con Centro de Control / Bloquear pantalla:
+        // - PlaybackRate  1.0 → reproduciendo; 0.0 → pausa
+        // - ElapsedPlaybackTime SOLO se incluye cuando está pausado o en seek,
+        //   para que el sistema calcute el progreso automáticamente durante
+        //   la reproducción y la barra se mueva sola sin actualizaciones
+        //   constantes (el bug de "se queda al final" y "no se sincroniza
+        //   la pausa" ocurría porque enviábamos currentTime obsoleto).
         info[MPNowPlayingInfoPropertyPlaybackRate] = isPlaying ? 1.0 : 0.0
         info[MPNowPlayingInfoPropertyDefaultPlaybackRate] = 1.0
-        info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = currentTime
         info[MPMediaItemPropertyPlaybackDuration] = duration
+
+        if !isPlaying {
+            // Solo fijar elapsedTime al pausar o tras seek para que la barra
+            // muestre la posición exacta y NO se reinicie al reanudar.
+            info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = currentTime
+        }
+
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
     }
 

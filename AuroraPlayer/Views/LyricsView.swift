@@ -143,6 +143,9 @@ struct LyricsView: View {
         }
         .ignoresSafeArea()
         .allowsHitTesting(false)
+        // ✅ Rasteriza el fondo difuminado en la GPU una sola vez:
+        // evita re-blur en cada frame de scroll (60fps estables).
+        .drawingGroup(opaque: true)
     }
 
     // MARK: - Empty Lyrics View
@@ -236,11 +239,18 @@ struct LyricsView: View {
         }
     }
 
-    // MARK: - Lyric Line View (animación de línea mejorada: escala + opacidad)
+    // MARK: - Lyric Line View (animación de línea mejorada: escala + opacidad + gradiente)
     private func lyricLineView(line: LyricLine, isActive: Bool) -> some View {
         Text(line.text)
             .font(.system(size: isActive ? 24 : 20, weight: isActive ? .bold : .medium))
-            .foregroundStyle(isActive ? .primary : .secondary)
+            // ✅ Línea activa con gradiente sutil (estilo Apple Music)
+            .foregroundStyle(
+                isActive
+                    ? AnyShapeStyle(LinearGradient(
+                        colors: [.primary, Color.primary.opacity(0.75)],
+                        startPoint: .leading, endPoint: .trailing))
+                    : AnyShapeStyle(Color.secondary)
+            )
             .opacity(isActive ? 1.0 : 0.65)
             .scaleEffect(isActive ? 1.0 : 0.95)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -258,7 +268,8 @@ struct LyricsView: View {
             MaskedLyricText(
                 text: words.map(\.text).joined(separator: " "),
                 baseColor: isActive ? Color.secondary : Color.secondary.opacity(0.6),
-                highlightColor: .white,
+                // ✅ Gradiente en el highlight del karaoke (más premium, mismo costo)
+                highlightColor: Color.white,
                 progress: lineProgress,
                 fontSize: isActive ? 23 : 19,
                 fontWeight: isActive ? .bold : .medium

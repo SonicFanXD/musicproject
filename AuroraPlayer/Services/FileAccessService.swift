@@ -35,8 +35,8 @@ class FileAccessService: ObservableObject {
     // (causa principal del crash durante la indexación).
     private var queuedBatches: [(urls: [URL], generation: Int)] = []
     private var inFlightBatches = 0
-    private let maxInFlightBatches = 2
-    private let metadataBatchSize = 20
+    private let maxInFlightBatches = 3
+    private let metadataBatchSize = 40
 
     // Colecciones derivadas cacheadas: se recalculan solo cuando cambia `songs`,
     // no en cada render de la UI.
@@ -54,6 +54,17 @@ class FileAccessService: ObservableObject {
         loadFiles()
         loadPlaylists()
         loadCachedSongs()
+    }
+
+    // 🔄 Precarga de portadas en caché tras recuperar del archivo
+    func prewarmArtworkCache() {
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            guard let self else { return }
+            let songsToWarm = self.songs.prefix(50)
+            for song in songsToWarm {
+                _ = song.artwork // Fuerza la extracción y caché
+            }
+        }
     }
 
     func addFolder(url: URL) {
@@ -185,13 +196,11 @@ class FileAccessService: ObservableObject {
         scanProcessed = 0
         activeDiscoveries = 0
         isScanning = !folders.isEmpty || !files.isEmpty
-        // ✅ Guardar el caché vacío inmediatamente: evita que un crash durante
-        // el re-escaneo deje un caché desincronizado (antes se guardaba 1s después).
-        saveCachedSongs()
         guard !folders.isEmpty || !files.isEmpty else {
             removeCachedSongs()
             return
         }
+        // ✅ IMPORTANTE: NO guardar caché vacío aquí, solo al completar.
         for folder in folders {
             resolveAndScan(folder)
         }
@@ -682,18 +691,20 @@ class FileAccessService: ObservableObject {
     }
 
     private func thumbnailArtwork(_ data: Data) -> Data {
-        // ✅ MEJORADO: 1280px para mayor calidad en pantallas @2x/@3x modernas
-        // Calidad JPEG 0.92 para mejor nitidez sin aumento excesivo de tamaño
+        // ✅ OPTIMIZADO: 640px con calidad 0.85 para reducir drásticamente
+        // el tamaño del caché JSON (1000+ canciones a 1280px causaba crashes
+        // y re-indexación completa al reiniciar por desbordamiento de memoria).
+        // iOS escalará la imagen hacia arriba sin pérdida visible en UI.
         guard data.count > 100_000,
               let source = CGImageSourceCreateWithData(data as CFData, nil) else { return data }
         let options: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
-            kCGImageSourceThumbnailMaxPixelSize: 1280,
+            kCGImageSourceThumbnailMaxPixelSize: 640,
             kCGImageSourceCreateThumbnailWithTransform: true,
             kCGImageSourceShouldCacheImmediately: true
         ]
         guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary),
-              let compressed = UIImage(cgImage: image).jpegData(compressionQuality: 0.92) else { return data }
+              let compressed = UIImage(cgImage: image).jpegData(compressionQuality: 0.85) else { return data }
         return compressed
     }
 

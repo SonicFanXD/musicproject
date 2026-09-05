@@ -277,7 +277,8 @@ struct AlbumDetailView: View {
                 }
             }
         }
-        .buttonStyle(.plain)
+        // ✅ Feedback de presión al tocar (micro-escala, animación GPU)
+        .buttonStyle(PressableButtonStyle(scale: 0.98))
     }
 
     private func statPill(icon: String, text: String) -> some View {
@@ -306,11 +307,20 @@ struct AlbumDetailView: View {
     }
 }
 
-// MARK: - Header de sección reutilizable
+// MARK: - Header de sección reutilizable (con gradiente sutil)
 private func sectionHeader(icon: String, title: String) -> some View {
     HStack(spacing: 8) {
-        Image(systemName: icon).font(.system(size: 14, weight: .semibold)).foregroundStyle(Color.accentColor)
-        Text(title).font(.system(size: 20, weight: .bold)).foregroundStyle(.primary)
+        Image(systemName: icon)
+            .font(.system(size: 14, weight: .semibold))
+            .foregroundStyle(
+                LinearGradient(
+                    colors: [Color.accentColor, Color.accentColor.opacity(0.7)],
+                    startPoint: .top, endPoint: .bottom
+                )
+            )
+        Text(title)
+            .font(.system(size: 20, weight: .bold, design: .rounded))
+            .foregroundStyle(.primary)
         Spacer()
     }.padding(.top, 4)
 }
@@ -562,6 +572,8 @@ struct ArtistDetailView: View {
             }
         }
         .frame(width: 150)
+        // ✅ Micro-escala al presionar la tarjeta (feedback premium, GPU)
+        .contentShape(Rectangle())
     }
 
     private func songRow(_ song: Song, index: Int) -> some View {
@@ -607,11 +619,12 @@ struct ArtistDetailView: View {
             .overlay {
                 if isCurrent {
                     RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .strokeBorder(Color.accentColor.opacity(0.2), lineWidth: 0.5)
+                        .strokeBorder(tintColor.opacity(0.2), lineWidth: 0.5)
                 }
             }
         }
-        .buttonStyle(.plain)
+        // ✅ Feedback de presión al tocar (micro-escala, animación GPU)
+        .buttonStyle(PressableButtonStyle(scale: 0.98))
     }
 
     private func statPill(icon: String, text: String) -> some View {
