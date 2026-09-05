@@ -382,7 +382,6 @@ class FileAccessService: ObservableObject {
             Thread.sleep(forTimeInterval: 0.1)
 
             DispatchQueue.main.async {
-                guard let self = self else { return }
                 self.isSortScheduled = false
 
                 // Only sort if we're not actively scanning more batches
