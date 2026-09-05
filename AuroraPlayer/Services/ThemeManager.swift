@@ -152,9 +152,7 @@ enum AppTheme {
                 let si = min(4, Int(s * 5))
                 let bi = min(4, Int(br * 5))
                 // Peso: saturación² × distancia del brillo de 0.6 (colores vivos, no demasiado oscuros/claros)
-                let saturationWeight = Float(s * s)
-                let brightnessDistance = abs(br - 0.6) * 1.2
-                let weight = saturationWeight * (1.0 - brightnessDistance)
+                let weight = Float(s * s) * Float(1.0 - abs(br - 0.6) * 1.2)
                 buckets[(bi * 5 + si) * 24 + hi] += max(weight, 0)
             }
         }
