@@ -201,7 +201,7 @@ struct LyricsView: View {
             return
         }
 
-        var newProgress: [UUID: Double] = {}
+        var newProgress: [UUID: Double] = [:]
 
         // Binary search para ventana de tiempo
         let windowStart = time - 0.3
