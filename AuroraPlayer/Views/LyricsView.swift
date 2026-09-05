@@ -8,16 +8,14 @@ struct LyricsView: View {
     @State private var parsedLyrics: LyricsType = .none
     @State private var currentLineIndex: Int? = nil
     @State private var scrollTarget: Int? = nil
-    @State private var activeWordIds: Set<UUID> = []
-    @State private var showKaraokeMode: Bool = false
+    @State private var wordProgress: [UUID: Double] = [:]
 
     var body: some View {
         NavigationStack {
             ZStack {
-                // Fondo difuminado del artwork (como NowPlaying)
+                // Fondo difuminado del artwork
                 blurredArtworkBackground
 
-                // Contenido de letras
                 switch parsedLyrics {
                 case .none:
                     emptyLyricsView
@@ -36,30 +34,15 @@ struct LyricsView: View {
             .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    if case .synchronized(let syncLyrics) = parsedLyrics, syncLyrics.isWordByWord {
-                        Button {
-                            showKaraokeMode.toggle()
-                        } label: {
-                            Image(systemName: showKaraokeMode ? "sparkles" : "textformat")
-                                .foregroundStyle(showKaraokeMode ? Color.accentColor : .secondary)
-                        }
-                    }
-                }
-
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Listo") {
-                        dismiss()
-                    }
-                    .foregroundStyle(Color.accentColor)
+                    Button("Listo") { dismiss() }
+                        .foregroundStyle(Color.accentColor)
                 }
             }
-            .onAppear {
-                parseLyrics()
-            }
+            .onAppear { parseLyrics() }
             .onChange(of: audioEngine.currentTime) { newTime in
                 updateCurrentLine(for: newTime)
-                updateActiveWords(for: newTime)
+                updateWordProgress(for: newTime)
             }
         }
     }
@@ -92,42 +75,25 @@ struct LyricsView: View {
     private var emptyLyricsView: some View {
         VStack(spacing: 18) {
             ZStack {
-                Circle()
-                    .fill(Color.accentColor.opacity(0.12))
-                    .frame(width: 100, height: 100)
-
-                Image(systemName: "quote.bubble")
-                    .font(.system(size: 48, weight: .semibold))
-                    .foregroundStyle(Color.accentColor)
+                Circle().fill(Color.accentColor.opacity(0.12)).frame(width: 100, height: 100)
+                Image(systemName: "quote.bubble").font(.system(size: 48, weight: .semibold)).foregroundStyle(Color.accentColor)
             }
-
-            Text("No hay letras disponibles")
-                .font(.system(size: 20, weight: .bold))
-                .foregroundStyle(.primary)
-
+            Text("No hay letras disponibles").font(.system(size: 20, weight: .bold)).foregroundStyle(.primary)
             Text("Esta canción no tiene información de letras en su metadata.")
-                .font(.system(size: 15))
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 24)
+                .font(.system(size: 15)).foregroundStyle(.secondary).multilineTextAlignment(.center).padding(.horizontal, 24)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(.vertical, 60)
+        .frame(maxWidth: .infinity, maxHeight: .infinity).padding(.vertical, 60)
     }
 
     // MARK: - Plain Lyrics View
     private func plainLyricsView(text: String) -> some View {
         ScrollView {
-            Text(text)
-                .font(.system(size: 19, weight: .medium))
-                .foregroundStyle(.primary)
-                .lineSpacing(14)
-                .padding(24)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            Text(text).font(.system(size: 19, weight: .medium)).foregroundStyle(.primary).lineSpacing(14)
+                .padding(24).frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
-    // MARK: - Synchronized Lyrics View (por línea, con tap-to-seek)
+    // MARK: - Synchronized Lyrics View (con tap-to-seek)
     private func synchronizedLyricsView(lyrics: SynchronizedLyrics) -> some View {
         ScrollViewReader { proxy in
             ScrollView {
@@ -136,27 +102,23 @@ struct LyricsView: View {
                         lyricLineView(line: line, isActive: currentLineIndex == index)
                             .id(index)
                             .onTapGesture {
-                                // Tap-to-seek: ir al momento de la línea
                                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
                                 audioEngine.seek(to: line.time)
                                 currentLineIndex = index
                             }
                     }
                 }
-                .padding(.horizontal, 24)
-                .padding(.vertical, 20)
+                .padding(.horizontal, 24).padding(.vertical, 20)
             }
             .onChange(of: scrollTarget) { target in
                 if let target = target {
-                    withAnimation(.easeInOut(duration: 0.5)) {
-                        proxy.scrollTo(target, anchor: .center)
-                    }
+                    withAnimation(.easeInOut(duration: 0.5)) { proxy.scrollTo(target, anchor: .center) }
                 }
             }
         }
     }
 
-    // MARK: - Word by Word Lyrics View (karaoke optimizado + tap-to-seek)
+    // MARK: - Word by Word Lyrics View (karaoke animado + tap-to-seek)
     private func wordByWordLyricsView(lyrics: SynchronizedLyrics) -> some View {
         ScrollViewReader { proxy in
             ScrollView {
@@ -170,7 +132,6 @@ struct LyricsView: View {
                         wordByWordLineView(line: line, words: wordsInLine, isActive: currentLineIndex == index)
                             .id(index)
                             .onTapGesture {
-                                // Tap-to-seek: ir al momento de la línea/palabra
                                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
                                 audioEngine.seek(to: line.time)
                                 currentLineIndex = index
@@ -182,20 +143,17 @@ struct LyricsView: View {
                             )
                     }
                 }
-                .padding(.horizontal, 24)
-                .padding(.vertical, 20)
+                .padding(.horizontal, 24).padding(.vertical, 20)
             }
             .onChange(of: scrollTarget) { target in
                 if let target = target {
-                    withAnimation(.easeInOut(duration: 0.5)) {
-                        proxy.scrollTo(target, anchor: .center)
-                    }
+                    withAnimation(.easeInOut(duration: 0.5)) { proxy.scrollTo(target, anchor: .center) }
                 }
             }
         }
     }
 
-    // MARK: - Lyric Line View (más brillante y legible)
+    // MARK: - Lyric Line View (brillante)
     private func lyricLineView(line: LyricLine, isActive: Bool) -> some View {
         Text(line.text)
             .font(.system(size: isActive ? 24 : 20, weight: isActive ? .bold : .medium))
@@ -206,70 +164,49 @@ struct LyricsView: View {
             .animation(.spring(response: 0.4, dampingFraction: 0.8), value: isActive)
     }
 
-    // MARK: - Word by Word Line View (karaoke fluido, timestamps limpios)
+    // MARK: - Word by Word Line View (karaoke con animación fluida)
     private func wordByWordLineView(line: LyricLine, words: [LyricWord], isActive: Bool) -> some View {
         HStack(alignment: .center, spacing: 5) {
             ForEach(Array(words.enumerated()), id: \.element.id) { _, word in
-                let isWordActive = isWordActive(word, at: audioEngine.currentTime)
+                let progress = wordProgress[word.id] ?? 0.0
 
-                Text(cleanWordText(word.text))
-                    .font(.system(size: isActive ? 22 : 18, weight: isWordActive ? .bold : .medium))
-                    .foregroundStyle(isWordActive ? Color.accentColor : (isActive ? .primary : .secondary))
-                    .opacity(isActive ? (isWordActive ? 1.0 : 0.85) : 0.75)
-                    .scaleEffect(isWordActive ? 1.08 : 1.0)
-                    .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isWordActive)
+                Text(word.text)
+                    .font(.system(size: isActive ? 22 : 18, weight: progress > 0 ? .bold : .medium))
+                    .foregroundStyle(karaokeColor(progress: progress, isActive: isActive))
+                    .opacity(isActive ? (progress > 0 ? 1.0 : 0.85) : 0.75)
+                    .scaleEffect(1.0 + (progress * 0.08))
+                    .animation(.spring(response: 0.35, dampingFraction: 0.7), value: progress)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 8)
     }
 
-    // MARK: - Limpiar residuos de timestamps (agresivo)
-    private func cleanWordText(_ text: String) -> String {
-        var cleaned = text
-        // Formato LRC [mm:ss.xx]
-        cleaned = cleaned.replacingOccurrences(of: "\\[\\d{1,2}:\\d{2}(\\.\\d{1,3})?\\]", with: "", options: .regularExpression)
-        // Formato word-by-word <mm:ss.xx>
-        cleaned = cleaned.replacingOccurrences(of: "<\\d{1,2}:\\d{2}(\\.\\d{1,3})?>", with: "", options: .regularExpression)
-        // Formato SYLT [m:ss.xx]
-        cleaned = cleaned.replacingOccurrences(of: "\\[\\d{1,2}:\\d{2}\\.\\d{2}\\]", with: "", options: .regularExpression)
-        // Cualquier bracket residual
-        cleaned = cleaned.replacingOccurrences(of: "\\[.*?\\]", with: "", options: .regularExpression)
-        cleaned = cleaned.replacingOccurrences(of: "<.*?>", with: "", options: .regularExpression)
-        return cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
+    // MARK: - Color karaoke (gradiente de inactivo a activo)
+    private func karaokeColor(progress: Double, isActive: Bool) -> Color {
+        if !isActive { return .secondary }
+        if progress >= 1.0 { return Color.accentColor }
+        if progress > 0 { return Color.accentColor.opacity(0.4 + progress * 0.6) }
+        return .primary
     }
 
-    // MARK: - Check if word is active
-    private func isWordActive(_ word: LyricWord, at time: TimeInterval) -> Bool {
-        let wordStartTime = word.time
-        let wordEndTime: TimeInterval
-
-        if let duration = word.duration {
-            wordEndTime = wordStartTime + duration
-        } else {
-            wordEndTime = wordStartTime + Double(max(word.text.count, 1)) * 0.15
-        }
-
-        return time >= wordStartTime && time < wordEndTime
-    }
-
-    // MARK: - Update Active Words (optimizado, sin timer)
-    private func updateActiveWords(for time: TimeInterval) {
+    // MARK: - Update Word Progress (animación karaoke suave)
+    private func updateWordProgress(for time: TimeInterval) {
         guard case .synchronized(let syncLyrics) = parsedLyrics,
               syncLyrics.isWordByWord else { return }
 
         let words = syncLyrics.words
         guard !words.isEmpty else {
-            activeWordIds = []
+            wordProgress = [:]
             return
         }
 
-        var newActiveWordIds = Set<UUID>()
+        var newProgress: [UUID: Double] = {}
 
-        let windowStart = time - 0.5
-        let windowEnd = time + 3.0
+        // Binary search para ventana de tiempo
+        let windowStart = time - 0.3
+        let windowEnd = time + 2.0
 
-        // Binary search
         var startIndex = 0
         var endIndex = words.count - 1
         while startIndex < endIndex {
@@ -282,18 +219,37 @@ struct LyricsView: View {
         }
 
         guard startIndex < words.count else {
-            activeWordIds = []
+            wordProgress = [:]
             return
         }
 
-        for word in words[startIndex...] {
+        for (index, word) in words[startIndex...].enumerated() {
             guard word.time <= windowEnd else { break }
-            if isWordActive(word, at: time) {
-                newActiveWordIds.insert(word.id)
+
+            let timeDiff = time - word.time
+            if let duration = word.duration, duration > 0 {
+                // Palabra con duración conocida: progreso suave 0→1
+                if timeDiff >= 0 && timeDiff <= duration {
+                    newProgress[word.id] = min(1.0, max(0.0, timeDiff / duration))
+                } else if timeDiff > duration {
+                    newProgress[word.id] = 1.0
+                }
+            } else {
+                // Sin duración: estimación basada en tiempo hasta siguiente palabra
+                if timeDiff >= 0 {
+                    // Buscar siguiente palabra para estimar duración
+                    let nextWordTime = startIndex + index + 1 < words.count ? words[startIndex + index + 1].time : word.time + 0.5
+                    let estimatedDuration = nextWordTime - word.time
+                    if estimatedDuration > 0 {
+                        newProgress[word.id] = min(1.0, max(0.0, timeDiff / estimatedDuration))
+                    } else {
+                        newProgress[word.id] = min(1.0, timeDiff * 2.0)
+                    }
+                }
             }
         }
 
-        activeWordIds = newActiveWordIds
+        wordProgress = newProgress
     }
 
     // MARK: - Parse Lyrics
@@ -302,7 +258,6 @@ struct LyricsView: View {
             parsedLyrics = .none
             return
         }
-
         parsedLyrics = LyricsParser.parse(lyrics)
     }
 

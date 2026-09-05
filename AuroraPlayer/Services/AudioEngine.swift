@@ -107,15 +107,27 @@ class AudioEngine: NSObject, ObservableObject {
                 options: [.allowBluetoothHFP, .allowBluetoothA2DP, .allowAirPlay]
             )
 
-            // Configurar para alta calidad de audio con buffer optimizado
-            try session.setPreferredSampleRate(48000)
-            try session.setPreferredIOBufferDuration(0.02) // 20ms buffer (balance entre latencia y CPU)
+            // Configurar para la mayor calidad de audio posible
+            // Sample rate de 96kHz para soportar archivos Hi-Res sin downsampling
+            try session.setPreferredSampleRate(96000)
+            // Buffer de 10ms para mínima latencia y máxima fidelidad
+            try session.setPreferredIOBufferDuration(0.01)
 
             try session.setActive(true, options: .notifyOthersOnDeactivation)
             updateRouteName()
             updateAudioQuality()
+
+            AppLog.info(.playback, "Sesión de audio configurada: \(Int(session.sampleRate))Hz · buffer \(String(format: "%.0f", session.ioBufferDuration * 1000))ms")
         } catch {
-            print("Error configurando AVAudioSession: \(error.localizedDescription)")
+            AppLog.error(.playback, error, context: "setupSession")
+            // Fallback a configuración estándar si falla la alta calidad
+            do {
+                try session.setPreferredSampleRate(48000)
+                try session.setPreferredIOBufferDuration(0.02)
+                try session.setActive(true, options: .notifyOthersOnDeactivation)
+            } catch {
+                AppLog.error(.playback, error, context: "setupSession fallback")
+            }
         }
     }
 
@@ -1363,6 +1375,13 @@ class AudioEngine: NSObject, ObservableObject {
 
     deinit {
         NotificationCenter.default.removeObserver(self)
+        // Ensure timers are invalidated before cleanup
+        displayTimer?.invalidate()
+        displayTimer = nil
+        nowPlayingInfoTimer?.invalidate()
+        nowPlayingInfoTimer = nil
+        crossfadeTimer?.invalidate()
+        crossfadeTimer = nil
         cleanupAudioResources()
         saveState()
     }

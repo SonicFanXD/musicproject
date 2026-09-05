@@ -33,21 +33,11 @@ struct MusicFile: Identifiable, Codable {
 }
 
 enum RepeatMode: String, CaseIterable, Codable {
-    case off
-    case all
-    case one
+    case off, all, one
 }
 
 enum EQPreset: String, CaseIterable, Codable {
-    case flat
-    case bass
-    case treble
-    case vocal
-    case classical
-    case electronic
-    case pop
-    case rock
-    case jazz
+    case flat, bass, treble, vocal, classical, electronic, pop, rock, jazz
 
     var displayName: String {
         switch self {
@@ -65,24 +55,15 @@ enum EQPreset: String, CaseIterable, Codable {
 
     var gains: [Float] {
         switch self {
-        case .flat:
-            return [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-        case .bass:
-            return [8, 7, 5, 3, 0, 0, 0, 0, 0, 0]
-        case .treble:
-            return [0, 0, 0, 0, 0, 0, 3, 5, 7, 8]
-        case .vocal:
-            return [2, 4, 5, 4, 2, 0, 0, 0, 0, 0]
-        case .classical:
-            return [5, 4, 3, 2, 0, 0, 2, 3, 4, 5]
-        case .electronic:
-            return [6, 5, 3, 0, -2, -2, 0, 3, 5, 6]
-        case .pop:
-            return [3, 4, 3, 1, 0, 0, 1, 3, 4, 3]
-        case .rock:
-            return [6, 5, 4, 2, 0, 0, 2, 4, 5, 6]
-        case .jazz:
-            return [4, 3, 2, 2, 0, 0, 2, 3, 4, 4]
+        case .flat: return [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        case .bass: return [8, 7, 5, 3, 0, 0, 0, 0, 0, 0]
+        case .treble: return [0, 0, 0, 0, 0, 0, 3, 5, 7, 8]
+        case .vocal: return [2, 4, 5, 4, 2, 0, 0, 0, 0, 0]
+        case .classical: return [5, 4, 3, 2, 0, 0, 2, 3, 4, 5]
+        case .electronic: return [6, 5, 3, 0, -2, -2, 0, 3, 5, 6]
+        case .pop: return [3, 4, 3, 1, 0, 0, 1, 3, 4, 3]
+        case .rock: return [6, 5, 4, 2, 0, 0, 2, 4, 5, 6]
+        case .jazz: return [4, 3, 2, 2, 0, 0, 2, 3, 4, 4]
         }
     }
 }
@@ -101,6 +82,9 @@ struct Song: Identifiable, Equatable, Codable {
     let discNumber: Int?
     let trackNumber: Int
     let releaseDate: Date?
+    let sampleRate: Double
+    let bitDepth: Int
+    let channelCount: Int
 
     init(
         id: UUID = UUID(),
@@ -115,7 +99,10 @@ struct Song: Identifiable, Equatable, Codable {
         formatDescription: String = "",
         discNumber: Int? = nil,
         trackNumber: Int = 0,
-        releaseDate: Date? = nil
+        releaseDate: Date? = nil,
+        sampleRate: Double = 0,
+        bitDepth: Int = 0,
+        channelCount: Int = 0
     ) {
         self.id = id
         self.url = url
@@ -130,6 +117,9 @@ struct Song: Identifiable, Equatable, Codable {
         self.discNumber = discNumber.flatMap { $0 > 0 ? $0 : nil }
         self.trackNumber = max(0, trackNumber)
         self.releaseDate = releaseDate
+        self.sampleRate = sampleRate
+        self.bitDepth = bitDepth
+        self.channelCount = channelCount
     }
 
     static func == (lhs: Song, rhs: Song) -> Bool {
@@ -138,8 +128,6 @@ struct Song: Identifiable, Equatable, Codable {
 }
 
 extension Song {
-    // Caché de imágenes decodificadas: evita re-decodificar el JPEG en cada
-    // render de cada fila (gran optimización con bibliotecas grandes).
     private static let artworkCache: NSCache<NSUUID, UIImage> = {
         let cache = NSCache<NSUUID, UIImage>()
         cache.countLimit = 300
@@ -156,26 +144,48 @@ extension Song {
         return image
     }
 
-    // Display formatted title with artist if album is unknown
     var displayName: String {
-        if album.isEmpty {
-            return "\(title) • \(artist)"
-        }
-        return title
+        album.isEmpty ? "\(title) • \(artist)" : title
     }
 
-    // Display formatted subtitle
     var displaySubtitle: String {
         var components: [String] = []
         if !artist.isEmpty { components.append(artist) }
         if !album.isEmpty { components.append(album) }
         return components.joined(separator: " • ")
     }
+
+    /// Descripción detallada del formato de audio basada en metadatos reales del archivo
+    var audioQualityDescription: String {
+        var parts: [String] = []
+        let format = formatDescription.isEmpty ? url.pathExtension.uppercased() : formatDescription
+        parts.append(format)
+
+        if bitDepth > 0 && (format == "FLAC" || format == "ALAC" || format == "WAV" || format == "AIFF") {
+            parts.append("\(bitDepth)-bit")
+        }
+
+        if sampleRate > 0 {
+            parts.append(sampleRate >= 48000 ? "\(Int(sampleRate / 1000))kHz" : "\(Int(sampleRate))Hz")
+        }
+
+        if channelCount == 2 {
+            parts.append("Estéreo")
+        } else if channelCount == 1 {
+            parts.append("Mono")
+        } else if channelCount > 2 {
+            parts.append("\(channelCount).1")
+        }
+
+        if sampleRate > 48000 || bitDepth > 16 {
+            parts.append("Hi-Res")
+        }
+
+        return parts.joined(separator: " · ")
+    }
 }
 
 struct Album: Identifiable, Equatable {
-    // Identidad estable (nombre+artista): un UUID nuevo por render hacía que
-    // SwiftUI recreara todas las filas y perdiera animaciones/estado.
     var id: String { "\(artist)|\(name)" }
     let name: String
     let artist: String
@@ -185,8 +195,6 @@ struct Album: Identifiable, Equatable {
         songs.first(where: { $0.artworkData != nil })?.artwork
     }
 
-    // Color dominante extraído del artwork (cálculo único durante indexación).
-    // Se usa para teñir botones y fondos con la paleta del álbum.
     private static let colorCache: NSCache<NSString, UIColor> = {
         let cache = NSCache<NSString, UIColor>()
         cache.countLimit = 200
@@ -227,10 +235,7 @@ struct Artist: Identifiable, Equatable {
     }
 }
 
-// MARK: - Extractor de color dominante (para teñir UI con la paleta del artwork)
 enum ColorExtractor {
-    /// Extrae el color más representativo del artwork para teñir la UI.
-    /// Optimizado: downscalea a 32x32, agrupa por similitud y elige el grupo más grande.
     static func dominantColor(from image: UIImage) -> UIColor? {
         let size = CGSize(width: 32, height: 32)
         guard let resized = downscale(image: image, to: size) else { return nil }
@@ -243,7 +248,6 @@ enum ColorExtractor {
         let width = cgImage.width
         let height = cgImage.height
 
-        // Agrupar colores por similitud (bucket de 32 niveles por canal)
         var colorBuckets: [Int: (count: Int, r: CGFloat, g: CGFloat, b: CGFloat)] = [:]
 
         for y in 0..<height {
@@ -261,10 +265,8 @@ enum ColorExtractor {
                 let brightness = maxC
                 let saturation = maxC == 0 ? 0 : (maxC - minC) / maxC
 
-                // Descartar casi-blancos y casi-negros
                 guard brightness > 0.2, brightness < 0.95 else { continue }
 
-                // Crear bucket key (agrupar colores similares)
                 let rBucket = Int(r * 4)
                 let gBucket = Int(g * 4)
                 let bBucket = Int(b * 4)
@@ -282,7 +284,6 @@ enum ColorExtractor {
             }
         }
 
-        // Encontrar el bucket más poblado con buena saturación
         var bestKey: Int?
         var bestScore: CGFloat = -1
 
@@ -294,7 +295,6 @@ enum ColorExtractor {
             let minC = min(avgR, avgG, avgB)
             let saturation = maxC == 0 ? 0 : (maxC - minC) / maxC
 
-            // Puntuación: balance entre tamaño del bucket y saturación
             let score = CGFloat(bucket.count) * (0.5 + saturation * 0.5)
             if score > bestScore {
                 bestScore = score
@@ -309,7 +309,6 @@ enum ColorExtractor {
             return UIColor(red: avgR, green: avgG, blue: avgB, alpha: 1.0)
         }
 
-        // Fallback
         return averageColor(from: bytes, width: width, height: height)
     }
 
@@ -340,7 +339,6 @@ enum ColorExtractor {
     }
 }
 
-// MARK: - Playlist System
 struct Playlist: Identifiable, Codable {
     let id: UUID
     var name: String
@@ -350,15 +348,7 @@ struct Playlist: Identifiable, Codable {
     var modifiedAt: Date
     var coverArtworkData: Data?
 
-    init(
-        id: UUID = UUID(),
-        name: String,
-        description: String = "",
-        songIDs: [UUID] = [],
-        createdAt: Date = Date(),
-        modifiedAt: Date = Date(),
-        coverArtworkData: Data? = nil
-    ) {
+    init(id: UUID = UUID(), name: String, description: String = "", songIDs: [UUID] = [], createdAt: Date = Date(), modifiedAt: Date = Date(), coverArtworkData: Data? = nil) {
         self.id = id
         self.name = name
         self.description = description

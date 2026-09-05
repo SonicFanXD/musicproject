@@ -5,107 +5,129 @@ struct ContentView: View {
     @StateObject private var audioEngine = AudioEngine()
     @StateObject private var fileAccessService = FileAccessService()
 
-    @State private var showFolderPicker = false
     @State private var hasRestored = false
+    @State private var isInitialLoad = true
+    @State private var showSettings = false
+    @State private var showPlaylists = false
 
     @State private var selectedCategory: LibraryCategory = .songs
     @State private var searchText = ""
-    @State private var showLogs = false
-    @State private var showPlaylists = false
 
     var body: some View {
-        NavigationStack {
-            ZStack {
-                AppBackground()
+        ZStack {
+            NavigationStack {
+                ZStack {
+                    AppBackground()
 
-                VStack(spacing: 0) {
-                    // Modern category selector
-                    categoryPicker
+                    VStack(spacing: 0) {
+                        categoryPicker
 
-                    List {
-                        libraryContent
-                            .id(selectedCategory)
+                        List {
+                            libraryContent
+                                .id(selectedCategory)
+                        }
+                        .listStyle(.plain)
+                        .scrollContentBackground(.hidden)
+                        .searchable(
+                            text: $searchText,
+                            prompt: "Buscar en tu biblioteca"
+                        )
                     }
-                    .listStyle(.plain)
-                    .scrollContentBackground(.hidden)
-                    .searchable(
-                        text: $searchText,
-                        prompt: "Buscar en tu biblioteca"
-                    )
                 }
-            }
-            .navigationTitle("Aurora Player")
-            .navigationBarTitleDisplayMode(.large)
-            .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
-            .toolbarBackground(.visible, for: .navigationBar)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    HStack(spacing: 12) {
-                        Button {
-                            showPlaylists = true
-                        } label: {
-                            Image(systemName: "music.note.list")
-                        }
+                .navigationTitle("Aurora Player")
+                .navigationBarTitleDisplayMode(.large)
+                .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+                .toolbarBackground(.visible, for: .navigationBar)
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        HStack(spacing: 14) {
+                            Button {
+                                showPlaylists = true
+                            } label: {
+                                Image(systemName: "music.note.list")
+                                    .font(.system(size: 16, weight: .medium))
+                            }
 
-                        Button {
-                            showLogs = true
-                        } label: {
-                            Image(systemName: "doc.text.magnifyingglass")
-                        }
-
-                        Button {
-                            showFolderPicker = true
-                        } label: {
-                            Image(systemName: "plus")
+                            Button {
+                                showSettings = true
+                            } label: {
+                                Image(systemName: "gearshape.fill")
+                                    .font(.system(size: 16, weight: .medium))
+                            }
                         }
                     }
                 }
-            }
-            .sheet(isPresented: $showFolderPicker) {
-                FolderPickerView(fileAccessService: fileAccessService)
-            }
-            .sheet(isPresented: $showLogs) {
-                LogsView()
-            }
-            .sheet(isPresented: $showPlaylists) {
-                PlaylistsView(fileAccessService: fileAccessService, audioEngine: audioEngine)
-            }
-            .onAppear {
-                restoreLibraryIfNeeded()
-            }
-            .onChange(of: fileAccessService.songs.isEmpty) { songsEmpty in
-                // Reintentar restauración cuando la biblioteca termine de cargar del caché
-                if !songsEmpty {
-                    hasRestored = false
+                .sheet(isPresented: $showSettings) {
+                    SettingsView(audioEngine: audioEngine, fileAccessService: fileAccessService)
+                }
+                .sheet(isPresented: $showPlaylists) {
+                    PlaylistsView(fileAccessService: fileAccessService, audioEngine: audioEngine)
+                }
+                .onAppear {
                     restoreLibraryIfNeeded()
+                    // Hide splash after initial load
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        withAnimation(.easeOut(duration: 0.3)) {
+                            isInitialLoad = false
+                        }
+                    }
+                }
+                .onChange(of: fileAccessService.songs.isEmpty) { songsEmpty in
+                    if !songsEmpty {
+                        hasRestored = false
+                        restoreLibraryIfNeeded()
+                        withAnimation(.easeOut(duration: 0.3)) {
+                            isInitialLoad = false
+                        }
+                    }
+                }
+                .overlay {
+                    if fileAccessService.isScanning && !fileAccessService.songs.isEmpty {
+                        // Mini scanning indicator when library exists
+                        VStack {
+                            Spacer()
+                            HStack(spacing: 8) {
+                                ProgressView()
+                                    .controlSize(.small)
+                                Text("Actualizando...")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
+                            .background {
+                                Capsule()
+                                    .fill(.regularMaterial)
+                            }
+                            .padding(.bottom, 80)
+                        }
+                        .transition(.opacity)
+                    }
                 }
             }
-            .overlay {
-                if fileAccessService.isScanning {
-                    IndexingOverlay(
-                        processed: fileAccessService.scanProcessed,
-                        total: max(fileAccessService.scanTotal, 1)
-                    )
+
+            // Splash screen overlay
+            if isInitialLoad {
+                SplashView()
                     .transition(.opacity)
-                }
+                    .zIndex(1)
             }
-            .animation(.easeInOut(duration: 0.35), value: fileAccessService.isScanning)
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             PlayerBar(audioEngine: audioEngine)
                 .padding(.horizontal, 10)
                 .padding(.bottom, 6)
         }
+        .animation(.easeInOut(duration: 0.35), value: fileAccessService.isScanning)
     }
 
-    // MARK: - Category Picker (iOS 16 native picker with enhanced design)
-
+    // MARK: - Category Picker
     private var categoryPicker: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 12) {
                 ForEach(LibraryCategory.allCases, id: \.self) { category in
                     Button {
-                        withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                             selectedCategory = category
                         }
                     } label: {
@@ -128,20 +150,16 @@ struct ContentView: View {
                                     RoundedRectangle(cornerRadius: 24, style: .continuous)
                                         .fill(
                                             LinearGradient(
-                                                colors: [
-                                                    .white.opacity(0.15),
-                                                    .white.opacity(0.05),
-                                                    .clear
-                                                ],
+                                                colors: [.white.opacity(0.15), .clear],
                                                 startPoint: .topLeading,
                                                 endPoint: .bottomTrailing
                                             )
                                         )
                                 }
-                                .shadow(color: Color.accentColor.opacity(0.4), radius: 8, x: 0, y: 4)
+                                .shadow(color: Color.accentColor.opacity(0.3), radius: 6, x: 0, y: 3)
                             } else {
                                 RoundedRectangle(cornerRadius: 24, style: .continuous)
-                                    .fill(Color.secondary.opacity(0.12))
+                                    .fill(Color.secondary.opacity(0.1))
                             }
                         }
                     }
@@ -163,22 +181,15 @@ struct ContentView: View {
     }
 
     // MARK: - Library Content
-
     @ViewBuilder
     private var libraryContent: some View {
         switch selectedCategory {
-        case .songs:
-            songsSection
-        case .albums:
-            albumsSection
-        case .artists:
-            artistsSection
-        case .playlists:
-            playlistsSection
+        case .songs: songsSection
+        case .albums: albumsSection
+        case .artists: artistsSection
+        case .playlists: playlistsSection
         }
     }
-
-    // MARK: - Songs
 
     @ViewBuilder
     private var songsSection: some View {
@@ -187,24 +198,17 @@ struct ContentView: View {
         if currentFilteredSongs.isEmpty {
             ContentUnavailableLibraryView(
                 icon: "music.note.list",
-                title: searchText.isEmpty
-                    ? "Tu biblioteca está vacía"
-                    : "No se encontraron canciones",
-                message: searchText.isEmpty
-                    ? "Agrega una carpeta con tu música para comenzar."
-                    : "Prueba con otro término de búsqueda."
+                title: searchText.isEmpty ? "Tu biblioteca está vacía" : "No se encontraron canciones",
+                message: searchText.isEmpty ? "Agrega una carpeta con tu música para comenzar." : "Prueba con otro término de búsqueda."
             )
             .listRowSeparator(.hidden)
             .listRowBackground(Color.clear)
         } else {
             ForEach(currentFilteredSongs) { song in
                 songRow(song)
-                    .transition(.opacity)
             }
         }
     }
-
-    // MARK: - Albums (Vertical list - each row is a proper List row)
 
     @ViewBuilder
     private var albumsSection: some View {
@@ -214,9 +218,7 @@ struct ContentView: View {
             ContentUnavailableLibraryView(
                 icon: "square.stack",
                 title: "No hay álbumes",
-                message: searchText.isEmpty
-                    ? "Tus álbumes aparecerán aquí."
-                    : "No se encontraron álbumes."
+                message: searchText.isEmpty ? "Tus álbumes aparecerán aquí." : "No se encontraron álbumes."
             )
             .listRowSeparator(.hidden)
             .listRowBackground(Color.clear)
@@ -235,8 +237,6 @@ struct ContentView: View {
         }
     }
 
-    // MARK: - Artists (Vertical list - each row is a proper List row)
-
     @ViewBuilder
     private var artistsSection: some View {
         let artists = filteredArtists
@@ -245,9 +245,7 @@ struct ContentView: View {
             ContentUnavailableLibraryView(
                 icon: "person.2",
                 title: "No hay artistas",
-                message: searchText.isEmpty
-                    ? "Tus artistas aparecerán aquí."
-                    : "No se encontraron artistas."
+                message: searchText.isEmpty ? "Tus artistas aparecerán aquí." : "No se encontraron artistas."
             )
             .listRowSeparator(.hidden)
             .listRowBackground(Color.clear)
@@ -266,8 +264,6 @@ struct ContentView: View {
         }
     }
 
-    // MARK: - Playlists
-
     @ViewBuilder
     private var playlistsSection: some View {
         let playlists = fileAccessService.playlists
@@ -281,16 +277,11 @@ struct ContentView: View {
             .listRowSeparator(.hidden)
             .listRowBackground(Color.clear)
         } else {
-            // Grid layout for playlists
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 16) {
                     ForEach(playlists) { playlist in
                         NavigationLink {
-                            PlaylistDetailView(
-                                playlist: playlist,
-                                fileAccessService: fileAccessService,
-                                audioEngine: audioEngine
-                            )
+                            PlaylistDetailView(playlist: playlist, fileAccessService: fileAccessService, audioEngine: audioEngine)
                         } label: {
                             playlistLibraryCard(playlist: playlist)
                         }
@@ -305,7 +296,6 @@ struct ContentView: View {
         }
     }
 
-    // MARK: - Song Row (iOS 16 native design)
     @ViewBuilder
     private func songRow(_ song: Song) -> some View {
         let isCurrent = audioEngine.currentSong?.id == song.id
@@ -314,11 +304,9 @@ struct ContentView: View {
             playSong(song)
         } label: {
             HStack(spacing: 16) {
-                // Artwork
                 artworkView(for: song)
 
-                // Song info with enhanced typography
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: 4) {
                     Text(song.displayName)
                         .font(.body.weight(.medium))
                         .foregroundStyle(isCurrent ? Color.accentColor : .primary)
@@ -334,7 +322,6 @@ struct ContentView: View {
                             Image(systemName: "opticaldisc")
                                 .font(.caption2)
                                 .foregroundStyle(.tertiary)
-
                             Text(song.album)
                                 .font(.caption2)
                                 .foregroundStyle(.tertiary)
@@ -345,14 +332,12 @@ struct ContentView: View {
 
                 Spacer(minLength: 12)
 
-                // Playing indicator or duration
                 if isCurrent {
-                    HStack(spacing: 4) {
-                        ForEach(0..<3) { _ in
-                            RoundedRectangle(cornerRadius: 2)
+                    HStack(spacing: 3) {
+                        ForEach(0..<3, id: \.self) { _ in
+                            RoundedRectangle(cornerRadius: 1.5)
                                 .fill(Color.accentColor)
-                                .frame(width: 3, height: 16)
-                                .offset(y: CGFloat.random(in: -3...3))
+                                .frame(width: 3, height: 14)
                                 .animation(.easeInOut(duration: 0.4).repeatForever(autoreverses: true), value: isCurrent)
                         }
                     }
@@ -363,7 +348,6 @@ struct ContentView: View {
                         .monospacedDigit()
                 }
 
-                // Add to playlist button
                 Menu {
                     if fileAccessService.playlists.isEmpty {
                         Text("No hay listas disponibles")
@@ -383,14 +367,11 @@ struct ContentView: View {
                 }
             }
             .padding(.horizontal, 16)
-            .padding(.vertical, 12)
+            .padding(.vertical, 10)
             .background {
                 if isCurrent {
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(Color.accentColor.opacity(0.1))
-                } else {
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(Color.secondary.opacity(0.05))
+                        .fill(Color.accentColor.opacity(0.08))
                 }
             }
         }
@@ -402,34 +383,30 @@ struct ContentView: View {
     private func formatDuration(_ seconds: TimeInterval) -> String {
         guard seconds.isFinite, seconds >= 0 else { return "0:00" }
         let totalSeconds = Int(seconds)
-        let minutes = totalSeconds / 60
-        let remainingSeconds = totalSeconds % 60
-        return String(format: "%d:%02d", minutes, remainingSeconds)
+        return String(format: "%d:%02d", totalSeconds / 60, totalSeconds % 60)
     }
 
-    // MARK: - Artwork (iOS 16 native design)
     @ViewBuilder
     private func artworkView(for song: Song) -> some View {
         if let artwork = song.artwork {
             Image(uiImage: artwork)
                 .resizable()
                 .scaledToFill()
-                .frame(width: 56, height: 56)
-                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .frame(width: 52, height: 52)
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         } else {
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color.secondary.opacity(0.2))
-                .frame(width: 56, height: 56)
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color.secondary.opacity(0.15))
+                .frame(width: 52, height: 52)
                 .overlay {
                     Image(systemName: "music.note")
-                        .font(.system(size: 20))
+                        .font(.system(size: 18))
                         .foregroundStyle(.secondary)
                 }
         }
     }
 
-    // MARK: - Filtering (optimized with cached query)
-
+    // MARK: - Filtering
     private var normalizedQuery: String {
         searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
@@ -438,11 +415,10 @@ struct ContentView: View {
         let songs = fileAccessService.songs
         let query = normalizedQuery
         guard !query.isEmpty else { return songs }
-
-        return songs.filter { song in
-            song.title.lowercased().contains(query) ||
-            song.artist.lowercased().contains(query) ||
-            song.album.lowercased().contains(query)
+        return songs.filter {
+            $0.title.lowercased().contains(query) ||
+            $0.artist.lowercased().contains(query) ||
+            $0.album.lowercased().contains(query)
         }
     }
 
@@ -450,10 +426,9 @@ struct ContentView: View {
         let albums = fileAccessService.albums
         let query = normalizedQuery
         guard !query.isEmpty else { return albums }
-
-        return albums.filter { album in
-            album.name.lowercased().contains(query) ||
-            album.artist.lowercased().contains(query)
+        return albums.filter {
+            $0.name.lowercased().contains(query) ||
+            $0.artist.lowercased().contains(query)
         }
     }
 
@@ -461,39 +436,13 @@ struct ContentView: View {
         let artists = fileAccessService.artists
         let query = normalizedQuery
         guard !query.isEmpty else { return artists }
-
-        return artists.filter {
-            $0.name.lowercased().contains(query)
-        }
+        return artists.filter { $0.name.lowercased().contains(query) }
     }
-
-    private var filteredPlaylists: [Playlist] {
-        let playlists = fileAccessService.playlists
-
-        guard !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return playlists
-        }
-
-        let query = searchText
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased()
-
-        return playlists.filter {
-            $0.name.lowercased().contains(query) ||
-            $0.description.lowercased().contains(query)
-        }
-    }
-
-    // MARK: - Playback
 
     private func playSong(_ song: Song) {
-        // Feedback háptico suave al iniciar reproducción: detalle pequeño
-        // pero es justo lo que hace sentir "premium" a un reproductor.
         UIImpactFeedbackGenerator(style: .soft).impactOccurred()
         audioEngine.play(song: song, from: fileAccessService.songs)
     }
-
-    // MARK: - Restore
 
     private func restoreLibraryIfNeeded() {
         guard !hasRestored else { return }
@@ -502,290 +451,55 @@ struct ContentView: View {
     }
 }
 
-// MARK: - Indexing Overlay (animación de indexado con progreso)
-struct IndexingOverlay: View {
-    let processed: Int
-    let total: Int
-
-    @State private var isPulsing = false
-    @State private var noteOffsets: [CGFloat] = (0..<6).map { _ in CGFloat.random(in: -24...24) }
-    @State private var noteOpacity: [Double] = (0..<6).map { _ in Double.random(in: 0.15...0.4) }
-    @State private var wavePhase = false
-
-    private var progress: Double {
-        guard total > 0 else { return 0 }
-        return min(1.0, Double(processed) / Double(total))
-    }
+// MARK: - Splash View
+struct SplashView: View {
+    @State private var isAnimating = false
 
     var body: some View {
         ZStack {
-            // Fondo semitransparente que permite ver la biblioteca llenándose
-            Color(UIColor.systemBackground).opacity(0.72)
-                .ignoresSafeArea()
-                .background(.ultraThinMaterial)
+            // Dark background
+            Color.black.ignoresSafeArea()
 
-            VStack(spacing: 22) {
-                ZStack {
-                    // Anillo de progreso
-                    Circle()
-                        .stroke(Color.accentColor.opacity(0.15), lineWidth: 10)
-                        .frame(width: 110, height: 110)
+            VStack(spacing: 24) {
+                // App icon with pulse animation
+                Image(systemName: "music.note")
+                    .font(.system(size: 60, weight: .light))
+                    .foregroundStyle(Color.accentColor)
+                    .scaleEffect(isAnimating ? 1.1 : 0.95)
+                    .animation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true), value: isAnimating)
 
-                    Circle()
-                        .trim(from: 0, to: progress)
-                        .stroke(
-                            Color.accentColor,
-                            style: StrokeStyle(lineWidth: 10, lineCap: .round)
-                        )
-                        .frame(width: 110, height: 110)
-                        .rotationEffect(.degrees(-90))
-                        .animation(.easeInOut(duration: 0.4), value: progress)
+                Text("Aurora Player")
+                    .font(.system(size: 24, weight: .bold))
+                    .foregroundStyle(.white)
 
-                    // Nota musical pulsante al centro
-                    Image(systemName: "music.note")
-                        .font(.system(size: 38, weight: .semibold))
-                        .foregroundStyle(Color.accentColor)
-                        .scaleEffect(isPulsing ? 1.18 : 0.95)
-                        .animation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true), value: isPulsing)
-                }
-
-                // Notas flotantes decorativas
-                ZStack {
-                    ForEach(0..<6, id: \.self) { index in
-                        Image(systemName: index.isMultiple(of: 2) ? "music.note" : "music.quarternote.3")
-                            .font(.system(size: index.isMultiple(of: 2) ? 16 : 12))
-                            .foregroundStyle(Color.accentColor.opacity(noteOpacity[index]))
-                            .offset(x: noteOffsets[index], y: isPulsing ? -38 - CGFloat(index) * 9 : 12)
-                            .animation(
-                                .easeInOut(duration: Double(1.1 + Double(index) * 0.17))
-                                    .repeatForever(autoreverses: true),
-                                value: isPulsing
-                            )
-                    }
-                }
-                .frame(height: 60)
-
-                VStack(spacing: 8) {
-                    Text("Indexando tu música")
-                        .font(.system(size: 19, weight: .bold))
-                        .foregroundStyle(.primary)
-
-                    Text("\(processed) de \(total) canciones")
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundStyle(.secondary)
-                        .monospacedDigit()
-                }
-
-                // Barra de progreso lineal con onda animada
-                GeometryReader { geometry in
-                    ZStack(alignment: .leading) {
-                        RoundedRectangle(cornerRadius: 4, style: .continuous)
-                            .fill(Color.secondary.opacity(0.2))
-
-                        HStack(spacing: 3) {
-                            ForEach(0..<Int(max(2, geometry.size.width / 6)), id: \.self) { _ in
-                                RoundedRectangle(cornerRadius: 1.5)
-                                    .fill(Color.accentColor)
-                                    .frame(height: wavePhase ? 6 : 12)
-                            }
-                        }
-                        .frame(width: max(8, geometry.size.width * progress))
-                        .animation(.easeInOut(duration: 0.55).repeatForever(autoreverses: true), value: wavePhase)
-                        .animation(.easeInOut(duration: 0.4), value: progress)
-                    }
-                }
-                .frame(height: 12)
-                .frame(maxWidth: 240)
-                .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
-
-                Text("Las canciones aparecerán al terminar")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.tertiary)
+                ProgressView()
+                    .controlSize(.small)
+                    .tint(Color.accentColor)
             }
-            .padding(28)
-            .background {
-                RoundedRectangle(cornerRadius: 28, style: .continuous)
-                    .fill(.ultraThinMaterial)
-                    .shadow(color: .black.opacity(0.15), radius: 24, x: 0, y: 10)
-            }
-            .padding(.horizontal, 40)
         }
         .onAppear {
-            isPulsing = true
-            wavePhase = true
+            isAnimating = true
         }
     }
 }
 
 // MARK: - Library Category
 enum LibraryCategory: String, CaseIterable {
-    case songs
-    case albums
-    case artists
-    case playlists
+    case songs, albums, artists, playlists
 
     var title: String {
         switch self {
-        case .songs:
-            return "Canciones"
-        case .albums:
-            return "Álbumes"
-        case .artists:
-            return "Artistas"
-        case .playlists:
-            return "Listas"
+        case .songs: return "Canciones"
+        case .albums: return "Álbumes"
+        case .artists: return "Artistas"
+        case .playlists: return "Listas"
         }
     }
 }
 
-// MARK: - Album Row (iOS 16 native design)
-struct AlbumLibraryRow: View {
-    let album: Album
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            // Album artwork with native design
-            Group {
-                if let artwork = album.artwork {
-                    Image(uiImage: artwork)
-                        .resizable()
-                        .scaledToFill()
-                        .frame(width: 140, height: 140)
-                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                } else {
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(Color.secondary.opacity(0.2))
-                        .frame(width: 140, height: 140)
-                        .overlay {
-                            Image(systemName: "square.stack")
-                                .font(.system(size: 35))
-                                .foregroundStyle(.secondary)
-                        }
-                }
-            }
-
-            // Album info with native typography
-            VStack(alignment: .leading, spacing: 4) {
-                Text(album.name)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-
-                Text(album.artist)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-
-                Text("\(album.songs.count) canciones")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-            }
-        }
-        .frame(width: 140)
-        .padding(.vertical, 8)
-    }
-}
-
-// MARK: - Artist Row (iOS 16 native design)
-struct ArtistLibraryRow: View {
-    let artist: Artist
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            // Artist artwork with native circular design
-            Group {
-                if let artwork = artist.artwork {
-                    Image(uiImage: artwork)
-                        .resizable()
-                        .scaledToFill()
-                        .frame(width: 140, height: 140)
-                        .clipShape(Circle())
-                } else {
-                    Circle()
-                        .fill(Color.secondary.opacity(0.2))
-                        .frame(width: 140, height: 140)
-                        .overlay {
-                            Image(systemName: "person.fill")
-                                .font(.system(size: 35))
-                                .foregroundStyle(.secondary)
-                        }
-                }
-            }
-
-            // Artist info with native typography
-            VStack(alignment: .leading, spacing: 4) {
-                Text(artist.name)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-
-                Text("\(artist.songs.count) canciones")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .frame(width: 140)
-        .padding(.vertical, 8)
-    }
-}
-
-// MARK: - Playlist Library Card (iOS 16 native design)
-struct playlistLibraryCard: View {
-    let playlist: Playlist
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            // Playlist artwork with native design
-            Group {
-                if let artwork = playlist.artwork {
-                    Image(uiImage: artwork)
-                        .resizable()
-                        .scaledToFill()
-                        .frame(width: 140, height: 140)
-                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                } else {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .fill(
-                                LinearGradient(
-                                    colors: [
-                                        Color.accentColor.opacity(0.3),
-                                        Color.accentColor.opacity(0.15)
-                                    ],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                            )
-                            .frame(width: 140, height: 140)
-
-                        Image(systemName: "music.note.list")
-                            .font(.system(size: 35))
-                            .foregroundStyle(.white.opacity(0.8))
-                    }
-                }
-            }
-
-            // Playlist info with native typography
-            VStack(alignment: .leading, spacing: 4) {
-                Text(playlist.name)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-
-                Text("\(playlist.songIDs.count) canciones")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .frame(width: 140)
-        .padding(.vertical, 8)
-    }
-}
-
-// MARK: - Album List Row (Vertical list - optimized for iPhone 8 Plus)
+// MARK: - Album List Row
 private func albumListRow(_ album: Album) -> some View {
     HStack(spacing: 16) {
-        // Album artwork (square aspect ratio preserved)
         Group {
             if let artwork = album.artwork {
                 Image(uiImage: artwork)
@@ -795,7 +509,7 @@ private func albumListRow(_ album: Album) -> some View {
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             } else {
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(Color.secondary.opacity(0.2))
+                    .fill(Color.secondary.opacity(0.15))
                     .frame(width: 56, height: 56)
                     .overlay {
                         Image(systemName: "square.stack")
@@ -805,7 +519,6 @@ private func albumListRow(_ album: Album) -> some View {
             }
         }
 
-        // Album info
         VStack(alignment: .leading, spacing: 4) {
             Text(album.name)
                 .font(.body.weight(.medium))
@@ -832,14 +545,13 @@ private func albumListRow(_ album: Album) -> some View {
     .padding(.vertical, 12)
     .background {
         RoundedRectangle(cornerRadius: 14, style: .continuous)
-            .fill(Color.secondary.opacity(0.05))
+            .fill(Color.secondary.opacity(0.04))
     }
 }
 
-// MARK: - Artist List Row (Vertical list - optimized for iPhone 8 Plus)
+// MARK: - Artist List Row
 private func artistListRow(_ artist: Artist) -> some View {
     HStack(spacing: 16) {
-        // Artist artwork (circular aspect ratio preserved)
         Group {
             if let artwork = artist.artwork {
                 Image(uiImage: artwork)
@@ -849,7 +561,7 @@ private func artistListRow(_ artist: Artist) -> some View {
                     .clipShape(Circle())
             } else {
                 Circle()
-                    .fill(Color.secondary.opacity(0.2))
+                    .fill(Color.secondary.opacity(0.15))
                     .frame(width: 56, height: 56)
                     .overlay {
                         Image(systemName: "person.fill")
@@ -859,7 +571,6 @@ private func artistListRow(_ artist: Artist) -> some View {
             }
         }
 
-        // Artist info
         VStack(alignment: .leading, spacing: 4) {
             Text(artist.name)
                 .font(.body.weight(.medium))
@@ -881,11 +592,11 @@ private func artistListRow(_ artist: Artist) -> some View {
     .padding(.vertical, 12)
     .background {
         RoundedRectangle(cornerRadius: 14, style: .continuous)
-            .fill(Color.secondary.opacity(0.05))
+            .fill(Color.secondary.opacity(0.04))
     }
 }
 
-// MARK: - Empty Library (Enhanced iOS 16 design)
+// MARK: - Empty Library
 struct ContentUnavailableLibraryView: View {
     let icon: String
     let title: String
@@ -895,7 +606,7 @@ struct ContentUnavailableLibraryView: View {
         VStack(spacing: 16) {
             ZStack {
                 Circle()
-                    .fill(Color.accentColor.opacity(0.12))
+                    .fill(Color.accentColor.opacity(0.1))
                     .frame(width: 80, height: 80)
 
                 Image(systemName: icon)
@@ -916,5 +627,140 @@ struct ContentUnavailableLibraryView: View {
         .frame(maxWidth: .infinity)
         .padding(.vertical, 32)
         .enhancedGlass(cornerRadius: 24)
+    }
+}
+
+// MARK: - Playlist Library Card
+struct playlistLibraryCard: View {
+    let playlist: Playlist
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Group {
+                if let artwork = playlist.artwork {
+                    Image(uiImage: artwork)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: 140, height: 140)
+                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                } else {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .fill(
+                                LinearGradient(
+                                    colors: [Color.accentColor.opacity(0.25), Color.accentColor.opacity(0.1)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .frame(width: 140, height: 140)
+
+                        Image(systemName: "music.note.list")
+                            .font(.system(size: 35))
+                            .foregroundStyle(.white.opacity(0.8))
+                    }
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(playlist.name)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+
+                Text("\(playlist.songIDs.count) canciones")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(width: 140)
+        .padding(.vertical, 8)
+    }
+}
+
+// MARK: - Album Library Row
+struct AlbumLibraryRow: View {
+    let album: Album
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Group {
+                if let artwork = album.artwork {
+                    Image(uiImage: artwork)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: 140, height: 140)
+                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                } else {
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(Color.secondary.opacity(0.15))
+                        .frame(width: 140, height: 140)
+                        .overlay {
+                            Image(systemName: "square.stack")
+                                .font(.system(size: 35))
+                                .foregroundStyle(.secondary)
+                        }
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(album.name)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+
+                Text(album.artist)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+
+                Text("\(album.songs.count) canciones")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+        }
+        .frame(width: 140)
+        .padding(.vertical, 8)
+    }
+}
+
+// MARK: - Artist Library Row
+struct ArtistLibraryRow: View {
+    let artist: Artist
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Group {
+                if let artwork = artist.artwork {
+                    Image(uiImage: artwork)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: 140, height: 140)
+                        .clipShape(Circle())
+                } else {
+                    Circle()
+                        .fill(Color.secondary.opacity(0.15))
+                        .frame(width: 140, height: 140)
+                        .overlay {
+                            Image(systemName: "person.fill")
+                                .font(.system(size: 35))
+                                .foregroundStyle(.secondary)
+                        }
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(artist.name)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+
+                Text("\(artist.songs.count) canciones")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(width: 140)
+        .padding(.vertical, 8)
     }
 }

@@ -3,29 +3,35 @@ import AVFoundation
 
 struct AudioVisualizer: View {
     @ObservedObject var audioEngine: AudioEngine
+    var tintColor: Color = Color.accentColor
     @State private var amplitudes: [CGFloat] = Array(repeating: 0, count: 32)
     @State private var animationTimer: Timer?
+    @State private var phase: Double = 0
 
     var body: some View {
         GeometryReader { geometry in
-            HStack(spacing: 3) {
+            HStack(spacing: 2) {
                 ForEach(0..<amplitudes.count, id: \.self) { index in
-                    RoundedRectangle(cornerRadius: 3)
+                    let normalizedIndex = CGFloat(index) / CGFloat(amplitudes.count)
+                    let phaseOffset = sin(phase + Double(index) * 0.3) * 0.15
+                    let adjustedAmplitude = max(0.05, min(1.0, amplitudes[index] + CGFloat(phaseOffset)))
+
+                    RoundedRectangle(cornerRadius: 2.5)
                         .fill(
                             LinearGradient(
                                 colors: [
-                                    Color.accentColor.opacity(0.9),
-                                    Color.accentColor.opacity(0.6),
-                                    Color.accentColor.opacity(0.3)
+                                    tintColor.opacity(0.95),
+                                    tintColor.opacity(0.7),
+                                    tintColor.opacity(0.4)
                                 ],
                                 startPoint: .bottom,
                                 endPoint: .top
                             )
                         )
-                        .frame(width: geometry.size.width / CGFloat(amplitudes.count) - 3)
-                        .frame(height: amplitudes[index] * geometry.size.height)
-                        .shadow(color: Color.accentColor.opacity(0.3), radius: 4, x: 0, y: 2)
-                        .animation(.spring(response: 0.2, dampingFraction: 0.8), value: amplitudes[index])
+                        .frame(width: max(2, geometry.size.width / CGFloat(amplitudes.count) - 2))
+                        .frame(height: max(3, adjustedAmplitude * geometry.size.height))
+                        .shadow(color: tintColor.opacity(0.4), radius: 3, x: 0, y: 1)
+                        .animation(.spring(response: 0.15, dampingFraction: 0.7), value: adjustedAmplitude)
                 }
             }
             .frame(height: geometry.size.height)

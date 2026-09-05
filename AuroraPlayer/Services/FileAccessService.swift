@@ -388,7 +388,7 @@ class FileAccessService: ObservableObject {
 
     private func makeSong(from url: URL) async -> Song {
         let metadata = await readMetadata(from: url)
-        return Song(url: url, title: metadata.title, artist: metadata.artist, albumArtist: metadata.albumArtist, album: metadata.album, artworkData: metadata.artworkData, duration: metadata.duration, lyrics: metadata.lyrics, formatDescription: metadata.formatDescription, discNumber: metadata.discNumber, trackNumber: metadata.trackNumber, releaseDate: metadata.releaseDate)
+        return Song(url: url, title: metadata.title, artist: metadata.artist, albumArtist: metadata.albumArtist, album: metadata.album, artworkData: metadata.artworkData, duration: metadata.duration, lyrics: metadata.lyrics, formatDescription: metadata.formatDescription, discNumber: metadata.discNumber, trackNumber: metadata.trackNumber, releaseDate: metadata.releaseDate, sampleRate: metadata.sampleRate, bitDepth: metadata.bitDepth, channelCount: metadata.channelCount)
     }
 
     private struct SongMetadata {
@@ -403,6 +403,9 @@ class FileAccessService: ObservableObject {
         let discNumber: Int?
         let trackNumber: Int
         let releaseDate: Date?
+        let sampleRate: Double
+        let bitDepth: Int
+        let channelCount: Int
     }
 
     // MARK: - readMetadata (OPTIMIZADO: una sola apertura de archivo, sin lecturas redundantes)
@@ -528,6 +531,16 @@ class FileAccessService: ObservableObject {
         // Formato: usar solo la extensión (evita abrir AVAudioFile innecesariamente)
         let formatDescription = url.pathExtension.uppercased()
 
+        // Obtener sample rate, bit depth y canales del archivo de audio
+        var sampleRate: Double = 0
+        var bitDepth: Int = 0
+        var channelCount: Int = 0
+        if let audioFile = try? AVAudioFile(forReading: url) {
+            sampleRate = audioFile.processingFormat.sampleRate
+            bitDepth = Int(audioFile.processingFormat.streamDescription.pointee.mBitsPerChannel)
+            channelCount = Int(audioFile.processingFormat.channelCount)
+        }
+
         return SongMetadata(
             title: title,
             artist: artist,
@@ -539,7 +552,10 @@ class FileAccessService: ObservableObject {
             formatDescription: formatDescription,
             discNumber: discNumber,
             trackNumber: trackNumber,
-            releaseDate: releaseDate
+            releaseDate: releaseDate,
+            sampleRate: sampleRate,
+            bitDepth: bitDepth,
+            channelCount: channelCount
         )
     }
 

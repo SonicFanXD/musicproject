@@ -28,7 +28,7 @@ struct LogsView: View {
     @State private var copiedToast = false
 
     // Timer para refrescar la vista en vivo mientras se registran nuevos eventos
-    let timer = Timer.publish(every: 1.5, on: .main, in: .common).autoconnect()
+    let timer = Timer.publish(every: 2.0, on: .main, in: .common).autoconnect()
     @State private var refreshTick = 0
 
     private var filteredEntries: [InAppLogEntry] {
