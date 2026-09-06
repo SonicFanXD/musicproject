@@ -698,16 +698,9 @@ struct ContentView: View {
             }
             .buttonStyle(.plain)
             
-            Menu {
-                if fileAccessService.playlists.isEmpty {
-                    Button {
-                        // No hay playlists - deshabilitado
-                    } label: {
-                        Label(Localization.localized("playlists.createFirst"), systemImage: "plus.circle")
-                            .foregroundStyle(.secondary)
-                    }
-                    .disabled(true)
-                } else {
+            // ✅ Botón "Añadir a playlist" — solo visible si hay playlists
+            if !fileAccessService.playlists.isEmpty {
+                Menu {
                     ForEach(fileAccessService.playlists) { playlist in
                         Button {
                             fileAccessService.addSongToPlaylist(song, playlist: playlist)
@@ -715,16 +708,16 @@ struct ContentView: View {
                             Label(playlist.name, systemImage: "music.note.list")
                         }
                     }
+                } label: {
+                    // ✅ Brillo aumentado: el + ahora usa secondary a 0.7 (antes
+                    // .tertiary, casi invisible) + resalta con accent cuando la
+                    // canción está sonando para mantenerse legible en cualquier fondo.
+                    Image(systemName: "plus.circle.fill")
+                        .font(.system(size: 15))
+                        .foregroundStyle(isCurrent ? AppTheme.accent : Color.secondary.opacity(0.7))
+                        .frame(width: 36, height: 36)
+                        .contentShape(Rectangle())
                 }
-            } label: {
-                // ✅ Brillo aumentado: el + ahora usa secondary a 0.7 (antes
-                // .tertiary, casi invisible) + resalta con accent cuando la
-                // canción está sonando para mantenerse legible en cualquier fondo.
-                Image(systemName: "plus.circle.fill")
-                    .font(.system(size: 15))
-                    .foregroundStyle(isCurrent ? AppTheme.accent : Color.secondary.opacity(0.7))
-                    .frame(width: 36, height: 36)
-                    .contentShape(Rectangle())
             }
         }
         .padding(.horizontal, 14)
@@ -760,16 +753,9 @@ struct ContentView: View {
                 Label(isLiked ? Localization.localized("actions.unlike") : Localization.localized("actions.like"), systemImage: isLiked ? "heart.slash" : "heart")
             }
             
-            Menu {
-                if fileAccessService.playlists.isEmpty {
-                    Button {
-                        // No hay playlists - acción vacía
-                    } label: {
-                        Label(Localization.localized("playlists.createFirst"), systemImage: "plus.circle")
-                            .foregroundStyle(.secondary)
-                    }
-                    .disabled(true)
-                } else {
+            // ✅ "Añadir a playlist" en context menu — solo si hay playlists
+            if !fileAccessService.playlists.isEmpty {
+                Menu {
                     ForEach(fileAccessService.playlists) { playlist in
                         Button {
                             Haptics.light()
@@ -778,9 +764,9 @@ struct ContentView: View {
                             Label(playlist.name, systemImage: "music.note.list")
                         }
                     }
+                } label: {
+                    Label(Localization.localized("context.addToPlaylist"), systemImage: "plus.circle.fill")
                 }
-            } label: {
-                Label(Localization.localized("context.addToPlaylist"), systemImage: "plus.circle.fill")
             }
             
             Button {

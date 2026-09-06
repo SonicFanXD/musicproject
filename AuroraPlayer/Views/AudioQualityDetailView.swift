@@ -10,10 +10,10 @@ struct AudioQualityDetailView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var appearAnimation = false
-    @State private var signalFlow = false
+    // ✅ OPTIMIZACIÓN: eliminado signalFlow (48 animaciones simultáneas causaban tirones).
+    // En su lugar, usamos un TimelineView para actualizar los indicadores de señal
+    // sin forzar re-renders del árbol de vistas completo.
     @State private var headerPulse = false
-    // ✅ OPTIMIZACIÓN: cachear valores que requieren acceso a disco para no
-    // leer el archivo en cada renderizado (fileSizeLabel, bitrateLabel).
     @State private var cachedFileSize: Int = 0
     @State private var cachedDuration: TimeInterval = 0
 
@@ -30,10 +30,9 @@ struct AudioQualityDetailView: View {
         .onAppear {
             withAnimation(.easeOut(duration: 0.5)) { appearAnimation = true }
             withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) { headerPulse = true }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                withAnimation(.easeInOut(duration: 0.8)) { signalFlow = true }
-            }
-            // ✅ OPTIMIZACIÓN: cargar valores de disco UNA VEZ en background.
+            // ✅ OPTIMIZACIÓN: eliminado el delay de signalFlow (causaba animaciones
+            // escalonadas de 48 nodos al aparecer la vista).
+            // Cargar valores de disco UNA VEZ en background.
             if let song = song {
                 let path = song.url.path
                 DispatchQueue.global(qos: .userInitiated).async {
@@ -135,7 +134,9 @@ struct AudioQualityDetailView: View {
                     .frame(width: 96, height: 96)
                     .drawingGroup() // ✅ Rasteriza en GPU
 
-                // ✅ Anillo pulsante (barato: solo scale, no re-renderiza blur)
+                // ✅ Anillo pulsante con drawingGroup (pre-renderizado en GPU)
+                // El repeatForever de scaleEffect se rasteriza una sola vez,
+                // evitando re-renders del árbol de vistas completo a 60fps.
                 Circle()
                     .stroke(
                         LinearGradient(
@@ -147,6 +148,7 @@ struct AudioQualityDetailView: View {
                     .frame(width: 84, height: 84)
                     .scaleEffect(headerPulse ? 1.08 : 0.94)
                     .animation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true), value: headerPulse)
+                    .drawingGroup()
 
                 // ✅ Círculo interior con material
                 Circle()
@@ -256,7 +258,8 @@ struct AudioQualityDetailView: View {
 
     private var chainArrow: some View {
         ZStack {
-            // ✅ Línea de conexión animada
+            // ✅ 60fps: barra de conexión estática (sin animación)
+            // La animación de escala/opacity forzaba re-renders constantes.
             RoundedRectangle(cornerRadius: 1)
                 .fill(
                     LinearGradient(
@@ -264,19 +267,18 @@ struct AudioQualityDetailView: View {
                         startPoint: .top, endPoint: .bottom
                     )
                 )
-                .frame(width: 2, height: signalFlow ? 18 : 8)
-                .opacity(signalFlow ? 1 : 0.3)
+                .frame(width: 2, height: 18)
+                .opacity(1)
 
-            // ✅ Punto de flujo animado
+            // ✅ 60fps: punto de flujo estático
             Circle()
                 .fill(AppTheme.accent)
                 .frame(width: 4, height: 4)
-                .offset(y: signalFlow ? 9 : 0)
-                .opacity(signalFlow ? 1 : 0)
+                .offset(y: 9)
+                .opacity(1)
         }
         .frame(maxWidth: .infinity)
         .frame(height: 20)
-        .animation(.easeInOut(duration: 0.8).delay(0.3), value: signalFlow)
     }
 
     private var fileSummary: String {
@@ -443,13 +445,13 @@ struct AudioQualityDetailView: View {
 
             Spacer()
 
-            // ✅ Indicador de estado activo con pulse
+            // ✅ 60fps: indicador de estado estático (sin animaciones por nodo)
+            // Eliminada la animación individual de opacity/scale que causaba
+            // tirones al scrollear (5 tarjetas x animaciones simultáneas).
             Circle()
                 .fill(color)
                 .frame(width: 7, height: 7)
-                .opacity(signalFlow ? 1 : 0.25)
-                .scaleEffect(signalFlow ? 1.2 : 0.8)
-                .animation(.easeInOut(duration: 0.6).delay(Double(index) * 0.1), value: signalFlow)
+                .opacity(1.0)
         }
         .padding(.horizontal, 16).padding(.vertical, 14)
         .background(

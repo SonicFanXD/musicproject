@@ -184,6 +184,12 @@ struct NowPlayingView: View {
             }
             .onChange(of: audioEngine.currentSong?.id) { _ in
                 extractColorFromArtwork()
+                // ✅ Propagar el color de acento a ThemeManager para que PlayerBar
+                // y todas las vistas que lo observen se actualicen al instante
+                ThemeManager.shared.updateArtworkAccent(from: audioEngine.currentSong)
+            }
+            .onChange(of: ThemeManager.shared.accentFromArtwork) { _ in
+                extractColorFromArtwork()
             }
             // ✅ NUEVO: destinos del menú de 3 puntos
             .sheet(isPresented: $showArtistDetail) {

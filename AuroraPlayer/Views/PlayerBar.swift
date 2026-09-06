@@ -25,6 +25,10 @@ struct PlayerBar: View {
     // ✅ Ajuste "Visualizador en barra" (antes no se aplicaba)
     @AppStorage("com.aurora.showVisualizerInBar") private var showVisualizerInBar = true
 
+    // ✅ Observar ThemeManager para que los cambios de acento (manual o desde carátula)
+    // se apliquen instantáneamente sin necesidad de cambiar de canción.
+    @ObservedObject private var theme = ThemeManager.shared
+
     private var progress: Double {
         if isScrubbing { return scrubPreviewProgress }
         guard audioEngine.duration > 0 else { return 0 }
@@ -38,13 +42,13 @@ struct PlayerBar: View {
     }
 
     // ✅ Color dominante del artwork para indicadores dinámicos
+    // Observa ThemeManager: si "Acento desde portada" está activo, usa el color
+    // publicado (re-render instantáneo). Si no, usa el acento manual del tema.
     private var artworkDominantColor: Color {
-        guard let song = audioEngine.currentSong, song.artwork != nil else { return AppTheme.accent }
-        let cacheKey = (song.id.uuidString) as NSString
-        if let cached = AppTheme.artworkColorCache.object(forKey: cacheKey) {
-            return AppTheme.readableColor(from: cached)
+        if theme.accentFromArtwork, let artworkColor = theme.artworkAccentColor {
+            return artworkColor
         }
-        return AppTheme.accent
+        return theme.accent
     }
 
     var body: some View {

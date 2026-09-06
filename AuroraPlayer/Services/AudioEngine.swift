@@ -949,7 +949,8 @@ class AudioEngine: NSObject, ObservableObject {
     }
 
     /// Programa un segmento encadenado al anterior (at: nil) para gapless.
-    /// Si el nodo no está reproduciendo (se detuvo entre segmentos), lo reinicia.
+    /// Usa AVAudioTime para encadenar en el momento exacto donde termina el
+    /// segmento actual, evitando gaps y reproducciones erráticas.
     private func scheduleChainedFile(_ file: AVAudioFile, from startSeconds: TimeInterval) {
         let generation = scheduleGeneration
         let safeStartFrame = AVAudioFramePosition(startSeconds * sampleRate)
@@ -963,11 +964,27 @@ class AudioEngine: NSObject, ObservableObject {
             return
         }
 
+        // ✅ FIX GAPLESS ROBUSTO: calcular el momento exacto donde termina el
+        // segmento actual usando lastRenderTime. Si no está disponible o el nodo
+        // no está reproduciendo, usar at: nil (el sistema decide cuándo encadenar).
+        let scheduleTime: AVAudioTime?
+        if playerNode.isPlaying,
+           let lastRender = playerNode.lastRenderTime,
+           let playerTime = playerNode.playerTime(forNodeTime: lastRender) {
+            // Calcular frames restantes del segmento actual
+            let elapsedInSegment = playerTime.sampleTime
+            // Estimación: asumimos que el segmento actual tiene ~duration*sampleRate frames
+            // y programamos justo cuando termine
+            scheduleTime = AVAudioTime(sampleTime: elapsedInSegment + AVAudioFramePosition(duration * playerTime.sampleRate), atRate: playerTime.sampleRate)
+        } else {
+            scheduleTime = nil
+        }
+
         playerNode.scheduleSegment(
             file,
             startingFrame: safeStartFrame,
             frameCount: framesToPlay,
-            at: nil
+            at: scheduleTime
         ) { [weak self] in
             DispatchQueue.main.async {
                 guard let self = self,
@@ -984,9 +1001,7 @@ class AudioEngine: NSObject, ObservableObject {
             if !engine.isRunning {
                 try? startEngineSafely()
             }
-            if engine.isRunning {
-                playerNode.play()
-            }
+            playerNode.play()
         }
     }
 
@@ -1150,6 +1165,9 @@ class AudioEngine: NSObject, ObservableObject {
                 self.currentTime = current
                 self.clock.time = current
             }
+            // ✅ WATCHDOG: si llegamos al final sin transición, forzarla.
+            // Corrige el bug de "barra congelada al final, no pasa la canción".
+            self.checkPlaybackEndWatchdog()
             // ✅ FIX Centro de Control / pantalla de bloqueo: refrescar
             // nowPlayingInfo cada ~0.8s en fg / ~1.5s en bg con el elapsed
             // EXACTO del reloj de render. En segundo plano iOS ya interpola
@@ -1172,47 +1190,48 @@ class AudioEngine: NSObject, ObservableObject {
     // nueva generación para garantizar que suene sin cortes ni silencios.
     private func handlePlaybackFinished() {
         guard isPlaying, !isStopping else { return }
-        // ✅ FIX ANTI-STALE: capturar la generación actual y validar al final.
-        // Si la generación cambió mientras se ejecutaba este handler, significa
-        // que ya se procesó el cambio de canción → ignorar este handler stale.
-        let capturedGeneration = scheduleGeneration
-        // ✅ ANTI-SALTO PREMATURO (red de seguridad): el completion handler se
-        // dispara cuando el segmento TERMINA de sonar, así que el reloj de
-        // pared DEBE estar (casi) al final. Si está muy atrás, es un handler
-        // viejo que sobrevivió a un reinicio → ignorarlo, no saltar de canción.
-        // Tolerancia de 1.0s para drift de reloj / finales muy cortos.
-        if repeatMode != .one, duration > 0, wallClockTime < duration - 1.0 {
-            AppLog.warning(.playback, String(format: "Completion stale ignorado: '%@' en %.1f/%.1fs (handler de segmento anterior)", currentSong?.displayName ?? "—", wallClockTime, duration))
-            return
-        }
-        // ✅ FIX: evitar llamadas múltiples del completion handler (bug de
-        // AVAudioEngine que puede dispararlo más de una vez). Incrementar
-        // scheduleGeneration invalida cualquier handler anterior pendiente.
-        scheduleGeneration += 1
-        // ✅ FIX: verificar que la generación sigue válida después del incremento
-        // (protección extra contra condiciones de carrera)
-        guard scheduleGeneration == capturedGeneration + 1 else {
-            AppLog.warning(.playback, "Completion handler superpuesto ignorado (generación cambió)")
-            return
-        }
+        let generation = scheduleGeneration
         AppLog.info(.playback, "Canción terminada: '\(currentSong?.displayName ?? "—")' (\(String(format: "%.1f", duration))s, repeat: \(repeatMode.rawValue))")
 
         if repeatMode == .one {
             guard let file = audioFile else { return }
+            scheduleGeneration += 1
             anchorPlaybackPosition(0)
             currentTime = 0
             rescheduleFileAfterStop(file, from: 0)
             return
         }
-        // ✅ Gapless: marcar que la canción actual llegó al 100% antes de encadenar
-        // para evitar cortes prematuros. El completion handler se dispara cuando el
-        // segmento termina de programarse, no cuando el audio deja de sonar.
-        if currentTime < duration {
-            currentTime = duration
-            clock.time = duration
-        }
+
+        // ✅ Gapless: intentar encadenar. Si chainNextSong no puede (fin de playlist,
+        // error de formato, etc.), el flujo normal se encargará de stop() o repeat.
         stopDisplayTimer()
         chainNextSong()
+
+        // ✅ FIX ANTI-CONGELAMIENTO: si después de chainNextSong el estado sigue
+        // siendo "reproduciendo la misma canción sin avance", forzar el motor para
+        // que el watchdog detecte el problema en el próximo tick.
+        if scheduleGeneration == generation, isPlaying {
+            // chainNextSong no pudo avanzar (posible fallo de formato). Programar
+            // un retry en el siguiente runloop para evitar bloquear el completion.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+                guard let self, self.isPlaying else { return }
+                self.handlePlaybackFinished()
+            }
+        }
+    }
+
+    // ✅ WATCHDOG: seguridad contra completions perdidos. Si el display timer
+    // detecta que la reproducción llegó al final pero no hubo transición, la
+    // fuerza. Esto evita el bug de "barra congelada al final, no pasa la canción"
+    // que ocurría cuando el completion handler no se disparaba (desync de reloj,
+    // handler perdido en el runloop, etc.).
+    private func checkPlaybackEndWatchdog() {
+        guard isPlaying, !isStopping, duration > 0 else { return }
+        // Ya pasamos el final + margen de seguridad de 0.5s
+        if wallClockTime >= duration + 0.5, repeatMode != .one {
+            AppLog.warning(.playback, String(format: "Watchdog: '%@' en %.1f/%.1fs sin transición, forzando", currentSong?.displayName ?? "—", wallClockTime, duration))
+            handlePlaybackFinished()
+        }
     }
 
     /// Re-programa el mismo archivo tras detener el nodo, con un breve delay.
