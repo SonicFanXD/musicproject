@@ -202,6 +202,9 @@ struct NowPlayingView: View {
                 }
             }
             .presentationDetents([.large])
+            // ✅ Mezcla el header con el fondo inmersivo: oculta cualquier banda/corte del sistema
+            .toolbarBackground(.hidden, for: .navigationBar)
+            .navigationBarBackButtonHidden(true)
             .sheet(isPresented: $showLyrics) {
                 LyricsView(song: audioEngine.currentSong, audioEngine: audioEngine, clock: audioEngine.clock)
             }

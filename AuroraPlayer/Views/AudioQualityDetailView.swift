@@ -122,26 +122,19 @@ struct AudioQualityDetailView: View {
     private var headerCard: some View {
         VStack(spacing: 18) {
             ZStack {
-                // ✅ Halo animado con AngularGradient (drawingGroup para GPU)
+                // ✅ Halo simple con gradiente radial (sin blur → sin lag al scrollear)
                 Circle()
                     .fill(
-                        AngularGradient(
-                            colors: [
-                                AppTheme.accent.opacity(0.4),
-                                Color(red: 0.3, green: 0.6, blue: 1.0).opacity(0.2),
-                                AppTheme.accent.opacity(0.1),
-                                AppTheme.accent.opacity(0.4)
-                            ],
-                            center: .center,
-                            startAngle: .degrees(headerPulse ? 360 : 0),
-                            endAngle: .degrees(headerPulse ? 720 : 360)
+                        LinearGradient(
+                            colors: [AppTheme.accent.opacity(0.25), AppTheme.accent.opacity(0.05)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
                         )
                     )
-                    .frame(width: 100, height: 100)
-                    .blur(radius: 12)
+                    .frame(width: 96, height: 96)
                     .drawingGroup() // ✅ Rasteriza en GPU
 
-                // ✅ Anillo pulsante
+                // ✅ Anillo pulsante (barato: solo scale, no re-renderiza blur)
                 Circle()
                     .stroke(
                         LinearGradient(
@@ -152,6 +145,7 @@ struct AudioQualityDetailView: View {
                     )
                     .frame(width: 84, height: 84)
                     .scaleEffect(headerPulse ? 1.08 : 0.94)
+                    .animation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true), value: headerPulse)
 
                 // ✅ Círculo interior con material
                 Circle()
