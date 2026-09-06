@@ -13,9 +13,13 @@ struct PlayerBar: View {
     // ✅ Scrub optimizado: preview local a 60fps, seek real solo al soltar
     @State private var isScrubbing = false
     @State private var scrubPreviewProgress: Double = 0
+    // ✅ Inicializar scrub con progreso actual para evitar salto a 0
+    @State private var scrubStartProgress: Double = 0
 
     // Animaciones optimizadas (una sola @State, triggers discretos = 60fps)
     @State private var playButtonScale: CGFloat = 1.0
+    // ✅ Opacidad del visualizador para transición suave (no crear/destruir)
+    @State private var visualizerOpacity: Double = 0
 
     // ✅ Esquinas del artwork sincronizadas con el ajuste de Apariencia
     @AppStorage("com.aurora.artworkCorner") private var artworkCorner: Double = 22
@@ -25,6 +29,12 @@ struct PlayerBar: View {
 
     private var progress: Double {
         if isScrubbing { return scrubPreviewProgress }
+        guard audioEngine.duration > 0 else { return 0 }
+        return min(max(clock.time / audioEngine.duration, 0), 1)
+    }
+
+    /// Progreso actual real (para inicializar scrub sin salto)
+    private var currentProgress: Double {
         guard audioEngine.duration > 0 else { return 0 }
         return min(max(clock.time / audioEngine.duration, 0), 1)
     }
@@ -51,21 +61,20 @@ struct PlayerBar: View {
                                     .lineLimit(1)
                             }
 
-                            // ✅ Mini visualizador junto al título cuando reproduce
-                            if audioEngine.isPlaying {
-                                HStack(spacing: 2.5) {
-                                    ForEach(0..<3, id: \.self) { bar in
-                                        RoundedRectangle(cornerRadius: 1)
-                                            .fill(AppTheme.accent)
-                                            .frame(width: 2.5, height: bar % 2 == 0 ? 11 : 6)
-                                            .animation(
-                                                .easeInOut(duration: 0.4 + Double(bar) * 0.1).repeatForever(autoreverses: true),
-                                                value: audioEngine.isPlaying
-                                            )
+                            // ✅ Mini visualizador con opacidad animada (no se crea/destruye)
+                            // Evita saltos visuales y mantiene estado de animación
+                            MusicVisualizer()
+                                .frame(width: 18, height: 14)
+                                .opacity(visualizerOpacity)
+                                .animation(.easeInOut(duration: 0.3), value: visualizerOpacity)
+                                .onAppear {
+                                    visualizerOpacity = audioEngine.isPlaying ? 1 : 0
+                                }
+                                .onChange(of: audioEngine.isPlaying) { _, playing in
+                                    withAnimation(.easeInOut(duration: 0.3)) {
+                                        visualizerOpacity = playing ? 1 : 0
                                     }
                                 }
-                                .drawingGroup()
-                            }
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .contentShape(Rectangle())
@@ -104,10 +113,10 @@ struct PlayerBar: View {
                             .buttonStyle(PressableButtonStyle(scale: 0.85))
                             .accessibilityLabel(Localization.localized("accessibility.previousSong"))
 
-                            // Play/Pause con animación de escala y halo
+                            // ✅ Play/Pause con animación de escala y halo
                             Button {
-                                Haptics.medium()
                                 animatePlayButton()
+                                Haptics.light()
                                 if audioEngine.isPlaying {
                                     audioEngine.pause()
                                 } else {
@@ -153,7 +162,6 @@ struct PlayerBar: View {
                                     .foregroundStyle(.primary)
                                     .frame(width: 40, height: 40)
                                     .contentShape(Circle())
-                                    .scaleEffect(playButtonScale)
                             }
                             .buttonStyle(PressableButtonStyle(scale: 0.85))
                             .accessibilityLabel(Localization.localized("accessibility.nextSong"))
@@ -208,16 +216,19 @@ struct PlayerBar: View {
                             DragGesture(minimumDistance: 0)
                                 .onChanged { value in
                                     guard audioEngine.duration > 0, geometry.size.width > 0 else { return }
+                                    // ✅ Inicializar scrub con progreso actual (evita salto a 0)
+                                    if !isScrubbing {
+                                        startScrubbing()
+                                    }
                                     // ✅ Preview local a 60fps (sin toques al engine durante el arrastre)
-                                    isScrubbing = true
                                     scrubPreviewProgress = max(0, min(1, value.location.x / geometry.size.width))
                                 }
                                 .onEnded { value in
                                     guard audioEngine.duration > 0, geometry.size.width > 0 else { return }
                                     // ✅ Seek real UNA sola vez al soltar
                                     let percentage = max(0, min(1, value.location.x / geometry.size.width))
-                                    isScrubbing = false
-                                    audioEngine.seek(to: audioEngine.duration * percentage)
+                                    scrubPreviewProgress = percentage
+                                    endScrubbing()
                                 }
                         )
                     }
@@ -236,7 +247,8 @@ struct PlayerBar: View {
                         .strokeBorder(Color.white.opacity(0.08), lineWidth: 0.5)
                 }
                 .onAppear {
-                    artworkAppear()
+                    // ✅ Sincronizar estado visual inicial
+                    visualizerOpacity = audioEngine.isPlaying ? 1 : 0
                 }
                 .sheet(isPresented: $showingNowPlaying) {
                     NowPlayingView(audioEngine: audioEngine, fileAccessService: fileAccessService, clock: audioEngine.clock)
@@ -247,19 +259,28 @@ struct PlayerBar: View {
 
     // MARK: - Animaciones optimizadas
 
-    /// Animación de aparición del artwork (spring una sola vez, sin repeatForever)
-    private func artworkAppear() {
-        withAnimation(.spring(response: 0.5, dampingFraction: 0.8)) {
-            // trigger inicial
-        }
-    }
-
     /// Animación de feedback del botón play (spring discreto, no repeatForever)
     private func animatePlayButton() {
         playButtonScale = 0.88
         withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
             playButtonScale = 1.0
         }
+    }
+
+    /// Inicializar scrub con progreso actual para evitar salto a 0
+    private func startScrubbing() {
+        Haptics.selection()
+        scrubStartProgress = currentProgress
+        scrubPreviewProgress = currentProgress
+        isScrubbing = true
+    }
+
+    /// Finalizar scrub con seek real
+    private func endScrubbing() {
+        Haptics.light()
+        let targetTime = scrubPreviewProgress * audioEngine.duration
+        isScrubbing = false
+        audioEngine.seek(to: targetTime)
     }
 
     private func openNowPlaying() {
