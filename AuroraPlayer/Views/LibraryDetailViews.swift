@@ -341,7 +341,7 @@ struct AlbumSongRow: View {
             .contentShape(Rectangle())
             .overlay {
                 RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .fill(isCurrent ? Color.clear : AnyShapeStyle(.ultraThinMaterial))
+                    .fill(isCurrent ? AnyShapeStyle(Color.clear) : AnyShapeStyle(.ultraThinMaterial))
             }
             .overlay {
                 if isCurrent {
@@ -752,7 +752,7 @@ struct ArtistSongRow: View {
             .contentShape(Rectangle())
             .overlay {
                 RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .fill(isCurrent ? Color.clear : AnyShapeStyle(.ultraThinMaterial))
+                    .fill(isCurrent ? AnyShapeStyle(Color.clear) : AnyShapeStyle(.ultraThinMaterial))
             }
             .overlay {
                 if isCurrent {

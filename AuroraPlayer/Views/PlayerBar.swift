@@ -39,8 +39,8 @@ struct PlayerBar: View {
 
     // ✅ Color dominante del artwork para indicadores dinámicos
     private var artworkDominantColor: Color {
-        guard let artwork = audioEngine.currentSong?.artwork else { return AppTheme.accent }
-        let cacheKey = (audioEngine.currentSong?.id.uuidString ?? "none") as NSString
+        guard let song = audioEngine.currentSong, song.artwork != nil else { return AppTheme.accent }
+        let cacheKey = (song.id.uuidString) as NSString
         if let cached = AppTheme.artworkColorCache.object(forKey: cacheKey) {
             return AppTheme.readableColor(from: cached)
         }
