@@ -184,10 +184,11 @@ struct NowPlayingView: View {
 
                     Color(UIColor.systemBackground).opacity(0.75).ignoresSafeArea()
 
-                    VisualEffectView(
-                        material: .systemChromeMaterialDark,
-                        prefersReducedTransparency: false
-                    ).ignoresSafeArea()
+                    // ✅ Capa de material translúcido (sin dependencia externa)
+                    Rectangle()
+                        .fill(.ultraThinMaterial)
+                        .ignoresSafeArea()
+                        .opacity(reduceTransparency ? 0 : 1)
                 }
             }
         }
@@ -328,7 +329,7 @@ struct NowPlayingView: View {
                         .onChanged { value in
                             if !isScrubbing {
                                 isScrubbing = true
-                                Haptics.selection()
+                                Haptics.light()
                             }
                             let newProgress = min(max(0, value.location.x / geometry.size.width), 1)
                             scrubPreviewTime = newProgress * audioEngine.duration
@@ -532,7 +533,12 @@ struct NowPlayingView: View {
     }
 
     @ViewBuilder
-    private func featureButton(icon: String, active: Bool, action: @escaping () -> Void, picker: (() -> AnyView)? = nil) -> some View {
+    private func featureButton<Picker: View>(
+        icon: String,
+        active: Bool,
+        @ViewBuilder picker: () -> Picker? = { nil },
+        action: @escaping () -> Void
+    ) -> some View {
         let buttonSize: CGFloat = isCompactScreen ? 56 : 64
         let capsuleWidth: CGFloat = isCompactScreen ? 42 : 48
         let capsuleHeight: CGFloat = isCompactScreen ? 32 : 36
@@ -554,8 +560,8 @@ struct NowPlayingView: View {
             }
             .buttonStyle(.plain)
 
-            if let picker = picker {
-                picker()
+            if let picker = picker() {
+                picker
             }
         }
         .frame(width: buttonSize, height: buttonSize)
