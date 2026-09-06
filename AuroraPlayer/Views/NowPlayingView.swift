@@ -6,31 +6,42 @@ struct NowPlayingView: View {
     @ObservedObject var audioEngine: AudioEngine
     @ObservedObject var fileAccessService: FileAccessService
     @ObservedObject var clock: PlaybackClock
+    // ✅ Observar el idioma: al cambiar, esta vista se re-renderiza al instante
     @ObservedObject private var localization = Localization.shared
     @Environment(\.dismiss) private var dismiss
 
+    // Configuraciones de personalización
     @AppStorage("com.aurora.showVisualizer") private var showVisualizer = true
     @AppStorage("com.aurora.keepScreenOn") private var keepScreenOn = false
     @AppStorage("com.aurora.dynamicColor") private var dynamicColor = true
     @AppStorage("com.aurora.artworkCorner") private var artworkCorner: Double = 22
     @AppStorage("com.aurora.reduceTransparency") private var reduceTransparency = false
+    // ✅ Ajuste "Mostrar letras" (antes no se aplicaba)
     @AppStorage("com.aurora.showLyricsByDefault") private var showLyricsByDefault = false
 
     @State private var showLyrics = false
     @State private var showEqualizer = false
     @State private var showQueue = false
     @State private var showQualityDetail = false
+    // ✅ NUEVO: menú de 3 puntos → ver artista / álbum / letras / cola / compartir
     @State private var showArtistDetail = false
     @State private var showAlbumDetail = false
     @State private var artworkScale: CGFloat = 1.0
     @State private var progressBarWidth: CGFloat = 0
     @State private var extractedColor: Color = AppTheme.accent
+    // ✅ Guardamos el UIColor dominante crudo para calcular contraste
+    // ✅ FIX: usar accentUIColor en vez de systemPurple hardcodeado
     @State private var extractedUIColor: UIColor = AppTheme.accentUIColor
+
+    // ✅ Caché de color dominante por canción: evita recalcular el histograma
+    // HSB al reabrir NowPlaying o re-entrar a la misma pista (60fps sin hitch)
+    private static let colorCache = NSCache<NSString, UIColor>()
+
+    // ✅ Scrub optimizado: preview local a 60fps, seek real solo al soltar
     @State private var isScrubbing = false
     @State private var scrubPreviewTime: TimeInterval = 0
 
-    private static let colorCache = NSCache<NSString, UIColor>()
-
+    // MARK: - Adaptive sizing for iOS 16 & iPhone 8 Plus
     private var isCompactScreen: Bool {
         UIScreen.main.bounds.height < 800
     }
@@ -38,6 +49,7 @@ struct NowPlayingView: View {
     private var artworkSize: CGFloat {
         let screenWidth = UIScreen.main.bounds.width
         let screenHeight = UIScreen.main.bounds.height
+        // ✅ MEJORADO: Portada más grande y mejor centrada
         let maxByWidth = screenWidth - 40
         let maxByHeight = screenHeight * (isCompactScreen ? 0.32 : 0.42)
         return min(340, maxByWidth, maxByHeight)
@@ -56,8 +68,10 @@ struct NowPlayingView: View {
         formatTime(isScrubbing ? scrubPreviewTime : clock.time)
     }
 
+    // ✅ Contraste: si el color dominante es claro → texto oscuro; si es oscuro → texto blanco
     private var playIconColor: Color { AppTheme.contrastingText(on: extractedUIColor) }
 
+    // ✅ NUEVO: resoluciones para el menú de 3 puntos (artista/álbum actuales)
     private var currentArtist: Artist? {
         guard let song = audioEngine.currentSong else { return nil }
         let preferred = song.albumArtist.isEmpty ? song.artist : song.albumArtist
@@ -71,54 +85,75 @@ struct NowPlayingView: View {
             ?? fileAccessService.albums.first { $0.name == song.album }
     }
 
-    private var currentSongHasLyrics: Bool {
-        !(audioEngine.currentSong?.lyrics.isEmpty ?? true)
-    }
-
     var body: some View {
         NavigationStack {
             ZStack {
                 backgroundView
 
+                // ✅ DISEÑO MEJORADO: distribución equilibrada con Spacers
+                // flexibles (la proporción se adapta a cualquier pantalla,
+                // iPhone 8 Plus incluido) en lugar de espaciados fijos.
                 VStack(spacing: 0) {
-                    Spacer().frame(height: isCompactScreen ? 50 : 60)
+                    Spacer(minLength: isCompactScreen ? 4 : 10)
 
-                    artworkSection
+                    artworkView
+                        // ✅ MEJORADO: la portada solo anima al CAMBIAR de canción,
+                        // no al pausar/resumir. Antes había una animación rara de
+                        // escala (1.02 → 1.0) que se veía artificial al tocar play/pause.
+                        .animation(.easeInOut(duration: 0.3), value: audioEngine.currentSong?.id)
 
-                    Spacer().frame(height: isCompactScreen ? 16 : 24)
+                    Spacer(minLength: isCompactScreen ? 10 : 16)
 
-                    if let song = audioEngine.currentSong, !song.audioQualityDescription.isEmpty {
-                        qualityBadge(song.audioQualityDescription)
-                            .padding(.bottom, 8)
+                    if showVisualizer {
+                        // ✅ MEJORADO: AudioVisualizer ya rasteriza internamente
+                        // con .drawingGroup() y maneja la atenuación al pausar.
+                        // Nada de animaciones raras de escala aquí.
+                        AudioVisualizer(audioEngine: audioEngine, tintColor: extractedColor)
+                            .frame(height: isCompactScreen ? 32 : 48)
+                            .padding(.horizontal, 36)
                     }
 
-                    trackInfoSection
+                    Spacer(minLength: isCompactScreen ? 8 : 14)
 
-                    Spacer().frame(height: isCompactScreen ? 12 : 20)
+                    songInfoView
+                        .animation(.easeInOut(duration: 0.25), value: audioEngine.currentSong?.id)
 
-                    progressSection
+                    Spacer(minLength: isCompactScreen ? 8 : 14)
 
-                    Spacer().frame(height: isCompactScreen ? 16 : 24)
+                    progressView
+
+                    Spacer(minLength: isCompactScreen ? 10 : 18)
 
                     controlsView
 
-                    Spacer().frame(height: isCompactScreen ? 12 : 16)
+                    Spacer(minLength: isCompactScreen ? 8 : 14)
 
                     featureButtonsView
 
-                    Spacer(minLength: isCompactScreen ? 16 : 24)
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 24)
+                .fixedSize(horizontal: false, vertical: true)
+            }
+            .onAppear {
+                extractColorFromArtwork()
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
+                    artworkScale = 1.0
+                }
+                audioEngine.isKeepScreenOnEnabled = keepScreenOn
+                // ✅ Abrir letras automáticamente si el ajuste está activado
+                // y la canción tiene letras sincronizadas/plain
+                if showLyricsByDefault, audioEngine.currentSong?.lyrics.isEmpty == false, !showLyrics {
+                    showLyrics = true
                 }
             }
-            .ignoresSafeArea(.container, edges: .top)
-            .sheet(isPresented: $showLyrics) {
-                LyricsView(song: audioEngine.currentSong, audioEngine: audioEngine, clock: audioEngine.clock)
+            .onChange(of: audioEngine.isPlaying) { isPlaying in
+                UIApplication.shared.isIdleTimerDisabled = keepScreenOn && isPlaying
             }
-            .sheet(isPresented: $showEqualizer) {
-                EqualizerView(audioEngine: audioEngine)
+            .onChange(of: audioEngine.currentSong?.id) { _ in
+                extractColorFromArtwork()
             }
-            .sheet(isPresented: $showQueue) {
-                QueueView(audioEngine: audioEngine)
-            }
+            // ✅ NUEVO: destinos del menú de 3 puntos
             .sheet(isPresented: $showArtistDetail) {
                 if let artist = currentArtist {
                     NavigationStack {
@@ -135,580 +170,619 @@ struct NowPlayingView: View {
             }
             .presentationDetents([.large])
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(.hidden, for: .navigationBar)
+            .toolbarBackground(Color(UIColor.systemBackground).opacity(0.92), for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .principal) {
                     Text(Localization.localized("nowPlaying.title"))
-                        .font(.system(size: 13, weight: .bold, design: .rounded))
-                        .tracking(2.5)
-                        .foregroundStyle(AppTheme.contrastingText(on: extractedUIColor).opacity(0.9))
-                        .textCase(.uppercase)
+                        .font(.system(size: 20, weight: .bold, design: .rounded))
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: [extractedColor, extractedColor.opacity(0.75)],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .accessibilityLabel(Localization.localized("nowPlaying.title"))
                 }
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button {
                         dismiss()
                     } label: {
                         Image(systemName: "chevron.down")
-                            .foregroundStyle(AppTheme.contrastingText(on: extractedUIColor).opacity(0.7))
-                            .padding(8)
-                            .contentShape(Circle())
-                            .background {
-                                Circle().fill(.ultraThinMaterial)
-                            }
+                            .foregroundStyle(extractedColor)
+                            .font(.system(size: 17, weight: .semibold))
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
                     }
                 }
-            }
-            .onChange(of: audioEngine.isPlaying) { isPlaying in
-                UIApplication.shared.isIdleTimerDisabled = keepScreenOn && isPlaying
-            }
-            .onChange(of: audioEngine.currentSong?.id) { _ in
-                extractColorFromArtwork()
-            }
-        }
-        .overlay {
-            qualityDetailModal
-        }
-    }
-
-    private var backgroundView: some View {
-        Group {
-            if reduceTransparency {
-                Color(UIColor.systemBackground).ignoresSafeArea()
-            } else {
-                ZStack {
-                    // ✅ FONDO DIFUMINADO BASADO EN LA PORTADA: la carátula de la
-                    // canción en reproducción se muestra a tamaño completo con blur
-                    // intenso (60fps, GPU) y se oscurece para legibilidad.
-                    if let artwork = audioEngine.currentSong?.artwork {
-                        Image(uiImage: artwork)
-                            .resizable()
-                            .interpolation(.high)
-                            .scaledToFill()
-                            .blur(radius: 60)
-                            .scaleEffect(1.6) // ✅ evita bordes visibles del blur
-                            .overlay {
-                                Color.black.opacity(0.42)
+                // ✅ NUEVO: menú de opciones (3 puntos)
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Menu {
+                        if currentArtist != nil {
+                            Button {
+                                Haptics.light()
+                                showArtistDetail = true
+                            } label: {
+                                Label(Localization.localized("nowPlaying.viewArtist"), systemImage: "person.crop.circle")
                             }
-                        // ✅ Transición suave al cambiar de canción
-                        .id(audioEngine.currentSong?.id)
-                        .transition(.opacity)
-                            .animation(.easeInOut(duration: 0.5), value: audioEngine.currentSong?.id)
-                    } else {
-                        // ✅ Fallback: gradiente con el color dominante cuando no hay portada
-                        LinearGradient(
-                            colors: [
-                                Color(extractedUIColor).opacity(0.18),
-                                Color(UIColor.systemBackground),
-                                Color(UIColor.systemBackground)
-                            ],
-                            startPoint: .top, endPoint: .bottom
-                        )
-                    }
-
-                    // ✅ Capa de material translúcido para suavizar y unificar textos
-                    Rectangle()
-                        .fill(.ultraThinMaterial)
-                        .ignoresSafeArea()
-                        .overlay {
-                            LinearGradient(
-                                colors: [Color.black.opacity(0.25), Color.clear, Color.black.opacity(0.4)],
-                                startPoint: .top, endPoint: .bottom
-                            )
                         }
+                        if currentAlbum != nil {
+                            Button {
+                                Haptics.light()
+                                showAlbumDetail = true
+                            } label: {
+                                Label(Localization.localized("nowPlaying.viewAlbum"), systemImage: "square.stack")
+                            }
+                        }
+                        Button {
+                            Haptics.light()
+                            showLyrics = true
+                        } label: {
+                            Label(Localization.localized("nowPlaying.viewLyrics"), systemImage: "quote.opening")
+                        }
+                        Button {
+                            Haptics.light()
+                            showQueue = true
+                        } label: {
+                            Label(Localization.localized("nowPlaying.viewQueue"), systemImage: "list.number")
+                        }
+                        if let url = audioEngine.currentSong?.url {
+                            Divider()
+                            ShareLink(item: url) {
+                                Label(Localization.localized("nowPlaying.shareSong"), systemImage: "square.and.arrow.up")
+                            }
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis")
+                            .foregroundStyle(extractedColor)
+                            .font(.system(size: 17, weight: .semibold))
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
+                    }
+                    .accessibilityLabel(Localization.localized("nowPlaying.more"))
                 }
-                .ignoresSafeArea()
-            }
-        }
-    }
-
-    private var artworkSection: some View {
-        ZStack {
-            // ✅ Anillo visualizador circular alrededor del artwork (PowerAmp)
-            if showVisualizer {
-                CircularAudioVisualizer(audioEngine: audioEngine)
-                    .frame(width: artworkSize + 36, height: artworkSize + 36)
-                    .opacity(audioEngine.isPlaying ? 1 : 0.25)
-                    .animation(.easeInOut(duration: 0.3), value: audioEngine.isPlaying)
-            }
-
-            artworkView(frame: CGSize(width: artworkSize, height: artworkSize))
-        }
-        .frame(height: artworkSize + (showVisualizer ? 20 : 0))
-        .frame(maxWidth: .infinity)
-    }
-
-    @ViewBuilder
-    private func artworkView(frame: CGSize) -> some View {
-        if let artwork = audioEngine.currentSong?.artwork {
-            Image(uiImage: artwork)
-                .resizable()
-                .interpolation(.high)
-                .aspectRatio(contentMode: .fill)
-                .frame(width: frame.width, height: frame.height)
-                .clipShape(RoundedRectangle(cornerRadius: CGFloat(artworkCorner), style: .continuous))
-                .shadow(color: .black.opacity(0.25), radius: 20, x: 0, y: 10)
-                .overlay {
-                    RoundedRectangle(cornerRadius: CGFloat(artworkCorner), style: .continuous)
-                        .stroke(Color.white.opacity(0.08), lineWidth: 0.5)
-                }
-                .scaleEffect(artworkScale)
-                .animation(.spring(response: 0.4, dampingFraction: 0.7), value: artworkScale)
-                .onAppear {
-                    artworkScale = 0.92
-                    withAnimation(.spring(response: 0.5, dampingFraction: 0.7)) {
-                        artworkScale = 1.0
+                // ✅ Botón de me gusta en la barra de navegación
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    if let song = audioEngine.currentSong {
+                        Button {
+                            Haptics.light()
+                            fileAccessService.toggleLike(song)
+                        } label: {
+                            Image(systemName: fileAccessService.isLiked(song) ? "heart.fill" : "heart")
+                                .font(.system(size: 17, weight: .semibold))
+                                .foregroundStyle(fileAccessService.isLiked(song) ? .red : playIconColor)
+                                .frame(width: 44, height: 44)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .transition(.scale.combined(with: .opacity))
                     }
                 }
-        } else {
-            ZStack {
-                RoundedRectangle(cornerRadius: CGFloat(artworkCorner), style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: [extractedColor.opacity(0.3), extractedColor.opacity(0.1)],
-                            startPoint: .topLeading, endPoint: .bottomTrailing
-                        )
-                    )
-                    .frame(width: frame.width, height: frame.height)
-                    .shadow(color: .black.opacity(0.15), radius: 12, x: 0, y: 6)
-
-                Image(systemName: "music.note")
-                    .font(.system(size: frame.width * 0.18, weight: .light))
-                    .foregroundStyle(extractedColor.opacity(0.8))
             }
-        }
-    }
-
-    @ViewBuilder
-    private func qualityBadge(_ text: String) -> some View {
-        Button {
-            Haptics.light()
-            showQualityDetail = true
-        } label: {
-            HStack(spacing: 5) {
-                Image(systemName: "waveform.circle.fill")
-                    .font(.system(size: 10, weight: .semibold))
-                Text(text)
-                    .font(.system(size: 10, weight: .semibold).monospacedDigit())
+            .sheet(isPresented: $showLyrics) {
+                LyricsView(song: audioEngine.currentSong, audioEngine: audioEngine, clock: audioEngine.clock)
             }
-            .foregroundStyle(playIconColor)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 7)
-            .background {
-                Capsule().fill(
-                    LinearGradient(
-                        colors: [extractedColor.opacity(0.22), extractedColor.opacity(0.12)],
-                        startPoint: .top, endPoint: .bottom
-                    )
-                )
+            .sheet(isPresented: $showEqualizer) {
+                EqualizerView(audioEngine: audioEngine)
+            }
+            .sheet(isPresented: $showQueue) {
+                QueueView(audioEngine: audioEngine)
             }
             .overlay {
-                Capsule().strokeBorder(playIconColor.opacity(0.2), lineWidth: 0.5)
+                if showQualityDetail {
+                    qualityCardModal
+                        .transition(.opacity.combined(with: .scale(scale: 0.92)))
+                }
             }
-            .shadow(color: extractedColor.opacity(0.15), radius: 4, y: 2)
-        }
-        .buttonStyle(.plain)
-    }
-
-    private var trackInfoSection: some View {
-        VStack(spacing: 6) {
-            Text(audioEngine.currentSong?.title ?? Localization.localized("quality.noSong"))
-                .font(.system(size: isCompactScreen ? 20 : 24, weight: .bold, design: .rounded))
-                .foregroundStyle(.white)
-                .shadow(color: .black.opacity(0.4), radius: 6, y: 2)
-                .lineLimit(1)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 24)
-
-            Text(audioEngine.currentSong?.displaySubtitle ?? "")
-                .font(.system(size: isCompactScreen ? 13 : 15, weight: .medium))
-                .foregroundStyle(.white.opacity(0.7))
-                .shadow(color: .black.opacity(0.3), radius: 4, y: 1)
-                .lineLimit(1)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 24)
+            .animation(.spring(response: 0.35, dampingFraction: 0.85), value: showQualityDetail)
         }
     }
 
-    private var progressSection: some View {
-        VStack(spacing: 6) {
-            GeometryReader { geometry in
-                ZStack(alignment: .leading) {
-                    Capsule()
-                        .fill(Color.white.opacity(0.2))
-                        .frame(height: 4)
+    // MARK: - Background (respeta "Reducir transparencia")
+    private var backgroundView: some View {
+        Group {
+            if let artwork = audioEngine.currentSong?.artwork, !reduceTransparency {
+                GeometryReader { geometry in
+                    ZStack {
+                        Image(uiImage: artwork)
+                            .resizable()
+                            .interpolation(.medium)
+                            .scaledToFit()
+                            .frame(width: geometry.size.width, height: geometry.size.height)
+                            .blur(radius: 25)
+                            .opacity(0.45)
 
-                    Capsule()
+                        extractedColor.opacity(0.12)
+                    }
+                }
+                .ignoresSafeArea()
+                .allowsHitTesting(false)
+                .drawingGroup(opaque: false)
+            } else {
+                LinearGradient(
+                    colors: [
+                        Color(UIColor.systemBackground),
+                        Color(UIColor.secondarySystemBackground)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .ignoresSafeArea()
+                .allowsHitTesting(false)
+            }
+        }
+    }
+
+    // MARK: - Artwork (mejorado con mejor sombras y efectos)
+    private var artworkView: some View {
+        Group {
+            if let artwork = audioEngine.currentSong?.artwork {
+                Image(uiImage: artwork)
+                    .resizable()
+                    .interpolation(.high) // ✅ Mejor calidad de interpolación
+                    .scaledToFill()
+                    .frame(width: artworkSize, height: artworkSize)
+                    .clipShape(RoundedRectangle(cornerRadius: CGFloat(artworkCorner), style: .continuous))
+                    // ✅ 60fps: sombra ÚNICA consolidada (la doble sombra forzaba
+                    // 2 pasadas de offscreen rendering por frame; visualmente
+                    // equivalente con radius medio + borde luminoso).
+                    .shadow(color: .black.opacity(0.3), radius: 16, x: 0, y: 8)
+                    .overlay(
+                        // ✅ Borde con brillo sutil
+                        RoundedRectangle(cornerRadius: CGFloat(artworkCorner), style: .continuous)
+                            .stroke(
+                                LinearGradient(
+                                    colors: [.white.opacity(0.15), extractedColor.opacity(0.2), .clear],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                ),
+                                lineWidth: 1
+                            )
+                    )
+            } else {
+                ZStack {
+                    RoundedRectangle(cornerRadius: CGFloat(artworkCorner), style: .continuous)
                         .fill(
                             LinearGradient(
-                                colors: [extractedColor, extractedColor.opacity(0.8)],
-                                startPoint: .leading, endPoint: .trailing
+                                colors: [extractedColor.opacity(0.3), extractedColor.opacity(0.1)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
                             )
                         )
-                        .frame(width: geometry.size.width * progress, height: 4)
+                        .frame(width: artworkSize, height: artworkSize)
 
-                    Circle()
-                        .fill(playIconColor)
-                        .frame(width: isScrubbing ? 14 : 10, height: isScrubbing ? 14 : 10)
-                        .overlay {
-                            Circle().stroke(Color.white.opacity(0.6), lineWidth: 1.5)
-                        }
-                        .shadow(color: .black.opacity(0.4), radius: 3, x: 0, y: 1)
-                        .offset(x: geometry.size.width * progress - (isScrubbing ? 7 : 5))
-                        .animation(.easeOut(duration: 0.15), value: isScrubbing)
+                    Image(systemName: "music.note")
+                        .font(.system(size: artworkSize * 0.15, weight: .light))
+                        .foregroundStyle(extractedColor.opacity(0.8))
                 }
-                .frame(height: 20)
-                .contentShape(Rectangle())
-                .gesture(
-                    DragGesture(minimumDistance: 0)
-                        .onChanged { value in
-                            if !isScrubbing {
-                                isScrubbing = true
-                                Haptics.light()
-                            }
-                            let newProgress = min(max(0, value.location.x / geometry.size.width), 1)
-                            scrubPreviewTime = newProgress * audioEngine.duration
-                        }
-                        .onEnded { value in
-                            let finalProgress = min(max(0, value.location.x / geometry.size.width), 1)
-                            audioEngine.seek(to: finalProgress * audioEngine.duration)
-                            isScrubbing = false
-                        }
-                )
+                .shadow(color: .black.opacity(0.15), radius: 15, x: 0, y: 8)
+                .shadow(color: extractedColor.opacity(0.15), radius: 8, x: 0, y: 4)
             }
-            .frame(height: 20)
+        }
+    }
+
+    // MARK: - Song Info (mejorado con mejor tipografía y espaciado)
+    private var songInfoView: some View {
+        VStack(spacing: 6) {
+            // ✅ Título con gradiente sutil del color extraído (mejor tipografía)
+            // ✅ 60fps: shadow removido del texto con gradiente (forzaba blur
+            // offscreen por frame; el gradiente ya da suficiente profundidad).
+            Text(audioEngine.currentSong?.displayName ?? Localization.localized("quality.noSong"))
+                .font(.system(size: isCompactScreen ? 20 : 24, weight: .bold, design: .rounded))
+                .multilineTextAlignment(.center)
+                .foregroundStyle(
+                    LinearGradient(
+                        colors: [playIconColor, playIconColor.opacity(0.85)],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
+                .lineLimit(2)
+
+            Text(audioEngine.currentSong?.displaySubtitle ?? "—")
+                .font(.system(size: isCompactScreen ? 14 : 16, weight: .medium))
+                .foregroundStyle(AppTheme.contrastingText(on: extractedUIColor).opacity(0.75))
+                .lineLimit(1)
+                .padding(.horizontal, 20)
+
+            if let song = audioEngine.currentSong, !song.audioQualityDescription.isEmpty {
+                Button {
+                    Haptics.light()
+                    showQualityDetail = true
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "waveform.circle.fill")
+                            .font(.system(size: 10, weight: .semibold))
+
+                        Text(song.audioQualityDescription)
+                            .font(.system(size: 10, weight: .medium).monospacedDigit())
+
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 7, weight: .bold))
+                            .foregroundStyle(extractedColor.opacity(0.6))
+                    }
+                    .foregroundStyle(playIconColor)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background {
+                        Capsule().fill(extractedColor.opacity(0.2))
+                    }
+                    .overlay {
+                        Capsule().strokeBorder(playIconColor.opacity(0.15), lineWidth: 0.5)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(Localization.localized("quality.viewDetails"))
+            }
+        }
+        .padding(.horizontal, 6)
+    }
+
+    // MARK: - Progress View (scrub fluido a 60fps)
+    private var progressView: some View {
+        VStack(spacing: 8) {
+            // ✅ FIX: .frame(maxWidth: .infinity) para que el GeometryReader
+            // se expanda al ancho completo disponible. El gesture usa
+            // progressBarWidth (actualizado por onAppear/onChange del
+            // GeometryReader) para calcular el porcentaje de scrub.
+            GeometryReader { geometry in
+                // ✅ Feedback táctil: la barra engrosa al hacer scrub
+                // (animación de frame → GPU, sin costo de calidad)
+                let barHeight: CGFloat = isScrubbing ? 10 : 6
+                ZStack(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                        .fill(Color.secondary.opacity(0.2))
+                        .frame(height: barHeight)
+
+                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: [extractedColor.opacity(0.85), extractedColor],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .frame(width: geometry.size.width * progress, height: barHeight)
+                        // ✅ Glow más notorio mientras se arrastra
+                        .shadow(color: isScrubbing ? extractedColor.opacity(0.6) : extractedColor.opacity(0.3), radius: isScrubbing ? 8 : 4, x: 0, y: 0)
+                    // ✅ IndicADOR CIRCULAR: posicionado con .position en vez de
+                        // .offset (el offset causaba el "punto blanco" fuera de lugar).
+                        // Solo visible cuando hay progreso intermedio.
+                        .overlay(alignment: .leading) {
+                            Circle()
+                                .fill(.white)
+                                .frame(width: isScrubbing ? 14 : 10, height: isScrubbing ? 14 : 10)
+                                .shadow(color: .black.opacity(0.2), radius: 3, x: 0, y: 1)
+                                .position(
+                                    x: geometry.size.width * progress,
+                                    y: barHeight / 2
+                                )
+                                .opacity(progress > 0.01 && progress < 0.99 ? 1 : 0)
+                        }
+                }
+                .onAppear {
+                    progressBarWidth = geometry.size.width
+                }
+                .onChange(of: geometry.size.width) { newWidth in
+                    progressBarWidth = newWidth
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 10)
+            .padding(.vertical, 16)
+            .contentShape(Rectangle())
+            // ✅ FIX animación rara: antes había UNA animación spring sobre
+            // todo el subárbol disparada por isScrubbing, lo que hacía que el
+            // indicador circular "botara" cada vez que el reloj (0.3s) movía
+            // el progreso. Ahora: easing lineal suave para el avance normal
+            // del reloj + spring SOLO para el cambio de tamaño al arrastrar.
+            .animation(.linear(duration: 0.25), value: progress)
+            .animation(.spring(response: 0.3, dampingFraction: 0.8), value: isScrubbing)
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        isScrubbing = true
+                        let percentage = max(0, min(1, value.location.x / progressBarWidth))
+                        scrubPreviewTime = audioEngine.duration * percentage
+                    }
+                    .onEnded { value in
+                        let percentage = max(0, min(1, value.location.x / progressBarWidth))
+                        let newTime = audioEngine.duration * percentage
+                        isScrubbing = false
+                        audioEngine.seek(to: newTime)
+                    }
+            )
 
             HStack {
                 Text(scrubPreviewText)
-                    .font(.system(size: 11, weight: .semibold).monospacedDigit())
-                    .foregroundStyle(.white.opacity(0.8))
+                    .font(.system(size: isCompactScreen ? 12 : 13, weight: isScrubbing ? .bold : .medium))
+                    .foregroundStyle(isScrubbing ? playIconColor : AppTheme.contrastingText(on: extractedUIColor).opacity(0.75))
+                    .monospacedDigit()
+                    .animation(.easeInOut(duration: 0.15), value: isScrubbing)
 
                 Spacer()
 
                 Text(formatTime(audioEngine.duration))
-                    .font(.system(size: 11, weight: .semibold).monospacedDigit())
-                    .foregroundStyle(.white.opacity(0.8))
+                    .font(.system(size: isCompactScreen ? 12 : 13, weight: .medium))
+                    .foregroundStyle(AppTheme.contrastingText(on: extractedUIColor).opacity(0.75))
+                    .monospacedDigit()
             }
         }
-        .padding(.horizontal, 24)
     }
 
+    // MARK: - Controls
     private var controlsView: some View {
-        HStack(spacing: isCompactScreen ? 2 : 8) {
-            // Grupo izquierdo: Shuffle
-            controlButton(icon: "shuffle", isActive: audioEngine.isShuffleEnabled) {
+        HStack(spacing: isCompactScreen ? 8 : 14) {
+            // Shuffle
+            Button {
                 Haptics.light()
                 audioEngine.toggleShuffle()
+            } label: {
+                ZStack {
+                    Capsule()
+                        .fill(audioEngine.isShuffleEnabled ? extractedColor.opacity(0.25) : Color.clear)
+                        .frame(width: isCompactScreen ? 42 : 46, height: isCompactScreen ? 30 : 36)
+
+                    Image(systemName: "shuffle")
+                        .font(.system(size: isCompactScreen ? 15 : 17, weight: audioEngine.isShuffleEnabled ? .bold : .semibold))
+                        .foregroundStyle(audioEngine.isShuffleEnabled ? playIconColor : AppTheme.contrastingText(on: extractedUIColor).opacity(0.7))
+                }
+                .frame(width: isCompactScreen ? 56 : 64, height: isCompactScreen ? 56 : 64)
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
 
-            Spacer()
-
-            // Grupo central: Prev · Play · Next
-            HStack(spacing: isCompactScreen ? 6 : 18) {
-                controlButton(icon: "backward.fill", size: .medium) {
-                    Haptics.light()
-                    audioEngine.playPrevious()
+            // Previous
+            Button {
+                Haptics.light()
+                audioEngine.playPrevious()
+            } label: {
+                ZStack {
+                    Circle().fill(controlBackground).frame(width: isCompactScreen ? 44 : 50, height: isCompactScreen ? 44 : 50)
+                    Image(systemName: "backward.fill")
+                        .font(.system(size: isCompactScreen ? 16 : 18, weight: .semibold))
+                        .foregroundStyle(playIconColor)
                 }
-
-                Button {
-                    Haptics.medium()
-                    if audioEngine.isPlaying {
-                        audioEngine.pause()
-                    } else {
-                        audioEngine.resume()
-                    }
-                } label: {
-                    ZStack {
-                        Circle()
-                            .fill(
-                                LinearGradient(
-                                    colors: [extractedColor, extractedColor.opacity(0.8)],
-                                    startPoint: .topLeading, endPoint: .bottomTrailing
-                                )
-                            )
-                            .frame(width: isCompactScreen ? 64 : 76, height: isCompactScreen ? 64 : 76)
-                            .shadow(color: extractedColor.opacity(0.5), radius: 14, x: 0, y: 6)
-
-                        Image(systemName: audioEngine.isPlaying ? "pause.fill" : "play.fill")
-                            .font(.system(size: isCompactScreen ? 24 : 28, weight: .bold))
-                            .foregroundStyle(playIconColor)
-                            .id(audioEngine.isPlaying ? "playing" : "paused")
-                    }
-                    .animation(.easeInOut(duration: 0.2), value: audioEngine.isPlaying)
-                }
-                .buttonStyle(.plain)
-
-                controlButton(icon: "forward.fill", size: .medium) {
-                    Haptics.light()
-                    audioEngine.playNext()
-                }
+                .frame(width: isCompactScreen ? 56 : 64, height: isCompactScreen ? 56 : 64)
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
 
-            Spacer()
-
-            // Grupo derecho: Repeat · Like
-            HStack(spacing: isCompactScreen ? 2 : 8) {
-                controlButton(icon: repeatIcon, isActive: audioEngine.repeatMode != .off) {
-                    Haptics.light()
-                    audioEngine.cycleRepeatMode()
+            // Play/Pause (icono con contraste)
+            Button {
+                Haptics.medium()
+                if audioEngine.isPlaying {
+                    audioEngine.pause()
+                } else {
+                    audioEngine.resume()
                 }
-
-                if let song = audioEngine.currentSong {
-                    Button {
-                        Haptics.light()
-                        fileAccessService.toggleLike(song)
-                    } label: {
-                        ZStack {
-                            Capsule()
-                                .fill(fileAccessService.isLiked(song) ? Color.red.opacity(0.25) : Color.clear)
-                                .frame(width: isCompactScreen ? 38 : 44, height: isCompactScreen ? 28 : 34)
-
-                            Image(systemName: fileAccessService.isLiked(song) ? "heart.fill" : "heart")
-                                .font(.system(size: isCompactScreen ? 15 : 17, weight: fileAccessService.isLiked(song) ? .bold : .semibold))
-                                .foregroundStyle(fileAccessService.isLiked(song) ? .red : .white.opacity(0.75))
-                        }
-                        .frame(width: isCompactScreen ? 56 : 64, height: isCompactScreen ? 56 : 64)
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
+            } label: {
+                ZStack {
+                    Circle().fill(extractedColor).frame(width: isCompactScreen ? 62 : 72, height: isCompactScreen ? 62 : 72)
+                    // ✅ El icono cambia con crossfade de opacidad al pausar/resumir
+                    // (sin animación de scale rara; compatible iOS 16)
+                    Image(systemName: audioEngine.isPlaying ? "pause.fill" : "play.fill")
+                        .font(.system(size: isCompactScreen ? 22 : 26, weight: .bold))
+                        .foregroundStyle(playIconColor)
+                        .transition(.opacity)
+                        .id(audioEngine.isPlaying ? "playing" : "paused")
                 }
+                .shadow(color: extractedColor.opacity(0.35), radius: 10, x: 0, y: 4)
+                .animation(.easeInOut(duration: 0.2), value: audioEngine.isPlaying)
+                .frame(width: isCompactScreen ? 76 : 88, height: isCompactScreen ? 76 : 88)
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+
+            // Next
+            Button {
+                Haptics.light()
+                audioEngine.playNext()
+            } label: {
+                ZStack {
+                    Circle().fill(controlBackground).frame(width: isCompactScreen ? 44 : 50, height: isCompactScreen ? 44 : 50)
+                    Image(systemName: "forward.fill")
+                        .font(.system(size: isCompactScreen ? 16 : 18, weight: .semibold))
+                        .foregroundStyle(playIconColor)
+                }
+                .frame(width: isCompactScreen ? 56 : 64, height: isCompactScreen ? 56 : 64)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            // Repeat
+            Button {
+                Haptics.light()
+                audioEngine.cycleRepeatMode()
+            } label: {
+                ZStack {
+                    Capsule()
+                        .fill(audioEngine.repeatMode != .off ? extractedColor.opacity(0.25) : Color.clear)
+                        .frame(width: isCompactScreen ? 42 : 46, height: isCompactScreen ? 30 : 36)
+
+                    Image(systemName: repeatIcon)
+                        .font(.system(size: isCompactScreen ? 15 : 17, weight: audioEngine.repeatMode != .off ? .bold : .semibold))
+                        .foregroundStyle(audioEngine.repeatMode != .off ? playIconColor : AppTheme.contrastingText(on: extractedUIColor).opacity(0.7))
+                }
+                .frame(width: isCompactScreen ? 56 : 64, height: isCompactScreen ? 56 : 64)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
         }
         .frame(maxWidth: .infinity)
-        .padding(.horizontal, 16)
+        .fixedSize()
     }
 
-    @ViewBuilder
-    private func controlButton(icon: String, size: ControlSize = .small, isActive: Bool = false, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            ZStack {
-                if size == .medium {
-                    Circle()
-                        .fill(controlBackground)
-                        .frame(width: isCompactScreen ? 44 : 50, height: isCompactScreen ? 44 : 50)
-                } else {
-                    Capsule()
-                        .fill(isActive ? extractedColor.opacity(0.2) : Color.clear)
-                        .frame(width: isCompactScreen ? 38 : 44, height: isCompactScreen ? 28 : 34)
-                }
-
-                Image(systemName: icon)
-                    .font(.system(size: isCompactScreen ? 15 : 17, weight: isActive ? .bold : .semibold))
-                    .foregroundStyle(isActive ? extractedColor : .white.opacity(0.75))
-                    .shadow(color: .black.opacity(0.3), radius: 3, y: 1)
-            }
-            .frame(width: isCompactScreen ? 56 : 64, height: isCompactScreen ? 56 : 64)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-    }
-
-    private enum ControlSize {
-        case small, medium
-    }
-
+    // MARK: - Feature Buttons (EQ · Letras · Cola · AirPlay en una sola línea)
     private var featureButtonsView: some View {
-        let buttonSize: CGFloat = isCompactScreen ? 56 : 64
-        let capsuleWidth: CGFloat = isCompactScreen ? 42 : 48
-        let capsuleHeight: CGFloat = isCompactScreen ? 32 : 36
-        let iconSize: CGFloat = isCompactScreen ? 14 : 16
+        let buttonSize: CGFloat = isCompactScreen ? 60 : 68
+        let capsuleWidth: CGFloat = isCompactScreen ? 44 : 50
+        let capsuleHeight: CGFloat = isCompactScreen ? 34 : 38
+        let iconSize: CGFloat = isCompactScreen ? 15 : 17
 
-        return HStack(spacing: isCompactScreen ? 8 : 12) {
-            featureButton(icon: "slider.horizontal.3", active: audioEngine.isEQEnabled) {
+        return HStack(spacing: isCompactScreen ? 10 : 14) {
+            // Equalizador
+            Button {
                 Haptics.light()
                 showEqualizer = true
-            }
+            } label: {
+                ZStack {
+                    Capsule()
+                        .fill(audioEngine.isEQEnabled ? extractedColor.opacity(0.25) : Color.clear)
+                        .frame(width: capsuleWidth, height: capsuleHeight)
 
-            featureButton(icon: currentSongHasLyrics ? "quote.bubble.fill" : "quote.bubble", active: currentSongHasLyrics) {
+                    Image(systemName: "slider.horizontal.3")
+                        .font(.system(size: iconSize, weight: audioEngine.isEQEnabled ? .bold : .semibold))
+                        .foregroundStyle(audioEngine.isEQEnabled ? playIconColor : AppTheme.contrastingText(on: extractedUIColor).opacity(0.7))
+                }
+                .frame(width: buttonSize, height: buttonSize)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(Localization.localized("quality.accessibility.equalizer"))
+
+            // Letras
+            Button {
                 Haptics.light()
                 showLyrics = true
-            }
+            } label: {
+                ZStack {
+                    Capsule()
+                        .fill(audioEngine.currentSong?.lyrics.isEmpty == false ? extractedColor.opacity(0.25) : Color.clear)
+                        .frame(width: capsuleWidth, height: capsuleHeight)
 
-            featureButton(icon: "list.bullet", active: !audioEngine.nextUpQueue.isEmpty) {
+                    Image(systemName: audioEngine.currentSong?.lyrics.isEmpty == false ? "quote.bubble.fill" : "quote.bubble")
+                        .font(.system(size: iconSize, weight: audioEngine.currentSong?.lyrics.isEmpty == false ? .bold : .semibold))
+                        .foregroundStyle(audioEngine.currentSong?.lyrics.isEmpty == false ? playIconColor : AppTheme.contrastingText(on: extractedUIColor).opacity(0.7))
+                }
+                .frame(width: buttonSize, height: buttonSize)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(Localization.localized("quality.accessibility.lyrics"))
+
+            // Cola
+            Button {
                 Haptics.light()
                 showQueue = true
-            }
+            } label: {
+                ZStack {
+                    Capsule()
+                        .fill(audioEngine.nextUpQueue.isEmpty ? Color.clear : extractedColor.opacity(0.25))
+                        .frame(width: capsuleWidth, height: capsuleHeight)
 
-            featureButton(icon: "airplayaudio", active: audioEngine.outputPortType == AVAudioSession.Port.airPlay.rawValue) {
+                    Image(systemName: "list.bullet")
+                        .font(.system(size: iconSize, weight: .semibold))
+                        .foregroundStyle(audioEngine.nextUpQueue.isEmpty ? AppTheme.contrastingText(on: extractedUIColor).opacity(0.7) : playIconColor)
+                }
+                .frame(width: buttonSize, height: buttonSize)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(Localization.localized("quality.accessibility.queue"))
+
+            // ✅ AirPlay (FIX): en vez de abrir un sheet con un AVRoutePickerView
+            // gigante que fallaba, el picker NATIVO de iOS va superpuesto e
+            // invisible sobre el botón: al tocar, iOS muestra directamente su
+            // menú emergente de AirPlay (comportamiento estándar del sistema).
+            ZStack {
+                // Botón visual (icono + resaltado si la salida es AirPlay)
+                Capsule()
+                    .fill(audioEngine.outputPortType == AVAudioSession.Port.airPlay.rawValue ? extractedColor.opacity(0.25) : Color.clear)
+                    .frame(width: capsuleWidth, height: capsuleHeight)
+
+                Image(systemName: "airplayaudio")
+                    .font(.system(size: iconSize, weight: audioEngine.outputPortType == AVAudioSession.Port.airPlay.rawValue ? .bold : .semibold))
+                    .foregroundStyle(audioEngine.outputPortType == AVAudioSession.Port.airPlay.rawValue ? playIconColor : AppTheme.contrastingText(on: extractedUIColor).opacity(0.7))
+
+                // ✅ Picker nativo invisible encima: captura el toque y muestra
+                // el menú de AirPlay del sistema. opacity 0.011 (no 0) para que
+                // UIKit siga entregando los toques al AVRoutePickerView.
                 AirPlayRoutePickerView()
                     .frame(width: buttonSize, height: buttonSize)
                     .opacity(0.011)
-                    .allowsHitTesting(true)
+                    .contentShape(Rectangle())
             }
+            .frame(width: buttonSize, height: buttonSize)
+            .contentShape(Rectangle())
+            .accessibilityLabel(Localization.localized("quality.accessibility.airplay"))
+        }
+        .frame(maxWidth: .infinity)
+        .fixedSize()
+    }
 
-            Menu {
-                if currentArtist != nil {
+    // MARK: - Modal centrado con X (ventana emergente sobre el NowPlaying)
+    private var qualityCardModal: some View {
+        ZStack {
+            // ✅ Backdrop con blur (más premium que solo opacidad)
+            Color.black.opacity(0.4)
+                .ignoresSafeArea()
+                .background(.ultraThinMaterial)
+                .onTapGesture {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                        showQualityDetail = false
+                    }
+                }
+                .transition(.opacity)
+
+            VStack(spacing: 0) {
+                HStack(spacing: 12) {
+                    Image(systemName: "waveform.badge.magnifyingglass")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(AppTheme.accent)
+
+                    Text(Localization.localized("audio.quality.title"))
+                        .font(.system(size: 17, weight: .bold, design: .rounded))
+                        .foregroundStyle(.primary)
+
+                    Spacer()
+
                     Button {
                         Haptics.light()
-                        showArtistDetail = true
-                    } label: {
-                        Label(Localization.localized("nowPlaying.viewArtist"), systemImage: "person.crop.circle")
-                    }
-                }
-                if currentAlbum != nil {
-                    Button {
-                        Haptics.light()
-                        showAlbumDetail = true
-                    } label: {
-                        Label(Localization.localized("nowPlaying.viewAlbum"), systemImage: "square.stack")
-                    }
-                }
-                Divider()
-                if let url = audioEngine.currentSong?.url {
-                    ShareLink(item: url) {
-                        Label(Localization.localized("nowPlaying.shareSong"), systemImage: "square.and.arrow.up")
-                    }
-                }
-            } label: {
-                ZStack {
-                    Capsule()
-                        .fill(Color.clear)
-                        .frame(width: capsuleWidth, height: capsuleHeight)
-
-                    Image(systemName: "ellipsis")
-                        .font(.system(size: iconSize, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.75))
-                        .shadow(color: .black.opacity(0.3), radius: 3, y: 1)
-                }
-                .frame(width: buttonSize, height: buttonSize)
-                .contentShape(Rectangle())
-            }
-            .accessibilityLabel(Localization.localized("nowPlaying.more"))
-        }
-        .padding(.horizontal, isCompactScreen ? 12 : 18)
-        .padding(.vertical, isCompactScreen ? 6 : 8)
-        .background {
-            Capsule()
-                .fill(.ultraThinMaterial.opacity(0.6))
-                .overlay {
-                    Capsule().strokeBorder(Color.white.opacity(0.1), lineWidth: 0.5)
-                }
-                .shadow(color: .black.opacity(0.2), radius: 8, y: 3)
-        }
-    }
-
-    // ✅ Overload sin picker (la mayoría de botones de feature)
-    @ViewBuilder
-    private func featureButton(
-        icon: String,
-        active: Bool,
-        action: @escaping () -> Void
-    ) -> some View {
-        let buttonSize: CGFloat = isCompactScreen ? 56 : 64
-        let capsuleWidth: CGFloat = isCompactScreen ? 42 : 48
-        let capsuleHeight: CGFloat = isCompactScreen ? 32 : 36
-        let iconSize: CGFloat = isCompactScreen ? 14 : 16
-
-        ZStack {
-            Button(action: action) {
-                ZStack {
-                    Capsule()
-                        .fill(active ? extractedColor.opacity(0.25) : Color.clear)
-                        .frame(width: capsuleWidth, height: capsuleHeight)
-                        .overlay {
-                            if active {
-                                Capsule().strokeBorder(extractedColor.opacity(0.4), lineWidth: 0.5)
-                            }
-                        }
-
-                    Image(systemName: icon)
-                        .font(.system(size: iconSize, weight: active ? .bold : .semibold))
-                        .foregroundStyle(active ? extractedColor : .white.opacity(0.75))
-                        .shadow(color: .black.opacity(0.3), radius: 3, y: 1)
-                }
-                .frame(width: buttonSize, height: buttonSize)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-        }
-        .frame(width: buttonSize, height: buttonSize)
-    }
-
-    // ✅ Overload con picker (AirPlay superpuesto, iOS 16+)
-    @ViewBuilder
-    private func featureButton<Picker: View>(
-        icon: String,
-        active: Bool,
-        @ViewBuilder picker: () -> Picker
-    ) -> some View {
-        let buttonSize: CGFloat = isCompactScreen ? 56 : 64
-        let capsuleWidth: CGFloat = isCompactScreen ? 42 : 48
-        let capsuleHeight: CGFloat = isCompactScreen ? 32 : 36
-        let iconSize: CGFloat = isCompactScreen ? 14 : 16
-
-        ZStack {
-            Button {
-                // El picker nativo maneja el toque
-            } label: {
-                ZStack {
-                    Capsule()
-                        .fill(active ? extractedColor.opacity(0.25) : Color.clear)
-                        .frame(width: capsuleWidth, height: capsuleHeight)
-
-                    Image(systemName: icon)
-                        .font(.system(size: iconSize, weight: active ? .bold : .semibold))
-                        .foregroundStyle(active ? extractedColor : .white.opacity(0.75))
-                        .shadow(color: .black.opacity(0.3), radius: 3, y: 1)
-                }
-                .frame(width: buttonSize, height: buttonSize)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-
-            picker()
-        }
-        .frame(width: buttonSize, height: buttonSize)
-    }
-
-    private var qualityDetailModal: some View {
-        Group {
-            if showQualityDetail {
-                ZStack {
-                    Color.black.opacity(0.4)
-                        .ignoresSafeArea()
-                        .onTapGesture {
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
                             showQualityDetail = false
                         }
-
-                    VStack(spacing: 0) {
-                        HStack {
-                            Spacer()
-                            Button {
-                                showQualityDetail = false
-                            } label: {
-                                Image(systemName: "xmark.circle.fill")
-                                    .font(.system(size: 22))
-                                    .foregroundStyle(.secondary)
-                                    .background(Circle().fill(Color(UIColor.systemBackground)))
-                                    .contentShape(Circle())
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 32, height: 32)
+                            .background {
+                                Circle().fill(Color.secondary.opacity(0.15))
                             }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel(Localization.localized("audio.quality.close"))
-                        }
-                        .padding(.horizontal, 18).padding(.top, 16).padding(.bottom, 8)
-
-                        AudioQualityDetailView(audioEngine: audioEngine, embeddedInCard: true)
+                            .contentShape(Circle())
                     }
-                    .frame(maxWidth: 480, maxHeight: 640)
-                    .background {
-                        RoundedRectangle(cornerRadius: 32, style: .continuous)
-                            .fill(Color(UIColor.systemBackground))
-                            .shadow(color: .black.opacity(0.35), radius: 30, x: 0, y: 15)
-                            .shadow(color: AppTheme.accent.opacity(0.08), radius: 20, x: 0, y: 5)
-                    }
-                    .clipShape(RoundedRectangle(cornerRadius: 32, style: .continuous))
-                    .padding(.horizontal, 24)
-                    .scaleEffect(showQualityDetail ? 1.0 : 0.88)
-                    .opacity(showQualityDetail ? 1.0 : 0)
-                    .blur(radius: showQualityDetail ? 0 : 8)
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(Localization.localized("audio.quality.close"))
                 }
-                .animation(.spring(response: 0.4, dampingFraction: 0.8), value: showQualityDetail)
+                .padding(.horizontal, 18).padding(.top, 16).padding(.bottom, 8)
+
+                AudioQualityDetailView(audioEngine: audioEngine, embeddedInCard: true)
             }
+            .frame(maxWidth: 480, maxHeight: 640)
+            .background {
+                RoundedRectangle(cornerRadius: 32, style: .continuous)
+                    .fill(Color(UIColor.systemBackground))
+                    // ✅ Sombra doble para mayor profundidad
+                    .shadow(color: .black.opacity(0.35), radius: 30, x: 0, y: 15)
+                    .shadow(color: AppTheme.accent.opacity(0.08), radius: 20, x: 0, y: 5)
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 32, style: .continuous))
+            .padding(.horizontal, 24)
+            // ✅ ANIMACIÓN DE ENTRADA/SALIDA: scale + opacity + blur
+            .scaleEffect(showQualityDetail ? 1.0 : 0.88)
+            .opacity(showQualityDetail ? 1.0 : 0)
+            .blur(radius: showQualityDetail ? 0 : 8)
         }
+        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: showQualityDetail)
     }
 
+    // MARK: - Helpers
     private var controlBackground: AnyShapeStyle {
         reduceTransparency
-            ? AnyShapeStyle(Color(UIColor.systemBackground))
+            ? AnyShapeStyle(Color(UIColor.secondarySystemBackground))
             : AnyShapeStyle(.ultraThinMaterial)
     }
 
@@ -728,6 +802,7 @@ struct NowPlayingView: View {
     }
 
     private func extractColorFromArtwork() {
+        // ✅ FIX: respetar el ajuste "Color dinámico"
         guard dynamicColor else {
             extractedColor = AppTheme.accent
             return
@@ -738,6 +813,7 @@ struct NowPlayingView: View {
             return
         }
 
+        // ✅ Color dominante VIVO vía histograma HSB, con caché por canción
         let cacheKey = (audioEngine.currentSong?.id.uuidString ?? "none") as NSString
         if let cached = NowPlayingView.colorCache.object(forKey: cacheKey) {
             extractedColor = AppTheme.readableColor(from: cached)
@@ -755,20 +831,20 @@ struct NowPlayingView: View {
     }
 }
 
+// MARK: - AirPlay Route Picker View (UIKit wrapper)
+// ✅ FIX: el picker nativo embebido directamente (no dentro de un contenedor
+// extra). Al tocarlo, iOS muestra su menú emergente de AirPlay del sistema.
 struct AirPlayRoutePickerView: UIViewRepresentable {
     typealias UIViewType = AVRoutePickerView
 
     func makeUIView(context: Context) -> AVRoutePickerView {
         let picker = AVRoutePickerView()
         picker.prioritizesVideoDevices = false
+        // ✅ FIX: usar AppTheme.accent (UIColor(AppTheme.accent) resolvía el
+        // asset por defecto y no respetaba el ajuste "Color de acento")
         picker.tintColor = AppTheme.accentUIColor
         return picker
     }
 
-    func updateUIView(_ uiView: AVRoutePickerView, context: Context) {
-        // ✅ FIX: el tint se fijaba solo en makeUIView → no reaccionaba al
-        // acento dinámico de la carátula ni al cambio manual de acento.
-        let tint = AppTheme.accentUIColor
-        if uiView.tintColor != tint { uiView.tintColor = tint }
-    }
+    func updateUIView(_ uiView: AVRoutePickerView, context: Context) {}
 }
