@@ -317,6 +317,9 @@ struct ContentView: View {
             ForEach(currentFilteredSongs) { song in
                 songRow(song)
             }
+            .listRowSeparator(.hidden)
+            .listRowBackground(Color.clear)
+            .listRowInsets(EdgeInsets(top: 6, leading: 12, bottom: 6, trailing: 12))
         }
     }
     
@@ -667,17 +670,21 @@ struct ContentView: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
-        .background {
-            if isCurrent {
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(AppTheme.accent.opacity(0.07))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .strokeBorder(AppTheme.accent.opacity(0.15), lineWidth: 0.5)
-                    )
+            .background {
+                if isCurrent {
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(AppTheme.accent.opacity(0.07))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                .strokeBorder(AppTheme.accent.opacity(0.15), lineWidth: 0.5)
+                        )
+                } else {
+                    // ✅ Misma tarjeta material que álbumes/artistas (diseño unificado)
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(.regularMaterial)
+                }
             }
-        }
-        .contextMenu {
+            .contextMenu {
             Button {
                 playSong(song)
             } label: {

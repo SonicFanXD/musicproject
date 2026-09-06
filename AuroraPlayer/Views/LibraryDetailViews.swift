@@ -1,4 +1,5 @@
 import SwiftUI
+import CoreImage
 
 // MARK: - Album Detail (diseño inmersivo premium con color de carátula)
 struct AlbumDetailView: View {
@@ -9,6 +10,8 @@ struct AlbumDetailView: View {
     // ✅ Color dominante VIVO (histograma HSB) extraído en segundo plano
     @State private var liveDominantColor: UIColor? = nil
     @State private var appearAnimation = false
+    // ✅ OPT: blur precalculado UNA vez (en background) en vez de re-renderizar .blur(50) en cada frame
+    @State private var heroBlurredArtwork: UIImage? = nil
 
     private var songs: [Song] { album.songs }
     private var totalDuration: TimeInterval { songs.reduce(0) { $0 + $1.duration } }
@@ -30,7 +33,7 @@ struct AlbumDetailView: View {
                 heroSection
                 actionButtons
                     .padding(.horizontal, 20).padding(.top, 20)
-                VStack(spacing: 10) {
+                LazyVStack(spacing: 10) {
                     sectionHeader(icon: "music.note.list", title: Localization.localized("details.songs"))
                     if hasMultipleDiscs {
                         ForEach(songsByDisc, id: \.disc) { discGroup in
@@ -51,23 +54,35 @@ struct AlbumDetailView: View {
         .background(Color(UIColor.systemBackground).ignoresSafeArea())
         .navigationTitle(album.name)
         .navigationBarTitleDisplayMode(.inline)
-        .toolbarBackground(Color(UIColor.systemBackground).opacity(0.92), for: .navigationBar)
-        .toolbarBackground(.visible, for: .navigationBar)
+        // ✅ Sin banda gris: el hero inmersivo fluye bajo la barra de navegación
+        .toolbarBackground(.hidden, for: .navigationBar)
         .onAppear {
             // ✅ Animación de entrada suave
             withAnimation(.easeOut(duration: 0.4)) {
                 appearAnimation = true
             }
+            // ✅ OPT: precalcular el blur del hero UNA vez en background
+            prepareBlurredArtwork(from: album.artwork)
             // ✅ Extraer el color dominante VIVO de la carátula en hilo de fondo
             guard let artwork = album.artwork else { return }
             DispatchQueue.global(qos: .userInitiated).async {
-                let dominant = AppTheme.dominantColor(from: artwork)
+                // ✅ Caché compartida: mismo color que NowPlaying para este álbum
+                let dominant = AppTheme.cachedDominantColor(from: artwork, key: album.id.uuidString)
                 DispatchQueue.main.async {
                     withAnimation(.easeInOut(duration: 0.3)) {
                         self.liveDominantColor = dominant
                     }
                 }
             }
+        }
+    }
+
+    // ✅ OPT: gaussian blur costoso → se calcula UNA vez en hilo de fondo y se cachea
+    private func prepareBlurredArtwork(from artwork: UIImage?) {
+        guard heroBlurredArtwork == nil, let artwork = artwork else { return }
+        DispatchQueue.global(qos: .userInitiated).async {
+            let blurred = artwork.applyingGaussianBlur(radius: 40)
+            DispatchQueue.main.async { self.heroBlurredArtwork = blurred }
         }
     }
 
@@ -149,8 +164,8 @@ struct AlbumDetailView: View {
             GeometryReader { geometry in
                 Group {
                     if let artwork = album.artwork {
-                        Image(uiImage: artwork)
-                            .resizable().scaledToFill().blur(radius: 50).opacity(0.35)
+                        Image(uiImage: heroBlurredArtwork ?? artwork)
+                            .resizable().scaledToFill().opacity(0.35)
                             .overlay(
                                 LinearGradient(
                                     colors: [
@@ -267,13 +282,13 @@ struct AlbumDetailView: View {
             }
             .padding(.horizontal, 14).padding(.vertical, 12)
             .background {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(isCurrent ? tintColor.opacity(0.08) : Color.clear)
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(isCurrent ? tintColor.opacity(0.08) : .regularMaterial)
             }
             .contentShape(Rectangle())
             .overlay {
                 if isCurrent {
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
                         .strokeBorder(tintColor.opacity(0.2), lineWidth: 0.5)
                 }
             }
@@ -334,12 +349,16 @@ struct ArtistDetailView: View {
 
     @State private var appearAnimation = false
     @State private var liveDominantColor: UIColor? = nil
+    // ✅ OPT: blur precalculado UNA vez (en background)
+    @State private var heroBlurredArtwork: UIImage? = nil
 
     private var songs: [Song] { artist.songs }
     private var albums: [Album] { artist.albums }
     private var totalDuration: TimeInterval { songs.reduce(0) { $0 + $1.duration } }
     private var tintColor: Color { AppTheme.readableColor(from: liveDominantColor ?? artist.albums.first?.dominantColor) }
     private var tintUIColor: UIColor { liveDominantColor ?? artist.albums.first?.dominantColor ?? AppTheme.accentUIColor }
+    // ✅ Contraste para botones (igual que AlbumDetailView)
+    private var onTintColor: Color { AppTheme.contrastingText(on: tintUIColor) }
 
     var body: some View {
         ScrollView {
@@ -366,7 +385,7 @@ struct ArtistDetailView: View {
                     }
                     .padding(.top, 28)
                 }
-                VStack(spacing: 10) {
+                LazyVStack(spacing: 10) {
                     sectionHeader(icon: "music.note.list", title: Localization.localized("details.songs"))
                     ForEach(Array(songs.enumerated()), id: \.element.id) { index, song in
                         songRow(song, index: index)
@@ -380,16 +399,19 @@ struct ArtistDetailView: View {
         .background(Color(UIColor.systemBackground).ignoresSafeArea())
         .navigationTitle(artist.name)
         .navigationBarTitleDisplayMode(.inline)
-        .toolbarBackground(Color(UIColor.systemBackground).opacity(0.92), for: .navigationBar)
-        .toolbarBackground(.visible, for: .navigationBar)
+        // ✅ Sin banda gris (coherente con AlbumDetailView)
+        .toolbarBackground(.hidden, for: .navigationBar)
         .onAppear {
             withAnimation(.easeOut(duration: 0.4)) {
                 appearAnimation = true
             }
+            // ✅ OPT: precalcular el blur del hero UNA vez en background
+            prepareBlurredArtwork(from: artist.artwork)
             // ✅ Extraer color del primer álbum
             if let artwork = artist.artwork {
                 DispatchQueue.global(qos: .userInitiated).async {
-                    let dominant = AppTheme.dominantColor(from: artwork)
+                    // ✅ Caché compartida por id de artista
+                    let dominant = AppTheme.cachedDominantColor(from: artwork, key: "artist-" + artist.id.uuidString)
                     DispatchQueue.main.async {
                         withAnimation(.easeInOut(duration: 0.3)) {
                             self.liveDominantColor = dominant
@@ -397,6 +419,15 @@ struct ArtistDetailView: View {
                     }
                 }
             }
+        }
+    }
+
+    // ✅ OPT: gaussian blur costoso → se calcula UNA vez en hilo de fondo y se cachea
+    private func prepareBlurredArtwork(from artwork: UIImage?) {
+        guard heroBlurredArtwork == nil, let artwork = artwork else { return }
+        DispatchQueue.global(qos: .userInitiated).async {
+            let blurred = artwork.applyingGaussianBlur(radius: 40)
+            DispatchQueue.main.async { self.heroBlurredArtwork = blurred }
         }
     }
 
@@ -469,8 +500,8 @@ struct ArtistDetailView: View {
             GeometryReader { geometry in
                 Group {
                     if let artwork = artist.artwork {
-                        Image(uiImage: artwork)
-                            .resizable().scaledToFill().blur(radius: 50).opacity(0.3)
+                        Image(uiImage: heroBlurredArtwork ?? artwork)
+                            .resizable().scaledToFill().opacity(0.3)
                             .overlay(
                                 LinearGradient(
                                     colors: [
@@ -507,14 +538,14 @@ struct ArtistDetailView: View {
                     Image(systemName: "play.fill").font(.system(size: 16, weight: .bold))
                     Text(Localization.localized("details.play")).font(.system(size: 16, weight: .bold, design: .rounded))
                 }
-                .foregroundStyle(.white).frame(maxWidth: .infinity).frame(height: 54)
+                .foregroundStyle(onTintColor).frame(maxWidth: .infinity).frame(height: 54)
                 .background {
                     Capsule().fill(
-                        LinearGradient(colors: [AppTheme.accent, AppTheme.accent.opacity(0.82)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                        LinearGradient(colors: [tintColor, tintColor.opacity(0.82)], startPoint: .topLeading, endPoint: .bottomTrailing)
                     )
                 }
                 .contentShape(Capsule())
-                .shadow(color: AppTheme.accent.opacity(0.45), radius: 14, x: 0, y: 7)
+                .shadow(color: tintColor.opacity(0.5), radius: 14, x: 0, y: 7)
             }
             .buttonStyle(PressableButtonStyle(scale: 0.97))
 
@@ -526,11 +557,11 @@ struct ArtistDetailView: View {
                 }
             } label: {
                 Image(systemName: "shuffle")
-                    .font(.system(size: 17, weight: .bold)).foregroundStyle(AppTheme.accent)
+                    .font(.system(size: 17, weight: .bold)).foregroundStyle(tintColor)
                     .frame(width: 54, height: 54)
                     .background {
                         Circle().fill(
-                            LinearGradient(colors: [AppTheme.accent.opacity(0.18), AppTheme.accent.opacity(0.08)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                            LinearGradient(colors: [tintColor.opacity(0.18), tintColor.opacity(0.08)], startPoint: .topLeading, endPoint: .bottomTrailing)
                         )
                     }
                     .frame(width: 62, height: 62).contentShape(Circle())
@@ -601,7 +632,7 @@ struct ArtistDetailView: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(song.title)
                         .font(.system(size: 15, weight: isCurrent ? .bold : .semibold, design: .rounded))
-                        .foregroundStyle(isCurrent ? AppTheme.accent : .primary).lineLimit(1)
+                        .foregroundStyle(isCurrent ? tintColor : .primary).lineLimit(1)
                     Text(song.album.isEmpty ? song.displaySubtitle : song.album)
                         .font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
                 }
@@ -613,13 +644,13 @@ struct ArtistDetailView: View {
             }
             .padding(.horizontal, 14).padding(.vertical, 12)
             .background {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(isCurrent ? AppTheme.accent.opacity(0.08) : Color.clear)
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(isCurrent ? tintColor.opacity(0.08) : .regularMaterial)
             }
             .contentShape(Rectangle())
             .overlay {
                 if isCurrent {
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
                         .strokeBorder(tintColor.opacity(0.2), lineWidth: 0.5)
                 }
             }
@@ -651,5 +682,17 @@ struct ArtistDetailView: View {
             return rem > 0 ? "\(hours) h \(rem) min" : "\(hours) h"
         }
         return "\(minutes) min"
+    }
+}
+// MARK: - Blur en background (OPT: evita re-renderizar .blur(50) en cada frame)
+extension UIImage {
+    func applyingGaussianBlur(radius: Double) -> UIImage {
+        guard let ciImage = CIImage(image: self) else { return self }
+        let filter = CIFilter(name: "CIGaussianBlur")
+        filter?.setValue(ciImage, forKey: kCIInputImageKey)
+        filter?.setValue(radius, forKey: kCIInputRadiusKey)
+        guard let output = filter?.outputImage,
+              let cg = CIContext().createCGImage(output.clampedToExtent(), from: ciImage.extent.insetBy(dx: -radius, dy: -radius)) else { return self }
+        return UIImage(cgImage: cg, scale: scale, orientation: imageOrientation)
     }
 }

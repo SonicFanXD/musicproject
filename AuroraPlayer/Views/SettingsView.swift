@@ -55,8 +55,8 @@ struct SettingsView: View {
     private let themeDefaultsKey = "com.aurora.uiTheme"
 
     private var appVersion: String {
-        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.8.0"
-        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "17"
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.9.0"
+        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "18"
         return "\(version) (\(build))"
     }
 

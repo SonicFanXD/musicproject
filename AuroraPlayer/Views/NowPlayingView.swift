@@ -35,7 +35,7 @@ struct NowPlayingView: View {
 
     // ✅ Caché de color dominante por canción: evita recalcular el histograma
     // HSB al reabrir NowPlaying o re-entrar a la misma pista (60fps sin hitch)
-    private static let colorCache = NSCache<NSString, UIColor>()
+
 
     // ✅ Scrub optimizado: preview local a 60fps, seek real solo al soltar
     @State private var isScrubbing = false
@@ -170,8 +170,7 @@ struct NowPlayingView: View {
             }
             .presentationDetents([.large])
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(Color(UIColor.systemBackground).opacity(0.92), for: .navigationBar)
-            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbarBackground(.hidden, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .principal) {
                     Text(Localization.localized("nowPlaying.title"))
@@ -194,69 +193,6 @@ struct NowPlayingView: View {
                             .font(.system(size: 17, weight: .semibold))
                             .frame(width: 44, height: 44)
                             .contentShape(Rectangle())
-                    }
-                }
-                // ✅ NUEVO: menú de opciones (3 puntos)
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Menu {
-                        if currentArtist != nil {
-                            Button {
-                                Haptics.light()
-                                showArtistDetail = true
-                            } label: {
-                                Label(Localization.localized("nowPlaying.viewArtist"), systemImage: "person.crop.circle")
-                            }
-                        }
-                        if currentAlbum != nil {
-                            Button {
-                                Haptics.light()
-                                showAlbumDetail = true
-                            } label: {
-                                Label(Localization.localized("nowPlaying.viewAlbum"), systemImage: "square.stack")
-                            }
-                        }
-                        Button {
-                            Haptics.light()
-                            showLyrics = true
-                        } label: {
-                            Label(Localization.localized("nowPlaying.viewLyrics"), systemImage: "quote.opening")
-                        }
-                        Button {
-                            Haptics.light()
-                            showQueue = true
-                        } label: {
-                            Label(Localization.localized("nowPlaying.viewQueue"), systemImage: "list.number")
-                        }
-                        if let url = audioEngine.currentSong?.url {
-                            Divider()
-                            ShareLink(item: url) {
-                                Label(Localization.localized("nowPlaying.shareSong"), systemImage: "square.and.arrow.up")
-                            }
-                        }
-                    } label: {
-                        Image(systemName: "ellipsis")
-                            .foregroundStyle(extractedColor)
-                            .font(.system(size: 17, weight: .semibold))
-                            .frame(width: 44, height: 44)
-                            .contentShape(Rectangle())
-                    }
-                    .accessibilityLabel(Localization.localized("nowPlaying.more"))
-                }
-                // ✅ Botón de me gusta en la barra de navegación
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    if let song = audioEngine.currentSong {
-                        Button {
-                            Haptics.light()
-                            fileAccessService.toggleLike(song)
-                        } label: {
-                            Image(systemName: fileAccessService.isLiked(song) ? "heart.fill" : "heart")
-                                .font(.system(size: 17, weight: .semibold))
-                                .foregroundStyle(fileAccessService.isLiked(song) ? .red : playIconColor)
-                                .frame(width: 44, height: 44)
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .transition(.scale.combined(with: .opacity))
                     }
                 }
             }
@@ -609,8 +545,29 @@ struct NowPlayingView: View {
                 .frame(width: isCompactScreen ? 56 : 64, height: isCompactScreen ? 56 : 64)
                 .contentShape(Rectangle())
             }
+`            .buttonStyle(.plain)
+            // Me gusta (junto a Repeat)
+            Button {
+                Haptics.light()
+                if let song = audioEngine.currentSong {
+                    fileAccessService.toggleLike(song)
+                }
+            } label: {
+                ZStack {
+                    Capsule()
+                        .fill(isCurrentLiked ? Color.red.opacity(0.25) : Color.clear)
+                        .frame(width: isCompactScreen ? 42 : 46, height: isCompactScreen ? 30 : 36)
+
+                    Image(systemName: isCurrentLiked ? "heart.fill" : "heart")
+                        .font(.system(size: isCompactScreen ? 15 : 17, weight: isCurrentLiked ? .bold : .semibold))
+                        .foregroundStyle(isCurrentLiked ? Color.red : AppTheme.contrastingText(on: extractedUIColor).opacity(0.7))
+                }
+                .frame(width: isCompactScreen ? 56 : 64, height: isCompactScreen ? 56 : 64)
+                .contentShape(Rectangle())
+                .animation(.spring(response: 0.3, dampingFraction: 0.6), value: isCurrentLiked)
+            }
             .buttonStyle(.plain)
-        }
+`        }
         .frame(maxWidth: .infinity)
         .fixedSize()
     }
@@ -708,8 +665,58 @@ struct NowPlayingView: View {
             .frame(width: buttonSize, height: buttonSize)
             .contentShape(Rectangle())
             .accessibilityLabel(Localization.localized("quality.accessibility.airplay"))
-        }
-        .frame(maxWidth: .infinity)
+            // Menu de opciones (3 puntos)
+            Menu {
+                if currentArtist != nil {
+                    Button {
+                        Haptics.light()
+                        showArtistDetail = true
+                    } label: {
+                        Label(Localization.localized("nowPlaying.viewArtist"), systemImage: "person.crop.circle")
+                    }
+                }
+                if currentAlbum != nil {
+                    Button {
+                        Haptics.light()
+                        showAlbumDetail = true
+                    } label: {
+                        Label(Localization.localized("nowPlaying.viewAlbum"), systemImage: "square.stack")
+                    }
+                }
+                Button {
+                    Haptics.light()
+                    showLyrics = true
+                } label: {
+                    Label(Localization.localized("nowPlaying.viewLyrics"), systemImage: "quote.opening")
+                }
+                Button {
+                    Haptics.light()
+                    showQueue = true
+                } label: {
+                    Label(Localization.localized("nowPlaying.viewQueue"), systemImage: "list.number")
+                }
+                if let url = audioEngine.currentSong?.url {
+                    Divider()
+                    ShareLink(item: url) {
+                        Label(Localization.localized("nowPlaying.shareSong"), systemImage: "square.and.arrow.up")
+                    }
+                }
+            } label: {
+                ZStack {
+                    Capsule()
+                        .fill(Color.clear)
+                        .frame(width: capsuleWidth, height: capsuleHeight)
+
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: iconSize, weight: .semibold))
+                        .foregroundStyle(AppTheme.contrastingText(on: extractedUIColor).opacity(0.7))
+                }
+                .frame(width: buttonSize, height: buttonSize)
+                .contentShape(Rectangle())
+            }
+            .accessibilityLabel(Localization.localized("nowPlaying.more"))
+`        }
+`        .frame(maxWidth: .infinity)
         .fixedSize()
     }
 
@@ -786,6 +793,10 @@ struct NowPlayingView: View {
             : AnyShapeStyle(.ultraThinMaterial)
     }
 
+    private var isCurrentLiked: Bool {
+        guard let song = audioEngine.currentSong else { return false }
+        return fileAccessService.isLiked(song)
+    }
     private var repeatIcon: String {
         switch audioEngine.repeatMode {
         case .off: return "repeat"
@@ -815,14 +826,14 @@ struct NowPlayingView: View {
 
         // ✅ Color dominante VIVO vía histograma HSB, con caché por canción
         let cacheKey = (audioEngine.currentSong?.id.uuidString ?? "none") as NSString
-        if let cached = NowPlayingView.colorCache.object(forKey: cacheKey) {
+        if let cached = AppTheme.artworkColorCache.object(forKey: cacheKey) {
             extractedColor = AppTheme.readableColor(from: cached)
             extractedUIColor = cached
             return
         }
         DispatchQueue.global(qos: .userInitiated).async {
             let dominant = AppTheme.dominantColor(from: artwork) ?? AppTheme.accentUIColor
-            NowPlayingView.colorCache.setObject(dominant, forKey: cacheKey)
+            AppTheme.artworkColorCache.setObject(dominant, forKey: cacheKey)
             DispatchQueue.main.async {
                 self.extractedColor = AppTheme.readableColor(from: dominant)
                 self.extractedUIColor = dominant
@@ -846,5 +857,9 @@ struct AirPlayRoutePickerView: UIViewRepresentable {
         return picker
     }
 
-    func updateUIView(_ uiView: AVRoutePickerView, context: Context) {}
+    func updateUIView(_ uiView: AVRoutePickerView, context: Context) {
+        // FIX: reaccionar al acento dinamico de la caratula / acento manual
+        let tint = AppTheme.accentUIColor
+        if uiView.tintColor != tint { uiView.tintColor = tint }
+    }
 }

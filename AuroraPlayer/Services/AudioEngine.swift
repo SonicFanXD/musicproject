@@ -117,7 +117,22 @@ class AudioEngine: NSObject, ObservableObject {
         didSet {
             if isMonoAudioEnabled != oldValue {
                 UserDefaults.standard.set(isMonoAudioEnabled, forKey: "com.aurora.monoAudio")
+                // ✅ FIX mono: además del downmix en el grafo, forzar mono a
+                // nivel de AVAudioSession — es lo ÚNICO que iOS respeta en el
+                // hardware de salida (el mixer del grafo no llega a algunos
+                // dispositivos/rutas de audio).
+                applySystemMonoOutput()
             }
+        }
+    }
+
+    /// Downmix mono a nivel de sesión de audio (afecta TODA la salida).
+    private func applySystemMonoOutput() {
+        let session = AVAudioSession.sharedInstance()
+        do {
+            try session.setPreferredOutputNumberOfChannels(isMonoAudioEnabled ? 1 : 2)
+        } catch {
+            AppLog.warning(.playback, "No se pudo fijar canales de salida: \(error.localizedDescription)")
         }
     }
 
@@ -139,6 +154,8 @@ class AudioEngine: NSObject, ObservableObject {
 
     override init() {
         super.init()
+        // ✅ Mono: restaurar el ajuste persistido a nivel de sesión al arrancar
+        applySystemMonoOutput()
         // ✅ Crossfade eliminado: limpiar preferencias obsoletas
         UserDefaults.standard.removeObject(forKey: "com.aurora.crossfadeEnabled")
         UserDefaults.standard.removeObject(forKey: "com.aurora.crossfadeDuration")

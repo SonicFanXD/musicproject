@@ -27,8 +27,7 @@ final class ThemeManager: ObservableObject {
     @Published private(set) var artworkAccentColor: Color?
     @Published private(set) var artworkAccentUIColor: UIColor?
 
-    // Caché de color por canción (id) para no re-extraer el histograma HSB
-    private static let artworkColorCache = NSCache<NSString, UIColor>()
+    // ✅ La caché de colores vive en AppTheme.artworkColorCache (compartida)
 
     /// Extrae el color dominante de la portada en segundo plano y lo publica.
     /// Llamado por AudioEngine cada vez que cambia la canción actual.
@@ -40,7 +39,7 @@ final class ThemeManager: ObservableObject {
             return
         }
         let cacheKey = song.id.uuidString as NSString
-        if let cached = Self.artworkColorCache.object(forKey: cacheKey) {
+        if let cached = AppTheme.artworkColorCache.object(forKey: cacheKey) {
             artworkAccentUIColor = cached
             artworkAccentColor = Self.normalizeArtworkAccent(cached)
             applyGlobalUIKitTint()
@@ -49,7 +48,7 @@ final class ThemeManager: ObservableObject {
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let dominant = AppTheme.dominantColor(from: artwork)
             guard let dominant else { return }
-            Self.artworkColorCache.setObject(dominant, forKey: cacheKey)
+            AppTheme.artworkColorCache.setObject(dominant, forKey: cacheKey)
             DispatchQueue.main.async {
                 guard let self, self.accentFromArtwork else { return }
                 self.artworkAccentUIColor = dominant
@@ -200,6 +199,20 @@ enum AppTheme {
 
     // MARK: - Extracción de color dominante (más vivo)
 
+    // ✅ Caché global COMPARTIDA: NowPlaying, AlbumDetail, ArtistDetail y
+    // ThemeManager extraen de las MISMAS carátulas → un solo cálculo por arte.
+    // Clave = id de canción/álbum/artista. NSCache se limpia solo bajo presión.
+    static let artworkColorCache = NSCache<NSString, UIColor>()
+
+    /// Wrapper con caché: usar SIEMPRE este desde las vistas (no dominantColor directo).
+    static func cachedDominantColor(from artwork: UIImage, key: String) -> UIColor? {
+        let nsKey = key as NSString
+        if let cached = artworkColorCache.object(forKey: nsKey) { return cached }
+        guard let color = dominantColor(from: artwork) else { return nil }
+        artworkColorCache.setObject(color, forKey: nsKey)
+        return color
+    }
+
     /// Extrae el color más REPRESENTATIVO y vibrante de una portada:
     /// en vez del promedio (que era apagado/grisáceo), usa un histograma
     /// HSB y elige el bucket con mayor saturación×peso y brillo moderado.
@@ -225,10 +238,19 @@ enum AppTheme {
         ) else { return nil }
         ctx.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
 
-        // Histograma HSB: hue 0..23, sat 0..4, bright 0..4 (24*5*5 buckets)
+        // Histograma HSB FINO: hue 0..35, sat 0..5, bright 0..5 (36*6*6 buckets)
         // ✅ PERF: HSV calculado inline (antes: 1 alloc de UIColor + getHue por
         // píxel = ~2300 allocs por carátula durante la indexación).
-        var buckets = [Float](repeating: 0, count: 24 * 5 * 5)
+        // ✅ PRECISIÓN: además del peso por bucket, se acumula el hue como
+        // vector (cos/sin) y sat/br ponderados → el color final es el PROMEDIO
+        // EXACTO del cluster ganador, no el centro tosco del bucket.
+        let hueBins = 36, satBins = 6, brBins = 6
+        let bucketCount = hueBins * satBins * brBins
+        var buckets = [Float](repeating: 0, count: bucketCount)
+        var hueX = [Float](repeating: 0, count: bucketCount)
+        var hueY = [Float](repeating: 0, count: bucketCount)
+        var satSum = [Float](repeating: 0, count: bucketCount)
+        var brSum = [Float](repeating: 0, count: bucketCount)
         var totalR: Float = 0, totalG: Float = 0, totalB: Float = 0, totalCount: Float = 0
         for y in 0..<height {
             for x in 0..<width {
@@ -260,26 +282,33 @@ enum AppTheme {
                     h /= 6
                     if h < 0 { h += 1 }
                 }
-                let hi = min(23, Int(h * 24))
-                let si = min(4, Int(s * 5))
-                let bi = min(4, Int(br * 5))
-                // Peso: saturación² × distancia del brillo de 0.6 (colores vivos, no demasiado oscuros/claros)
-                let weight = s * s * max(0, 1.0 - abs(br - 0.6) * 1.2)
-                buckets[(bi * 5 + si) * 24 + hi] += max(weight, 0.0001)
+                let hi = min(hueBins - 1, Int(h * Float(hueBins)))
+                let si = min(satBins - 1, Int(s * Float(satBins)))
+                let bi = min(brBins - 1, Int(br * Float(brBins)))
+                // Peso: saturación² × proximidad del brillo a 0.62 (colores vivos,
+                // no demasiado oscuros/claros). Factor 1.3 escala la campana.
+                let weight = s * s * max(0, 1.15 - abs(br - 0.62) * 1.3)
+                let w = max(weight, 0.0001)
+                let idx = (bi * satBins + si) * hueBins + hi
+                buckets[idx] += w
+                let angle = Float(h * 2 * .pi)
+                hueX[idx] += cos(angle) * w
+                hueY[idx] += sin(angle) * w
+                satSum[idx] += s * w
+                brSum[idx] += br * w
             }
         }
 
         if let best = buckets.enumerated().max(by: { $0.element < $1.element }), best.element > 0 {
             let idx = best.offset
-            let hi = idx % 24
-            let si = (idx / 24) % 5
-            let bi = idx / (24 * 5)
-            return UIColor(
-                hue: (CGFloat(hi) + 0.5) / 24,
-                saturation: (CGFloat(si) + 0.5) / 5,
-                brightness: (CGFloat(bi) + 0.5) / 5,
-                alpha: 1
-            )
+            let w = best.element
+            // ✅ Color EXACTO del cluster: hue vía promedio vectorial (sin saltos
+            // en el wrap 0/360), sat y br como medias ponderadas reales.
+            var hue = CGFloat(atan2f(hueY[idx], hueX[idx]) / (2 * .pi))
+            if hue < 0 { hue += 1 }
+            let saturation = CGFloat(min(0.95, max(0.08, satSum[idx] / w)))
+            let brightness = CGFloat(min(0.92, max(0.10, brSum[idx] / w)))
+            return UIColor(hue: hue, saturation: saturation, brightness: brightness, alpha: 1)
         }
         // ✅ Fallback: promedio real de la carátula (p. ej. portada monocromática
         // sin matiz). `readableColor` lo normaliza para legibilidad.

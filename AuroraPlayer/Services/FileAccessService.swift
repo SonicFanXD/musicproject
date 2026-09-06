@@ -696,10 +696,15 @@ class FileAccessService: ObservableObject {
         // Fallback binario (ID3/FLAC/M4A) para lo que AVFoundation no mapea
         if title == nil || artist.isEmpty || album.isEmpty || lyrics.isEmpty {
             if let embedded = readID3Metadata(from: url) ?? readFLACMetadata(from: url) ?? readM4AMetadata(from: url) {
-                title = title ?? embedded.title
-                if artist.isEmpty { artist = embedded.artist ?? "" }
-                if albumArtist.isEmpty { albumArtist = embedded.albumArtist ?? "" }
-                if album.isEmpty { album = embedded.album ?? "" }
+                // ✅ FIX "símbolos raros": AVFoundation a veces devuelve texto
+                // corrupto (mojibake / U+FFFD) según la codificación del tag.
+                // Antes ese valor corrupto bloqueaba al parser binario (que solo
+                // rellenaba campos vacíos). Ahora el parser binario SIEMPRE
+                // reemplaza valores corruptos.
+                if title == nil || isCorruptText(title) { title = embedded.title ?? title }
+                if artist.isEmpty || isCorruptText(artist) { artist = embedded.artist ?? artist }
+                if albumArtist.isEmpty || isCorruptText(albumArtist) { albumArtist = embedded.albumArtist ?? albumArtist }
+                if album.isEmpty || isCorruptText(album) { album = embedded.album ?? album }
                 if trackNumber == 0 { trackNumber = embedded.trackNumber ?? 0 }
                 if discNumber == nil { discNumber = embedded.discNumber }
                 if releaseDate == nil { releaseDate = embedded.releaseDate }
@@ -1067,13 +1072,29 @@ class FileAccessService: ObservableObject {
         return result
     }
 
+    /// ✅ Detecta texto corrupto de metadatos: caracteres de reemplazo (U+FFFD),
+    /// controles raros o símbolos de mojibake típicos (Ã, â€, etc.).
+    private func isCorruptText(_ value: String?) -> Bool {
+        guard let value, !value.isEmpty else { return false }
+        if value.contains("\u{FFFD}") { return true }
+        let scalars = value.unicodeScalars
+        if scalars.contains(where: { $0.value < 0x20 && $0 != "\n" && $0 != "\r" && $0 != "\t" }) { return true }
+        // Mojibake clásico UTF-8 leído como Latin-1 / Windows-1252
+        if value.contains("Ã") || value.contains("â€") || value.contains("Â") { return true }
+        return false
+    }
+
     private func id3Text(_ data: Data) -> String? {
         let bytes = [UInt8](data)
         guard let encoding = bytes.first, bytes.count > 1 else { return nil }
         let text = Data(bytes.dropFirst())
         let value: String?
         switch encoding {
-        case 0: value = String(data: text, encoding: .isoLatin1)
+        case 0:
+            // ✅ FIX mojibake: muchos tags declaran Latin-1 pero contienen UTF-8
+            // (acentos como "é" aparecían como "Ã©"). Si el payload es UTF-8
+            // válido, usarlo; si no, caer a Latin-1 como declara el tag.
+            value = String(data: text, encoding: .utf8) ?? String(data: text, encoding: .isoLatin1)
         case 1: value = String(data: text, encoding: .utf16)
         case 2: value = String(data: text, encoding: .utf16BigEndian)
         case 3: value = String(data: text, encoding: .utf8)
