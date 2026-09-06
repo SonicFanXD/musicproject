@@ -102,7 +102,16 @@ final class ThemeManager: ObservableObject {
         // ✅ FIX CI: 'key' es estático, debe referenciarse como Self.key
         let saved = UserDefaults.standard.integer(forKey: Self.key)
         accentIndex = (saved >= 0 && saved < 7) ? saved : 0
-        accentFromArtwork = UserDefaults.standard.bool(forKey: Self.artworkAccentKey)
+        // ✅ MIGRACIÓN: si nunca se configuró el acento desde carátula,
+        // heredar el valor del antiguo toggle "dynamicColor" (ajuste único
+        // para todos los entornos: NowPlaying, álbumes, artistas, tint global)
+        if UserDefaults.standard.object(forKey: Self.artworkAccentKey) == nil {
+            let legacy = UserDefaults.standard.object(forKey: "com.aurora.dynamicColor")
+            accentFromArtwork = (legacy as? Bool) ?? false
+            UserDefaults.standard.set(accentFromArtwork, forKey: Self.artworkAccentKey)
+        } else {
+            accentFromArtwork = UserDefaults.standard.bool(forKey: Self.artworkAccentKey)
+        }
         // ✅ Aplicar el tint UIKit al arrancar (restaura el ajuste guardado)
         applyGlobalUIKitTint()
     }
@@ -154,12 +163,12 @@ enum AppTheme {
             return ThemeManager.shared.accent
         }
 
-        // ✅ FIX carátulas grises/oscuras: antes se devolvía el acento por
-        // defecto cuando la saturación/brillo eran bajos → portadas negras o
-        // grises "no se detectaban". Ahora conservamos el MATIZ real de la
-        // carátula y solo elevamos saturación/brillo al rango legible.
-        let newSaturation = min(0.85, max(0.40, saturation))
-        let newBrightness = min(0.80, max(0.45, brightness))
+        // ✅ Rangos AMPLIADOS: antes (sat 0.40–0.85, br 0.45–0.80) aplastaba
+        // todos los colores al mismo tono medio → muchas portadas "no quedaban"
+        // (un rosa neón y un pastel se veían iguales). Ahora se respeta más la
+        // personalidad real del color y solo se corrige lo ilegible.
+        let newSaturation = min(0.95, max(0.30, saturation))
+        let newBrightness = min(0.88, max(0.40, brightness))
 
         return Color(uiColor: UIColor(
             hue: hue,
@@ -217,7 +226,7 @@ enum AppTheme {
     /// en vez del promedio (que era apagado/grisáceo), usa un histograma
     /// HSB y elige el bucket con mayor saturación×peso y brillo moderado.
     static func dominantColor(from artwork: UIImage) -> UIColor? {
-        let size = CGSize(width: 48, height: 48)
+        let size = CGSize(width: 64, height: 64)
         UIGraphicsBeginImageContextWithOptions(size, false, 1.0)
         artwork.draw(in: CGRect(origin: .zero, size: size))
         guard let cgImage = UIGraphicsGetImageFromCurrentImageContext()?.cgImage else {
@@ -247,6 +256,7 @@ enum AppTheme {
         let hueBins = 36, satBins = 6, brBins = 6
         let bucketCount = hueBins * satBins * brBins
         var buckets = [Float](repeating: 0, count: bucketCount)
+        var bucketCounts = [Int](repeating: 0, count: bucketCount)
         var hueX = [Float](repeating: 0, count: bucketCount)
         var hueY = [Float](repeating: 0, count: bucketCount)
         var satSum = [Float](repeating: 0, count: bucketCount)
@@ -287,10 +297,14 @@ enum AppTheme {
                 let bi = min(brBins - 1, Int(br * Float(brBins)))
                 // Peso: saturación² × proximidad del brillo a 0.62 (colores vivos,
                 // no demasiado oscuros/claros). Factor 1.3 escala la campana.
-                let weight = s * s * max(0, 1.15 - abs(br - 0.62) * 1.3)
+                // ✅ Peso VIVID-FIRST: saturación^1.5 × campana de brillo (centro
+                // 0.58, más ancho). Un acento pequeño pero vívido (logo, figura)
+                // ahora gana al área enorme y apagada que lo rodea.
+                let weight = pow(s, 1.5) * max(0, 1.2 - abs(br - 0.58) * 1.1)
                 let w = max(weight, 0.0001)
                 let idx = (bi * satBins + si) * hueBins + hi
                 buckets[idx] += w
+                bucketCounts[idx] += 1
                 let angle = Float(h * 2 * .pi)
                 hueX[idx] += cos(angle) * w
                 hueY[idx] += sin(angle) * w
@@ -300,14 +314,32 @@ enum AppTheme {
         }
 
         if let best = buckets.enumerated().max(by: { $0.element < $1.element }), best.element > 0 {
-            let idx = best.offset
-            let w = best.element
-            // ✅ Color EXACTO del cluster: hue vía promedio vectorial (sin saltos
-            // en el wrap 0/360), sat y br como medias ponderadas reales.
-            var hue = CGFloat(atan2f(hueY[idx], hueX[idx]) / (2 * .pi))
+            var chosen = best.offset
+            let acceptedPixels = bucketCounts.reduce(0, +)
+            let bestW = max(buckets[chosen], 0.0001)
+            let avgSatBest = satSum[chosen] / bestW
+            // RESCATE VIVO: si el cluster ganador es casi gris (portada
+            // monocroma con un acento de color pequeno), elegir el cluster mas
+            // saturado con respaldo >= 2% de los pixeles aceptados.
+            if avgSatBest < 0.12, acceptedPixels > 0 {
+                let minPixels = Int(Float(acceptedPixels) * 0.02)
+                var vividIdx: Int?
+                var vividSat: Float = 0.12
+                for (i, w) in buckets.enumerated() where w > 0 && bucketCounts[i] >= minPixels {
+                    let s = satSum[i] / max(w, 0.0001)
+                    if s > vividSat {
+                        vividSat = s
+                        vividIdx = i
+                    }
+                }
+                if let v = vividIdx { chosen = v }
+            }
+
+            let w = buckets[chosen]
+            var hue = CGFloat(atan2f(hueY[chosen], hueX[chosen]) / (2 * .pi))
             if hue < 0 { hue += 1 }
-            let saturation = CGFloat(min(0.95, max(0.08, satSum[idx] / w)))
-            let brightness = CGFloat(min(0.92, max(0.10, brSum[idx] / w)))
+            let saturation = CGFloat(min(0.95, max(0.08, satSum[chosen] / w)))
+            let brightness = CGFloat(min(0.92, max(0.10, brSum[chosen] / w)))
             return UIColor(hue: hue, saturation: saturation, brightness: brightness, alpha: 1)
         }
         // ✅ Fallback: promedio real de la carátula (p. ej. portada monocromática

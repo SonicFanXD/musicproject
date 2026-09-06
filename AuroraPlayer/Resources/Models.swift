@@ -222,25 +222,12 @@ struct Album: Identifiable, Equatable {
         songs.compactMap { $0.releaseDate }.min()
     }
 
-    private static let colorCache: NSCache<NSString, UIColor> = {
-        let cache = NSCache<NSString, UIColor>()
-        cache.countLimit = 200
-        return cache
-    }()
-
+    // ✅ UNIFICADO: delega en la caché/algorithm compartidos de AppTheme —
+    // NowPlaying, AlbumDetail y ArtistDetail ahora obtienen el MISMO color
+    // para la misma carátula (una sola extracción por arte).
     var dominantColor: UIColor? {
         guard let artwork = artwork else { return nil }
-        if let cached = Album.colorCache.object(forKey: id as NSString) {
-            return cached
-        }
-        // ✅ Unificado: usa el mismo extractor HSB mejorado (con fallback para
-        // carátulas oscuras/grises) que NowPlaying/ThemeManager — antes había
-        // DOS implementaciones distintas y esta daba resultados diferentes.
-        let color = AppTheme.dominantColor(from: artwork)
-        if let color = color {
-            Album.colorCache.setObject(color, forKey: id as NSString)
-        }
-        return color
+        return AppTheme.cachedDominantColor(from: artwork, key: id)
     }
 }
 

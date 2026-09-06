@@ -19,7 +19,6 @@ struct SettingsView: View {
     @AppStorage("com.aurora.enableHaptics") private var enableHaptics = true
     @AppStorage("com.aurora.keepScreenOn") private var keepScreenOn = false
     @AppStorage("com.aurora.artworkCorner") private var artworkCorner: Double = 22
-    @AppStorage("com.aurora.dynamicColor") private var dynamicColor = true
     @AppStorage("com.aurora.reduceTransparency") private var reduceTransparency = false
     @AppStorage("com.aurora.hapticIntensity") private var hapticIntensity: Double = 1.0
     @AppStorage("com.aurora.showLyricsByDefault") private var showLyricsByDefault = false
@@ -120,24 +119,6 @@ struct SettingsView: View {
                                 theme.setAccent(index)
                             }
                             settingsDivider
-                            settingsToggleRow(title: Localization.localized("settings.dynamicColor"), subtitle: Localization.localized("settings.dynamicColorSubtitle"), icon: "wand.and.stars", color: .cyan, isOn: $dynamicColor)
-                            settingsDivider
-                            // ✅ NUEVO: acento dinámico según la carátula de la canción
-                            settingsToggleRow(
-                                title: Localization.localized("settings.accentFromArtwork"),
-                                subtitle: Localization.localized("settings.accentFromArtworkSubtitle"),
-                                icon: "photo.artframe",
-                                color: .indigo,
-                                isOn: Binding(
-                                    get: { theme.accentFromArtwork },
-                                    set: { newValue in
-                                        theme.accentFromArtwork = newValue
-                                        // Al activar, extraer de inmediato el color de la canción actual
-                                        if newValue { theme.updateArtworkAccent(from: audioEngine.currentSong) }
-                                    }
-                                )
-                            )
-                            settingsDivider
                             settingsSliderRow(title: Localization.localized("settings.artworkCorners"), value: $artworkCorner, range: 0...44, step: 2, color: .blue, suffix: "pt")
                             settingsDivider
                             settingsToggleRow(title: Localization.localized("settings.reduceTransparency"), subtitle: Localization.localized("settings.reduceTransparencySubtitle"), icon: "circle.slash", color: .gray, isOn: $reduceTransparency)
@@ -147,6 +128,40 @@ struct SettingsView: View {
                                 // ✅ Aplicar el idioma al instante en toda la app
                                 Localization.shared.currentLanguage = Localization.Language(rawValue: index) ?? .spanish
                             }
+                        }
+
+                        // ✅ Acento de portada: control unificado para todo el entorno
+                        // (NowPlaying, álbumes, artistas, PlayerBar, tint global UIKit).
+                        // Un solo ajuste activa/desactiva la detección de colores en
+                        // TODAS las vistas simultáneamente.
+                        settingsSection(icon: "swatchpalette.fill", title: Localization.localized("settings.artworkAccent"), color: .purple) {
+                            settingsToggleRow(
+                                title: Localization.localized("settings.artworkAccentToggle"),
+                                subtitle: Localization.localized("settings.artworkAccentSubtitle"),
+                                icon: "paintpalette.fill",
+                                color: .purple,
+                                isOn: Binding(
+                                    get: { theme.accentFromArtwork },
+                                    set: { theme.accentFromArtwork = $0 }
+                                )
+                            )
+                            settingsDivider
+                            // ✅ Indicador del color activo (extraído de la portada)
+                            HStack(spacing: 12) {
+                                Circle()
+                                    .fill(theme.artworkAccentColor ?? theme.accent)
+                                    .frame(width: 28, height: 28)
+                                    .overlay(
+                                        Circle()
+                                            .stroke(Color.primary.opacity(0.15), lineWidth: 1)
+                                    )
+                                    .shadow(color: (theme.artworkAccentColor ?? theme.accent).opacity(0.4), radius: 4, y: 2)
+                                Text(Localization.localized("settings.artworkAccentActive"))
+                                    .font(.system(size: 14, weight: .medium, design: .rounded))
+                                    .foregroundStyle(.secondary)
+                                Spacer()
+                            }
+                            .padding(.vertical, 4)
                         }
 
                         // Reproducción

@@ -700,7 +700,13 @@ struct ContentView: View {
             
             Menu {
                 if fileAccessService.playlists.isEmpty {
-                    Text(Localization.localized("library.noPlaylists"))
+                    Button {
+                        // No hay playlists - deshabilitado
+                    } label: {
+                        Label(Localization.localized("playlists.createFirst"), systemImage: "plus.circle")
+                            .foregroundStyle(.secondary)
+                    }
+                    .disabled(true)
                 } else {
                     ForEach(fileAccessService.playlists) { playlist in
                         Button {

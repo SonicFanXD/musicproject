@@ -513,8 +513,10 @@ struct AudioQualityDetailView: View {
             }
             .padding(8)
             .background {
+                // ✅ 60fps: color OPACO (no material blur) — 5 secciones con
+                // blur simultáneo degradan el scroll. Mismo look, cero blur.
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(.ultraThinMaterial)
+                    .fill(Color(UIColor.secondarySystemBackground))
                     .shadow(color: .black.opacity(0.04), radius: 8, x: 0, y: 2)
             }
         }

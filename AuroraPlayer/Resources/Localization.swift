@@ -57,8 +57,11 @@ final class Localization: ObservableObject {
             // Apariencia / Appearance
             "settings.theme": [.spanish: "Tema", .english: "Theme"],
             "settings.accentColor": [.spanish: "Color de acento", .english: "Accent Color"],
-            "settings.dynamicColor": [.spanish: "Color dinámico", .english: "Dynamic Color"],
-            "settings.dynamicColorSubtitle": [.spanish: "Extrae el color dominante de la portada", .english: "Extract dominant color from artwork"],
+            // ✅ Acento de portada (sección unificada)
+            "settings.artworkAccent": [.spanish: "Acento de portada", .english: "Artwork Accent"],
+            "settings.artworkAccentToggle": [.spanish: "Color desde carátula", .english: "Color from Artwork"],
+            "settings.artworkAccentSubtitle": [.spanish: "El acento sigue el color dominante de la portada en NowPlaying, álbumes, artistas y PlayerBar", .english: "Accent follows the dominant artwork color in NowPlaying, albums, artists and PlayerBar"],
+            "settings.artworkAccentActive": [.spanish: "Color activo extraído de la portada", .english: "Active color extracted from artwork"],
             "settings.artworkCorners": [.spanish: "Esquinas del artwork", .english: "Artwork Corners"],
             "settings.reduceTransparency": [.spanish: "Reducir transparencia", .english: "Reduce Transparency"],
             "settings.reduceTransparencySubtitle": [.spanish: "Menos desenfoques, más rendimiento", .english: "Less blur, better performance"],

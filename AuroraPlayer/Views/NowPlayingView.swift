@@ -13,7 +13,6 @@ struct NowPlayingView: View {
     // Configuraciones de personalización
     @AppStorage("com.aurora.showVisualizer") private var showVisualizer = true
     @AppStorage("com.aurora.keepScreenOn") private var keepScreenOn = false
-    @AppStorage("com.aurora.dynamicColor") private var dynamicColor = true
     @AppStorage("com.aurora.artworkCorner") private var artworkCorner: Double = 22
     @AppStorage("com.aurora.reduceTransparency") private var reduceTransparency = false
     // ✅ Ajuste "Mostrar letras" (antes no se aplicaba)
@@ -821,33 +820,26 @@ struct NowPlayingView: View {
         return String(format: "%d:%02d", minutes, seconds)
     }
 
-    private func extractColorFromArtwork() {
-        // ✅ FIX: respetar el ajuste "Color dinámico"
-        guard dynamicColor else {
+private func extractColorFromArtwork() {
+        // UNIFICADO: un solo ajuste maestro (ThemeManager.accentFromArtwork)
+        // controla el acento de portada en TODOS los entornos.
+        guard ThemeManager.shared.accentFromArtwork else {
             extractedColor = AppTheme.accent
             return
         }
 
-        guard let artwork = audioEngine.currentSong?.artwork else {
+        guard let artwork = audioEngine.currentSong?.artwork, let songID = audioEngine.currentSong?.id else {
             extractedColor = AppTheme.accent
             return
         }
 
-        // ✅ Color dominante VIVO vía histograma HSB, con caché por canción
-        let cacheKey = (audioEngine.currentSong?.id.uuidString ?? "none") as NSString
-        if let cached = AppTheme.artworkColorCache.object(forKey: cacheKey) {
+        // Cache compartida: mismo color que AlbumDetail/ArtistDetail.
+        if let cached = AppTheme.cachedDominantColor(from: artwork, key: songID.uuidString) {
             extractedColor = AppTheme.readableColor(from: cached)
             extractedUIColor = cached
             return
         }
-        DispatchQueue.global(qos: .userInitiated).async {
-            let dominant = AppTheme.dominantColor(from: artwork) ?? AppTheme.accentUIColor
-            AppTheme.artworkColorCache.setObject(dominant, forKey: cacheKey)
-            DispatchQueue.main.async {
-                self.extractedColor = AppTheme.readableColor(from: dominant)
-                self.extractedUIColor = dominant
-            }
-        }
+        extractedColor = AppTheme.accent
     }
 }
 

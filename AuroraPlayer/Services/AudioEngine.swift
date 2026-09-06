@@ -77,8 +77,24 @@ class AudioEngine: NSObject, ObservableObject {
     @Published var audioQualityInfo: String = ""
 
     // MARK: - Propiedades para la cola y controles
-    @Published var isShuffleEnabled: Bool = false
-    @Published var repeatMode: RepeatMode = .off
+    @Published var isShuffleEnabled: Bool = UserDefaults.standard.bool(forKey: "com.aurora.shuffleEnabled") {
+        didSet {
+            if isShuffleEnabled != oldValue {
+                UserDefaults.standard.set(isShuffleEnabled, forKey: "com.aurora.shuffleEnabled")
+            }
+        }
+    }
+    @Published var repeatMode: RepeatMode = {
+        if let raw = UserDefaults.standard.string(forKey: "com.aurora.repeatMode"),
+           let mode = RepeatMode(rawValue: raw) { return mode }
+        return .off
+    }() {
+        didSet {
+            if repeatMode != oldValue {
+                UserDefaults.standard.set(repeatMode.rawValue, forKey: "com.aurora.repeatMode")
+            }
+        }
+    }
     @Published var playbackQueue: [Song] = []
     @Published var nextUpQueue: [Song] = []
     @Published var playHistory: [Song] = []
@@ -846,10 +862,19 @@ class AudioEngine: NSObject, ObservableObject {
     /// Calcula el índice de la siguiente canción según shuffle/repeat-all.
     /// Retorna nil si se alcanzó el final de la playlist sin repeat.
     /// NOTA: repeat-one se maneja en handlePlaybackFinished, no aquí.
+    /// FIX: shuffle nunca devuelve el mismo índice actual (evita bucles infinitos
+    /// donde la "siguiente" canción es la misma → completion handler se repite).
     private func computeNextIndex() -> Int? {
         guard !playlist.isEmpty else { return nil }
+        if playlist.count == 1 {
+            return repeatMode == .all || repeatMode == .one ? 0 : nil
+        }
         if isShuffleEnabled {
-            return Int.random(in: 0..<playlist.count)
+            var nextIndex: Int
+            repeat {
+                nextIndex = Int.random(in: 0..<playlist.count)
+            } while nextIndex == currentIndex
+            return nextIndex
         }
         let next = currentIndex + 1
         if next >= playlist.count {
@@ -1147,6 +1172,10 @@ class AudioEngine: NSObject, ObservableObject {
     // nueva generación para garantizar que suene sin cortes ni silencios.
     private func handlePlaybackFinished() {
         guard isPlaying, !isStopping else { return }
+        // ✅ FIX ANTI-STALE: capturar la generación actual y validar al final.
+        // Si la generación cambió mientras se ejecutaba este handler, significa
+        // que ya se procesó el cambio de canción → ignorar este handler stale.
+        let capturedGeneration = scheduleGeneration
         // ✅ ANTI-SALTO PREMATURO (red de seguridad): el completion handler se
         // dispara cuando el segmento TERMINA de sonar, así que el reloj de
         // pared DEBE estar (casi) al final. Si está muy atrás, es un handler
@@ -1160,6 +1189,12 @@ class AudioEngine: NSObject, ObservableObject {
         // AVAudioEngine que puede dispararlo más de una vez). Incrementar
         // scheduleGeneration invalida cualquier handler anterior pendiente.
         scheduleGeneration += 1
+        // ✅ FIX: verificar que la generación sigue válida después del incremento
+        // (protección extra contra condiciones de carrera)
+        guard scheduleGeneration == capturedGeneration + 1 else {
+            AppLog.warning(.playback, "Completion handler superpuesto ignorado (generación cambió)")
+            return
+        }
         AppLog.info(.playback, "Canción terminada: '\(currentSong?.displayName ?? "—")' (\(String(format: "%.1f", duration))s, repeat: \(repeatMode.rawValue))")
 
         if repeatMode == .one {

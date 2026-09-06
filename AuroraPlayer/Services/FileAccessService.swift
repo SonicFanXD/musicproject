@@ -66,11 +66,12 @@ class FileAccessService: ObservableObject {
     // (causa principal del crash durante la indexación).
     private var queuedBatches: [(urls: [URL], generation: Int)] = []
     private var inFlightBatches = 0
-    // ✅ INDEXACIÓN MÁS RÁPIDA: más lotes en paralelo (AVAsset.load es I/O
-    // bound; 5 lotes concurrentes saturan mejor el disco/caché de metadata)
-    private let maxInFlightBatches = 5
-    // ✅ Lotes más grandes: menos overhead de scheduling y menos flushes de UI
-    private let metadataBatchSize = 100
+    // ✅ CONCURRENCIA CONTROLADA: 3 lotes en paralelo × 50 URLs = máx 150
+    // AVAsset.load simultáneos. Antes (5×100=500) saturaba memoria/CPU en
+    // bibliotecas grandes → tirones y lag. 3×50 mantiene velocidad sin saturar.
+    private let maxInFlightBatches = 3
+    // ✅ Lotes medianos: balance entre overhead de scheduling y uso de memoria
+    private let metadataBatchSize = 50
     private var lastUIUpdate: Date = Date()
     private let uiUpdateInterval: TimeInterval = 0.05 // Actualizar UI cada 50ms máximo
 
@@ -301,6 +302,14 @@ class FileAccessService: ObservableObject {
         DispatchQueue.global(qos: .utility).async { [weak self] in
             guard let self = self else { return }
 
+            defer {
+                // ✅ SEGURIDAD: finishDiscovery SIEMPRE se llama, incluso si el
+                // coordinator o el enumerator fallan → evita que isScanning se
+                // quede atascado en true para siempre (bug de "tirones" al dejar
+                // de responder la barra de progreso).
+                DispatchQueue.main.async { self.finishDiscovery(generation: generation) }
+            }
+
             let coordinator = NSFileCoordinator()
             var coordinationError: NSError?
 
@@ -314,28 +323,34 @@ class FileAccessService: ObservableObject {
                     at: coordinatedURL,
                     includingPropertiesForKeys: keys,
                     options: [.skipsHiddenFiles]
-                ) else { return }
+                ) else {
+                    AppLog.error(.library, "No se pudo crear enumerador para: \(coordinatedURL.lastPathComponent)")
+                    return
+                }
 
                 var batch: [URL] = []
+                var fileCount = 0
                 for case let fileURL as URL in enumerator {
+                    // ✅ SEGURIDAD: capturar excepciones de recursos corruptos
+                    // para que un archivo problemático no detenga toda la carpeta
                     let values = try? fileURL.resourceValues(forKeys: Set(keys))
                     if values?.isDirectory == true { continue }
                     guard self.supportedExtensions.contains(fileURL.pathExtension.lowercased()) else { continue }
 
                     batch.append(fileURL)
+                    fileCount += 1
                     if batch.count == self.metadataBatchSize {
                         self.registerMetadataBatch(batch, generation: generation)
                         batch.removeAll(keepingCapacity: true)
                     }
                 }
                 if !batch.isEmpty { self.registerMetadataBatch(batch, generation: generation) }
+                AppLog.debug(.library, "Carpeta \(coordinatedURL.lastPathComponent): \(fileCount) archivos encontrados")
             }
 
             if let coordinationError {
                 AppLog.error(.library, "No se pudo leer la carpeta: \(coordinationError.localizedDescription)")
             }
-
-            DispatchQueue.main.async { self.finishDiscovery(generation: generation) }
         }
     }
 
