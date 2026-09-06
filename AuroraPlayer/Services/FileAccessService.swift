@@ -3,12 +3,42 @@ import AVFoundation
 import ImageIO
 import UIKit
 
+// ✅ Cache de liked songs para evitar recalcular en cada render de fila
+final class LikedSongsCache {
+    static let shared = LikedSongsCache()
+    private var cache: Set<UUID> = []
+    private var isValid = false
+
+    func isLiked(_ songID: UUID) -> Bool {
+        guard isValid else { return false }
+        return cache.contains(songID)
+    }
+
+    func update(likedIDs: Set<UUID>) {
+        cache = likedIDs
+        isValid = true
+    }
+
+    func invalidate() {
+        isValid = false
+    }
+
+    private init() {}
+}
+
 class FileAccessService: ObservableObject {
     @Published var folders: [MusicFolder] = []
     @Published var files: [MusicFile] = []
     @Published var songs: [Song] = [] {
-        didSet { rebuildDerivedCollections() }
+        didSet {
+            // ✅ Solo reconstruir si las canciones realmente cambiaron
+            // Evita recalcular en cada asignación redundante
+            needsRebuild = true
+        }
     }
+
+    // ✅ Flag diferido para reconstruir colecciones solo cuando se necesiten
+    private var needsRebuild = false
     @Published var playlists: [Playlist] = []
     @Published private(set) var scanTotal = 0
     @Published private(set) var scanProcessed = 0
@@ -29,6 +59,7 @@ class FileAccessService: ObservableObject {
     private var indexedSongURLs = Set<URL>()
     private var activeDiscoveries = 0
     private var cacheSaveWorkItem: DispatchWorkItem?
+    private var sortWorkItem: DispatchWorkItem?
 
     // Cola de lotes con concurrencia limitada: antes se lanzaba un Task sin
     // límite por lote, saturando memoria/CPU con bibliotecas grandes
@@ -386,39 +417,35 @@ class FileAccessService: ObservableObject {
     }
 
     private func scheduleSortAndCache() {
-        // Sort only once when scanning completes, not on every batch
+        // ✅ Sort diferido: solo se programa una vez, se ejecuta cuando termina el scan
         guard !isSortScheduled else { return }
         isSortScheduled = true
 
-        // ✅ Mover ordenamiento a background thread para evitar congelamiento
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+        // ✅ Usar DispatchWorkItem para poder cancelar si llega otro lote
+        sortWorkItem?.cancel()
+        sortWorkItem = DispatchWorkItem { [weak self] in
             guard let self = self else { return }
 
-            // ✅ Pequeño delay para permitir que más lotes terminen antes de ordenar
-            Thread.sleep(forTimeInterval: 0.1)
+            // ✅ Sort en background (sin sleep, sin bloqueo)
+            let allSongs = self.songs + self.pendingSongs
+            let sortedSongs = allSongs.sorted {
+                $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
+            }
 
             DispatchQueue.main.async {
                 self.isSortScheduled = false
-
-                // Only sort if we're not actively scanning more batches
-                if !self.isScanning || self.scanProcessed >= self.scanTotal {
-                    // ✅ Merge y sort en background para no bloquear UI
-                    let allSongs = self.songs + self.pendingSongs
-                    DispatchQueue.global(qos: .userInitiated).async {
-                        let sortedSongs = allSongs.sorted {
-                            $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
-                        }
-
-                        DispatchQueue.main.async {
-                            self.songs = sortedSongs
-                            self.pendingSongs.removeAll(keepingCapacity: true)
-                            self.scheduleCacheSave()
-                        }
-                    }
-                }
+                self.songs = sortedSongs
+                self.pendingSongs.removeAll(keepingCapacity: true)
+                self.scheduleCacheSave()
             }
         }
+
+        // ✅ Ejecutar después de un breve delay para acumular lotes pendientes
+        // Delay de 200ms permite que los últimos lotes terminen sin bloquear el thread
+        DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 0.2, execute: sortWorkItem!)
     }
+
+    private var sortWorkItem: DispatchWorkItem?
 
     private func finishDiscovery(generation: Int) {
         guard generation == scanGeneration else { return }
@@ -427,9 +454,13 @@ class FileAccessService: ObservableObject {
     }
 
     private func updateScanningState() {
+        let wasScanning = isScanning
         isScanning = activeDiscoveries > 0 || scanProcessed < scanTotal
-        if !isScanning && !pendingSongs.isEmpty {
-            // ✅ Final sort en background para evitar congelamiento
+
+        // ✅ Al finalizar: verificar si hay sort pendiente que ejecutar
+        if wasScanning && !isScanning && !pendingSongs.isEmpty && !isSortScheduled {
+            // ✅ Final sort en background para evitar congelamiento (sin sleep)
+            isSortScheduled = true
             let allSongs = songs + pendingSongs
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in
                 guard let self = self else { return }
@@ -438,6 +469,7 @@ class FileAccessService: ObservableObject {
                 }
 
                 DispatchQueue.main.async {
+                    self.isSortScheduled = false
                     self.songs = sortedSongs
                     self.pendingSongs.removeAll(keepingCapacity: true)
                     self.scheduleCacheSave()
@@ -1231,17 +1263,27 @@ class FileAccessService: ObservableObject {
         }
     }
     
-    /// Check if a song is liked
+    /// Check if a song is liked (usa cache O(1) en vez de O(n))
     func isLiked(_ song: Song) -> Bool {
-        guard let liked = likedPlaylist else { return false }
-        return liked.songIDs.contains(song.id)
+        // ✅ Usar cache si es válido, si no calcular y cachear
+        if LikedSongsCache.shared.isLiked(song.id) {
+            return true
+        }
+        // Fallback: calcular y actualizar cache
+        guard let liked = likedPlaylist else {
+            LikedSongsCache.shared.update(likedIDs: [])
+            return false
+        }
+        let likedSet = Set(liked.songIDs)
+        LikedSongsCache.shared.update(likedIDs: likedSet)
+        return likedSet.contains(song.id)
     }
-    
+
     /// Toggle like status for a song
     func toggleLike(_ song: Song) {
         ensureLikedPlaylistExists()
         guard let index = playlists.firstIndex(where: { $0.name == likedPlaylistName }) else { return }
-        
+
         if playlists[index].songIDs.contains(song.id) {
             playlists[index].songIDs.removeAll { $0 == song.id }
         } else {
@@ -1249,6 +1291,8 @@ class FileAccessService: ObservableObject {
         }
         playlists[index].modifiedAt = Date()
         savePlaylists()
+        // ✅ Invalidar cache para que se recalcule en el próximo acceso
+        LikedSongsCache.shared.invalidate()
     }
     
     /// Get all liked songs
@@ -1327,8 +1371,14 @@ class FileAccessService: ObservableObject {
 
     // MARK: - Albums y Artists (cacheados: se recalculan solo cuando cambia `songs`)
 
-    var albums: [Album] { cachedAlbums }
-    var artists: [Artist] { cachedArtists }
+    var albums: [Album] {
+        if needsRebuild { rebuildDerivedCollections() }
+        return cachedAlbums
+    }
+    var artists: [Artist] {
+        if needsRebuild { rebuildDerivedCollections() }
+        return cachedArtists
+    }
 
     private func rebuildDerivedCollections() {
         let groupedAlbums = Dictionary(grouping: songs) { song -> AlbumKey in
@@ -1356,6 +1406,8 @@ class FileAccessService: ObservableObject {
                 songs: artistSongs
             )
         }.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+
+        needsRebuild = false // ✅ Marcar como actualizado
     }
 
     deinit {

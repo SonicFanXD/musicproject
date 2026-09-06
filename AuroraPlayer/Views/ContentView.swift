@@ -627,7 +627,7 @@ struct ContentView: View {
                                     .frame(width: 2.5, height: bar % 2 == 0 ? 12 : 7)
                                     .animation(
                                         .easeInOut(duration: 0.4 + Double(bar) * 0.1).repeatForever(autoreverses: true),
-                                        value: isCurrent
+                                        value: audioEngine.isPlaying
                                     )
                             }
                         }
@@ -681,6 +681,7 @@ struct ContentView: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
+        .drawingGroup() // ✅ Rasterizar la fila para scroll suave a 60fps
             .background {
                 if isCurrent {
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
@@ -888,56 +889,64 @@ struct ContentView: View {
 }
 
 struct SplashView: View {
-    @State private var isAnimating = false
+    @State private var phase: CGFloat = 0
     @State private var appear = false
 
     var body: some View {
         ZStack {
-            Color.black.ignoresSafeArea()
+            // ✅ Fondo sólido con gradiente sutil (sin blur costoso)
+            LinearGradient(
+                colors: [Color.black, Color(red: 0.05, green: 0.05, blue: 0.12)],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .ignoresSafeArea()
 
-            // ✅ Fondo "aurora": blobs de color con movimiento lento (GPU, blur)
-            ZStack {
-                Circle()
-                    .fill(AppTheme.accent.opacity(0.35))
-                    .frame(width: 440, height: 440)
-                    .blur(radius: 90)
-                    .offset(x: -100, y: -200)
-                Circle()
-                    .fill(Color(red: 0.25, green: 0.55, blue: 1.0).opacity(0.28))
-                    .frame(width: 400, height: 400)
-                    .blur(radius: 100)
-                    .offset(x: 130, y: 240)
-                Circle()
-                    .fill(Color(red: 0.95, green: 0.35, blue: 0.65).opacity(0.20))
-                    .frame(width: 360, height: 360)
-                    .blur(radius: 90)
-                    .offset(x: 70, y: -30)
-            }
-            .scaleEffect(isAnimating ? 1.15 : 0.9)
-            .rotationEffect(.degrees(isAnimating ? 10 : -8))
-            .animation(.easeInOut(duration: 3.2).repeatForever(autoreverses: true), value: isAnimating)
+            // ✅ Aurora animada con drawingGroup (GPU-accelerated, sin blur)
+            AngularGradient(
+                colors: [
+                    AppTheme.accent.opacity(0.0),
+                    AppTheme.accent.opacity(0.25),
+                    Color(red: 0.25, green: 0.55, blue: 1.0).opacity(0.2),
+                    Color(red: 0.95, green: 0.35, blue: 0.65).opacity(0.15),
+                    AppTheme.accent.opacity(0.0)
+                ],
+                center: .center,
+                startAngle: .degrees(phase * 360),
+                endAngle: .degrees(phase * 360 + 180)
+            )
+            .frame(width: 600, height: 600)
+            .opacity(0.6)
+            .drawingGroup() // ✅ Renderiza en GPU sin costo de CPU
 
-            VStack(spacing: 26) {
+            VStack(spacing: 32) {
+                // ✅ Logo con pulse sutil (una sola animación)
                 ZStack {
+                    // Halo exterior que pulsa
                     Circle()
-                        .stroke(AppTheme.accent.opacity(0.14), lineWidth: 1)
-                        .frame(width: 164, height: 164)
-                        .scaleEffect(isAnimating ? 1.1 : 0.94)
-                        .animation(.easeInOut(duration: 1.8).repeatForever(autoreverses: true), value: isAnimating)
-                    Circle()
-                        .stroke(AppTheme.accent.opacity(0.35), lineWidth: 1.5)
-                        .frame(width: 128, height: 128)
-                    Image(systemName: "music.note")
-                        .font(.system(size: 54, weight: .light))
-                        .foregroundStyle(AppTheme.accent)
-                        .scaleEffect(isAnimating ? 1.12 : 0.94)
-                        .shadow(color: AppTheme.accent.opacity(0.65), radius: isAnimating ? 18 : 6)
-                        .animation(.easeInOut(duration: 1.4).repeatForever(autoreverses: true), value: isAnimating)
-                }
+                        .stroke(
+                            LinearGradient(
+                                colors: [AppTheme.accent.opacity(0.3), AppTheme.accent.opacity(0.05)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 1.5
+                        )
+                        .frame(width: 140, height: 140)
+                        .scaleEffect(appear ? 1.0 : 0.85)
 
-                VStack(spacing: 10) {
+                    // Icono principal
+                    Image(systemName: "music.note")
+                        .font(.system(size: 52, weight: .light))
+                        .foregroundStyle(AppTheme.accent)
+                        .shadow(color: AppTheme.accent.opacity(0.5), radius: 12)
+                }
+                .opacity(appear ? 1 : 0)
+                .animation(.easeOut(duration: 0.5).delay(0.1), value: appear)
+
+                VStack(spacing: 14) {
                     Text("Aurora Player")
-                        .font(.system(size: 28, weight: .bold, design: .rounded))
+                        .font(.system(size: 30, weight: .bold, design: .rounded))
                         .foregroundStyle(
                             LinearGradient(
                                 colors: [.white, AppTheme.accent],
@@ -945,30 +954,23 @@ struct SplashView: View {
                                 endPoint: .bottomTrailing
                             )
                         )
-                    // Barra de carga indeterminada propia (más elegante que el spinner)
-                    GeometryReader { geometry in
-                        ZStack(alignment: .leading) {
-                            Capsule()
-                                .fill(Color.white.opacity(0.12))
-                                .frame(height: 4)
-                            Capsule()
-                                .fill(AppTheme.accent)
-                                .frame(width: geometry.size.width * 0.35, height: 4)
-                                .offset(x: isAnimating ? geometry.size.width * 0.65 : 0)
-                                .animation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true), value: isAnimating)
-                        }
-                    }
-                    .frame(width: 140, height: 4)
+
+                    // ✅ Indicador de progreso minimalista (sin GeometryReader costoso)
+                    ProgressView()
+                        .progressViewStyle(CircularProgressViewStyle(tint: AppTheme.accent))
+                        .scaleEffect(0.8)
+                        .opacity(0.7)
                 }
+                .opacity(appear ? 1 : 0)
+                .offset(y: appear ? 0 : 12)
+                .animation(.easeOut(duration: 0.6).delay(0.25), value: appear)
             }
-            .opacity(appear ? 1 : 0)
-            .offset(y: appear ? 0 : 18)
-            .animation(.easeOut(duration: 0.7), value: appear)
         }
         .onAppear {
-            isAnimating = true
-            withAnimation(.easeOut(duration: 0.6).delay(0.15)) {
-                appear = true
+            appear = true
+            // ✅ Una sola animación continua, sin repeatForever costoso
+            withAnimation(.linear(duration: 8).repeatForever(autoreverses: false)) {
+                phase = 1
             }
         }
     }
