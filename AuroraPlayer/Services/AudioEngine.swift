@@ -695,6 +695,12 @@ class AudioEngine: NSObject, ObservableObject {
         // residual (el bug de "reiniciar en cualquier punto random").
         // Solución: detener engine completo, programar, y relanzar.
         isUsingFallback = false
+        // ✅ ANTI-SALTO PREMATURO: invalidar TODOS los completion handlers
+        // pendientes del segmento anterior (pueden estar encolados en la main
+        // queue y dispararse DESPUÉS de que isPlaying=true más abajo). Sin
+        // esto, el handler viejo pasaba los guards con la generación vigente
+        // y saltaba de canción antes de que la actual llegara al 100%.
+        scheduleGeneration += 1
         crossfadeTimer?.invalidate()
         isCrossfading = false
         isStopping = true
@@ -1382,6 +1388,15 @@ class AudioEngine: NSObject, ObservableObject {
     // nueva generación para garantizar que suene sin cortes ni silencios.
     private func handlePlaybackFinished() {
         guard isPlaying, !isStopping, !isCrossfading else { return }
+        // ✅ ANTI-SALTO PREMATURO (red de seguridad): el completion handler se
+        // dispara cuando el segmento TERMINA de sonar, así que el reloj de
+        // pared DEBE estar (casi) al final. Si está muy atrás, es un handler
+        // viejo que sobrevivió a un reinicio → ignorarlo, no saltar de canción.
+        // Tolerancia de 1.0s para drift de reloj / finales muy cortos.
+        if repeatMode != .one, duration > 0, wallClockTime < duration - 1.0 {
+            AppLog.warning(.playback, String(format: "Completion stale ignorado: '%@' en %.1f/%.1fs (handler de segmento anterior)", currentSong?.displayName ?? "—", wallClockTime, duration))
+            return
+        }
         // ✅ FIX: evitar llamadas múltiples del completion handler (bug de
         // AVAudioEngine que puede dispararlo más de una vez). Incrementar
         // scheduleGeneration invalida cualquier handler anterior pendiente.
