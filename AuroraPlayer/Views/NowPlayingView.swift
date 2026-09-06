@@ -135,8 +135,7 @@ struct NowPlayingView: View {
             }
             .presentationDetents([.large])
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(Color(UIColor.systemBackground).opacity(0.92), for: .navigationBar)
-            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbarBackground(.hidden, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .principal) {
                     Text(Localization.localized("nowPlaying.title"))
@@ -151,7 +150,11 @@ struct NowPlayingView: View {
                     } label: {
                         Image(systemName: "chevron.down")
                             .foregroundStyle(AppTheme.contrastingText(on: extractedUIColor).opacity(0.7))
-                            .font(.system(size: 16, weight: .semibold))
+                            .padding(8)
+                            .contentShape(Circle())
+                            .background {
+                                Circle().fill(.ultraThinMaterial)
+                            }
                     }
                 }
             }
@@ -173,39 +176,65 @@ struct NowPlayingView: View {
                 Color(UIColor.systemBackground).ignoresSafeArea()
             } else {
                 ZStack {
-                    LinearGradient(
-                        colors: [
-                            Color(extractedUIColor).opacity(0.18),
-                            Color(UIColor.systemBackground),
-                            Color(UIColor.systemBackground)
-                        ],
-                        startPoint: .top, endPoint: .bottom
-                    ).ignoresSafeArea()
+                    // ✅ FONDO DIFUMINADO BASADO EN LA PORTADA: la carátula de la
+                    // canción en reproducción se muestra a tamaño completo con blur
+                    // intenso (60fps, GPU) y se oscurece para legibilidad.
+                    if let artwork = audioEngine.currentSong?.artwork {
+                        Image(uiImage: artwork)
+                            .resizable()
+                            .interpolation(.high)
+                            .scaledToFill()
+                            .blur(radius: 60)
+                            .scaleEffect(1.6) // ✅ evita bordes visibles del blur
+                            .overlay {
+                                Color.black.opacity(0.42)
+                            }
+                        // ✅ Transición suave al cambiar de canción
+                        .id(audioEngine.currentSong?.id)
+                        .transition(.opacity)
+                            .animation(.easeInOut(duration: 0.5), value: audioEngine.currentSong?.id)
+                    } else {
+                        // ✅ Fallback: gradiente con el color dominante cuando no hay portada
+                        LinearGradient(
+                            colors: [
+                                Color(extractedUIColor).opacity(0.18),
+                                Color(UIColor.systemBackground),
+                                Color(UIColor.systemBackground)
+                            ],
+                            startPoint: .top, endPoint: .bottom
+                        )
+                    }
 
-                    Color(UIColor.systemBackground).opacity(0.75).ignoresSafeArea()
-
-                    // ✅ Capa de material translúcido (sin dependencia externa)
+                    // ✅ Capa de material translúcido para suavizar y unificar textos
                     Rectangle()
                         .fill(.ultraThinMaterial)
                         .ignoresSafeArea()
-                        .opacity(reduceTransparency ? 0 : 1)
+                        .overlay {
+                            LinearGradient(
+                                colors: [Color.black.opacity(0.25), Color.clear, Color.black.opacity(0.4)],
+                                startPoint: .top, endPoint: .bottom
+                            )
+                        }
                 }
+                .ignoresSafeArea()
             }
         }
     }
 
     private var artworkSection: some View {
-        GeometryReader { geometry in
-            let size = artworkSize
-
-            return HStack {
-                Spacer()
-                artworkView(frame: CGSize(width: size, height: size))
-                Spacer()
+        ZStack {
+            // ✅ Anillo visualizador circular alrededor del artwork (PowerAmp)
+            if showVisualizer {
+                CircularAudioVisualizer(audioEngine: audioEngine)
+                    .frame(width: artworkSize + 36, height: artworkSize + 36)
+                    .opacity(audioEngine.isPlaying ? 1 : 0.25)
+                    .animation(.easeInOut(duration: 0.3), value: audioEngine.isPlaying)
             }
-            .frame(height: geometry.size.height)
+
+            artworkView(frame: CGSize(width: artworkSize, height: artworkSize))
         }
-        .frame(height: artworkSize)
+        .frame(height: artworkSize + (showVisualizer ? 20 : 0))
+        .frame(maxWidth: .infinity)
     }
 
     @ViewBuilder
@@ -281,20 +310,22 @@ struct NowPlayingView: View {
     }
 
     private var trackInfoSection: some View {
-        VStack(spacing: 5) {
+        VStack(spacing: 6) {
             Text(audioEngine.currentSong?.title ?? Localization.localized("quality.noSong"))
                 .font(.system(size: isCompactScreen ? 20 : 24, weight: .bold, design: .rounded))
-                .foregroundStyle(.primary)
+                .foregroundStyle(.white)
+                .shadow(color: .black.opacity(0.4), radius: 6, y: 2)
                 .lineLimit(1)
                 .multilineTextAlignment(.center)
-                .padding(.horizontal, 20)
+                .padding(.horizontal, 24)
 
             Text(audioEngine.currentSong?.displaySubtitle ?? "")
                 .font(.system(size: isCompactScreen ? 13 : 15, weight: .medium))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.white.opacity(0.7))
+                .shadow(color: .black.opacity(0.3), radius: 4, y: 1)
                 .lineLimit(1)
                 .multilineTextAlignment(.center)
-                .padding(.horizontal, 20)
+                .padding(.horizontal, 24)
         }
     }
 
@@ -303,7 +334,7 @@ struct NowPlayingView: View {
             GeometryReader { geometry in
                 ZStack(alignment: .leading) {
                     Capsule()
-                        .fill(Color.secondary.opacity(0.2))
+                        .fill(Color.white.opacity(0.2))
                         .frame(height: 4)
 
                     Capsule()
@@ -316,9 +347,12 @@ struct NowPlayingView: View {
                         .frame(width: geometry.size.width * progress, height: 4)
 
                     Circle()
-                        .fill(Color.white)
+                        .fill(playIconColor)
                         .frame(width: isScrubbing ? 14 : 10, height: isScrubbing ? 14 : 10)
-                        .shadow(color: .black.opacity(0.25), radius: 3, x: 0, y: 1)
+                        .overlay {
+                            Circle().stroke(Color.white.opacity(0.6), lineWidth: 1.5)
+                        }
+                        .shadow(color: .black.opacity(0.4), radius: 3, x: 0, y: 1)
                         .offset(x: geometry.size.width * progress - (isScrubbing ? 7 : 5))
                         .animation(.easeOut(duration: 0.15), value: isScrubbing)
                 }
@@ -345,91 +379,102 @@ struct NowPlayingView: View {
 
             HStack {
                 Text(scrubPreviewText)
-                    .font(.system(size: 11, weight: .medium).monospacedDigit())
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 11, weight: .semibold).monospacedDigit())
+                    .foregroundStyle(.white.opacity(0.8))
 
                 Spacer()
 
                 Text(formatTime(audioEngine.duration))
-                    .font(.system(size: 11, weight: .medium).monospacedDigit())
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 11, weight: .semibold).monospacedDigit())
+                    .foregroundStyle(.white.opacity(0.8))
             }
         }
         .padding(.horizontal, 24)
     }
 
     private var controlsView: some View {
-        HStack(spacing: isCompactScreen ? 6 : 12) {
+        HStack(spacing: isCompactScreen ? 2 : 8) {
+            // Grupo izquierdo: Shuffle
             controlButton(icon: "shuffle", isActive: audioEngine.isShuffleEnabled) {
                 Haptics.light()
                 audioEngine.toggleShuffle()
             }
 
-            controlButton(icon: "backward.fill", size: .medium) {
-                Haptics.light()
-                audioEngine.playPrevious()
-            }
+            Spacer()
 
-            Button {
-                Haptics.medium()
-                if audioEngine.isPlaying {
-                    audioEngine.pause()
-                } else {
-                    audioEngine.resume()
-                }
-            } label: {
-                ZStack {
-                    Circle()
-                        .fill(
-                            LinearGradient(
-                                colors: [extractedColor, extractedColor.opacity(0.8)],
-                                startPoint: .topLeading, endPoint: .bottomTrailing
-                            )
-                        )
-                        .frame(width: isCompactScreen ? 64 : 74, height: isCompactScreen ? 64 : 74)
-                        .shadow(color: extractedColor.opacity(0.4), radius: 12, x: 0, y: 5)
-
-                    Image(systemName: audioEngine.isPlaying ? "pause.fill" : "play.fill")
-                        .font(.system(size: isCompactScreen ? 24 : 28, weight: .bold))
-                        .foregroundStyle(playIconColor)
-                        .id(audioEngine.isPlaying ? "playing" : "paused")
-                }
-                .animation(.easeInOut(duration: 0.2), value: audioEngine.isPlaying)
-            }
-            .buttonStyle(.plain)
-
-            controlButton(icon: "forward.fill", size: .medium) {
-                Haptics.light()
-                audioEngine.playNext()
-            }
-
-            controlButton(icon: repeatIcon, isActive: audioEngine.repeatMode != .off) {
-                Haptics.light()
-                audioEngine.cycleRepeatMode()
-            }
-
-            if let song = audioEngine.currentSong {
-                Button {
+            // Grupo central: Prev · Play · Next
+            HStack(spacing: isCompactScreen ? 6 : 18) {
+                controlButton(icon: "backward.fill", size: .medium) {
                     Haptics.light()
-                    fileAccessService.toggleLike(song)
+                    audioEngine.playPrevious()
+                }
+
+                Button {
+                    Haptics.medium()
+                    if audioEngine.isPlaying {
+                        audioEngine.pause()
+                    } else {
+                        audioEngine.resume()
+                    }
                 } label: {
                     ZStack {
-                        Capsule()
-                            .fill(fileAccessService.isLiked(song) ? Color.red.opacity(0.2) : Color.clear)
-                            .frame(width: isCompactScreen ? 38 : 44, height: isCompactScreen ? 28 : 34)
+                        Circle()
+                            .fill(
+                                LinearGradient(
+                                    colors: [extractedColor, extractedColor.opacity(0.8)],
+                                    startPoint: .topLeading, endPoint: .bottomTrailing
+                                )
+                            )
+                            .frame(width: isCompactScreen ? 64 : 76, height: isCompactScreen ? 64 : 76)
+                            .shadow(color: extractedColor.opacity(0.5), radius: 14, x: 0, y: 6)
 
-                        Image(systemName: fileAccessService.isLiked(song) ? "heart.fill" : "heart")
-                            .font(.system(size: isCompactScreen ? 15 : 17, weight: fileAccessService.isLiked(song) ? .bold : .semibold))
-                            .foregroundStyle(fileAccessService.isLiked(song) ? .red : AppTheme.contrastingText(on: extractedUIColor).opacity(0.7))
+                        Image(systemName: audioEngine.isPlaying ? "pause.fill" : "play.fill")
+                            .font(.system(size: isCompactScreen ? 24 : 28, weight: .bold))
+                            .foregroundStyle(playIconColor)
+                            .id(audioEngine.isPlaying ? "playing" : "paused")
                     }
-                    .frame(width: isCompactScreen ? 56 : 64, height: isCompactScreen ? 56 : 64)
-                    .contentShape(Rectangle())
+                    .animation(.easeInOut(duration: 0.2), value: audioEngine.isPlaying)
                 }
                 .buttonStyle(.plain)
+
+                controlButton(icon: "forward.fill", size: .medium) {
+                    Haptics.light()
+                    audioEngine.playNext()
+                }
+            }
+
+            Spacer()
+
+            // Grupo derecho: Repeat · Like
+            HStack(spacing: isCompactScreen ? 2 : 8) {
+                controlButton(icon: repeatIcon, isActive: audioEngine.repeatMode != .off) {
+                    Haptics.light()
+                    audioEngine.cycleRepeatMode()
+                }
+
+                if let song = audioEngine.currentSong {
+                    Button {
+                        Haptics.light()
+                        fileAccessService.toggleLike(song)
+                    } label: {
+                        ZStack {
+                            Capsule()
+                                .fill(fileAccessService.isLiked(song) ? Color.red.opacity(0.25) : Color.clear)
+                                .frame(width: isCompactScreen ? 38 : 44, height: isCompactScreen ? 28 : 34)
+
+                            Image(systemName: fileAccessService.isLiked(song) ? "heart.fill" : "heart")
+                                .font(.system(size: isCompactScreen ? 15 : 17, weight: fileAccessService.isLiked(song) ? .bold : .semibold))
+                                .foregroundStyle(fileAccessService.isLiked(song) ? .red : .white.opacity(0.75))
+                        }
+                        .frame(width: isCompactScreen ? 56 : 64, height: isCompactScreen ? 56 : 64)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
             }
         }
         .frame(maxWidth: .infinity)
-        .fixedSize()
+        .padding(.horizontal, 16)
     }
 
     @ViewBuilder
@@ -448,7 +493,8 @@ struct NowPlayingView: View {
 
                 Image(systemName: icon)
                     .font(.system(size: isCompactScreen ? 15 : 17, weight: isActive ? .bold : .semibold))
-                    .foregroundStyle(isActive ? playIconColor : AppTheme.contrastingText(on: extractedUIColor).opacity(0.7))
+                    .foregroundStyle(isActive ? extractedColor : .white.opacity(0.75))
+                    .shadow(color: .black.opacity(0.3), radius: 3, y: 1)
             }
             .frame(width: isCompactScreen ? 56 : 64, height: isCompactScreen ? 56 : 64)
             .contentShape(Rectangle())
@@ -520,15 +566,24 @@ struct NowPlayingView: View {
 
                     Image(systemName: "ellipsis")
                         .font(.system(size: iconSize, weight: .semibold))
-                        .foregroundStyle(AppTheme.contrastingText(on: extractedUIColor).opacity(0.7))
+                        .foregroundStyle(.white.opacity(0.75))
+                        .shadow(color: .black.opacity(0.3), radius: 3, y: 1)
                 }
                 .frame(width: buttonSize, height: buttonSize)
                 .contentShape(Rectangle())
             }
             .accessibilityLabel(Localization.localized("nowPlaying.more"))
         }
-        .frame(maxWidth: .infinity)
-        .fixedSize()
+        .padding(.horizontal, isCompactScreen ? 12 : 18)
+        .padding(.vertical, isCompactScreen ? 6 : 8)
+        .background {
+            Capsule()
+                .fill(.ultraThinMaterial.opacity(0.6))
+                .overlay {
+                    Capsule().strokeBorder(Color.white.opacity(0.1), lineWidth: 0.5)
+                }
+                .shadow(color: .black.opacity(0.2), radius: 8, y: 3)
+        }
     }
 
     // ✅ Overload sin picker (la mayoría de botones de feature)
@@ -547,12 +602,18 @@ struct NowPlayingView: View {
             Button(action: action) {
                 ZStack {
                     Capsule()
-                        .fill(active ? extractedColor.opacity(0.2) : Color.clear)
+                        .fill(active ? extractedColor.opacity(0.25) : Color.clear)
                         .frame(width: capsuleWidth, height: capsuleHeight)
+                        .overlay {
+                            if active {
+                                Capsule().strokeBorder(extractedColor.opacity(0.4), lineWidth: 0.5)
+                            }
+                        }
 
                     Image(systemName: icon)
                         .font(.system(size: iconSize, weight: active ? .bold : .semibold))
-                        .foregroundStyle(active ? playIconColor : AppTheme.contrastingText(on: extractedUIColor).opacity(0.7))
+                        .foregroundStyle(active ? extractedColor : .white.opacity(0.75))
+                        .shadow(color: .black.opacity(0.3), radius: 3, y: 1)
                 }
                 .frame(width: buttonSize, height: buttonSize)
                 .contentShape(Rectangle())
@@ -580,12 +641,13 @@ struct NowPlayingView: View {
             } label: {
                 ZStack {
                     Capsule()
-                        .fill(active ? extractedColor.opacity(0.2) : Color.clear)
+                        .fill(active ? extractedColor.opacity(0.25) : Color.clear)
                         .frame(width: capsuleWidth, height: capsuleHeight)
 
                     Image(systemName: icon)
                         .font(.system(size: iconSize, weight: active ? .bold : .semibold))
-                        .foregroundStyle(active ? playIconColor : AppTheme.contrastingText(on: extractedUIColor).opacity(0.7))
+                        .foregroundStyle(active ? extractedColor : .white.opacity(0.75))
+                        .shadow(color: .black.opacity(0.3), radius: 3, y: 1)
                 }
                 .frame(width: buttonSize, height: buttonSize)
                 .contentShape(Rectangle())
@@ -646,7 +708,7 @@ struct NowPlayingView: View {
 
     private var controlBackground: AnyShapeStyle {
         reduceTransparency
-            ? AnyShapeStyle(Color(UIColor.secondarySystemBackground))
+            ? AnyShapeStyle(Color(UIColor.systemBackground))
             : AnyShapeStyle(.ultraThinMaterial)
     }
 
@@ -703,5 +765,10 @@ struct AirPlayRoutePickerView: UIViewRepresentable {
         return picker
     }
 
-    func updateUIView(_ uiView: AVRoutePickerView, context: Context) {}
+    func updateUIView(_ uiView: AVRoutePickerView, context: Context) {
+        // ✅ FIX: el tint se fijaba solo en makeUIView → no reaccionaba al
+        // acento dinámico de la carátula ni al cambio manual de acento.
+        let tint = AppTheme.accentUIColor
+        if uiView.tintColor != tint { uiView.tintColor = tint }
+    }
 }

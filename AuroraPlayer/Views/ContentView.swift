@@ -10,6 +10,12 @@ struct ContentView: View {
     @State private var showSettings = false
     @State private var showPlaylists = false
     @State private var showFolderPicker = false
+    // ✅ Barra de categorías: píldora deslizante (matchedGeometry) + dirección
+    // de la transición al cambiar de categoría (el contenido entra desde el
+    // lado correspondiente para un movimiento coherente a 60fps).
+    @Namespace private var categoryPillNamespace
+    @State private var categorySwitchEdge: Edge = .leading
+    @State private var indexingPulse = false
 
     @AppStorage("com.aurora.selectedCategory") private var selectedCategoryRaw = LibraryCategory.songs.rawValue
     private var selectedCategory: LibraryCategory {
@@ -38,19 +44,25 @@ struct ContentView: View {
                     VStack(spacing: 0) {
                         categoryPicker
 
-                        Group {
+                        ZStack {
                             switch selectedCategory {
                             case .songs:
                                 libraryList(id: "songs") { songsSection }
+                                    .transition(categoryTransition)
                             case .albums:
                                 libraryList(id: "albums") { albumsSection }
+                                    .transition(categoryTransition)
                             case .artists:
                                 libraryList(id: "artists") { artistsSection }
+                                    .transition(categoryTransition)
                             case .playlists:
                                 libraryList(id: "playlists") { playlistsSection }
+                                    .transition(categoryTransition)
                             }
                         }
-                        .animation(nil, value: selectedCategory)
+                        // ✅ Transición suave y limpia al cambiar de categoría
+                        // (move + opacity = solo transform/alpha en GPU → 60fps)
+                        .animation(.spring(response: 0.38, dampingFraction: 0.86), value: selectedCategory)
                         .refreshable {
                             fileAccessService.refreshAllFolders()
                             try? await Task.sleep(nanoseconds: 600_000_000)
@@ -223,53 +235,89 @@ struct ContentView: View {
         .scrollContentBackground(.hidden)
     }
 
+    /// ✅ Transición de categorías: entra desde el lado de la píldora deslizante,
+    /// sale con fade + micro-escala. Solo anima transform/opacity (GPU puro).
+    private var categoryTransition: AnyTransition {
+        .asymmetric(
+            insertion: .move(edge: categorySwitchEdge).combined(with: .opacity),
+            removal: .opacity.combined(with: .scale(scale: 0.98))
+        )
+    }
+
+    private func selectCategory(_ category: LibraryCategory) {
+        guard selectedCategory != category else { return }
+        let categories = LibraryCategory.allCases
+        if let oldIndex = categories.firstIndex(of: selectedCategory),
+           let newIndex = categories.firstIndex(of: category) {
+            categorySwitchEdge = newIndex > oldIndex ? .trailing : .leading
+        }
+        Haptics.light()
+        withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) {
+            selectedCategoryRaw = category.rawValue
+        }
+    }
+
     private var categoryPicker: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 10) {
-                ForEach(LibraryCategory.allCases, id: \.self) { category in
-                    Button {
-                        selectedCategoryRaw = category.rawValue
-                    } label: {
-                        HStack(spacing: 7) {
-                            Image(systemName: categoryIcon(for: category))
-                                .font(.system(size: 13, weight: .semibold))
-                            Text(category.title)
-                                .font(.system(size: 14, weight: .semibold, design: .rounded))
-                        }
-                        .foregroundStyle(selectedCategory == category ? .white : .secondary)
-                        .padding(.horizontal, 18)
-                        .padding(.vertical, 12)
-                        .background {
-                            if selectedCategory == category {
-                                ZStack {
-                                    Capsule().fill(
-                                        LinearGradient(
-                                            colors: [AppTheme.accent, AppTheme.accent.opacity(0.8)],
-                                            startPoint: .topLeading,
-                                            endPoint: .bottomTrailing
-                                        )
+        // ✅ BARRA ÚNICA deslizable/tocable: una sola cápsula con 4 segmentos
+        // iguales y una píldora de acento que SE DESLIZA con spring
+        // (matchedGeometryEffect = solo transform en GPU → 60fps estable).
+        HStack(spacing: 4) {
+            ForEach(LibraryCategory.allCases, id: \.self) { category in
+                let isSelected = selectedCategory == category
+                Button {
+                    selectCategory(category)
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: categoryIcon(for: category))
+                            .font(.system(size: 12, weight: .semibold))
+                        Text(category.title)
+                            .font(.system(size: 13, weight: .semibold, design: .rounded))
+                            .lineLimit(1)
+                    }
+                    .foregroundStyle(isSelected ? .white : .secondary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 11)
+                    .background {
+                        if isSelected {
+                            Capsule()
+                                .fill(
+                                    LinearGradient(
+                                        colors: [AppTheme.accent, AppTheme.accent.opacity(0.8)],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
                                     )
-                                    Capsule().fill(
-                                        LinearGradient(
-                                            colors: [.white.opacity(0.2), .clear],
-                                            startPoint: .top,
-                                            endPoint: .bottom
-                                        )
-                                    )
-                                }
-                                .shadow(color: AppTheme.accent.opacity(0.35), radius: 8, x: 0, y: 4)
-                            } else {
-                                Capsule().fill(.regularMaterial)
-                                Capsule().strokeBorder(Color.secondary.opacity(0.1), lineWidth: 0.5)
-                            }
+                                )
+                                .matchedGeometryEffect(id: "categoryPill", in: categoryPillNamespace)
+                                .shadow(color: AppTheme.accent.opacity(0.35), radius: 6, x: 0, y: 3)
                         }
                     }
-                    .buttonStyle(PressableButtonStyle(scale: 0.95))
+                    .contentShape(Capsule())
                 }
+                .buttonStyle(.plain)
             }
-            .padding(.horizontal, 16)
         }
+        .padding(4)
+        .background {
+            Capsule().fill(.regularMaterial)
+            Capsule().strokeBorder(Color.secondary.opacity(0.1), lineWidth: 0.5)
+        }
+        .padding(.horizontal, 16)
         .padding(.vertical, 10)
+        // ✅ Deslizar sobre la barra cambia a la categoría adyacente
+        .gesture(
+            DragGesture(minimumDistance: 18)
+                .onEnded { value in
+                    let horizontal = abs(value.translation.width) > abs(value.translation.height)
+                    guard horizontal else { return }
+                    let categories = LibraryCategory.allCases
+                    guard let index = categories.firstIndex(of: selectedCategory) else { return }
+                    if value.translation.width < -24, index + 1 < categories.count {
+                        selectCategory(categories[index + 1])
+                    } else if value.translation.width > 24, index - 1 >= 0 {
+                        selectCategory(categories[index - 1])
+                    }
+                }
+        )
     }
 
     private func categoryIcon(for category: LibraryCategory) -> String {
@@ -416,12 +464,30 @@ struct ContentView: View {
 
     private var indexingProgressCard: some View {
         VStack(spacing: 16) {
+            // ✅ Anillo de progreso real + pulso del icono (GPU: trim/rotate/scale)
             ZStack {
-                Circle().fill(AppTheme.accent.opacity(0.12)).frame(width: 70, height: 70)
+                Circle()
+                    .stroke(Color.secondary.opacity(0.12), lineWidth: 6)
+                    .frame(width: 84, height: 84)
+                Circle()
+                    .trim(from: 0, to: max(0.02, indexingProgress))
+                    .stroke(
+                        AngularGradient(
+                            colors: [AppTheme.accent, AppTheme.accent.opacity(0.45), AppTheme.accent],
+                            center: .center
+                        ),
+                        style: StrokeStyle(lineWidth: 6, lineCap: .round)
+                    )
+                    .frame(width: 84, height: 84)
+                    .rotationEffect(.degrees(-90))
+                    .animation(.easeInOut(duration: 0.3), value: indexingProgress)
                 Image(systemName: "square.stack.3d.up")
-                    .font(.system(size: 30, weight: .semibold))
+                    .font(.system(size: 28, weight: .semibold))
                     .foregroundStyle(AppTheme.accent)
+                    .scaleEffect(indexingPulse ? 1.08 : 0.94)
+                    .animation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true), value: indexingPulse)
             }
+            .onAppear { indexingPulse = true }
 
             Text(Localization.localized("indexing.indexingLibrary"))
                 .font(.system(size: 18, weight: .bold, design: .rounded))
@@ -668,14 +734,23 @@ struct ContentView: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
         .background {
-            if isCurrent {
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(AppTheme.accent.opacity(0.07))
-                    .overlay(
+            // ✅ DISEÑO UNIFICADO: todas las listas (canciones/álbumes/artistas)
+            // usan la MISMA tarjeta material; la pista actual se resalta con
+            // tinte de acento encima (no cambia la estructura, solo overlay).
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(.regularMaterial)
+                .overlay {
+                    if isCurrent {
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .fill(AppTheme.accent.opacity(0.07))
+                    }
+                }
+                .overlay {
+                    if isCurrent {
                         RoundedRectangle(cornerRadius: 16, style: .continuous)
                             .strokeBorder(AppTheme.accent.opacity(0.15), lineWidth: 0.5)
-                    )
-            }
+                    }
+                }
         }
         .contextMenu {
             Button {
@@ -724,7 +799,7 @@ struct ContentView: View {
                 Label(Localization.localized("context.playNow"), systemImage: "play.circle.fill")
             }
         }
-        .listRowInsets(EdgeInsets(top: 3, leading: 10, bottom: 3, trailing: 10))
+        .listRowInsets(EdgeInsets(top: 6, leading: 12, bottom: 6, trailing: 12))
         .listRowBackground(Color.clear)
     }
 
@@ -906,6 +981,19 @@ struct SplashView: View {
                         .frame(width: 164, height: 164)
                         .scaleEffect(isAnimating ? 1.1 : 0.94)
                         .animation(.easeInOut(duration: 1.8).repeatForever(autoreverses: true), value: isAnimating)
+                    // ✅ Arco giratorio continuo (solo rotation = GPU, sin coste)
+                    Circle()
+                        .trim(from: 0.0, to: 0.32)
+                        .stroke(
+                            AngularGradient(
+                                colors: [AppTheme.accent.opacity(0.7), AppTheme.accent.opacity(0.05)],
+                                center: .center
+                            ),
+                            style: StrokeStyle(lineWidth: 2.5, lineCap: .round)
+                        )
+                        .frame(width: 164, height: 164)
+                        .rotationEffect(.degrees(isAnimating ? 360 : 0))
+                        .animation(.linear(duration: 2.6).repeatForever(autoreverses: false), value: isAnimating)
                     Circle()
                         .stroke(AppTheme.accent.opacity(0.35), lineWidth: 1.5)
                         .frame(width: 128, height: 128)

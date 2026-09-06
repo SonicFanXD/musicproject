@@ -155,15 +155,11 @@ enum AppTheme {
             return ThemeManager.shared.accent
         }
 
-        // Portadas grises/negras/blancas: poca saturación → poco útil como acento
-        guard saturation >= 0.12 && brightness >= 0.12 else {
-            return ThemeManager.shared.accent
-        }
-
-        // En modo claro un color muy oscuro no contrasta contra sombras;
-        // en oscuro un color muy claro compite con los textos primarios.
-        // Rango objetivo 0.45–0.80 cubre ambos casos con buena legibilidad.
-        let newSaturation = min(0.85, max(0.45, saturation))
+        // ✅ FIX carátulas grises/oscuras: antes se devolvía el acento por
+        // defecto cuando la saturación/brillo eran bajos → portadas negras o
+        // grises "no se detectaban". Ahora conservamos el MATIZ real de la
+        // carátula y solo elevamos saturación/brillo al rango legible.
+        let newSaturation = min(0.85, max(0.40, saturation))
         let newBrightness = min(0.80, max(0.45, brightness))
 
         return Color(uiColor: UIColor(
@@ -230,41 +226,68 @@ enum AppTheme {
         ctx.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
 
         // Histograma HSB: hue 0..23, sat 0..4, bright 0..4 (24*5*5 buckets)
+        // ✅ PERF: HSV calculado inline (antes: 1 alloc de UIColor + getHue por
+        // píxel = ~2300 allocs por carátula durante la indexación).
         var buckets = [Float](repeating: 0, count: 24 * 5 * 5)
+        var totalR: Float = 0, totalG: Float = 0, totalB: Float = 0, totalCount: Float = 0
         for y in 0..<height {
             for x in 0..<width {
                 let off = y * bytesPerRow + x * 4
-                let r = CGFloat(data[off]) / 255
-                let g = CGFloat(data[off + 1]) / 255
-                let b = CGFloat(data[off + 2]) / 255
-                let a = CGFloat(data[off + 3]) / 255
+                let r = Float(data[off]) / 255
+                let g = Float(data[off + 1]) / 255
+                let b = Float(data[off + 2]) / 255
+                let a = Float(data[off + 3]) / 255
                 guard a > 0.5 else { continue }
-                let ui = UIColor(red: r, green: g, blue: b, alpha: 1)
-                var h: CGFloat = 0
-                var s: CGFloat = 0
-                var br: CGFloat = 0
-                var alpha: CGFloat = 0
-                guard ui.getHue(&h, saturation: &s, brightness: &br, alpha: &alpha) else { continue }
-                // Ignorar grises (poco útiles como acento)
-                guard s >= 0.15 && br >= 0.15 else { continue }
+
+                totalR += r; totalG += g; totalB += b; totalCount += 1
+
+                // HSV inline (equivalente a getHue, sin allocs)
+                let maxC = max(r, g, b)
+                let minC = min(r, g, b)
+                let delta = maxC - minC
+                let br = maxC
+                let s: Float = maxC == 0 ? 0 : delta / maxC
+                // ✅ FIX carátulas negras/grises: antes se descartaban con
+                // s>=0.15 && br>=0.15 → portadas oscuras devolvían nil y caían
+                // al acento por defecto. Ahora se aceptan con filtros mínimos
+                // (solo descartamos píxeles casi-puros blanco/negro sin matiz).
+                guard s >= 0.03, br >= 0.04 else { continue }
+                var h: Float = 0
+                if delta > 0 {
+                    if maxC == r { h = ((g - b) / delta).truncatingRemainder(dividingBy: 6) }
+                    else if maxC == g { h = (b - r) / delta + 2 }
+                    else { h = (r - g) / delta + 4 }
+                    h /= 6
+                    if h < 0 { h += 1 }
+                }
                 let hi = min(23, Int(h * 24))
                 let si = min(4, Int(s * 5))
                 let bi = min(4, Int(br * 5))
                 // Peso: saturación² × distancia del brillo de 0.6 (colores vivos, no demasiado oscuros/claros)
-                let weight = Float(s * s) * Float(1.0 - abs(br - 0.6) * 1.2)
-                buckets[(bi * 5 + si) * 24 + hi] += max(weight, 0)
+                let weight = s * s * max(0, 1.0 - abs(br - 0.6) * 1.2)
+                buckets[(bi * 5 + si) * 24 + hi] += max(weight, 0.0001)
             }
         }
 
-        guard let best = buckets.enumerated().max(by: { $0.element < $1.element }), best.element > 0 else { return nil }
-        let idx = best.offset
-        let hi = idx % 24
-        let si = (idx / 24) % 5
-        let bi = idx / (24 * 5)
+        if let best = buckets.enumerated().max(by: { $0.element < $1.element }), best.element > 0 {
+            let idx = best.offset
+            let hi = idx % 24
+            let si = (idx / 24) % 5
+            let bi = idx / (24 * 5)
+            return UIColor(
+                hue: (CGFloat(hi) + 0.5) / 24,
+                saturation: (CGFloat(si) + 0.5) / 5,
+                brightness: (CGFloat(bi) + 0.5) / 5,
+                alpha: 1
+            )
+        }
+        // ✅ Fallback: promedio real de la carátula (p. ej. portada monocromática
+        // sin matiz). `readableColor` lo normaliza para legibilidad.
+        guard totalCount > 0 else { return nil }
         return UIColor(
-            hue: (CGFloat(hi) + 0.5) / 24,
-            saturation: (CGFloat(si) + 0.5) / 5,
-            brightness: (CGFloat(bi) + 0.5) / 5,
+            red: CGFloat(totalR / totalCount),
+            green: CGFloat(totalG / totalCount),
+            blue: CGFloat(totalB / totalCount),
             alpha: 1
         )
     }

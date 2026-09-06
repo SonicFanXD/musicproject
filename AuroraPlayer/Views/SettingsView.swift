@@ -55,8 +55,8 @@ struct SettingsView: View {
     private let themeDefaultsKey = "com.aurora.uiTheme"
 
     private var appVersion: String {
-        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.5.0"
-        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "14"
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.8.0"
+        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "17"
         return "\(version) (\(build))"
     }
 
@@ -92,8 +92,8 @@ struct SettingsView: View {
                         // Audio
                         // ✅ Crossfade eliminado por completo (fuente de bugs
                         // de sincronización): ya no aparece en Ajustes.
-                        settingsSection(icon: "waveform", title: Localization.localized("settings.audio"), color: .accentColor) {
-                            settingsButton(title: Localization.localized("settings.equalizer"), subtitle: audioEngine.isEQEnabled ? "\(Localization.localized("equalizer.active")) (\(audioEngine.eqPreset.displayName))" : Localization.localized("equalizer.disabled"), icon: "slider.horizontal.3", color: .accentColor) {
+                        settingsSection(icon: "waveform", title: Localization.localized("settings.audio"), color: AppTheme.accent) {
+                            settingsButton(title: Localization.localized("settings.equalizer"), subtitle: audioEngine.isEQEnabled ? "\(Localization.localized("equalizer.active")) (\(audioEngine.eqPreset.displayName))" : Localization.localized("equalizer.disabled"), icon: "slider.horizontal.3", color: AppTheme.accent) {
                                 showEqualizerSheet = true
                             }
                             settingsDivider

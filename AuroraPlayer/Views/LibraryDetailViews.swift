@@ -340,6 +340,8 @@ struct ArtistDetailView: View {
     private var totalDuration: TimeInterval { songs.reduce(0) { $0 + $1.duration } }
     private var tintColor: Color { AppTheme.readableColor(from: liveDominantColor ?? artist.albums.first?.dominantColor) }
     private var tintUIColor: UIColor { liveDominantColor ?? artist.albums.first?.dominantColor ?? AppTheme.accentUIColor }
+    // ✅ Contraste: blanco o negro según luminancia (igual que AlbumDetailView)
+    private var onTintColor: Color { AppTheme.contrastingText(on: tintUIColor) }
 
     var body: some View {
         ScrollView {
@@ -507,14 +509,14 @@ struct ArtistDetailView: View {
                     Image(systemName: "play.fill").font(.system(size: 16, weight: .bold))
                     Text(Localization.localized("details.play")).font(.system(size: 16, weight: .bold, design: .rounded))
                 }
-                .foregroundStyle(.white).frame(maxWidth: .infinity).frame(height: 54)
+                .foregroundStyle(onTintColor).frame(maxWidth: .infinity).frame(height: 54)
                 .background {
                     Capsule().fill(
-                        LinearGradient(colors: [AppTheme.accent, AppTheme.accent.opacity(0.82)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                        LinearGradient(colors: [tintColor, tintColor.opacity(0.82)], startPoint: .topLeading, endPoint: .bottomTrailing)
                     )
                 }
                 .contentShape(Capsule())
-                .shadow(color: AppTheme.accent.opacity(0.45), radius: 14, x: 0, y: 7)
+                .shadow(color: tintColor.opacity(0.5), radius: 14, x: 0, y: 7)
             }
             .buttonStyle(PressableButtonStyle(scale: 0.97))
 
@@ -526,11 +528,11 @@ struct ArtistDetailView: View {
                 }
             } label: {
                 Image(systemName: "shuffle")
-                    .font(.system(size: 17, weight: .bold)).foregroundStyle(AppTheme.accent)
+                    .font(.system(size: 17, weight: .bold)).foregroundStyle(tintColor)
                     .frame(width: 54, height: 54)
                     .background {
                         Circle().fill(
-                            LinearGradient(colors: [AppTheme.accent.opacity(0.18), AppTheme.accent.opacity(0.08)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                            LinearGradient(colors: [tintColor.opacity(0.18), tintColor.opacity(0.08)], startPoint: .topLeading, endPoint: .bottomTrailing)
                         )
                     }
                     .frame(width: 62, height: 62).contentShape(Circle())

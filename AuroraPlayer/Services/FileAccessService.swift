@@ -1320,7 +1320,7 @@ class FileAccessService: ObservableObject {
             Album(
                 name: key.album,
                 artist: key.artist,
-                songs: albumSongs.sorted { $0.trackNumber < $1.trackNumber }
+                songs: albumSongs.sorted(by: Song.discAwareOrder)
             )
         }.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
 

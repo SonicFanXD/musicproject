@@ -176,10 +176,11 @@ struct FolderPickerView: View {
                 .background {
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
                         .fill(.ultraThinMaterial)
+                        .shadow(color: AppTheme.accent.opacity(0.08), radius: 8, y: 4)
                 }
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(PressableButtonStyle(scale: 0.97))
 
             Button {
                 importMode = .files
@@ -217,10 +218,11 @@ struct FolderPickerView: View {
                 .background {
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
                         .fill(.ultraThinMaterial)
+                        .shadow(color: AppTheme.accent.opacity(0.08), radius: 8, y: 4)
                 }
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(PressableButtonStyle(scale: 0.97))
 
             Button {
                 fileAccessService.refreshAllFolders()
@@ -257,10 +259,11 @@ struct FolderPickerView: View {
                 .background {
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
                         .fill(.ultraThinMaterial)
+                        .shadow(color: Color.orange.opacity(0.08), radius: 8, y: 4)
                 }
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(PressableButtonStyle(scale: 0.97))
             .disabled(fileAccessService.isScanning)
         }
     }

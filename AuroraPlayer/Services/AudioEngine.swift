@@ -71,6 +71,12 @@ class AudioEngine: NSObject, ObservableObject {
     // MARK: - Motor de audio mejorado
     private let engine = AVAudioEngine()
     private let playerNode = AVAudioPlayerNode()
+    // ✅ Audio Mono REAL: mezclador intermedio siempre presente en el grafo.
+    // El downmix se hace reconectando su SALIDA con formato de 1 canal
+    // (AVAudioMixerNode adapta canales por DSP). El método anterior usaba
+    // setPreferredInputNumberOfChannels (ENTRADA/micrófono) → no afectaba
+    // en absoluto a la reproducción.
+    private let monoMixerNode = AVAudioMixerNode()
     private var audioFile: AVAudioFile?
     private var displayTimer: Timer?
     private var sampleRate: Double = 44100
@@ -376,6 +382,8 @@ class AudioEngine: NSObject, ObservableObject {
 
     private func setupEngine() {
         engine.attach(playerNode)
+        // ✅ Mono: el mezclador de downmix vive permanentemente en el grafo
+        engine.attach(monoMixerNode)
     }
 
     private func setupEqualizer() {
@@ -410,6 +418,10 @@ class AudioEngine: NSObject, ObservableObject {
         connectedFormatKey = formatKey(format)
 
         let mixer = engine.mainMixerNode
+        // ✅ Mono: desconectar también la salida previa del mezclador downmix
+        if !engine.outputConnectionPoints(for: monoMixerNode, outputBus: 0).isEmpty {
+            engine.disconnectNodeOutput(monoMixerNode)
+        }
         if let eq = equalizerNode {
             // Desconectar nodos previos de forma segura
             if !engine.outputConnectionPoints(for: playerNode, outputBus: 0).isEmpty {
@@ -420,13 +432,24 @@ class AudioEngine: NSObject, ObservableObject {
             }
 
             engine.connect(playerNode, to: eq, format: format)
-            engine.connect(eq, to: mixer, format: format)
+            engine.connect(eq, to: monoMixerNode, format: format)
+            engine.connect(monoMixerNode, to: mixer, format: monoMixerOutputFormat())
         } else {
             if !engine.outputConnectionPoints(for: playerNode, outputBus: 0).isEmpty {
                 engine.disconnectNodeOutput(playerNode)
             }
-            engine.connect(playerNode, to: mixer, format: format)
+            engine.connect(playerNode, to: monoMixerNode, format: format)
+            engine.connect(monoMixerNode, to: mixer, format: monoMixerOutputFormat())
         }
+    }
+
+    /// ✅ Mono: formato de salida del mezclador downmix — 1 canal si el mono
+    /// está activo (downmix real), 2 canales (estéreo transparente) si no.
+    private func monoMixerOutputFormat() -> AVAudioFormat {
+        let channels: AVAudioChannelCount = isMonoAudioEnabled ? 1 : 2
+        let rate = sampleRate > 0 ? sampleRate : 44100
+        return AVAudioFormat(standardFormatWithSampleRate: rate, channels: channels)
+            ?? engine.mainMixerNode.outputFormat(forBus: 0)
     }
 
     func toggleCrossfade() {
@@ -498,17 +521,30 @@ class AudioEngine: NSObject, ObservableObject {
     }
 
     private func applyMonoAudio() {
-        let session = AVAudioSession.sharedInstance()
-        do {
-            if isMonoAudioEnabled {
-                try session.setPreferredInputNumberOfChannels(1)
-            } else {
-                try session.setPreferredInputNumberOfChannels(2)
-            }
-            try session.setActive(true)
-        } catch {
-            AppLog.debug(.playback, "No se pudo configurar canales de entrada: \(error.localizedDescription)")
+        // ✅ Mono REAL (downmix de salida): reconectar la salida del mezclador
+        // intermedio con formato de 1 canal. AVAudioMixerNode hace el downmix
+        // estéreo→mono por DSP, y iOS reproduce la señal monofónica por ambos
+        // altavoces/auriculares. (El método anterior tocaba los canales de
+        // ENTRADA del micrófono → no tenía ningún efecto audible.)
+        if !engine.outputConnectionPoints(for: monoMixerNode, outputBus: 0).isEmpty {
+            engine.disconnectNodeOutput(monoMixerNode)
         }
+        engine.connect(monoMixerNode, to: engine.mainMixerNode, format: monoMixerOutputFormat())
+
+        // Si hay reproducción activa, re-programar el segmento para que el
+        // cambio se aplique al instante (mismo patrón que toggleEQ).
+        if isPlaying, !isCrossfading, playerNode.isPlaying, let file = audioFile {
+            scheduleGeneration += 1
+            let position = currentTime
+            playerNode.stop()
+            seekOffset = position
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.02) { [weak self] in
+                guard let self = self, self.isPlaying else { return }
+                self.scheduleFile(file, from: position)
+                self.playerNode.play()
+            }
+        }
+        AppLog.info(.playback, "Audio mono (downmix de salida): \(isMonoAudioEnabled ? "activado" : "desactivado")")
     }
 
     func setEQGain(for band: Int, gain: Float) {
@@ -745,7 +781,8 @@ class AudioEngine: NSObject, ObservableObject {
         if let eq = equalizerNode {
             engine.connect(nextPlayer, to: eq, format: file.processingFormat)
         } else {
-            engine.connect(nextPlayer, to: engine.mainMixerNode, format: file.processingFormat)
+            // ✅ Mono: pasar por el mezclador downmix, no directo al mainMixer
+            engine.connect(nextPlayer, to: monoMixerNode, format: file.processingFormat)
         }
 
         nextPlayerNode = nextPlayer
@@ -915,6 +952,16 @@ class AudioEngine: NSObject, ObservableObject {
                 }
             } else {
                 playerNode.play()
+                // ✅ FIX CRÍTICO (desincronización pausa/play): playerNode.pause()
+                // NO resetea playerTime.sampleTime (persiste al reanudar), pero
+                // pause() recolocó seekOffset a la posición absoluta. El display
+                // timer calcula seekOffset + sampleTime/sampleRate → DOBLE conteo
+                // y la barra (y las letras) saltaban a cualquier lado. Re-anclar:
+                // seekOffset = posición absoluta - muestras ya renderizadas.
+                if let nodeTime = playerNode.lastRenderTime,
+                   let playerTime = playerNode.playerTime(forNodeTime: nodeTime) {
+                    seekOffset = max(0, currentTime - Double(playerTime.sampleTime) / sampleRate)
+                }
                 if let nextNode = nextPlayerNode, isCrossfading {
                     nextNode.play()
                     // ✅ FIX: si se pausó a mitad del crossfade, el timer de

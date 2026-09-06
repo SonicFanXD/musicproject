@@ -1,4 +1,4 @@
-import Foundation
+﻿import Foundation
 import UIKit
 
 extension String {
@@ -125,12 +125,23 @@ struct Song: Identifiable, Equatable, Codable {
     static func == (lhs: Song, rhs: Song) -> Bool {
         lhs.id == rhs.id
     }
+
+    /// âœ… FIX multi-disco: orden canÃ³nico (disco 1 antes que disco 2, luego pista).
+    /// Antes solo se ordenaba por trackNumber â†’ en Ã¡lbumes con Disc 1 y Disc 2
+    /// (ambos arrancan en pista 1) el sort inestable podÃ­a poner primero el Disc 2.
+    static func discAwareOrder(_ lhs: Song, _ rhs: Song) -> Bool {
+        let ld = lhs.discNumber ?? 1
+        let rd = rhs.discNumber ?? 1
+        if ld != rd { return ld < rd }
+        if lhs.trackNumber != rhs.trackNumber { return lhs.trackNumber < rhs.trackNumber }
+        return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
+    }
 }
 
 extension Song {
     private static let artworkCache: NSCache<NSUUID, UIImage> = {
         let cache = NSCache<NSUUID, UIImage>()
-        cache.countLimit = 500 // ✅ Aumentado para mantener más portadas en caché
+        cache.countLimit = 500 // âœ… Aumentado para mantener mÃ¡s portadas en cachÃ©
         return cache
     }()
 
@@ -145,17 +156,17 @@ extension Song {
     }
 
     var displayName: String {
-        album.isEmpty ? "\(title) • \(artist)" : title
+        album.isEmpty ? "\(title) â€¢ \(artist)" : title
     }
 
     var displaySubtitle: String {
         var components: [String] = []
         if !artist.isEmpty { components.append(artist) }
         if !album.isEmpty { components.append(album) }
-        return components.joined(separator: " • ")
+        return components.joined(separator: " â€¢ ")
     }
 
-    /// Descripción detallada del formato de audio basada en metadatos reales del archivo
+    /// DescripciÃ³n detallada del formato de audio basada en metadatos reales del archivo
     var audioQualityDescription: String {
         var parts: [String] = []
         let format = formatDescription.isEmpty ? url.pathExtension.uppercased() : formatDescription
@@ -181,7 +192,7 @@ extension Song {
             parts.append(Localization.localized("audio.quality.hiRes"))
         }
 
-        return parts.joined(separator: " · ")
+        return parts.joined(separator: " Â· ")
     }
 }
 
@@ -206,7 +217,10 @@ struct Album: Identifiable, Equatable {
         if let cached = Album.colorCache.object(forKey: id as NSString) {
             return cached
         }
-        let color = ColorExtractor.dominantColor(from: artwork)
+        // âœ… Unificado: usa el mismo extractor HSB mejorado (con fallback para
+        // carÃ¡tulas oscuras/grises) que NowPlaying/ThemeManager â€” antes habÃ­a
+        // DOS implementaciones distintas y esta daba resultados diferentes.
+        let color = AppTheme.dominantColor(from: artwork)
         if let color = color {
             Album.colorCache.setObject(color, forKey: id as NSString)
         }
@@ -223,9 +237,9 @@ struct Artist: Identifiable, Equatable {
         let grouped = Dictionary(grouping: songs) { $0.album }
         return grouped.map { (albumName, songs) in
             Album(
-                name: albumName.isEmpty ? "Álbum desconocido" : albumName,
+                name: albumName.isEmpty ? "Ãlbum desconocido" : albumName,
                 artist: name,
-                songs: songs.sorted { $0.trackNumber < $1.trackNumber }
+                songs: songs.sorted(by: Song.discAwareOrder)
             )
         }.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
@@ -235,108 +249,6 @@ struct Artist: Identifiable, Equatable {
     }
 }
 
-enum ColorExtractor {
-    static func dominantColor(from image: UIImage) -> UIColor? {
-        let size = CGSize(width: 32, height: 32)
-        guard let resized = downscale(image: image, to: size) else { return nil }
-
-        guard let cgImage = resized.cgImage,
-              let data = cgImage.dataProvider?.data,
-              let bytes = CFDataGetBytePtr(data) else { return nil }
-
-        let bytesPerPixel = 4
-        let width = cgImage.width
-        let height = cgImage.height
-
-        var colorBuckets: [Int: (count: Int, r: CGFloat, g: CGFloat, b: CGFloat)] = [:]
-
-        for y in 0..<height {
-            for x in 0..<width {
-                let offset = (y * width + x) * bytesPerPixel
-                let r = CGFloat(bytes[offset]) / 255.0
-                let g = CGFloat(bytes[offset + 1]) / 255.0
-                let b = CGFloat(bytes[offset + 2]) / 255.0
-                let a = CGFloat(bytes[offset + 3]) / 255.0
-
-                guard a > 0.5 else { continue }
-
-                let maxC = max(r, g, b)
-                _ = min(r, g, b)
-                let brightness = maxC
-
-                guard brightness > 0.2, brightness < 0.95 else { continue }
-
-                let rBucket = Int(r * 4)
-                let gBucket = Int(g * 4)
-                let bBucket = Int(b * 4)
-                let key = rBucket * 16 + gBucket * 4 + bBucket
-
-                if var bucket = colorBuckets[key] {
-                    bucket.count += 1
-                    bucket.r += r
-                    bucket.g += g
-                    bucket.b += b
-                    colorBuckets[key] = bucket
-                } else {
-                    colorBuckets[key] = (1, r, g, b)
-                }
-            }
-        }
-
-        var bestKey: Int?
-        var bestScore: CGFloat = -1
-
-        for (key, bucket) in colorBuckets {
-            let avgR = bucket.r / CGFloat(bucket.count)
-            let avgG = bucket.g / CGFloat(bucket.count)
-            let avgB = bucket.b / CGFloat(bucket.count)
-            let maxC = max(avgR, avgG, avgB)
-            let minC = min(avgR, avgG, avgB)
-            let saturation = maxC == 0 ? 0 : (maxC - minC) / maxC
-
-            let score = CGFloat(bucket.count) * (0.5 + saturation * 0.5)
-            if score > bestScore {
-                bestScore = score
-                bestKey = key
-            }
-        }
-
-        if let key = bestKey, let bucket = colorBuckets[key] {
-            let avgR = bucket.r / CGFloat(bucket.count)
-            let avgG = bucket.g / CGFloat(bucket.count)
-            let avgB = bucket.b / CGFloat(bucket.count)
-            return UIColor(red: avgR, green: avgG, blue: avgB, alpha: 1.0)
-        }
-
-        return averageColor(from: bytes, width: width, height: height)
-    }
-
-    private static func downscale(image: UIImage, to size: CGSize) -> UIImage? {
-        UIGraphicsBeginImageContextWithOptions(size, true, 1.0)
-        defer { UIGraphicsEndImageContext() }
-        image.draw(in: CGRect(origin: .zero, size: size))
-        return UIGraphicsGetImageFromCurrentImageContext()
-    }
-
-    private static func averageColor(from bytes: UnsafePointer<UInt8>, width: Int, height: Int) -> UIColor? {
-        var totalR: CGFloat = 0, totalG: CGFloat = 0, totalB: CGFloat = 0
-        var count = 0
-        for y in stride(from: 0, to: height, by: 6) {
-            for x in stride(from: 0, to: width, by: 6) {
-                let offset = (y * width + x) * 4
-                let r = CGFloat(bytes[offset]) / 255.0
-                let g = CGFloat(bytes[offset + 1]) / 255.0
-                let b = CGFloat(bytes[offset + 2]) / 255.0
-                let brightness = max(r, g, b)
-                if brightness > 0.2, brightness < 0.9 {
-                    totalR += r; totalG += g; totalB += b; count += 1
-                }
-            }
-        }
-        guard count > 0 else { return AppTheme.accentUIColor }
-        return UIColor(red: totalR / CGFloat(count), green: totalG / CGFloat(count), blue: totalB / CGFloat(count), alpha: 1.0)
-    }
-}
 
 struct Playlist: Identifiable, Codable {
     let id: UUID
