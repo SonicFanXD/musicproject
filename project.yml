@@ -10,8 +10,6 @@ targets:
     platform: iOS
     sources:
       - path: AuroraPlayer
-        excludes:
-          - "Info.plist"
       - path: AuroraPlayerApp.swift
       - path: Assets.xcassets   # ✅ Así, sin guión extra
     settings:
