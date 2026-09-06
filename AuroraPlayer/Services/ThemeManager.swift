@@ -67,7 +67,7 @@ final class ThemeManager: ObservableObject {
     }
 
     private static func normalizeArtworkAccent(_ uiColor: UIColor) -> Color {
-        readableColor(from: uiColor)
+        AppTheme.readableColor(from: uiColor)
     }
 
     @Published var accentIndex: Int {

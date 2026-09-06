@@ -343,7 +343,7 @@ class FileAccessService: ObservableObject {
             // con TaskGroup (antes: await secuencial por URL → el disco esperaba
             // a que cada archivo terminara su carga de metadata). Los índices
             // preservan el orden original para resultados deterministas.
-            var foundSongs: [Song] = await withTaskGroup(of: (Int, Song?).self) { group in
+            let foundSongs: [Song] = await withTaskGroup(of: (Int, Song?).self) { group in
                 for (index, url) in batch.urls.enumerated() {
                     group.addTask { [weak self] in
                         guard let self = self else { return (index, nil) }

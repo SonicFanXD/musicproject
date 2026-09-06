@@ -121,7 +121,7 @@ struct AudioQualityDetailView: View {
                     .stroke(AppTheme.accent.opacity(0.12), lineWidth: 1)
                     .frame(width: 72, height: 72)
 
-                // ✅ Icono central con efecto de brillo
+                // ✅ Icono central con efecto de brillo (compatible iOS 16+)
                 Image(systemName: "waveform.circle.fill")
                     .font(.system(size: 36, weight: .medium))
                     .foregroundStyle(
@@ -130,7 +130,7 @@ struct AudioQualityDetailView: View {
                             startPoint: .top, endPoint: .bottom
                         )
                     )
-                    .symbolEffect(.pulse, options: .repeating, value: headerPulse)
+                    .scaleEffect(headerPulse ? 1.08 : 0.95)
             }
             .opacity(appearAnimation ? 1 : 0)
             .scaleEffect(appearAnimation ? 1 : 0.6)
