@@ -388,7 +388,7 @@ struct AudioQualityDetailView: View {
     }
 
     private var bitrateLabel: String {
-        guard let song = song, cachedDuration > 0, cachedFileSize > 0 else { return "—" }
+        guard song != nil, cachedDuration > 0, cachedFileSize > 0 else { return "—" }
         let kbps = Int((Double(cachedFileSize) * 8) / cachedDuration / 1000)
         return "\(kbps) kbps"
     }

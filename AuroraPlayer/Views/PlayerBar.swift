@@ -63,18 +63,20 @@ struct PlayerBar: View {
 
                             // ✅ Mini visualizador con opacidad animada (no se crea/destruye)
                             // Evita saltos visuales y mantiene estado de animación
-                            MusicVisualizer()
-                                .frame(width: 18, height: 14)
-                                .opacity(visualizerOpacity)
-                                .animation(.easeInOut(duration: 0.3), value: visualizerOpacity)
-                                .onAppear {
-                                    visualizerOpacity = audioEngine.isPlaying ? 1 : 0
-                                }
-                                .onChange(of: audioEngine.isPlaying) { _, playing in
-                                    withAnimation(.easeInOut(duration: 0.3)) {
-                                        visualizerOpacity = playing ? 1 : 0
+                            if showVisualizerInBar {
+                                AudioVisualizer(audioEngine: audioEngine)
+                                    .frame(width: 18, height: 14)
+                                    .opacity(visualizerOpacity)
+                                    .animation(.easeInOut(duration: 0.3), value: visualizerOpacity)
+                                    .onAppear {
+                                        visualizerOpacity = audioEngine.isPlaying ? 1 : 0
                                     }
-                                }
+                                    .onChange(of: audioEngine.isPlaying) { _, playing in
+                                        withAnimation(.easeInOut(duration: 0.3)) {
+                                            visualizerOpacity = playing ? 1 : 0
+                                        }
+                                    }
+                            }
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .contentShape(Rectangle())

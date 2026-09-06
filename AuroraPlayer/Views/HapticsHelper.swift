@@ -40,4 +40,10 @@ enum Haptics {
     static func soft() {
         light()
     }
+
+    /// Feedback de selección (para scrubbing, sliders, etc.)
+    /// Reutiliza el generator de light (garantiza compatibilidad).
+    static func selection() {
+        light()
+    }
 }

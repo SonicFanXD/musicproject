@@ -445,8 +445,6 @@ class FileAccessService: ObservableObject {
         DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 0.2, execute: sortWorkItem!)
     }
 
-    private var sortWorkItem: DispatchWorkItem?
-
     private func finishDiscovery(generation: Int) {
         guard generation == scanGeneration else { return }
         activeDiscoveries = max(0, activeDiscoveries - 1)
