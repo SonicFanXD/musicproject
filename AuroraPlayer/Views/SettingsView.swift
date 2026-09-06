@@ -27,6 +27,7 @@ struct SettingsView: View {
     @AppStorage("com.aurora.showVisualizerInBar") private var showVisualizerInBar = true
     @AppStorage("com.aurora.compactPlayerBar") private var compactPlayerBar = false
     @AppStorage("com.aurora.language") private var selectedLanguage = 0 // 0 = español, 1 = inglés
+    @AppStorage("com.aurora.showFPS") private var showFPS = false
 
     private let themes = ["Sistema (claro/oscuro)", "Modo Claro", "Modo Oscuro"]
     private let accents = ["Morado (predeterminado)", "Azul Aurora", "Esmeralda", "Rosa Neón", "Ámbar Solar"]
@@ -131,6 +132,8 @@ struct SettingsView: View {
 
                         // Rendimiento (info técnica)
                         settingsSection(icon: "gauge.open.with.needle", title: Localization.localized("settings.performance"), color: .indigo) {
+                            settingsToggleRow(title: Localization.localized("settings.showFPS"), subtitle: Localization.localized("settings.showFPSSubtitle"), icon: "speedometer", color: .green, isOn: $showFPS)
+                            settingsDivider
                             settingsInfoRow(title: Localization.localized("settings.audioOutput"), value: audioEngine.audioQualityInfo.isEmpty ? "\(Int(audioEngine.outputSampleRate / 1000)) kHz · \(audioEngine.outputChannelCount)" : audioEngine.audioQualityInfo, icon: "speaker.wave.2.fill", color: .indigo)
                             settingsDivider
                             settingsInfoRow(title: Localization.localized("settings.playbackRoute"), value: audioEngine.currentRouteName, icon: "airplayaudio", color: .blue)

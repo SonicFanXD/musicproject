@@ -49,13 +49,11 @@ struct PlayerBar: View {
                             }
 
                             // ✅ Mini visualizador junto al título cuando reproduce
-                            // ✅ 60fps: drawingGroup rasteriza las 3 barras animadas
-                            // en la GPU una vez (evita re-render por frame en A11)
                             if audioEngine.isPlaying {
                                 HStack(spacing: 2.5) {
                                     ForEach(0..<3, id: \.self) { bar in
                                         RoundedRectangle(cornerRadius: 1)
-                                            .fill(Color.accentColor)
+                                            .fill(AppTheme.accent)
                                             .frame(width: 2.5, height: bar % 2 == 0 ? 11 : 6)
                                             .animation(
                                                 .easeInOut(duration: 0.4 + Double(bar) * 0.1).repeatForever(autoreverses: true),
@@ -73,7 +71,7 @@ struct PlayerBar: View {
                             openNowPlaying()
                         }
 
-                        // ✅ Botón de me gusta en la barra de reproducción
+                        // ✅ Botón de me gusta
                         Button {
                             Haptics.light()
                             fileAccessService.toggleLike(song)
@@ -115,12 +113,11 @@ struct PlayerBar: View {
                             } label: {
                                 ZStack {
                                     Circle()
-                                        .fill(Color.accentColor)
+                                        .fill(AppTheme.accent)
 
                                     // ✅ Halo animado cuando reproduce
-                                    // ✅ 60fps: drawingGroup rasteriza el halo en GPU
                                     Circle()
-                                        .stroke(Color.accentColor.opacity(0.35), lineWidth: 2)
+                                        .stroke(AppTheme.accent.opacity(0.35), lineWidth: 2)
                                         .scaleEffect(audioEngine.isPlaying ? 1.12 : 1.0)
                                         .opacity(audioEngine.isPlaying ? 0.9 : 0)
                                         .animation(
@@ -136,7 +133,7 @@ struct PlayerBar: View {
                                         .foregroundStyle(.white)
                                 }
                                 .frame(width: compactPlayerBar ? 40 : 44, height: compactPlayerBar ? 40 : 44)
-                                .shadow(color: Color.accentColor.opacity(0.35), radius: 8, x: 0, y: 3)
+                                .shadow(color: AppTheme.accent.opacity(0.35), radius: 8, x: 0, y: 3)
                                 .scaleEffect(playButtonScale)
                                 .contentShape(Circle())
                             }

@@ -164,6 +164,8 @@ final class Localization: ObservableObject {
 
             // Secciones de Ajustes
             "settings.performance": [.spanish: "Rendimiento", .english: "Performance"],
+            "settings.showFPS": [.spanish: "Mostrar FPS", .english: "Show FPS"],
+            "settings.showFPSSubtitle": [.spanish: "Contador de frames en tiempo real", .english: "Real-time frame counter"],
             "settings.audioOutput": [.spanish: "Salida de audio", .english: "Audio Output"],
             "settings.playbackRoute": [.spanish: "Ruta de reproducción", .english: "Playback Route"],
             "settings.device": [.spanish: "Dispositivo", .english: "Device"],

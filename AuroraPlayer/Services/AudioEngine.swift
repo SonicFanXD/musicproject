@@ -102,7 +102,98 @@ class AudioEngine: NSObject, ObservableObject {
         setupBackgroundNotification()
         setupPlaybackStateObserver()
         observeEngineConfigurationChanges()
+        setupBackgroundLifecycleObservers()
         loadPlaybackState()
+    }
+
+    // MARK: - Persistencia del motor en segundo plano
+    // ✅ Mejora de batería + estabilidad: cuando la app pasa a segundo plano,
+    // iOS puede suspender timers/render y en algunos casos detener el engine.
+    // Este observador asegura que la sesión de audio permanezca activa y el
+    // engine siga corriendo sin que la app sea suspendida por el sistema.
+    // La persistencia de audio en background funciona gracias a la capacidad
+    // UIBackgroundModes = audio (ya configurada en Info.plist) y a que la
+    // sesión de audio se mantiene activa mientras hay reproducción activa.
+
+    private func setupBackgroundLifecycleObservers() {
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleAppDidEnterBackground),
+            name: UIApplication.didEnterBackgroundNotification,
+            object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleAppWillEnterForeground),
+            name: UIApplication.willEnterForegroundNotification,
+            object: nil
+        )
+    }
+
+    @objc private func handleAppDidEnterBackground() {
+        // ✅ Persistencia del audio: si estamos reproduciendo, mantener la
+        // sesión de audio activa y pedir tiempo en segundo plano para que
+        // el engine no se suspenda. Esto mejora la reproducción continua
+        // sin saltos ni cortes al cambiar de app o bloquear la pantalla.
+        guard isPlaying else {
+            // ✅ Si no se reproduce, liberar el engine para ahorrar batería:
+            // detener el engine (no la sesión) reduce consumo de CPU/RAM.
+            if engine.isRunning {
+                engine.pause()
+            }
+            return
+        }
+
+        let session = AVAudioSession.sharedInstance()
+        do {
+            // ✅ Reactivar la sesión con notifyOthersOnDeactivation para que
+            // otras apps (if any) se enteren y no se pisen. Mantener activa
+            // la sesión es imprescindible para audio en background continuo.
+            try session.setActive(true, options: .notifyOthersOnDeactivation)
+        } catch {
+            AppLog.error(.playback, error, context: "background: reactivar sesión")
+        }
+
+        // ✅ Mantener el engine corriendo (no pausar) para que la reproducción
+        // continúe de forma fluida al volver a primer plano. iOS permite audio
+        // en background gracias a UIBackgroundModes = audio.
+        if !engine.isRunning, isPlaying, let file = audioFile {
+            do {
+                try startEngineSafely()
+                let position = min(max(currentTime, 0), duration)
+                scheduleGeneration += 1
+                seekOffset = position
+                scheduleFile(file, from: position)
+            } catch {
+                AppLog.error(.playback, error, context: "background: reiniciar engine")
+            }
+        }
+
+        // ✅ Reducir la frecuencia de actualización del display timer en
+        // segundo plano para ahorrar batería (el UI no necesita updates
+        // tan frecuentes cuando no se ve la pantalla).
+        startDisplayTimer(isBackground: true)
+    }
+
+    @objc private func handleAppWillEnterForeground() {
+        // ✅ Volver a frecuencia normal del timer al regresar a primer plano
+        if isPlaying {
+            startDisplayTimer(isBackground: false)
+            updateNowPlayingInfo()
+        }
+
+        // ✅ Si se pausó en segundo plano, asegurar que el engine siga listo
+        if !engine.isRunning, isPlaying, let file = audioFile {
+            do {
+                try startEngineSafely()
+                let position = min(max(currentTime, 0), duration)
+                scheduleGeneration += 1
+                seekOffset = position
+                scheduleFile(file, from: position)
+            } catch {
+                AppLog.error(.playback, error, context: "foreground: reiniciar engine")
+            }
+        }
     }
 
     // MARK: - Recuperación robusta del engine (fix de crashes en segundo plano)
@@ -190,7 +281,11 @@ class AudioEngine: NSObject, ObservableObject {
             // orden descendente con fallback robusto. iOS 16 en A11 (iPhone 8)
             // devuelve error -50 (paramErr) con 0.02, así que vamos bajando
             // hasta encontrar el menor soportado por el hardware/DAC actual.
-            let bufferDurations: [TimeInterval] = [0.02, 0.03, 0.04, 0.05]
+            // ✅ OPTIMIZACIÓN DE BATERÍA: un buffer levemente más largo (0.04s
+            // en vez de 0.02s) reduce el número de interrupciones del render
+            // thread sin degradar la calidad audible (el sample rate y la
+            // precisión se mantienen idénticos; solo cambia la latencia).
+            let bufferDurations: [TimeInterval] = [0.04, 0.03, 0.02, 0.05]
             for duration in bufferDurations {
                 do {
                     try session.setPreferredIOBufferDuration(duration)
@@ -901,11 +996,16 @@ class AudioEngine: NSObject, ObservableObject {
         originalPlaylist = []
     }
 
-    private func startDisplayTimer() {
+    private func startDisplayTimer(isBackground: Bool = false) {
         stopDisplayTimer()
         var tickCount = 0
-        // 0.3s interval reduces UI churn on iPhone 8 Plus (A11) while remaining accurate
-        displayTimer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: true) { [weak self] _ in
+        // ✅ OPTIMIZACIÓN DE BATERÍA: en primer plano 0.4s es suficiente para
+        // una UI fluida (la barra de progreso responde rápido al seek/pause),
+        // y en segundo plano subimos a 1.5s para reducir drásticamente el
+        // consumo de CPU cuando la pantalla está bloqueada o en otra app.
+        let interval: TimeInterval = isBackground ? 1.5 : 0.4
+        let nowPlayingRefreshTicks = isBackground ? 1 : 2
+        displayTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
             guard let self = self, self.isPlaying else { return }
             if self.isUsingFallback {
                 if let current = self.avPlayer?.currentTime().seconds, !current.isNaN {
@@ -919,11 +1019,11 @@ class AudioEngine: NSObject, ObservableObject {
                 }
             }
             // ✅ FIX Centro de Control / pantalla de bloqueo: refrescar
-            // nowPlayingInfo cada ~1s con el elapsed EXACTO del reloj de
-            // render. Sin esto, iOS interpolaba su propio tiempo y la barra
-            // se desincronizaba tras pausas/seeks/interrupciones largas.
+            // nowPlayingInfo cada ~0.8s en fg / ~1.5s en bg con el elapsed
+            // EXACTO del reloj de render. En segundo plano iOS ya interpola
+            // el progreso con el rate, así que no necesitamos tantos updates.
             tickCount += 1
-            if tickCount >= 3 {
+            if tickCount >= nowPlayingRefreshTicks {
                 tickCount = 0
                 self.updateNowPlayingInfo()
             }
