@@ -118,57 +118,75 @@ struct AudioQualityDetailView: View {
         }
     }
 
-    // MARK: - Header (resumen de calidad con animación)
+    // MARK: - Header (resumen de calidad con animación, optimizado con drawingGroup)
     private var headerCard: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 18) {
             ZStack {
-                // ✅ Anillo pulsante animado con gradiente
+                // ✅ Halo animado con AngularGradient (drawingGroup para GPU)
+                Circle()
+                    .fill(
+                        AngularGradient(
+                            colors: [
+                                AppTheme.accent.opacity(0.4),
+                                Color(red: 0.3, green: 0.6, blue: 1.0).opacity(0.2),
+                                AppTheme.accent.opacity(0.1),
+                                AppTheme.accent.opacity(0.4)
+                            ],
+                            center: .center,
+                            startAngle: .degrees(headerPulse ? 360 : 0),
+                            endAngle: .degrees(headerPulse ? 720 : 360)
+                        )
+                    )
+                    .frame(width: 100, height: 100)
+                    .blur(radius: 12)
+                    .drawingGroup() // ✅ Rasteriza en GPU
+
+                // ✅ Anillo pulsante
                 Circle()
                     .stroke(
                         LinearGradient(
                             colors: [AppTheme.accent, AppTheme.accent.opacity(0.3)],
                             startPoint: .topLeading, endPoint: .bottomTrailing
                         ),
-                        lineWidth: 2.5
+                        lineWidth: 2
                     )
-                    .frame(width: 88, height: 88)
-                    .scaleEffect(headerPulse ? 1.1 : 0.92)
-                    .opacity(headerPulse ? 0.7 : 0.25)
+                    .frame(width: 84, height: 84)
+                    .scaleEffect(headerPulse ? 1.08 : 0.94)
 
-                // ✅ Anillo interior sutil
+                // ✅ Círculo interior con material
                 Circle()
-                    .stroke(AppTheme.accent.opacity(0.12), lineWidth: 1)
-                    .frame(width: 72, height: 72)
-
-                // ✅ Icono central con efecto de brillo (compatible iOS 16+)
-                Image(systemName: "waveform.circle.fill")
-                    .font(.system(size: 36, weight: .medium))
-                    .foregroundStyle(
-                        LinearGradient(
-                            colors: [AppTheme.accent, AppTheme.accent.opacity(0.6)],
-                            startPoint: .top, endPoint: .bottom
-                        )
+                    .fill(.ultraThinMaterial)
+                    .frame(width: 74, height: 74)
+                    .overlay(
+                        Image(systemName: "waveform.circle.fill")
+                            .font(.system(size: 34, weight: .medium))
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: [AppTheme.accent, AppTheme.accent.opacity(0.5)],
+                                    startPoint: .top, endPoint: .bottom
+                                )
+                            )
                     )
-                    .scaleEffect(headerPulse ? 1.08 : 0.95)
+                    .shadow(color: AppTheme.accent.opacity(0.25), radius: 12, x: 0, y: 4)
             }
             .opacity(appearAnimation ? 1 : 0)
-            .scaleEffect(appearAnimation ? 1 : 0.6)
+            .scaleEffect(appearAnimation ? 1 : 0.5)
 
-            // ✅ Badge de calidad con gradiente
+            // ✅ Badge de calidad mejorado
             Text(qualityBadge)
-                .font(.system(size: 13, weight: .bold, design: .rounded))
-                .tracking(1.5)
+                .font(.system(size: 12, weight: .bold, design: .rounded))
+                .tracking(2)
                 .foregroundStyle(.white)
-                .padding(.horizontal, 18)
+                .padding(.horizontal, 20)
                 .padding(.vertical, 8)
                 .background {
                     Capsule().fill(
                         LinearGradient(
-                            colors: [AppTheme.accent, AppTheme.accent.opacity(0.7)],
+                            colors: [AppTheme.accent, AppTheme.accent.opacity(0.65)],
                             startPoint: .leading, endPoint: .trailing
                         )
                     )
-                    .shadow(color: AppTheme.accent.opacity(0.4), radius: 8, y: 3)
+                    .shadow(color: AppTheme.accent.opacity(0.35), radius: 10, y: 4)
                 }
                 .opacity(appearAnimation ? 1 : 0)
                 .scaleEffect(appearAnimation ? 1 : 0.8)
@@ -391,23 +409,33 @@ struct AudioQualityDetailView: View {
         }
     }
 
-    // MARK: - Componentes reutilizables
+    // MARK: - Componentes reutilizables (optimizados con drawingGroup)
     @ViewBuilder
     private func chainNode(icon: String, title: String, detail: String, color: Color, index: Int) -> some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 14) {
             ZStack {
-                // ✅ OPTIMIZACIÓN: glow simplificado (sin overlay con stroke
-                // separado → una sola capa en vez de dos).
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(color.opacity(0.15))
-                    .frame(width: 36, height: 36)
+                // ✅ Fondo con gradiente sutil y borde
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [color.opacity(0.12), color.opacity(0.05)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .frame(width: 40, height: 40)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .stroke(color.opacity(0.15), lineWidth: 0.5)
+                    )
 
                 Image(systemName: icon)
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(color)
             }
+            .drawingGroup() // ✅ Rasteriza icono + fondo
 
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 3) {
                 Text(title)
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(.primary)
@@ -415,60 +443,88 @@ struct AudioQualityDetailView: View {
                     .font(.system(size: 11, weight: .medium).monospacedDigit())
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.85)
+                    .minimumScaleFactor(0.8)
             }
 
             Spacer()
 
-            // ✅ Indicador de estado activo
+            // ✅ Indicador de estado activo con pulse
             Circle()
-                .fill(color.opacity(0.6))
-                .frame(width: 6, height: 6)
-                .opacity(signalFlow ? 1 : 0.3)
+                .fill(color)
+                .frame(width: 7, height: 7)
+                .opacity(signalFlow ? 1 : 0.25)
+                .scaleEffect(signalFlow ? 1.2 : 0.8)
+                .animation(.easeInOut(duration: 0.6).delay(Double(index) * 0.1), value: signalFlow)
         }
-        .padding(.horizontal, 14).padding(.vertical, 12)
-        // ✅ OPTIMIZACIÓN: animación única con spring (antes: easeOut con
-        // delay encadenado por index → múltiples curvas simultáneas).
+        .padding(.horizontal, 16).padding(.vertical, 14)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(Color(UIColor.secondarySystemBackground).opacity(0.5))
+        )
         .opacity(appearAnimation ? 1 : 0)
-        .offset(x: appearAnimation ? 0 : -12)
-        .animation(.spring(response: 0.45, dampingFraction: 0.85).delay(Double(index) * 0.05), value: appearAnimation)
+        .offset(x: appearAnimation ? 0 : -15)
+        .animation(.spring(response: 0.5, dampingFraction: 0.88).delay(Double(index) * 0.06), value: appearAnimation)
     }
 
     @ViewBuilder
     private func detailRow(_ title: String, _ value: String) -> some View {
         HStack(alignment: .firstTextBaseline) {
-            Text(title).font(.system(size: 14, weight: .medium)).foregroundStyle(.secondary)
+            Text(title)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(.secondary)
             Spacer()
-            Text(value).font(.system(size: 13, weight: .semibold).monospacedDigit()).foregroundStyle(.primary).multilineTextAlignment(.trailing).lineLimit(2)
+            Text(value)
+                .font(.system(size: 13, weight: .semibold).monospacedDigit())
+                .foregroundStyle(.primary)
+                .multilineTextAlignment(.trailing)
+                .lineLimit(2)
         }
-        .padding(.horizontal, 16).padding(.vertical, 12).contentShape(Rectangle())
+        .padding(.horizontal, 18).padding(.vertical, 14)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color(UIColor.tertiarySystemBackground).opacity(0.4))
+        )
     }
 
-    // MARK: - Section Builder
+    // MARK: - Section Builder (mejorado visualmente)
     @ViewBuilder
     private func settingsSection<Content: View>(title: String, icon: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 10) {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 12) {
                 Image(systemName: icon)
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(AppTheme.accent)
-                    .frame(width: 28, height: 28)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 32, height: 32)
                     .background {
-                        RoundedRectangle(cornerRadius: 8, style: .continuous).fill(AppTheme.accent.opacity(0.12))
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(
+                                LinearGradient(
+                                    colors: [AppTheme.accent, AppTheme.accent.opacity(0.7)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
                     }
-                Text(title).font(.system(size: 17, weight: .semibold)).foregroundStyle(.primary)
-            }
-            .padding(.horizontal, 4)
+                    .drawingGroup()
 
-            VStack(spacing: 0) {
+                Text(title)
+                    .font(.system(size: 17, weight: .bold, design: .rounded))
+                    .foregroundStyle(.primary)
+            }
+            .padding(.horizontal, 6)
+
+            VStack(spacing: 8) {
                 content()
             }
+            .padding(8)
             .background {
-                RoundedRectangle(cornerRadius: 18, style: .continuous).fill(.ultraThinMaterial)
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(.ultraThinMaterial)
+                    .shadow(color: .black.opacity(0.04), radius: 8, x: 0, y: 2)
             }
         }
         .opacity(appearAnimation ? 1 : 0)
-        .offset(y: appearAnimation ? 0 : 15)
-        .animation(.easeOut(duration: 0.4).delay(0.2), value: appearAnimation)
+        .offset(y: appearAnimation ? 0 : 18)
+        .animation(.easeOut(duration: 0.45).delay(0.2), value: appearAnimation)
     }
 }
