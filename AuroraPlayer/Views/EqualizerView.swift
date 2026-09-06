@@ -30,7 +30,7 @@ struct EqualizerView: View {
                         .font(.system(size: 20, weight: .bold, design: .rounded))
                         .foregroundStyle(
                             LinearGradient(
-                                colors: [Color.accentColor, Color.accentColor.opacity(0.75)],
+                                colors: [AppTheme.accent, AppTheme.accent.opacity(0.75)],
                                 startPoint: .leading,
                                 endPoint: .trailing
                             )
@@ -40,7 +40,7 @@ struct EqualizerView: View {
 
                 ToolbarItem(placement: .topBarTrailing) {
                     Button(Localization.localized("actions.done")) { dismiss() }
-                        .foregroundStyle(Color.accentColor)
+                        .foregroundStyle(AppTheme.accent)
                         .frame(width: 44, height: 44)
                         .contentShape(Rectangle())
                 }
@@ -53,12 +53,12 @@ struct EqualizerView: View {
         HStack(spacing: 16) {
             ZStack {
                 Circle()
-                    .fill(Color.accentColor.opacity(0.15))
+                    .fill(AppTheme.accent.opacity(0.15))
                     .frame(width: 50, height: 50)
 
                 Image(systemName: "slider.horizontal.3")
                     .font(.system(size: 20, weight: .semibold))
-                    .foregroundStyle(Color.accentColor)
+                    .foregroundStyle(AppTheme.accent)
             }
 
             VStack(alignment: .leading, spacing: 4) {
@@ -78,7 +78,7 @@ struct EqualizerView: View {
                 set: { _ in audioEngine.toggleEQ() }
             ))
             .labelsHidden()
-            .tint(Color.accentColor)
+            .tint(AppTheme.accent)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
@@ -108,7 +108,7 @@ struct EqualizerView: View {
                                 .padding(.vertical, 10)
                                 .background {
                                     RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                        .fill(audioEngine.eqPreset == preset && audioEngine.isEQEnabled ? Color.accentColor : Color.secondary.opacity(0.12))
+                                        .fill(audioEngine.eqPreset == preset && audioEngine.isEQEnabled ? AppTheme.accent : Color.secondary.opacity(0.12))
                                 }
                         }
                         .buttonStyle(PressableButtonStyle(scale: 0.92))
@@ -156,7 +156,7 @@ struct EqualizerView: View {
 
                 Text(String(format: "%+.1f dB", currentGain))
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(audioEngine.isEQEnabled ? Color.accentColor : Color.secondary)
+                    .foregroundStyle(audioEngine.isEQEnabled ? AppTheme.accent : Color.secondary)
                     .monospacedDigit()
             }
 
@@ -170,7 +170,7 @@ struct EqualizerView: View {
                 in: -12...12,
                 step: 0.5
             )
-            .tint(Color.accentColor)
+            .tint(AppTheme.accent)
             .disabled(!audioEngine.isEQEnabled)
             .padding(.vertical, 6)
         }

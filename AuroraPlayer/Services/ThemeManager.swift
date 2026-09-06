@@ -8,6 +8,67 @@ final class ThemeManager: ObservableObject {
     static let shared = ThemeManager()
 
     private static let key = "com.aurora.accentColor"
+    private static let artworkAccentKey = "com.aurora.accentFromArtwork"
+
+    /// ✅ NUEVO: modo "acento desde carátula" — cuando está activo, todo el
+    /// color de acento de la app se toma del color dominante de la portada
+    /// de la canción en reproducción (con normalización de legibilidad).
+    @Published var accentFromArtwork: Bool {
+        didSet {
+            UserDefaults.standard.set(accentFromArtwork, forKey: Self.artworkAccentKey)
+            if !accentFromArtwork {
+                artworkAccentColor = nil
+                artworkAccentUIColor = nil
+            }
+            applyGlobalUIKitTint()
+        }
+    }
+
+    @Published private(set) var artworkAccentColor: Color?
+    @Published private(set) var artworkAccentUIColor: UIColor?
+
+    // Caché de color por canción (id) para no re-extraer el histograma HSB
+    private static let artworkColorCache = NSCache<NSString, UIColor>()
+
+    /// Extrae el color dominante de la portada en segundo plano y lo publica.
+    /// Llamado por AudioEngine cada vez que cambia la canción actual.
+    func updateArtworkAccent(from song: Song?) {
+        guard accentFromArtwork else { return }
+        guard let song, let artwork = song.artwork else {
+            artworkAccentColor = nil
+            artworkAccentUIColor = nil
+            return
+        }
+        let cacheKey = song.id.uuidString as NSString
+        if let cached = Self.artworkColorCache.object(forKey: cacheKey) {
+            artworkAccentUIColor = cached
+            artworkAccentColor = Self.normalizeArtworkAccent(cached)
+            applyGlobalUIKitTint()
+            return
+        }
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let dominant = AppTheme.dominantColor(from: artwork)
+            guard let dominant else { return }
+            Self.artworkColorCache.setObject(dominant, forKey: cacheKey)
+            DispatchQueue.main.async {
+                guard let self, self.accentFromArtwork else { return }
+                self.artworkAccentUIColor = dominant
+                self.artworkAccentColor = Self.normalizeArtworkAccent(dominant)
+                self.applyGlobalUIKitTint()
+            }
+        }
+    }
+
+    /// Color final efectivo del acento: el de la carátula si el modo está
+    /// activo y hay color disponible; si no, el acento manual.
+    var resolvedAccent: Color {
+        if accentFromArtwork, let c = artworkAccentColor { return c }
+        return accent
+    }
+
+    private static func normalizeArtworkAccent(_ uiColor: UIColor) -> Color {
+        readableColor(from: uiColor)
+    }
 
     @Published var accentIndex: Int {
         didSet {
@@ -21,7 +82,13 @@ final class ThemeManager: ObservableObject {
 
     /// Aplica el color de acento a todas las ventanas UIKit existentes.
     private func applyGlobalUIKitTint() {
-        let uiColor = UIColor(accent)
+        // ✅ Respeta el modo "acento desde carátula" en UIKit también
+        let uiColor: UIColor
+        if accentFromArtwork, let c = artworkAccentUIColor {
+            uiColor = c
+        } else {
+            uiColor = UIColor(accent)
+        }
         DispatchQueue.main.async {
             UIWindow.appearance().tintColor = uiColor
             for scene in UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }) {
@@ -35,7 +102,8 @@ final class ThemeManager: ObservableObject {
     private init() {
         // ✅ FIX CI: 'key' es estático, debe referenciarse como Self.key
         let saved = UserDefaults.standard.integer(forKey: Self.key)
-        accentIndex = (saved >= 0 && saved < 5) ? saved : 0
+        accentIndex = (saved >= 0 && saved < 7) ? saved : 0
+        accentFromArtwork = UserDefaults.standard.bool(forKey: Self.artworkAccentKey)
         // ✅ Aplicar el tint UIKit al arrancar (restaura el ajuste guardado)
         applyGlobalUIKitTint()
     }
@@ -54,6 +122,8 @@ final class ThemeManager: ObservableObject {
         case 2: return Color(red: 0.10, green: 0.75, blue: 0.50) // Esmeralda
         case 3: return Color(red: 0.95, green: 0.30, blue: 0.60) // Rosa Neón
         case 4: return Color(red: 0.98, green: 0.62, blue: 0.15) // Ámbar Solar
+        case 5: return Color(red: 0.11, green: 0.11, blue: 0.13) // Negro Grafito
+        case 6: return Color(red: 0.55, green: 0.08, blue: 0.11) // Rojo Oscuro
         default: return Color(red: 0.62, green: 0.40, blue: 0.95) // Morado (predeterminado)
         }
     }
@@ -62,12 +132,16 @@ final class ThemeManager: ObservableObject {
 /// Acceso cómodo al acento actual desde cualquier vista.
 /// Se lee en cada render, así que reacciona al cambiar el ajuste.
 enum AppTheme {
-    static var accent: Color { ThemeManager.shared.accent }
+    /// Acento efectivo: respeta el modo "acento desde carátula" si está activo.
+    static var accent: Color { ThemeManager.shared.resolvedAccent }
 
     /// ✅ Acento como UIColor: reemplaza los antiguos fallbacks
     /// `UIColor.systemPurple` hardcodeados (no respetaban el ajuste).
     static var accentUIColor: UIColor {
-        UIColor(ThemeManager.shared.accent)
+        if ThemeManager.shared.accentFromArtwork, let c = ThemeManager.shared.artworkAccentUIColor {
+            return c
+        }
+        return UIColor(ThemeManager.shared.accent)
     }
 
     /// Normaliza un color extraído de una portada para que siempre sea

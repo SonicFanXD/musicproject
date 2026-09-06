@@ -9,27 +9,40 @@ struct AudioQualityDetailView: View {
     var embeddedInCard: Bool = false
     @Environment(\.dismiss) private var dismiss
 
+    @State private var appearAnimation = false
+    @State private var signalFlow = false
+    @State private var headerPulse = false
+
     private var song: Song? { audioEngine.currentSong }
 
     var body: some View {
-        if embeddedInCard {
-            embeddedContent
-        } else {
-            fullScreenContent
+        Group {
+            if embeddedInCard {
+                embeddedContent
+            } else {
+                fullScreenContent
+            }
+        }
+        .onAppear {
+            withAnimation(.easeOut(duration: 0.5)) { appearAnimation = true }
+            withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) { headerPulse = true }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                withAnimation(.easeInOut(duration: 0.8)) { signalFlow = true }
+            }
         }
     }
 
     // MARK: - Contenido embebido (para tarjeta modal)
     private var embeddedContent: some View {
         ScrollView {
-            VStack(spacing: 18) {
+            VStack(spacing: 16) {
                 headerCard
                 signalChainSection
                 fileDetailsSection
                 outputDetailsSection
                 deviceSection
             }
-            .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 16)
+            .padding(.horizontal, 14).padding(.top, 10).padding(.bottom, 14)
         }
         .scrollIndicators(.hidden)
     }
@@ -38,20 +51,25 @@ struct AudioQualityDetailView: View {
     private var fullScreenContent: some View {
         NavigationStack {
             ZStack {
+                // ✅ Fondo con gradiente sutil y profundidad
                 LinearGradient(
-                    colors: [Color(UIColor.systemBackground), Color(UIColor.secondarySystemBackground)],
+                    colors: [
+                        Color(UIColor.systemBackground),
+                        Color(UIColor.tertiarySystemBackground).opacity(0.5),
+                        Color(UIColor.systemBackground)
+                    ],
                     startPoint: .top, endPoint: .bottom
                 ).ignoresSafeArea()
 
                 ScrollView {
-                    VStack(spacing: 20) {
+                    VStack(spacing: 18) {
                         headerCard
                         signalChainSection
                         fileDetailsSection
                         outputDetailsSection
                         deviceSection
                     }
-                    .padding(.horizontal, 20).padding(.top, 12).padding(.bottom, 30)
+                    .padding(.horizontal, 16).padding(.top, 10).padding(.bottom, 40)
                 }
                 .scrollIndicators(.hidden)
             }
@@ -61,10 +79,10 @@ struct AudioQualityDetailView: View {
             .toolbar {
                 ToolbarItem(placement: .principal) {
                     Text(Localization.localized("audio.quality.title"))
-                        .font(.system(size: 18, weight: .bold, design: .rounded))
+                        .font(.system(size: 17, weight: .bold, design: .rounded))
                         .foregroundStyle(
                             LinearGradient(
-                                colors: [Color.accentColor, Color.accentColor.opacity(0.75)],
+                                colors: [AppTheme.accent, AppTheme.accent.opacity(0.7)],
                                 startPoint: .leading, endPoint: .trailing
                             )
                         )
@@ -72,7 +90,8 @@ struct AudioQualityDetailView: View {
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button(Localization.localized("quality.done")) { dismiss() }
-                        .foregroundStyle(Color.accentColor)
+                        .foregroundStyle(AppTheme.accent)
+                        .font(.system(size: 15, weight: .semibold))
                         .frame(width: 44, height: 44)
                         .contentShape(Rectangle())
                 }
@@ -80,39 +99,65 @@ struct AudioQualityDetailView: View {
         }
     }
 
-    // MARK: - Header (resumen de calidad)
+    // MARK: - Header (resumen de calidad con animación)
     private var headerCard: some View {
-        VStack(spacing: 14) {
+        VStack(spacing: 16) {
             ZStack {
+                // ✅ Anillo pulsante animado con gradiente
                 Circle()
-                    .stroke(Color.accentColor.opacity(0.18), lineWidth: 1.5)
-                    .frame(width: 78, height: 78)
-                Circle()
-                    .fill(Color.accentColor.opacity(0.15))
-                    .frame(width: 68, height: 68)
-                Image(systemName: outputIcon)
-                    .font(.system(size: 28, weight: .semibold))
-                    .foregroundStyle(Color.accentColor)
-            }
+                    .stroke(
+                        LinearGradient(
+                            colors: [AppTheme.accent, AppTheme.accent.opacity(0.3)],
+                            startPoint: .topLeading, endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 2.5
+                    )
+                    .frame(width: 88, height: 88)
+                    .scaleEffect(headerPulse ? 1.1 : 0.92)
+                    .opacity(headerPulse ? 0.7 : 0.25)
 
+                // ✅ Anillo interior sutil
+                Circle()
+                    .stroke(AppTheme.accent.opacity(0.12), lineWidth: 1)
+                    .frame(width: 72, height: 72)
+
+                // ✅ Icono central con efecto de brillo
+                Image(systemName: "waveform.circle.fill")
+                    .font(.system(size: 36, weight: .medium))
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [AppTheme.accent, AppTheme.accent.opacity(0.6)],
+                            startPoint: .top, endPoint: .bottom
+                        )
+                    )
+                    .symbolEffect(.pulse, options: .repeating, value: headerPulse)
+            }
+            .opacity(appearAnimation ? 1 : 0)
+            .scaleEffect(appearAnimation ? 1 : 0.6)
+
+            // ✅ Badge de calidad con gradiente
             Text(qualityBadge)
                 .font(.system(size: 13, weight: .bold, design: .rounded))
-                .tracking(1.2)
+                .tracking(1.5)
                 .foregroundStyle(.white)
-                .padding(.horizontal, 16)
+                .padding(.horizontal, 18)
                 .padding(.vertical, 8)
                 .background {
                     Capsule().fill(
                         LinearGradient(
-                            colors: [Color.accentColor, Color.accentColor.opacity(0.75)],
+                            colors: [AppTheme.accent, AppTheme.accent.opacity(0.7)],
                             startPoint: .leading, endPoint: .trailing
                         )
                     )
+                    .shadow(color: AppTheme.accent.opacity(0.4), radius: 8, y: 3)
                 }
+                .opacity(appearAnimation ? 1 : 0)
+                .scaleEffect(appearAnimation ? 1 : 0.8)
 
-            VStack(spacing: 4) {
+            // ✅ Info de la canción
+            VStack(spacing: 5) {
                 Text(song?.title ?? Localization.localized("quality.noSong"))
-                    .font(.system(size: 16, weight: .semibold, design: .rounded))
+                    .font(.system(size: 16, weight: .bold, design: .rounded))
                     .foregroundStyle(.primary)
                     .lineLimit(2)
                     .multilineTextAlignment(.center)
@@ -122,9 +167,17 @@ struct AudioQualityDetailView: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
+            .opacity(appearAnimation ? 1 : 0)
+            .offset(y: appearAnimation ? 0 : 12)
         }
-        .frame(maxWidth: .infinity).padding(.vertical, 20)
-        .nativeGlass(cornerRadius: 24)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 22)
+        .background {
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .fill(.ultraThinMaterial)
+                .shadow(color: .black.opacity(0.06), radius: 12, y: 5)
+        }
+        .animation(.easeOut(duration: 0.5).delay(0.1), value: appearAnimation)
     }
 
     private var isLossless: Bool {
@@ -152,28 +205,46 @@ struct AudioQualityDetailView: View {
         return Int(song.sampleRate * Double(song.bitDepth) * Double(song.channelCount) / 1000)
     }
 
-    // MARK: - Cadena de procesamiento
+    // MARK: - Cadena de procesamiento con flujo animado
     private var signalChainSection: some View {
         settingsSection(title: Localization.localized("quality.signalChain"), icon: "arrow.triangle.branch") {
             VStack(spacing: 0) {
-                chainNode(icon: "doc.fill", title: Localization.localized("quality.sourceFile"), detail: fileSummary, color: .accentColor, isFirst: true)
+                chainNode(icon: "doc.fill", title: Localization.localized("quality.sourceFile"), detail: fileSummary, color: .accentColor, index: 0)
                 chainArrow
-                chainNode(icon: "waveform", title: Localization.localized("quality.decoder"), detail: "AVAudioFile · \(isLossless ? Localization.localized("quality.lossless") : Localization.localized("quality.compressed"))", color: .indigo)
+                chainNode(icon: "waveform", title: Localization.localized("quality.decoder"), detail: "AVAudioFile · \(isLossless ? Localization.localized("quality.lossless") : Localization.localized("quality.compressed"))", color: .indigo, index: 1)
                 chainArrow
-                chainNode(icon: "engine.combustion", title: Localization.localized("quality.audioEngine"), detail: "AVAudioEngine · \(Int(audioEngine.sampleRateDisplay / 1000)) kHz", color: .accentColor)
+                chainNode(icon: "engine.combustion", title: Localization.localized("quality.audioEngine"), detail: "AVAudioEngine · \(Int(audioEngine.sampleRateDisplay / 1000)) kHz", color: .accentColor, index: 2)
                 chainArrow
-                chainNode(icon: "slider.horizontal.3", title: Localization.localized("quality.equalizer"), detail: audioEngine.isEQEnabled ? "\(Localization.localized("quality.active")) · \(audioEngine.eqPreset.displayName) · 10 \(Localization.localized("format.bands"))" : "\(Localization.localized("quality.bypass")) · 10 \(Localization.localized("format.bands"))", color: audioEngine.isEQEnabled ? .accentColor : .gray)
+                chainNode(icon: "slider.horizontal.3", title: Localization.localized("quality.equalizer"), detail: audioEngine.isEQEnabled ? "\(Localization.localized("quality.active")) · \(audioEngine.eqPreset.displayName) · 10 \(Localization.localized("format.bands"))" : "\(Localization.localized("quality.bypass")) · 10 \(Localization.localized("format.bands"))", color: audioEngine.isEQEnabled ? .accentColor : .gray, index: 3)
                 chainArrow
-                chainNode(icon: outputIcon, title: Localization.localized("quality.output"), detail: outputSummary, color: .orange, isLast: true)
+                chainNode(icon: outputIcon, title: Localization.localized("quality.output"), detail: outputSummary, color: .orange, index: 4)
             }
         }
     }
 
     private var chainArrow: some View {
-        Image(systemName: "arrow.down")
-            .font(.system(size: 11, weight: .bold))
-            .foregroundStyle(Color.secondary.opacity(0.5))
-            .frame(maxWidth: .infinity).padding(.vertical, 2)
+        ZStack {
+            // ✅ Línea de conexión animada
+            RoundedRectangle(cornerRadius: 1)
+                .fill(
+                    LinearGradient(
+                        colors: [AppTheme.accent.opacity(0), AppTheme.accent.opacity(0.5), AppTheme.accent.opacity(0)],
+                        startPoint: .top, endPoint: .bottom
+                    )
+                )
+                .frame(width: 2, height: signalFlow ? 18 : 8)
+                .opacity(signalFlow ? 1 : 0.3)
+
+            // ✅ Punto de flujo animado
+            Circle()
+                .fill(AppTheme.accent)
+                .frame(width: 4, height: 4)
+                .offset(y: signalFlow ? 9 : 0)
+                .opacity(signalFlow ? 1 : 0)
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: 20)
+        .animation(.easeInOut(duration: 0.8).delay(0.3), value: signalFlow)
     }
 
     private var fileSummary: String {
@@ -306,24 +377,46 @@ struct AudioQualityDetailView: View {
 
     // MARK: - Componentes reutilizables
     @ViewBuilder
-    private func chainNode(icon: String, title: String, detail: String, color: Color, isFirst: Bool = false, isLast: Bool = false) -> some View {
+    private func chainNode(icon: String, title: String, detail: String, color: Color, index: Int) -> some View {
         HStack(spacing: 12) {
-            Image(systemName: icon)
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(color)
-                .frame(width: 34, height: 34)
-                .background {
-                    RoundedRectangle(cornerRadius: 9, style: .continuous).fill(color.opacity(0.12))
-                }
+            ZStack {
+                // ✅ Fondo del icono con glow sutil
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(color.opacity(0.15))
+                    .frame(width: 36, height: 36)
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .stroke(color.opacity(0.2), lineWidth: 0.5)
+                    }
 
-            VStack(alignment: .leading, spacing: 1) {
-                Text(title).font(.system(size: 14, weight: .semibold)).foregroundStyle(.primary)
-                Text(detail).font(.system(size: 11, weight: .medium).monospacedDigit()).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.85)
+                Image(systemName: icon)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(color)
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(.primary)
+                Text(detail)
+                    .font(.system(size: 11, weight: .medium).monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
             }
 
             Spacer()
+
+            // ✅ Indicador de estado activo
+            Circle()
+                .fill(color.opacity(0.6))
+                .frame(width: 6, height: 6)
+                .opacity(signalFlow ? 1 : 0.3)
         }
-        .padding(.horizontal, 14).padding(.vertical, isFirst || isLast ? 14 : 12)
+        .padding(.horizontal, 14).padding(.vertical, 12)
+        .opacity(appearAnimation ? 1 : 0)
+        .offset(x: appearAnimation ? 0 : -20)
+        .animation(.easeOut(duration: 0.4).delay(0.15 + Double(index) * 0.08), value: appearAnimation)
     }
 
     @ViewBuilder
@@ -343,10 +436,10 @@ struct AudioQualityDetailView: View {
             HStack(spacing: 10) {
                 Image(systemName: icon)
                     .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(Color.accentColor)
+                    .foregroundStyle(AppTheme.accent)
                     .frame(width: 28, height: 28)
                     .background {
-                        RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.accentColor.opacity(0.12))
+                        RoundedRectangle(cornerRadius: 8, style: .continuous).fill(AppTheme.accent.opacity(0.12))
                     }
                 Text(title).font(.system(size: 17, weight: .semibold)).foregroundStyle(.primary)
             }
@@ -359,5 +452,8 @@ struct AudioQualityDetailView: View {
                 RoundedRectangle(cornerRadius: 18, style: .continuous).fill(.ultraThinMaterial)
             }
         }
+        .opacity(appearAnimation ? 1 : 0)
+        .offset(y: appearAnimation ? 0 : 15)
+        .animation(.easeOut(duration: 0.4).delay(0.2), value: appearAnimation)
     }
 }

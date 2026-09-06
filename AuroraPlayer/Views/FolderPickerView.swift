@@ -46,7 +46,7 @@ struct FolderPickerView: View {
                         .font(.system(size: 20, weight: .bold, design: .rounded))
                         .foregroundStyle(
                             LinearGradient(
-                                colors: [Color.accentColor, Color.accentColor.opacity(0.75)],
+                                colors: [AppTheme.accent, AppTheme.accent.opacity(0.75)],
                                 startPoint: .leading,
                                 endPoint: .trailing
                             )
@@ -78,12 +78,12 @@ struct FolderPickerView: View {
         VStack(spacing: 12) {
             ZStack {
                 Circle()
-                    .fill(Color.accentColor.opacity(0.16))
+                    .fill(AppTheme.accent.opacity(0.16))
                     .frame(width: 70, height: 70)
 
                 Image(systemName: "music.note.list")
                     .font(.system(size: 28, weight: .semibold))
-                    .foregroundStyle(Color.accentColor)
+                    .foregroundStyle(AppTheme.accent)
             }
 
             Text("Tu Biblioteca")
@@ -110,12 +110,12 @@ struct FolderPickerView: View {
                 HStack {
                     ZStack {
                         RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .fill(Color.accentColor.opacity(0.12))
+                            .fill(AppTheme.accent.opacity(0.12))
                             .frame(width: 44, height: 44)
 
                         Image(systemName: "folder.fill")
                             .font(.system(size: 18, weight: .semibold))
-                            .foregroundStyle(Color.accentColor)
+                            .foregroundStyle(AppTheme.accent)
                     }
 
                     VStack(alignment: .leading, spacing: 2) {
@@ -151,12 +151,12 @@ struct FolderPickerView: View {
                 HStack {
                     ZStack {
                         RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .fill(Color.accentColor.opacity(0.12))
+                            .fill(AppTheme.accent.opacity(0.12))
                             .frame(width: 44, height: 44)
 
                         Image(systemName: "music.note")
                             .font(.system(size: 18, weight: .semibold))
-                            .foregroundStyle(Color.accentColor)
+                            .foregroundStyle(AppTheme.accent)
                     }
 
                     VStack(alignment: .leading, spacing: 2) {
@@ -234,7 +234,7 @@ struct FolderPickerView: View {
         VStack(spacing: 12) {
             HStack {
                 ProgressView()
-                    .progressViewStyle(CircularProgressViewStyle(tint: Color.accentColor))
+                    .progressViewStyle(CircularProgressViewStyle(tint: AppTheme.accent))
 
                 Text("Escaneando biblioteca...")
                     .font(.subheadline)
@@ -260,7 +260,7 @@ struct FolderPickerView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
                         Image(systemName: "folder.fill")
-                            .foregroundStyle(Color.accentColor)
+                            .foregroundStyle(AppTheme.accent)
 
                         Text("Carpetas")
                             .font(.headline)
@@ -272,12 +272,12 @@ struct FolderPickerView: View {
                             HStack {
                                 ZStack {
                                     RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                        .fill(Color.accentColor.opacity(0.12))
+                                        .fill(AppTheme.accent.opacity(0.12))
                                         .frame(width: 38, height: 38)
 
                                     Image(systemName: "folder.fill")
                                         .font(.system(size: 16, weight: .semibold))
-                                        .foregroundStyle(Color.accentColor)
+                                        .foregroundStyle(AppTheme.accent)
                                 }
 
                                 VStack(alignment: .leading, spacing: 2) {
@@ -320,7 +320,7 @@ struct FolderPickerView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
                         Image(systemName: "music.note")
-                            .foregroundStyle(Color.accentColor)
+                            .foregroundStyle(AppTheme.accent)
 
                         Text("Archivos individuales")
                             .font(.headline)
@@ -332,12 +332,12 @@ struct FolderPickerView: View {
                             HStack {
                                 ZStack {
                                     RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                        .fill(Color.accentColor.opacity(0.12))
+                                        .fill(AppTheme.accent.opacity(0.12))
                                         .frame(width: 38, height: 38)
 
                                     Image(systemName: "music.note")
                                         .font(.system(size: 16, weight: .semibold))
-                                        .foregroundStyle(Color.accentColor)
+                                        .foregroundStyle(AppTheme.accent)
                                 }
 
                                 VStack(alignment: .leading, spacing: 2) {

@@ -315,7 +315,7 @@ private func sectionHeader(icon: String, title: String) -> some View {
             .font(.system(size: 14, weight: .semibold))
             .foregroundStyle(
                 LinearGradient(
-                    colors: [Color.accentColor, Color.accentColor.opacity(0.7)],
+                    colors: [AppTheme.accent, AppTheme.accent.opacity(0.7)],
                     startPoint: .top, endPoint: .bottom
                 )
             )
@@ -510,11 +510,11 @@ struct ArtistDetailView: View {
                 .foregroundStyle(.white).frame(maxWidth: .infinity).frame(height: 54)
                 .background {
                     Capsule().fill(
-                        LinearGradient(colors: [Color.accentColor, Color.accentColor.opacity(0.82)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                        LinearGradient(colors: [AppTheme.accent, AppTheme.accent.opacity(0.82)], startPoint: .topLeading, endPoint: .bottomTrailing)
                     )
                 }
                 .contentShape(Capsule())
-                .shadow(color: Color.accentColor.opacity(0.45), radius: 14, x: 0, y: 7)
+                .shadow(color: AppTheme.accent.opacity(0.45), radius: 14, x: 0, y: 7)
             }
             .buttonStyle(PressableButtonStyle(scale: 0.97))
 
@@ -526,11 +526,11 @@ struct ArtistDetailView: View {
                 }
             } label: {
                 Image(systemName: "shuffle")
-                    .font(.system(size: 17, weight: .bold)).foregroundStyle(Color.accentColor)
+                    .font(.system(size: 17, weight: .bold)).foregroundStyle(AppTheme.accent)
                     .frame(width: 54, height: 54)
                     .background {
                         Circle().fill(
-                            LinearGradient(colors: [Color.accentColor.opacity(0.18), Color.accentColor.opacity(0.08)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                            LinearGradient(colors: [AppTheme.accent.opacity(0.18), AppTheme.accent.opacity(0.08)], startPoint: .topLeading, endPoint: .bottomTrailing)
                         )
                     }
                     .frame(width: 62, height: 62).contentShape(Circle())
@@ -556,7 +556,7 @@ struct ArtistDetailView: View {
                     ZStack {
                         RoundedRectangle(cornerRadius: 16, style: .continuous)
                             .fill(
-                                LinearGradient(colors: [Color.accentColor.opacity(0.22), Color.secondary.opacity(0.15)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                                LinearGradient(colors: [AppTheme.accent.opacity(0.22), Color.secondary.opacity(0.15)], startPoint: .topLeading, endPoint: .bottomTrailing)
                             )
                             .frame(width: 150, height: 150)
                         Image(systemName: "square.stack").font(.system(size: 34)).foregroundStyle(.secondary.opacity(0.7))
@@ -587,7 +587,7 @@ struct ArtistDetailView: View {
                 if isCurrent {
                     HStack(spacing: 2.5) {
                         ForEach(0..<3, id: \.self) { bar in
-                            RoundedRectangle(cornerRadius: 1).fill(Color.accentColor)
+                            RoundedRectangle(cornerRadius: 1).fill(AppTheme.accent)
                                 .frame(width: 2.5, height: bar % 2 == 0 ? 13 : 8)
                                 .animation(.easeInOut(duration: 0.45 + Double(bar) * 0.12).repeatForever(autoreverses: true), value: isCurrent)
                         }
@@ -601,7 +601,7 @@ struct ArtistDetailView: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(song.title)
                         .font(.system(size: 15, weight: isCurrent ? .bold : .semibold, design: .rounded))
-                        .foregroundStyle(isCurrent ? Color.accentColor : .primary).lineLimit(1)
+                        .foregroundStyle(isCurrent ? AppTheme.accent : .primary).lineLimit(1)
                     Text(song.album.isEmpty ? song.displaySubtitle : song.album)
                         .font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
                 }
@@ -614,7 +614,7 @@ struct ArtistDetailView: View {
             .padding(.horizontal, 14).padding(.vertical, 12)
             .background {
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(isCurrent ? Color.accentColor.opacity(0.08) : Color.clear)
+                    .fill(isCurrent ? AppTheme.accent.opacity(0.08) : Color.clear)
             }
             .contentShape(Rectangle())
             .overlay {

@@ -93,7 +93,7 @@ struct LogsView: View {
                         .font(.system(size: 20, weight: .bold, design: .rounded))
                         .foregroundStyle(
                             LinearGradient(
-                                colors: [Color.accentColor, Color.accentColor.opacity(0.75)],
+                                colors: [AppTheme.accent, AppTheme.accent.opacity(0.75)],
                                 startPoint: .leading,
                                 endPoint: .trailing
                             )
@@ -271,7 +271,7 @@ struct LogsView: View {
                 .background {
                     if isSelected {
                         RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .fill(Color.accentColor)
+                            .fill(AppTheme.accent)
                     } else {
                         RoundedRectangle(cornerRadius: 16, style: .continuous)
                             .fill(Color.secondary.opacity(0.12))

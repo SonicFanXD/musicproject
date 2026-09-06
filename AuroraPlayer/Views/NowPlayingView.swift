@@ -23,9 +23,12 @@ struct NowPlayingView: View {
     @State private var showEqualizer = false
     @State private var showQueue = false
     @State private var showQualityDetail = false
+    // ✅ NUEVO: menú de 3 puntos → ver artista / álbum / letras / cola / compartir
+    @State private var showArtistDetail = false
+    @State private var showAlbumDetail = false
     @State private var artworkScale: CGFloat = 1.0
     @State private var progressBarWidth: CGFloat = 0
-    @State private var extractedColor: Color = Color.accentColor
+    @State private var extractedColor: Color = AppTheme.accent
     // ✅ Guardamos el UIColor dominante crudo para calcular contraste
     // ✅ FIX: usar accentUIColor en vez de systemPurple hardcodeado
     @State private var extractedUIColor: UIColor = AppTheme.accentUIColor
@@ -67,6 +70,20 @@ struct NowPlayingView: View {
 
     // ✅ Contraste: si el color dominante es claro → texto oscuro; si es oscuro → texto blanco
     private var playIconColor: Color { AppTheme.contrastingText(on: extractedUIColor) }
+
+    // ✅ NUEVO: resoluciones para el menú de 3 puntos (artista/álbum actuales)
+    private var currentArtist: Artist? {
+        guard let song = audioEngine.currentSong else { return nil }
+        let preferred = song.albumArtist.isEmpty ? song.artist : song.albumArtist
+        return fileAccessService.artists.first { $0.name == preferred }
+            ?? fileAccessService.artists.first { $0.name == song.artist }
+    }
+
+    private var currentAlbum: Album? {
+        guard let song = audioEngine.currentSong, !song.album.isEmpty else { return nil }
+        return fileAccessService.albums.first { $0.name == song.album && $0.artist == song.albumArtist }
+            ?? fileAccessService.albums.first { $0.name == song.album }
+    }
 
     var body: some View {
         NavigationStack {
@@ -136,6 +153,21 @@ struct NowPlayingView: View {
             .onChange(of: audioEngine.currentSong?.id) { _ in
                 extractColorFromArtwork()
             }
+            // ✅ NUEVO: destinos del menú de 3 puntos
+            .sheet(isPresented: $showArtistDetail) {
+                if let artist = currentArtist {
+                    NavigationStack {
+                        ArtistDetailView(artist: artist, audioEngine: audioEngine)
+                    }
+                }
+            }
+            .sheet(isPresented: $showAlbumDetail) {
+                if let album = currentAlbum {
+                    NavigationStack {
+                        AlbumDetailView(album: album, audioEngine: audioEngine)
+                    }
+                }
+            }
             .presentationDetents([.large])
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(Color(UIColor.systemBackground).opacity(0.92), for: .navigationBar)
@@ -163,6 +195,52 @@ struct NowPlayingView: View {
                             .frame(width: 44, height: 44)
                             .contentShape(Rectangle())
                     }
+                }
+                // ✅ NUEVO: menú de opciones (3 puntos)
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Menu {
+                        if currentArtist != nil {
+                            Button {
+                                Haptics.light()
+                                showArtistDetail = true
+                            } label: {
+                                Label(Localization.localized("nowPlaying.viewArtist"), systemImage: "person.crop.circle")
+                            }
+                        }
+                        if currentAlbum != nil {
+                            Button {
+                                Haptics.light()
+                                showAlbumDetail = true
+                            } label: {
+                                Label(Localization.localized("nowPlaying.viewAlbum"), systemImage: "square.stack")
+                            }
+                        }
+                        Button {
+                            Haptics.light()
+                            showLyrics = true
+                        } label: {
+                            Label(Localization.localized("nowPlaying.viewLyrics"), systemImage: "quote.opening")
+                        }
+                        Button {
+                            Haptics.light()
+                            showQueue = true
+                        } label: {
+                            Label(Localization.localized("nowPlaying.viewQueue"), systemImage: "list.number")
+                        }
+                        if let url = audioEngine.currentSong?.url {
+                            Divider()
+                            ShareLink(item: url) {
+                                Label(Localization.localized("nowPlaying.shareSong"), systemImage: "square.and.arrow.up")
+                            }
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis")
+                            .foregroundStyle(extractedColor)
+                            .font(.system(size: 17, weight: .semibold))
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
+                    }
+                    .accessibilityLabel(Localization.localized("nowPlaying.more"))
                 }
                 // ✅ Botón de me gusta en la barra de navegación
                 ToolbarItem(placement: .navigationBarTrailing) {
@@ -653,7 +731,7 @@ struct NowPlayingView: View {
                 HStack(spacing: 12) {
                     Image(systemName: "waveform.badge.magnifyingglass")
                         .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(Color.accentColor)
+                        .foregroundStyle(AppTheme.accent)
 
                     Text(Localization.localized("audio.quality.title"))
                         .font(.system(size: 17, weight: .bold, design: .rounded))
@@ -689,7 +767,7 @@ struct NowPlayingView: View {
                     .fill(Color(UIColor.systemBackground))
                     // ✅ Sombra doble para mayor profundidad
                     .shadow(color: .black.opacity(0.35), radius: 30, x: 0, y: 15)
-                    .shadow(color: Color.accentColor.opacity(0.08), radius: 20, x: 0, y: 5)
+                    .shadow(color: AppTheme.accent.opacity(0.08), radius: 20, x: 0, y: 5)
             }
             .clipShape(RoundedRectangle(cornerRadius: 32, style: .continuous))
             .padding(.horizontal, 24)
@@ -762,7 +840,7 @@ struct AirPlayRoutePickerView: UIViewRepresentable {
     func makeUIView(context: Context) -> AVRoutePickerView {
         let picker = AVRoutePickerView()
         picker.prioritizesVideoDevices = false
-        // ✅ FIX: usar AppTheme.accent (UIColor(Color.accentColor) resolvía el
+        // ✅ FIX: usar AppTheme.accent (UIColor(AppTheme.accent) resolvía el
         // asset por defecto y no respetaba el ajuste "Color de acento")
         picker.tintColor = AppTheme.accentUIColor
         return picker

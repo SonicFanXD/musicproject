@@ -70,7 +70,7 @@ struct ContentView: View {
                             .font(.system(size: 22, weight: .bold, design: .rounded))
                             .foregroundStyle(
                                 LinearGradient(
-                                    colors: [Color.accentColor, Color.accentColor.opacity(0.75)],
+                                    colors: [AppTheme.accent, AppTheme.accent.opacity(0.75)],
                                     startPoint: .leading,
                                     endPoint: .trailing
                                 )
@@ -199,9 +199,9 @@ struct ContentView: View {
                     .padding(.horizontal, 24)
                     .padding(.vertical, 14)
                     .background {
-                        Capsule().fill(Color.accentColor)
+                        Capsule().fill(AppTheme.accent)
                     }
-                    .shadow(color: Color.accentColor.opacity(0.35), radius: 10, x: 0, y: 5)
+                    .shadow(color: AppTheme.accent.opacity(0.35), radius: 10, x: 0, y: 5)
                 }
                 .buttonStyle(PressableButtonStyle(scale: 0.96))
             }
@@ -244,7 +244,7 @@ struct ContentView: View {
                                 ZStack {
                                     Capsule().fill(
                                         LinearGradient(
-                                            colors: [Color.accentColor, Color.accentColor.opacity(0.8)],
+                                            colors: [AppTheme.accent, AppTheme.accent.opacity(0.8)],
                                             startPoint: .topLeading,
                                             endPoint: .bottomTrailing
                                         )
@@ -257,7 +257,7 @@ struct ContentView: View {
                                         )
                                     )
                                 }
-                                .shadow(color: Color.accentColor.opacity(0.35), radius: 8, x: 0, y: 4)
+                                .shadow(color: AppTheme.accent.opacity(0.35), radius: 8, x: 0, y: 4)
                             } else {
                                 Capsule().fill(.regularMaterial)
                                 Capsule().strokeBorder(Color.secondary.opacity(0.1), lineWidth: 0.5)
@@ -417,10 +417,10 @@ struct ContentView: View {
     private var indexingProgressCard: some View {
         VStack(spacing: 16) {
             ZStack {
-                Circle().fill(Color.accentColor.opacity(0.12)).frame(width: 70, height: 70)
+                Circle().fill(AppTheme.accent.opacity(0.12)).frame(width: 70, height: 70)
                 Image(systemName: "square.stack.3d.up")
                     .font(.system(size: 30, weight: .semibold))
-                    .foregroundStyle(Color.accentColor)
+                    .foregroundStyle(AppTheme.accent)
             }
 
             Text(Localization.localized("indexing.indexingLibrary"))
@@ -431,7 +431,7 @@ struct ContentView: View {
                 GeometryReader { geo in
                     ZStack(alignment: .leading) {
                         Capsule().fill(Color.secondary.opacity(0.15))
-                        Capsule().fill(Color.accentColor)
+                        Capsule().fill(AppTheme.accent)
                             .frame(width: geo.size.width * indexingProgress)
                             .animation(.easeInOut(duration: 0.3), value: indexingProgress)
                     }
@@ -445,7 +445,7 @@ struct ContentView: View {
                     Spacer()
                     Text("\(Int(indexingProgress * 100))%")
                         .font(.system(size: 12, weight: .bold).monospacedDigit())
-                        .foregroundStyle(Color.accentColor)
+                        .foregroundStyle(AppTheme.accent)
                 }
             }
             .padding(.horizontal, 8)
@@ -470,7 +470,7 @@ struct ContentView: View {
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
                     Capsule().fill(Color.secondary.opacity(0.15))
-                    Capsule().fill(Color.accentColor)
+                    Capsule().fill(AppTheme.accent)
                         .frame(width: geo.size.width * indexingProgress)
                         .animation(.easeInOut(duration: 0.3), value: indexingProgress)
                 }
@@ -587,7 +587,7 @@ struct ContentView: View {
                     VStack(alignment: .leading, spacing: 3) {
                         Text(song.displayName)
                             .font(.system(size: 15, weight: .semibold, design: .rounded))
-                            .foregroundStyle(isCurrent ? Color.accentColor : .primary)
+                            .foregroundStyle(isCurrent ? AppTheme.accent : .primary)
                             .lineLimit(1)
                         
                         Text(song.displaySubtitle)
@@ -615,7 +615,7 @@ struct ContentView: View {
                         HStack(spacing: 2.5) {
                             ForEach(0..<3, id: \.self) { bar in
                                 RoundedRectangle(cornerRadius: 1)
-                                    .fill(Color.accentColor)
+                                    .fill(AppTheme.accent)
                                     .frame(width: 2.5, height: bar % 2 == 0 ? 12 : 7)
                                     .animation(
                                         .easeInOut(duration: 0.4 + Double(bar) * 0.1).repeatForever(autoreverses: true),
@@ -670,10 +670,10 @@ struct ContentView: View {
         .background {
             if isCurrent {
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(Color.accentColor.opacity(0.07))
+                    .fill(AppTheme.accent.opacity(0.07))
                     .overlay(
                         RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .strokeBorder(Color.accentColor.opacity(0.15), lineWidth: 0.5)
+                            .strokeBorder(AppTheme.accent.opacity(0.15), lineWidth: 0.5)
                     )
             }
         }
@@ -747,7 +747,7 @@ struct ContentView: View {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(
                     LinearGradient(
-                        colors: [Color.accentColor.opacity(0.15), Color.accentColor.opacity(0.05)],
+                        colors: [AppTheme.accent.opacity(0.15), AppTheme.accent.opacity(0.05)],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     )
@@ -756,7 +756,7 @@ struct ContentView: View {
                 .overlay {
                     Image(systemName: "music.note")
                         .font(.system(size: 16, weight: .medium))
-                        .foregroundStyle(Color.accentColor.opacity(0.6))
+                        .foregroundStyle(AppTheme.accent.opacity(0.6))
                 }
         }
     }
@@ -871,29 +871,88 @@ struct ContentView: View {
 
 struct SplashView: View {
     @State private var isAnimating = false
+    @State private var appear = false
 
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
-            VStack(spacing: 24) {
-                Image(systemName: "music.note")
-                    .font(.system(size: 60, weight: .light))
-                    .foregroundStyle(Color.accentColor)
-                    .scaleEffect(isAnimating ? 1.1 : 0.95)
-                    .animation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true), value: isAnimating)
-                Text("Aurora Player")
-                    .font(.system(size: 26, weight: .bold, design: .rounded))
-                    .foregroundStyle(
-                        LinearGradient(
-                            colors: [Color.accentColor, Color.accentColor.opacity(0.7)],
-                            startPoint: .leading,
-                            endPoint: .trailing
+
+            // ✅ Fondo "aurora": blobs de color con movimiento lento (GPU, blur)
+            ZStack {
+                Circle()
+                    .fill(AppTheme.accent.opacity(0.35))
+                    .frame(width: 440, height: 440)
+                    .blur(radius: 90)
+                    .offset(x: -100, y: -200)
+                Circle()
+                    .fill(Color(red: 0.25, green: 0.55, blue: 1.0).opacity(0.28))
+                    .frame(width: 400, height: 400)
+                    .blur(radius: 100)
+                    .offset(x: 130, y: 240)
+                Circle()
+                    .fill(Color(red: 0.95, green: 0.35, blue: 0.65).opacity(0.20))
+                    .frame(width: 360, height: 360)
+                    .blur(radius: 90)
+                    .offset(x: 70, y: -30)
+            }
+            .scaleEffect(isAnimating ? 1.15 : 0.9)
+            .rotationEffect(.degrees(isAnimating ? 10 : -8))
+            .animation(.easeInOut(duration: 3.2).repeatForever(autoreverses: true), value: isAnimating)
+
+            VStack(spacing: 26) {
+                ZStack {
+                    Circle()
+                        .stroke(AppTheme.accent.opacity(0.14), lineWidth: 1)
+                        .frame(width: 164, height: 164)
+                        .scaleEffect(isAnimating ? 1.1 : 0.94)
+                        .animation(.easeInOut(duration: 1.8).repeatForever(autoreverses: true), value: isAnimating)
+                    Circle()
+                        .stroke(AppTheme.accent.opacity(0.35), lineWidth: 1.5)
+                        .frame(width: 128, height: 128)
+                    Image(systemName: "music.note")
+                        .font(.system(size: 54, weight: .light))
+                        .foregroundStyle(AppTheme.accent)
+                        .scaleEffect(isAnimating ? 1.12 : 0.94)
+                        .shadow(color: AppTheme.accent.opacity(0.65), radius: isAnimating ? 18 : 6)
+                        .animation(.easeInOut(duration: 1.4).repeatForever(autoreverses: true), value: isAnimating)
+                }
+
+                VStack(spacing: 10) {
+                    Text("Aurora Player")
+                        .font(.system(size: 28, weight: .bold, design: .rounded))
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: [.white, AppTheme.accent],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
                         )
-                    )
-                ProgressView().controlSize(.small).tint(Color.accentColor)
+                    // Barra de carga indeterminada propia (más elegante que el spinner)
+                    GeometryReader { geometry in
+                        ZStack(alignment: .leading) {
+                            Capsule()
+                                .fill(Color.white.opacity(0.12))
+                                .frame(height: 4)
+                            Capsule()
+                                .fill(AppTheme.accent)
+                                .frame(width: geometry.size.width * 0.35, height: 4)
+                                .offset(x: isAnimating ? geometry.size.width * 0.65 : 0)
+                                .animation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true), value: isAnimating)
+                        }
+                    }
+                    .frame(width: 140, height: 4)
+                }
+            }
+            .opacity(appear ? 1 : 0)
+            .offset(y: appear ? 0 : 18)
+            .animation(.easeOut(duration: 0.7), value: appear)
+        }
+        .onAppear {
+            isAnimating = true
+            withAnimation(.easeOut(duration: 0.6).delay(0.15)) {
+                appear = true
             }
         }
-        .onAppear { isAnimating = true }
     }
 }
 
@@ -989,9 +1048,8 @@ private func albumListRow(_ album: Album) -> some View {
         }
 
         Spacer()
-        Image(systemName: "chevron.right")
-            .font(.system(size: 12, weight: .semibold))
-            .foregroundStyle(.tertiary)
+        // ✅ FIX: sin flecha manual — NavigationLink ya muestra su propio chevron
+        // (antes se veía una flecha DUPLICADA en cada fila de álbumes)
     }
     .padding(.horizontal, 14).padding(.vertical, 12)
     .background {
@@ -1028,9 +1086,8 @@ private func artistListRow(_ artist: Artist) -> some View {
         }
 
         Spacer()
-        Image(systemName: "chevron.right")
-            .font(.system(size: 12, weight: .semibold))
-            .foregroundStyle(.tertiary)
+        // ✅ FIX: sin flecha manual — NavigationLink ya muestra su propio chevron
+        // (antes se veía una flecha DUPLICADA en cada fila de artistas)
     }
     .padding(.horizontal, 14).padding(.vertical, 12)
     .background {
@@ -1047,10 +1104,10 @@ struct ContentUnavailableLibraryView: View {
     var body: some View {
         VStack(spacing: 16) {
             ZStack {
-                Circle().fill(Color.accentColor.opacity(0.1)).frame(width: 80, height: 80)
+                Circle().fill(AppTheme.accent.opacity(0.1)).frame(width: 80, height: 80)
                 Image(systemName: icon)
                     .font(.system(size: 36, weight: .semibold))
-                    .foregroundStyle(Color.accentColor)
+                    .foregroundStyle(AppTheme.accent)
             }
             Text(title)
                 .font(.system(size: 20, weight: .bold, design: .rounded))
@@ -1083,7 +1140,7 @@ struct playlistLibraryCard: View {
                         RoundedRectangle(cornerRadius: 16, style: .continuous)
                             .fill(
                                 LinearGradient(
-                                    colors: [Color.accentColor.opacity(0.25), Color.accentColor.opacity(0.1)],
+                                    colors: [AppTheme.accent.opacity(0.25), AppTheme.accent.opacity(0.1)],
                                     startPoint: .topLeading, endPoint: .bottomTrailing
                                 )
                             )

@@ -177,7 +177,7 @@ struct PlayerBar: View {
                             Capsule()
                                 .fill(
                                     LinearGradient(
-                                        colors: [Color.accentColor.opacity(0.75), Color.accentColor],
+                                        colors: [AppTheme.accent.opacity(0.75), AppTheme.accent],
                                         startPoint: .leading,
                                         endPoint: .trailing
                                     )
@@ -187,7 +187,7 @@ struct PlayerBar: View {
                             // ✅ Indicador de posición al hacer scrub
                             if isScrubbing {
                                 Circle()
-                                    .fill(Color.accentColor)
+                                    .fill(AppTheme.accent)
                                     .frame(width: 10, height: 10)
                                     .offset(x: geometry.size.width * scrubPreviewProgress - 5)
                                     .shadow(color: .black.opacity(0.2), radius: 4, x: 0, y: 2)
@@ -281,7 +281,7 @@ struct PlayerBar: View {
                 .overlay(
                     // ✅ Indicador de reproducción con animación suave
                     RoundedRectangle(cornerRadius: CGFloat(artworkCorner * (14.0 / 22.0)), style: .continuous)
-                        .stroke(Color.accentColor.opacity(audioEngine.isPlaying ? 0.45 : 0.0), lineWidth: 1.5)
+                        .stroke(AppTheme.accent.opacity(audioEngine.isPlaying ? 0.45 : 0.0), lineWidth: 1.5)
                         .animation(.easeInOut(duration: 0.35), value: audioEngine.isPlaying)
                 )
                 .contentShape(Rectangle())
@@ -293,7 +293,7 @@ struct PlayerBar: View {
                 RoundedRectangle(cornerRadius: CGFloat(artworkCorner * (14.0 / 22.0)), style: .continuous)
                     .fill(
                         LinearGradient(
-                            colors: [Color.accentColor.opacity(0.28), Color.accentColor.opacity(0.12)],
+                            colors: [AppTheme.accent.opacity(0.28), AppTheme.accent.opacity(0.12)],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         )
@@ -302,7 +302,7 @@ struct PlayerBar: View {
 
                 Image(systemName: audioEngine.isPlaying ? "waveform" : "music.note")
                     .font(.system(size: 19, weight: .medium))
-                    .foregroundStyle(Color.accentColor)
+                    .foregroundStyle(AppTheme.accent)
                     .animation(.easeInOut(duration: 0.3), value: audioEngine.isPlaying)
             }
             .contentShape(Rectangle())

@@ -31,7 +31,15 @@ class AudioEngine: NSObject, ObservableObject {
         }
     }
     @Published var duration: TimeInterval = 0
-    @Published var currentSong: Song?
+    @Published var currentSong: Song? {
+        didSet {
+            // ✅ Acento dinámico desde carátula: al cambiar de canción se extrae
+            // el color dominante y ThemeManager lo publica para toda la app.
+            if oldValue?.id != currentSong?.id {
+                ThemeManager.shared.updateArtworkAccent(from: currentSong)
+            }
+        }
+    }
     @Published var currentRouteName: String = "Altavoz"
     // ✅ Tipo de salida (idioma-independiente): la detección por nombre
     // localizado ("Altavoz") fallaba fuera de español. Ahora usamos portType.
@@ -67,6 +75,14 @@ class AudioEngine: NSObject, ObservableObject {
     private var displayTimer: Timer?
     private var sampleRate: Double = 44100
     private var seekOffset: TimeInterval = 0
+    // ✅ FIX "corte feo" entre canciones: recordar el formato ya conectado al
+    // graph. Si la siguiente canción tiene el mismo formato, NO se detiene ni
+    // reinicia el engine (solo se reprograma el nodo) → transición sin hueco.
+    private var connectedFormatKey: String?
+    // ✅ FIX reinicio desde punto aleatorio: recordar el archivo cargado para
+    // detectar cuándo se reinicia la MISMA canción (repeat-one / álbum de una
+    // sola canción) y aplicar el re-programado con delay.
+    private var currentFileURL: URL?
 
     // MARK: - Crossfade (✅ ELIMINADO)
     // El crossfade era la fuente principal de bugs de sincronización
@@ -365,6 +381,9 @@ class AudioEngine: NSObject, ObservableObject {
         if engine.isRunning {
             engine.stop()
         }
+        // ✅ Recordar el formato conectado para evitar reinicios innecesarios
+        // del engine al cambiar de canción (transición sin hueco).
+        connectedFormatKey = formatKey(format)
 
         let mixer = engine.mainMixerNode
         if let eq = equalizerNode {
@@ -538,22 +557,38 @@ class AudioEngine: NSObject, ObservableObject {
                 return
             }
 
-            if engine.isRunning {
-                engine.stop()
-            }
+            // ✅ FIX "corte feo" entre canciones: solo detener/reiniciar el engine
+            // si cambió el formato (sample rate, canales o EQ). Si es el mismo,
+            // se mantiene el engine corriendo y solo se reprograma el nodo →
+            // la transición entre canciones queda sin hueco de silencio.
+            let needsReconnect = !engine.isRunning || connectedFormatKey != formatKey(file.processingFormat)
             playerNode.stop()
-            reconnectPlayerNode(format: file.processingFormat)
-
-            // ✅ FIX crash en segundo plano: arranque robusto con reactivación
-            // de sesión y reintento (antes: try engine.start() directo)
-            try startEngineSafely()
+            if needsReconnect {
+                engine.stop()
+                reconnectPlayerNode(format: file.processingFormat)
+                // ✅ FIX crash en segundo plano: arranque robusto con reactivación
+                // de sesión y reintento (antes: try engine.start() directo)
+                try startEngineSafely()
+            }
 
             currentSong = song
             seekOffset = 0
             isPlaying = true
             playbackErrorCount = 0
 
-            scheduleFile(file, from: 0)
+            // ✅ FIX reinicio desde punto aleatorio (repeat-one / álbum de una
+            // sola canción): si se carga el MISMO archivo que ya estaba en el
+            // nodo y no hubo que reconectar el graph, reprogramar con un breve
+            // delay. Detener el nodo y re-programar de inmediato deja sampleTime
+            // residual → la canción arranca desde un punto aleatorio. Con el
+            // delay el reloj del nodo se resetea y arranca limpio desde 0.
+            let isSameFileRestart = (song.url == currentFileURL) && !needsReconnect
+            currentFileURL = song.url
+            if isSameFileRestart {
+                rescheduleFileAfterStop(file, from: 0)
+            } else {
+                scheduleFile(file, from: 0)
+            }
 
             startDisplayTimer()
             updateNowPlayingInfo()
@@ -566,7 +601,7 @@ class AudioEngine: NSObject, ObservableObject {
         }
     }
 
-    private func scheduleFile(_ file: AVAudioFile, from startSeconds: TimeInterval) {
+    private func scheduleFile(_ file: AVAudioFile, from startSeconds: TimeInterval, autostart: Bool = true) {
         let generation = scheduleGeneration
         let safeStartFrame = AVAudioFramePosition(startSeconds * sampleRate)
         guard safeStartFrame < file.length else {
@@ -599,7 +634,18 @@ class AudioEngine: NSObject, ObservableObject {
             }
         }
 
-        playerNode.play()
+        // ✅ FIX sincronización: `autostart=false` permite reprogramar el nodo
+        // SIN iniciar la reproducción (ej. seek en pausa). Antes scheduleFile
+        // reproducía siempre: al buscar con la app en pausa el audio sonaba con
+        // isPlaying=false y todas las barras quedaban desincronizadas.
+        if autostart {
+            playerNode.play()
+        }
+    }
+
+    /// Identidad del formato conectado al graph (sample rate + canales + EQ)
+    private func formatKey(_ format: AVAudioFormat) -> String {
+        "\(format.sampleRate)-\(format.channelCount)-\(equalizerNode != nil)"
     }
 
     // MARK: - Crossfade implementado con precisión
@@ -864,30 +910,120 @@ class AudioEngine: NSObject, ObservableObject {
         currentTime = 0
         duration = 0
         currentSong = nil
+        currentFileURL = nil
         stopDisplayTimer()
         isStopping = false
         saveState()
     }
 
+    /// Calcula el índice de la siguiente canción según shuffle/repeat-all.
+    /// Retorna nil si se alcanzó el final de la playlist sin repeat.
+    /// NOTA: repeat-one se maneja en handlePlaybackFinished, no aquí.
+    private func computeNextIndex() -> Int? {
+        guard !playlist.isEmpty else { return nil }
+        if isShuffleEnabled {
+            return Int.random(in: 0..<playlist.count)
+        }
+        let next = currentIndex + 1
+        if next >= playlist.count {
+            return repeatMode == .all ? 0 : nil
+        }
+        return next
+    }
+
     func playNext() {
         // ✅ FIX CRÍTICO: Evitar crash si estamos en medio de un crossfade
         guard !isCrossfading else { return }
-        guard !playlist.isEmpty else { return }
-        if isShuffleEnabled {
-            currentIndex = Int.random(in: 0..<playlist.count)
-        } else {
-            currentIndex += 1
-            if currentIndex >= playlist.count {
-                if repeatMode == .all {
-                    currentIndex = 0
-                } else {
-                    currentIndex = playlist.count - 1
-                    stop()
-                    return
-                }
+        guard let index = computeNextIndex() else { return }
+        currentIndex = index
+        playCurrentSong()
+    }
+
+    /// Encadena la siguiente canción directamente en el nodo sin detenerlo,
+    /// logrando transición sin silencio (gapless). Si la siguiente canción
+    /// requiere reconectar el graph (formato distinto), cae al proceso normal.
+    private func chainNextSong() {
+        guard let index = computeNextIndex() else {
+            stop()
+            return
+        }
+        let nextSong = playlist[index]
+
+        guard let file = try? AVAudioFile(forReading: nextSong.url) else {
+            currentIndex = index
+            playCurrentSong()
+            return
+        }
+
+        let fileFormat = file.processingFormat
+        let needsReconnect = connectedFormatKey != nil && formatKey(fileFormat) != connectedFormatKey
+
+        if needsReconnect {
+            currentIndex = index
+            playCurrentSong()
+            return
+        }
+
+        // ✅ Gapless: actualizar estado y programar el segmento directamente.
+        currentSong = nextSong
+        currentIndex = index
+        currentFileURL = nextSong.url
+        seekOffset = 0
+        isPlaying = true
+        playbackErrorCount = 0
+        audioFile = file
+        sampleRate = fileFormat.sampleRate
+        if connectedFormatKey == nil {
+            connectedFormatKey = formatKey(fileFormat)
+        }
+        scheduleChainedFile(file, from: 0)
+        startDisplayTimer()
+        updateNowPlayingInfo()
+        updateAudioQuality()
+        addToHistory(nextSong)
+        updateNextUpQueue()
+        saveState()
+    }
+
+    /// Programa un segmento encadenado al anterior (at: nil) para gapless.
+    /// Si el nodo no está reproduciendo (se detuvo entre segmentos), lo reinicia.
+    private func scheduleChainedFile(_ file: AVAudioFile, from startSeconds: TimeInterval) {
+        let generation = scheduleGeneration
+        let safeStartFrame = AVAudioFramePosition(startSeconds * sampleRate)
+        guard safeStartFrame < file.length else {
+            handlePlaybackFinished()
+            return
+        }
+        let framesToPlay = AVAudioFrameCount(file.length - safeStartFrame)
+        guard framesToPlay > 0 else {
+            handlePlaybackFinished()
+            return
+        }
+
+        playerNode.scheduleSegment(
+            file,
+            startingFrame: safeStartFrame,
+            frameCount: framesToPlay,
+            at: nil
+        ) { [weak self] in
+            DispatchQueue.main.async {
+                guard let self = self,
+                      self.scheduleGeneration == generation,
+                      self.isPlaying,
+                      !self.isStopping,
+                      !self.isCrossfading else { return }
+                self.handlePlaybackFinished()
             }
         }
-        playCurrentSong()
+        // ✅ Reiniciar el nodo si se detuvo entre segmentos (evita silencio total)
+        if !playerNode.isPlaying {
+            if !engine.isRunning {
+                try? startEngineSafely()
+            }
+            if engine.isRunning {
+                playerNode.play()
+            }
+        }
     }
 
     func playPrevious() {
@@ -928,10 +1064,8 @@ class AudioEngine: NSObject, ObservableObject {
         // a 0 tras stop()/play(), y el display timer calcula seekOffset + sampleTime/sampleRate.
         // Sin actualizar seekOffset, currentTime volvía a ~0 y la letra saltaba al inicio.
         seekOffset = clampedTime
-        scheduleFile(file, from: clampedTime)
-        if isPlaying {
-            playerNode.play()
-        }
+        // ✅ FIX sincronización: en pausa el seek NO debe iniciar la reproducción.
+        scheduleFile(file, from: clampedTime, autostart: isPlaying)
         // ✅ FIX Centro de Control: publicar elapsed exacto inmediatamente
         // tras el seek para que la barra del sistema salte al mismo punto.
         updateNowPlayingInfo()
@@ -1074,27 +1208,40 @@ class AudioEngine: NSObject, ObservableObject {
     // el engine se detuvo), reprograma el segmento completo desde 0 con una
     // nueva generación para garantizar que suene sin cortes ni silencios.
     private func handlePlaybackFinished() {
+        guard isPlaying, !isStopping, !isCrossfading else { return }
+
         if repeatMode == .one {
             guard let file = audioFile else { return }
             scheduleGeneration += 1
             seekOffset = 0
             currentTime = 0
-            // ✅ FIX repeat-one: detener el nodo ANTES de re-programar. Sin esto,
-            // el segmento nuevo se encolaba detrás del anterior y las barras de
-            // progreso (app + Centro de Control) quedaban desincronizadas.
-            playerNode.stop()
-            scheduleFile(file, from: 0)
-            // ✅ FIX: Actualizar NowPlayingInfo con elapsed=0 al repetir, para que
-            // la barra de Centro de Control/pantalla de bloqueo se reinicie correctamente
-            updateNowPlayingInfo()
+            rescheduleFileAfterStop(file, from: 0)
             return
         }
-        // ✅ FIX: detener el display timer y resetear currentTime antes de
-        // reproducir la siguiente canción para evitar que la barra de progreso
-        // muestre la canción como terminada mientras sigue sonando.
+        // ✅ Gapless: en vez de playNext() (que detiene/reconecte el engine),
+        // encadena la siguiente canción directamente en el nodo → sin silencio.
         stopDisplayTimer()
         currentTime = 0
-        playNext()
+        chainNextSong()
+    }
+
+    /// Re-programa el mismo archivo tras detener el nodo, con un breve delay.
+    /// Necesario cuando se reinicia la MISMA canción: el reloj interno del nodo
+    /// (sampleTime) no se resetea hasta el siguiente render tras stop(), y
+    /// programar+reproducir de inmediato arranca desde un punto residual al azar.
+    private func rescheduleFileAfterStop(_ file: AVAudioFile, from seconds: TimeInterval) {
+        scheduleGeneration += 1
+        let generation = scheduleGeneration
+        playerNode.stop()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+            guard let self = self,
+                  self.scheduleGeneration == generation,
+                  self.isPlaying,
+                  !self.isStopping,
+                  !self.isCrossfading else { return }
+            self.scheduleFile(file, from: seconds)
+            self.updateNowPlayingInfo()
+        }
     }
 
     private func stopFallbackPlayback() {

@@ -316,6 +316,16 @@ final class Localization: ObservableObject {
             "settings.accent.emerald": [.spanish: "Esmeralda", .english: "Emerald"],
             "settings.accent.pink": [.spanish: "Rosa Neón", .english: "Neon Pink"],
             "settings.accent.amber": [.spanish: "Ámbar Solar", .english: "Solar Amber"],
+            "settings.accent.black": [.spanish: "Negro Grafito", .english: "Graphite Black"],
+            "settings.accent.darkRed": [.spanish: "Rojo Oscuro", .english: "Dark Red"],
+            "settings.accentFromArtwork": [.spanish: "Acento desde carátula", .english: "Accent from artwork"],
+            "settings.accentFromArtworkSubtitle": [.spanish: "El acento cambia según la portada de la canción", .english: "Accent follows the current song's artwork"],
+            "nowPlaying.more": [.spanish: "Más opciones", .english: "More options"],
+            "nowPlaying.viewArtist": [.spanish: "Ver artista", .english: "View artist"],
+            "nowPlaying.viewAlbum": [.spanish: "Ver álbum", .english: "View album"],
+            "nowPlaying.viewLyrics": [.spanish: "Ver letras", .english: "View lyrics"],
+            "nowPlaying.viewQueue": [.spanish: "Ver cola de reproducción", .english: "View play queue"],
+            "nowPlaying.shareSong": [.spanish: "Compartir canción", .english: "Share song"],
             "common.ok": [.spanish: "OK", .english: "OK"],
 
             // Presets de EQ

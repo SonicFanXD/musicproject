@@ -39,7 +39,7 @@ struct PlaylistsView: View {
                         .font(.system(size: 18, weight: .bold, design: .rounded))
                         .foregroundStyle(
                             LinearGradient(
-                                colors: [Color.accentColor, Color.accentColor.opacity(0.75)],
+                                colors: [AppTheme.accent, AppTheme.accent.opacity(0.75)],
                                 startPoint: .leading,
                                 endPoint: .trailing
                             )
@@ -64,7 +64,7 @@ struct PlaylistsView: View {
                         showCreatePlaylist = true
                     } label: {
                         Image(systemName: "plus")
-                            .foregroundStyle(Color.accentColor)
+                            .foregroundStyle(AppTheme.accent)
                             .frame(width: 44, height: 44) // Bigger invisible touch target
                             .contentShape(Rectangle())
                     }
@@ -81,12 +81,12 @@ struct PlaylistsView: View {
         VStack(spacing: 14) {
             ZStack {
                 Circle()
-                    .fill(Color.accentColor.opacity(0.16))
+                    .fill(AppTheme.accent.opacity(0.16))
                     .frame(width: 80, height: 80)
 
                 Image(systemName: "music.note.list")
                     .font(.system(size: 34, weight: .semibold))
-                    .foregroundStyle(Color.accentColor)
+                    .foregroundStyle(AppTheme.accent)
             }
 
             Text(Localization.localized("playlists.yourPlaylists"))
@@ -160,8 +160,8 @@ struct PlaylistsView: View {
                             .fill(
                                 LinearGradient(
                                     colors: [
-                                        Color.accentColor.opacity(0.3),
-                                        Color.accentColor.opacity(0.15)
+                                        AppTheme.accent.opacity(0.3),
+                                        AppTheme.accent.opacity(0.15)
                                     ],
                                     startPoint: .topLeading,
                                     endPoint: .bottomTrailing
@@ -228,12 +228,12 @@ struct PlaylistsView: View {
                         VStack(spacing: 16) {
                             ZStack {
                                 Circle()
-                                    .fill(Color.accentColor.opacity(0.16))
+                                    .fill(AppTheme.accent.opacity(0.16))
                                     .frame(width: 70, height: 70)
 
                                 Image(systemName: "plus.circle.fill")
                                     .font(.system(size: 28, weight: .semibold))
-                                    .foregroundStyle(Color.accentColor)
+                                    .foregroundStyle(AppTheme.accent)
                             }
 
                             Text(Localization.localized("playlists.newPlaylist"))
@@ -287,7 +287,7 @@ struct PlaylistsView: View {
                             .background {
                                 ZStack {
                                     RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                        .fill(Color.accentColor)
+                                        .fill(AppTheme.accent)
 
                                     RoundedRectangle(cornerRadius: 16, style: .continuous)
                                         .fill(
@@ -304,7 +304,7 @@ struct PlaylistsView: View {
                                 }
                             }
                             .contentShape(Rectangle())
-                            .shadow(color: Color.accentColor.opacity(0.5), radius: 16, x: 0, y: 8)
+                            .shadow(color: AppTheme.accent.opacity(0.5), radius: 16, x: 0, y: 8)
                         }
                         .disabled(newPlaylistName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
@@ -453,8 +453,8 @@ struct PlaylistDetailView: View {
                             .fill(
                                 LinearGradient(
                                     colors: [
-                                        Color.accentColor.opacity(0.3),
-                                        Color.accentColor.opacity(0.15)
+                                        AppTheme.accent.opacity(0.3),
+                                        AppTheme.accent.opacity(0.15)
                                     ],
                                     startPoint: .topLeading,
                                     endPoint: .bottomTrailing
@@ -518,10 +518,10 @@ struct PlaylistDetailView: View {
                         .padding(.vertical, 18) // Expanded touch target (15→18)
                         .background {
                             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                .fill(Color.accentColor)
+                                .fill(AppTheme.accent)
                         }
                         .contentShape(Rectangle())
-                        .shadow(color: Color.accentColor.opacity(0.35), radius: 10, x: 0, y: 5)
+                        .shadow(color: AppTheme.accent.opacity(0.35), radius: 10, x: 0, y: 5)
                     }
 
                     Button {
@@ -535,11 +535,11 @@ struct PlaylistDetailView: View {
                     } label: {
                         Image(systemName: "shuffle")
                             .font(.system(size: 17, weight: .semibold))
-                            .foregroundStyle(Color.accentColor)
+                            .foregroundStyle(AppTheme.accent)
                             .frame(width: 52, height: 52)
                             .background {
                                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                    .fill(Color.accentColor.opacity(0.14))
+                                    .fill(AppTheme.accent.opacity(0.14))
                             }
                             .frame(width: 60, height: 60) // Bigger invisible touch target
                             .contentShape(Rectangle())
@@ -563,7 +563,7 @@ struct PlaylistDetailView: View {
                             .overlay(Color(UIColor.systemBackground).opacity(0.45))
                     } else {
                         LinearGradient(
-                            colors: [Color.accentColor.opacity(0.18), Color(UIColor.systemBackground)],
+                            colors: [AppTheme.accent.opacity(0.18), Color(UIColor.systemBackground)],
                             startPoint: .top,
                             endPoint: .bottom
                         )
@@ -616,7 +616,7 @@ struct PlaylistDetailView: View {
                         HStack(spacing: 3) {
                             ForEach(0..<3, id: \.self) { bar in
                                 RoundedRectangle(cornerRadius: 1.5)
-                                    .fill(Color.accentColor)
+                                    .fill(AppTheme.accent)
                                     .frame(width: 3, height: bar % 2 == 0 ? 14 : 9)
                                     .animation(
                                         .easeInOut(duration: 0.45 + Double(bar) * 0.12)
@@ -636,7 +636,7 @@ struct PlaylistDetailView: View {
                     VStack(alignment: .leading, spacing: 3) {
                         Text(song.title)
                             .font(.system(size: 16, weight: isCurrent ? .semibold : .medium))
-                            .foregroundStyle(isCurrent ? Color.accentColor : .primary)
+                            .foregroundStyle(isCurrent ? AppTheme.accent : .primary)
                             .lineLimit(1)
 
                         Text(song.displaySubtitle)
@@ -672,12 +672,12 @@ struct PlaylistDetailView: View {
         .padding(.vertical, 12)
         .background {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(isCurrent ? Color.accentColor.opacity(0.1) : Color.secondary.opacity(0.05))
+                .fill(isCurrent ? AppTheme.accent.opacity(0.1) : Color.secondary.opacity(0.05))
         }
         .overlay {
             if isCurrent {
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .strokeBorder(Color.accentColor.opacity(0.25), lineWidth: 1)
+                    .strokeBorder(AppTheme.accent.opacity(0.25), lineWidth: 1)
             }
         }
     }
@@ -728,7 +728,7 @@ struct PlaylistDetailView: View {
                             .background {
                                 ZStack {
                                     RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                        .fill(Color.accentColor)
+                                        .fill(AppTheme.accent)
 
                                     RoundedRectangle(cornerRadius: 16, style: .continuous)
                                         .fill(
@@ -744,7 +744,7 @@ struct PlaylistDetailView: View {
                                         )
                                 }
                             }
-                            .shadow(color: Color.accentColor.opacity(0.5), radius: 16, x: 0, y: 8)
+                            .shadow(color: AppTheme.accent.opacity(0.5), radius: 16, x: 0, y: 8)
                         }
                         .disabled(editedName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }

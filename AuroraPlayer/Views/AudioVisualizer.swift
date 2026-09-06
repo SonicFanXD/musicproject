@@ -4,7 +4,7 @@ import QuartzCore
 
 struct AudioVisualizer: View {
     @ObservedObject var audioEngine: AudioEngine
-    var tintColor: Color = Color.accentColor
+    var tintColor: Color = AppTheme.accent
     // ✅ 30 barras: mejor definición de onda sin sobrecargar A11
     @State private var amplitudes: [CGFloat] = Array(repeating: 0.05, count: 30)
     // ✅ CADisplayLink a 60fps reales (antes Timer de 12.5Hz = 8x menos fluido)
@@ -133,7 +133,7 @@ struct CircularAudioVisualizer: View {
                 let height = amplitudes[index] * 50
 
                 RoundedRectangle(cornerRadius: 2)
-                    .fill(Color.accentColor.opacity(0.7))
+                    .fill(AppTheme.accent.opacity(0.7))
                     .frame(width: 3, height: height)
                     .offset(y: -height / 2)
                     .rotationEffect(.degrees(angle))

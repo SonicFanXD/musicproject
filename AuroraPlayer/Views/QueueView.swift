@@ -51,7 +51,7 @@ struct QueueView: View {
                                 .font(.system(size: 18, weight: .bold, design: .rounded))
                                 .foregroundStyle(
                                     LinearGradient(
-                                        colors: [Color.accentColor, Color.accentColor.opacity(0.75)],
+                                        colors: [AppTheme.accent, AppTheme.accent.opacity(0.75)],
                                         startPoint: .leading, endPoint: .trailing
                                     )
                                 )
@@ -74,7 +74,7 @@ struct QueueView: View {
                                     }
                                 }
                                 Button(Localization.localized("actions.done")) { dismiss() }
-                                    .foregroundStyle(Color.accentColor)
+                                    .foregroundStyle(AppTheme.accent)
                                     .frame(width: 44, height: 44)
                                     .contentShape(Rectangle())
                             }
@@ -111,8 +111,8 @@ struct QueueView: View {
                     .padding(.vertical, 12)
                     .background {
                         if selectedTab == tab {
-                            Capsule().fill(Color.accentColor)
-                                .shadow(color: Color.accentColor.opacity(0.3), radius: 6, x: 0, y: 3)
+                            Capsule().fill(AppTheme.accent)
+                                .shadow(color: AppTheme.accent.opacity(0.3), radius: 6, x: 0, y: 3)
                         } else {
                             Capsule().fill(.regularMaterial)
                         }
@@ -139,7 +139,7 @@ struct QueueView: View {
                     VStack(alignment: .leading, spacing: 3) {
                         Text(current.title)
                             .font(.system(size: 16, weight: .semibold, design: .rounded))
-                            .foregroundStyle(Color.accentColor).lineLimit(1)
+                            .foregroundStyle(AppTheme.accent).lineLimit(1)
                         Text(current.displaySubtitle)
                             .font(.system(size: 13)).foregroundStyle(.secondary).lineLimit(1)
                     }
@@ -149,7 +149,7 @@ struct QueueView: View {
                     HStack(spacing: 2.5) {
                         ForEach(0..<3, id: \.self) { bar in
                             RoundedRectangle(cornerRadius: 1.5)
-                                .fill(Color.accentColor)
+                                .fill(AppTheme.accent)
                                 .frame(width: 3, height: audioEngine.isPlaying ? (bar % 2 == 0 ? 14 : 9) : 6)
                                 .animation(
                                     .easeInOut(duration: 0.45 + Double(bar) * 0.12).repeatForever(autoreverses: true),
@@ -161,11 +161,11 @@ struct QueueView: View {
                 .padding(12)
                 .background {
                     RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(Color.accentColor.opacity(0.1))
+                        .fill(AppTheme.accent.opacity(0.1))
                 }
                 .overlay {
                     RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .strokeBorder(Color.accentColor.opacity(0.25), lineWidth: 1)
+                        .strokeBorder(AppTheme.accent.opacity(0.25), lineWidth: 1)
                 }
             }
         }
@@ -278,7 +278,7 @@ struct QueueView: View {
                             .font(.system(size: 7, weight: .bold))
                             .foregroundStyle(.white)
                             .padding(3)
-                            .background { Circle().fill(Color.accentColor) }
+                            .background { Circle().fill(AppTheme.accent) }
                             .offset(x: 3, y: 3)
                     }
 
@@ -294,7 +294,7 @@ struct QueueView: View {
 
                 Image(systemName: "play.circle.fill")
                     .font(.system(size: 24))
-                    .foregroundStyle(Color.accentColor)
+                    .foregroundStyle(AppTheme.accent)
             }
             .padding(.horizontal, 12).padding(.vertical, 10)
             .background {

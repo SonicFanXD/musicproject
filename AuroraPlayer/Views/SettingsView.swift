@@ -45,7 +45,9 @@ struct SettingsView: View {
             Localization.localized("settings.accent.blue"),
             Localization.localized("settings.accent.emerald"),
             Localization.localized("settings.accent.pink"),
-            Localization.localized("settings.accent.amber")
+            Localization.localized("settings.accent.amber"),
+            Localization.localized("settings.accent.black"),
+            Localization.localized("settings.accent.darkRed")
         ]
     }
     private var languages: [String] { ["Español", "English"] }
@@ -108,6 +110,22 @@ struct SettingsView: View {
                             }
                             settingsDivider
                             settingsToggleRow(title: Localization.localized("settings.dynamicColor"), subtitle: Localization.localized("settings.dynamicColorSubtitle"), icon: "wand.and.stars", color: .cyan, isOn: $dynamicColor)
+                            settingsDivider
+                            // ✅ NUEVO: acento dinámico según la carátula de la canción
+                            settingsToggleRow(
+                                title: Localization.localized("settings.accentFromArtwork"),
+                                subtitle: Localization.localized("settings.accentFromArtworkSubtitle"),
+                                icon: "photo.artframe",
+                                color: .indigo,
+                                isOn: Binding(
+                                    get: { theme.accentFromArtwork },
+                                    set: { newValue in
+                                        theme.accentFromArtwork = newValue
+                                        // Al activar, extraer de inmediato el color de la canción actual
+                                        if newValue { theme.updateArtworkAccent(from: audioEngine.currentSong) }
+                                    }
+                                )
+                            )
                             settingsDivider
                             settingsSliderRow(title: Localization.localized("settings.artworkCorners"), value: $artworkCorner, range: 0...44, step: 2, color: .blue, suffix: "pt")
                             settingsDivider
@@ -192,7 +210,7 @@ struct SettingsView: View {
                         .font(.system(size: 20, weight: .bold, design: .rounded))
                         .foregroundStyle(
                             LinearGradient(
-                                colors: [Color.accentColor, Color.accentColor.opacity(0.75)],
+                                colors: [AppTheme.accent, AppTheme.accent.opacity(0.75)],
                                 startPoint: .leading,
                                 endPoint: .trailing
                             )
@@ -202,7 +220,7 @@ struct SettingsView: View {
 
                 ToolbarItem(placement: .topBarTrailing) {
                     Button(Localization.localized("actions.done")) { dismiss() }
-                        .foregroundStyle(Color.accentColor)
+                        .foregroundStyle(AppTheme.accent)
                         .frame(width: 44, height: 44)
                         .contentShape(Rectangle())
                 }
@@ -266,7 +284,7 @@ struct SettingsView: View {
                 Circle()
                     .fill(
                         LinearGradient(
-                            colors: [Color.accentColor.opacity(0.3), Color.accentColor.opacity(0.1)],
+                            colors: [AppTheme.accent.opacity(0.3), AppTheme.accent.opacity(0.1)],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         )
@@ -275,7 +293,7 @@ struct SettingsView: View {
 
                 Image(systemName: "gearshape.fill")
                     .font(.system(size: 32, weight: .medium))
-                    .foregroundStyle(Color.accentColor)
+                    .foregroundStyle(AppTheme.accent)
             }
 
             VStack(spacing: 4) {

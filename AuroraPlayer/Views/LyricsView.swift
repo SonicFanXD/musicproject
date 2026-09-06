@@ -78,7 +78,7 @@ struct LyricsView: View {
                         .font(.system(size: 20, weight: .bold, design: .rounded))
                         .foregroundStyle(
                             LinearGradient(
-                                colors: [Color.accentColor, Color.accentColor.opacity(0.75)],
+                                colors: [AppTheme.accent, AppTheme.accent.opacity(0.75)],
                                 startPoint: .leading,
                                 endPoint: .trailing
                             )
@@ -88,7 +88,7 @@ struct LyricsView: View {
 
                 ToolbarItem(placement: .topBarTrailing) {
                     Button(Localization.localized("actions.done")) { dismiss() }
-                        .foregroundStyle(Color.accentColor)
+                        .foregroundStyle(AppTheme.accent)
                         .frame(width: 44, height: 44)
                         .contentShape(Rectangle())
                 }
@@ -123,7 +123,7 @@ struct LyricsView: View {
                         .overlay(Color(UIColor.systemBackground).opacity(0.72))
                 } else {
                     LinearGradient(
-                        colors: [Color.accentColor.opacity(0.12), Color(UIColor.systemBackground)],
+                        colors: [AppTheme.accent.opacity(0.12), Color(UIColor.systemBackground)],
                         startPoint: .top,
                         endPoint: .bottom
                     )
@@ -141,8 +141,8 @@ struct LyricsView: View {
     private var emptyLyricsView: some View {
         VStack(spacing: 18) {
             ZStack {
-                Circle().fill(Color.accentColor.opacity(0.12)).frame(width: 100, height: 100)
-                Image(systemName: "quote.bubble").font(.system(size: 48, weight: .semibold)).foregroundStyle(Color.accentColor)
+                Circle().fill(AppTheme.accent.opacity(0.12)).frame(width: 100, height: 100)
+                Image(systemName: "quote.bubble").font(.system(size: 48, weight: .semibold)).foregroundStyle(AppTheme.accent)
             }
             Text(Localization.localized("lyrics.noLyrics")).font(.system(size: 20, weight: .bold)).foregroundStyle(.primary)
             Text(Localization.localized("lyrics.noLyricsSubtitle"))
@@ -209,7 +209,7 @@ struct LyricsView: View {
                             .background(
                                 currentLineIndex == index ?
                                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                    .fill(Color.accentColor.opacity(0.06)) : nil
+                                    .fill(AppTheme.accent.opacity(0.06)) : nil
                             )
                     }
                 }
