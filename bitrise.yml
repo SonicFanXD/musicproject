@@ -1,0 +1,114 @@
+format_version: '13'
+default_step_lib_source: https://github.com/bitrise-io/bitrise-steplib.git
+project_type: ios
+
+meta:
+  bitrise.io:
+    # Stack macOS con Xcode 15 (ajustable en App Settings → Stack si hace falta)
+    stack: osx-xcode-15.4.x
+    machine_type_id: g2.mac.medium
+
+app:
+  envs:
+  # Nombre del scheme/target (coincide con project.yml de XcodeGen)
+  - opts:
+      is_expand: false
+    SCHEME: AuroraPlayer
+    PROJECT: AuroraPlayer.xcodeproj
+
+workflows:
+  # ============================================================
+  # Workflow principal: build para dispositivo sin firma
+  # (equivalente al "Build for iOS Device (no code signing)")
+  # ============================================================
+  primary:
+    steps:
+    - activate-ssh-key@4:
+        run_if: '{{getenv "SSH_RSA_PRIVATE_KEY" | ne ""}}'
+    - git-clone@8: {}
+
+    # 1. XcodeGen: el repo NO tiene .xcodeproj committed, se genera
+    - brew-install@1:
+        title: Install XcodeGen (brew)
+        inputs:
+        - packages: xcodegen
+
+    - script@1:
+        title: Generate Xcode project
+        inputs:
+        - content: |
+            set -e
+            xcodegen generate
+            echo "✅ Proyecto generado:"
+            ls -la AuroraPlayer.xcodeproj
+
+    # 2. Build sin firma (no requiere cuentas ni certificados)
+    - script@1:
+        title: Build for iOS Device (no code signing)
+        inputs:
+        - content: |
+            set -e
+            set -x
+            xcodebuild \
+              -project "$PROJECT" \
+              -scheme "$SCHEME" \
+              -configuration Release \
+              -destination 'generic/platform=iOS' \
+              -derivedDataPath ./build \
+              CODE_SIGNING_ALLOWED=NO \
+              CODE_SIGNING_REQUIRED=NO \
+              CODE_SIGN_IDENTITY="" \
+              build | xcpretty
+
+    # 3. Empaquetar el .app como .ipa (unsigned) para instalar/side-load
+    - script@1:
+        title: Package unsigned .ipa
+        is_always_run: true
+        inputs:
+        - content: |
+            set -e
+            APP_PATH=$(find ./build/Build/Products -name "*.app" -type d | head -n 1)
+            if [ -z "$APP_PATH" ]; then
+              echo "⚠️ No se encontró el .app; saltando empaquetado"
+              exit 0
+            fi
+            mkdir -p Payload
+            cp -R "$APP_PATH" Payload/
+            zip -r AuroraPlayer-unsigned.zip Payload
+            mkdir -p "$BITRISE_DEPLOY_DIR"
+            cp AuroraPlayer-unsigned.zip "$BITRISE_DEPLOY_DIR/AuroraPlayer-unsigned.ipa"
+            echo "✅ IPA sin firma creada"
+
+    # 4. Publicar artifacts (descargables desde la pestaña Apps & Artifacts)
+    - deploy@1: {}
+
+  # ============================================================
+  # Deploy con firma: requiere certificados + provisioning
+  # configurados en Bitrise (Codesigndoc). Ejecutar solo cuando
+  # quieras subir a TestFlight.
+  # ============================================================
+  deploy-signed:
+    steps:
+    - activate-ssh-key@4:
+        run_if: '{{getenv "SSH_RSA_PRIVATE_KEY" | ne ""}}'
+    - git-clone@8: {}
+    - brew-install@1:
+        title: Install XcodeGen (brew)
+        inputs:
+        - packages: xcodegen
+    - script@1:
+        title: Generate Xcode project
+        inputs:
+        - content: |
+            set -e
+            xcodegen generate
+    - certificate-and-profile-installer@1: {}
+    - xcode-archive@4:
+        inputs:
+        - project_path: "$PROJECT"
+        - scheme: "$SCHEME"
+        - distribution_method: app-store
+    - deploy-to-itunes-connect@1:
+        inputs:
+        - password: "$APPLE_ID_PASSWORD"
+    - deploy@1: {}

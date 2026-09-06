@@ -45,3 +45,4 @@ Desktop.ini
 *.log
 # Herramientas locales (no parte de la app)
 OmniCopilot/
+build/
