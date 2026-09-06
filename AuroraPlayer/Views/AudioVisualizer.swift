@@ -17,8 +17,11 @@ final class VisualizerFrameRate: ObservableObject {
 
     private init() {
         update()
+        // Nota: Foundation no expone una constante Swift para el cambio de
+        // estado de energía; el nombre oficial documentado por Apple es
+        // "NSProcessInfoPowerStateDidChange".
         NotificationCenter.default.addObserver(
-            forName: ProcessInfo.powerStateDidChangeNotification,
+            forName: Notification.Name("NSProcessInfoPowerStateDidChange"),
             object: nil, queue: .main
         ) { [weak self] _ in
             Task { @MainActor in self?.update() }
