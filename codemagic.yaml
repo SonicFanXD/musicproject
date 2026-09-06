@@ -22,16 +22,31 @@ workflows:
         XCODE_PROJECT: "AuroraPlayer.xcodeproj"
         SCHEME: "AuroraPlayer"
         CONFIGURATION: "Release"
-        DERIVED_DATA: "./DerivedData"   # Ruta fija para DerivedData
+        DERIVED_DATA: "./DerivedData"
 
     scripts:
       - name: Generate Xcode project (XcodeGen)
         script: |
           brew install xcodegen
           xcodegen generate
+          echo "📋 Archivos generados:"
+          ls -la "$XCODE_PROJECT"
+
+      - name: Verify project structure
+        script: |
+          echo "🔍 Verificando Info.plist..."
+          if [ ! -f "AuroraPlayer/Info.plist" ]; then
+            echo "❌ Info.plist NO encontrado"
+            exit 1
+          fi
+          echo "✅ Info.plist encontrado"
+          echo "📋 Contenido del proyecto:"
+          ls -la AuroraPlayer/
 
       - name: Build for iOS Device (no code signing)
         script: |
+          set -o pipefail
+          echo "🔨 Iniciando build..."
           xcodebuild clean build \
             -project "$XCODE_PROJECT" \
             -scheme "$SCHEME" \
@@ -42,26 +57,35 @@ workflows:
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
             ONLY_ACTIVE_ARCH=NO \
-            | xcpretty
+            2>&1 | tee /tmp/build.log | xcpretty
+          EXIT_CODE=${PIPESTATUS[0]}
+          if [ $EXIT_CODE -ne 0 ]; then
+            echo "❌ Build falló con código $EXIT_CODE"
+            echo "🔍 Errores de compilación:"
+            grep -E "(error:|warning:)" /tmp/build.log | head -30
+            exit $EXIT_CODE
+          fi
+          echo "✅ Build exitoso"
 
       - name: Create unsigned .ipa
         script: |
-          # Ruta exacta del .app generado (por el -derivedDataPath)
           APP_PATH="$DERIVED_DATA/Build/Products/Release-iphoneos/$SCHEME.app"
           echo "📁 Buscando .app en: $APP_PATH"
           if [ ! -d "$APP_PATH" ]; then
-            echo "❌ No se encontró el .app en la ruta esperada."
-            echo "🔍 Buscando en DerivedData..."
-            find "$DERIVED_DATA" -name "*.app" -path "*/Release-iphoneos/*"
+            echo "❌ No se encontró el .app"
+            echo "🔍 Buscando .app en DerivedData..."
+            find "$DERIVED_DATA" -name "*.app" 2>/dev/null
+            echo "📋 Contenido de DerivedData:"
+            ls -la "$DERIVED_DATA/Build/Products/" 2>/dev/null || true
             exit 1
           fi
-          # Verificar que Info.plist existe
           if [ ! -f "$APP_PATH/Info.plist" ]; then
-            echo "❌ El .app no contiene Info.plist. Posible build fallido."
+            echo "❌ El .app no contiene Info.plist"
+            echo "📋 Contenido del .app:"
             ls -la "$APP_PATH"
             exit 1
           fi
-          echo "✅ .app válido encontrado. Empaquetando..."
+          echo "✅ .app válido encontrado"
           mkdir -p Payload
           cp -R "$APP_PATH" Payload/
           zip -qry AuroraPlayer_unsigned.ipa Payload
@@ -74,7 +98,7 @@ workflows:
     publishing:
       email:
         recipients:
-          - rcortez.fsv@icloud.com   # Reemplaza con tu correo real
+          - rcortez.fsv@icloud.com
         notify:
           success: true
           failure: true
