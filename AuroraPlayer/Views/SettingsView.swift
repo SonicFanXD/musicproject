@@ -71,7 +71,7 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                applyThemeBackground()
+                AppBackground()
 
                 ScrollView {
                     VStack(spacing: 22) {
@@ -213,7 +213,7 @@ struct SettingsView: View {
                 .scrollIndicators(.hidden)
             }
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(Color(UIColor.systemBackground).opacity(0.92), for: .navigationBar)
+            .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .principal) {
@@ -288,32 +288,43 @@ struct SettingsView: View {
         }
     }
 
-    // MARK: - Header
+    // MARK: - Header (diseño premium estilo NowPlayingView)
     private var headerSection: some View {
-        VStack(spacing: 14) {
+        VStack(spacing: 16) {
             ZStack {
+                // ✅ Círculo con material de vidrio (estilo NowPlayingView)
                 Circle()
-                    .fill(
-                        LinearGradient(
-                            colors: [AppTheme.accent.opacity(0.3), AppTheme.accent.opacity(0.1)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .frame(width: 80, height: 80)
+                    .fill(AnyShapeStyle(.ultraThinMaterial))
+                    .frame(width: 88, height: 88)
+                    .overlay {
+                        Circle()
+                            .stroke(
+                                LinearGradient(
+                                    colors: [AppTheme.accent.opacity(0.5), AppTheme.accent.opacity(0.1), .clear],
+                                    startPoint: .topLeading, endPoint: .bottomTrailing
+                                ),
+                                lineWidth: 2
+                            )
+                    }
+                    .shadow(color: AppTheme.accent.opacity(0.2), radius: 12, x: 0, y: 6)
 
                 Image(systemName: "gearshape.fill")
-                    .font(.system(size: 32, weight: .medium))
-                    .foregroundStyle(AppTheme.accent)
+                    .font(.system(size: 36, weight: .medium))
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [AppTheme.accent, AppTheme.accent.opacity(0.7)],
+                            startPoint: .top, endPoint: .bottom
+                        )
+                    )
             }
 
-            VStack(spacing: 4) {
+            VStack(spacing: 6) {
                 Text(Localization.localized("settings.title"))
-                    .font(.system(size: 24, weight: .bold, design: .rounded))
+                    .font(.system(size: 26, weight: .bold, design: .rounded))
                     .foregroundStyle(.primary)
 
                 Text(Localization.localized("settings.subtitle"))
-                    .font(.system(size: 13))
+                    .font(.system(size: 14))
                     .foregroundStyle(.secondary)
             }
         }
@@ -322,25 +333,29 @@ struct SettingsView: View {
         .nativeGlass(cornerRadius: 24)
     }
 
-    // MARK: - Section Builder
+    // MARK: - Section Builder (diseño premium estilo NowPlayingView)
     @ViewBuilder
     private func settingsSection<Content: View>(
         icon: String, title: String, color: Color,
         @ViewBuilder content: () -> Content
     ) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 10) {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 12) {
                 Image(systemName: icon)
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(color)
-                    .frame(width: 26, height: 26)
+                    .frame(width: 30, height: 30)
                     .background {
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .fill(color.opacity(0.12))
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(color.opacity(0.15))
+                    }
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .strokeBorder(color.opacity(0.1), lineWidth: 0.5)
                     }
 
                 Text(title)
-                    .font(.system(size: 17, weight: .semibold))
+                    .font(.system(size: 18, weight: .semibold))
                     .foregroundStyle(.primary)
             }
             .padding(.horizontal, 4)
@@ -349,8 +364,9 @@ struct SettingsView: View {
                 content()
             }
             .background {
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(.ultraThinMaterial)
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .fill(AnyShapeStyle(.ultraThinMaterial))
+                    .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 4)
             }
         }
     }
@@ -472,15 +488,19 @@ struct SettingsView: View {
         .contentShape(Rectangle())
     }
 
-    // MARK: - Icon
+    // MARK: - Icon (diseño premium estilo NowPlayingView)
     private func iconView(icon: String, color: Color) -> some View {
         Image(systemName: icon)
-            .font(.system(size: 15, weight: .medium))
+            .font(.system(size: 16, weight: .semibold))
             .foregroundStyle(color)
-            .frame(width: 30, height: 30)
+            .frame(width: 32, height: 32)
             .background {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(color.opacity(0.1))
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(color.opacity(0.12))
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(color.opacity(0.08), lineWidth: 0.5)
             }
     }
 

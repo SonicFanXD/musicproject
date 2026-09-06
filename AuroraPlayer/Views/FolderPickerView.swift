@@ -19,17 +19,10 @@ struct FolderPickerView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                LinearGradient(
-                    colors: [
-                        Color(UIColor.systemBackground),
-                        Color(UIColor.tertiarySystemBackground).opacity(0.4),
-                        Color(UIColor.systemBackground)
-                    ],
-                    startPoint: .top, endPoint: .bottom
-                ).ignoresSafeArea()
+                AppBackground()
 
                 ScrollView {
-                    VStack(spacing: 18) {
+                    VStack(spacing: 20) {
                         headerSection
 
                         actionButtons
@@ -46,7 +39,7 @@ struct FolderPickerView: View {
                 .scrollIndicators(.hidden)
             }
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(Color(UIColor.systemBackground).opacity(0.92), for: .navigationBar)
+            .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 // Título personalizado consistente con la app
@@ -88,38 +81,54 @@ struct FolderPickerView: View {
     // MARK: - Header Section con animación
 
     private var headerSection: some View {
-        VStack(spacing: 14) {
+        VStack(spacing: 16) {
             ZStack {
-                // ✅ Anillo pulsante
+                // ✅ Anillo pulsante con material de vidrio (estilo NowPlayingView)
                 Circle()
-                    .stroke(AppTheme.accent.opacity(0.2), lineWidth: 2)
-                    .frame(width: 80, height: 80)
-                    .scaleEffect(headerPulse ? 1.1 : 0.95)
-                    .opacity(headerPulse ? 0.5 : 0.2)
+                    .stroke(
+                        LinearGradient(
+                            colors: [AppTheme.accent.opacity(0.4), AppTheme.accent.opacity(0.1)],
+                            startPoint: .topLeading, endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 2
+                    )
+                    .frame(width: 88, height: 88)
+                    .scaleEffect(headerPulse ? 1.12 : 0.95)
+                    .opacity(headerPulse ? 0.6 : 0.25)
 
                 Circle()
-                    .fill(
-                        LinearGradient(
-                            colors: [AppTheme.accent.opacity(0.15), AppTheme.accent.opacity(0.05)],
-                            startPoint: .topLeading, endPoint: .bottomTrailing
-                        )
-                    )
-                    .frame(width: 68, height: 68)
+                    .fill(AnyShapeStyle(.ultraThinMaterial))
+                    .frame(width: 76, height: 76)
+                    .overlay {
+                        Circle()
+                            .stroke(
+                                LinearGradient(
+                                    colors: [AppTheme.accent.opacity(0.3), .clear],
+                                    startPoint: .topLeading, endPoint: .bottomTrailing
+                                ),
+                                lineWidth: 1.5
+                            )
+                    }
 
                 Image(systemName: "music.note.list")
-                    .font(.system(size: 28, weight: .semibold))
-                    .foregroundStyle(AppTheme.accent)
+                    .font(.system(size: 32, weight: .semibold))
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [AppTheme.accent, AppTheme.accent.opacity(0.7)],
+                            startPoint: .top, endPoint: .bottom
+                        )
+                    )
             }
             .opacity(appearAnimation ? 1 : 0)
             .scaleEffect(appearAnimation ? 1 : 0.7)
 
-            VStack(spacing: 6) {
+            VStack(spacing: 8) {
                 Text(Localization.localized("library.title"))
-                    .font(.system(size: 22, weight: .bold, design: .rounded))
+                    .font(.system(size: 24, weight: .bold, design: .rounded))
                     .foregroundStyle(.primary)
 
                 Text(Localization.localized("library.subtitle"))
-                    .font(.system(size: 14))
+                    .font(.system(size: 15))
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
             }
@@ -127,11 +136,11 @@ struct FolderPickerView: View {
             .offset(y: appearAnimation ? 0 : 10)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 18)
+        .padding(.vertical, 20)
         .background {
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .fill(.ultraThinMaterial)
-                .shadow(color: .black.opacity(0.05), radius: 10, y: 4)
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .fill(AnyShapeStyle(.ultraThinMaterial))
+                .shadow(color: .black.opacity(0.06), radius: 12, y: 5)
         }
         .animation(.easeOut(duration: 0.5).delay(0.1), value: appearAnimation)
     }

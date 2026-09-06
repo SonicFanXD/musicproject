@@ -43,7 +43,7 @@ struct QueueView: View {
                 }
             }
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(Color(UIColor.systemBackground).opacity(0.92), for: .navigationBar)
+            .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
                     .toolbar {
                         ToolbarItem(placement: .principal) {
@@ -240,30 +240,30 @@ struct QueueView: View {
             Haptics.light()
             audioEngine.play(song: song, from: audioEngine.playbackQueue)
         } label: {
-            HStack(spacing: 12) {
-                artworkMiniature(song.artwork, size: 44, corner: 10)
+            HStack(spacing: 14) {
+                artworkMiniature(song.artwork, size: 48, corner: 12)
 
-                VStack(alignment: .leading, spacing: 3) {
+                VStack(alignment: .leading, spacing: 4) {
                     Text(song.title)
-                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                        .font(.system(size: 16, weight: .semibold, design: .rounded))
                         .foregroundStyle(.primary).lineLimit(1)
                     Text(song.displaySubtitle)
-                        .font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
+                        .font(.system(size: 13)).foregroundStyle(.secondary).lineLimit(1)
                 }
 
                 Spacer()
 
                 Text(formatDuration(song.duration))
-                    .font(.system(size: 11, weight: .medium).monospacedDigit())
+                    .font(.system(size: 12, weight: .medium).monospacedDigit())
                     .foregroundStyle(.tertiary)
             }
-            .padding(.horizontal, 12).padding(.vertical, 10)
+            .padding(.horizontal, 14).padding(.vertical, 12)
             .background {
-                RoundedRectangle(cornerRadius: 14, style: .continuous).fill(.regularMaterial)
+                RoundedRectangle(cornerRadius: 18, style: .continuous).fill(AnyShapeStyle(.ultraThinMaterial))
             }
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PressableButtonStyle(scale: 0.98))
     }
 
     private func historySongRow(_ song: Song, index: Int) -> some View {
@@ -271,38 +271,46 @@ struct QueueView: View {
             Haptics.light()
             audioEngine.playFromHistory(song)
         } label: {
-            HStack(spacing: 12) {
-                artworkMiniature(song.artwork, size: 44, corner: 10)
+            HStack(spacing: 14) {
+                artworkMiniature(song.artwork, size: 48, corner: 12)
                     .overlay(alignment: .bottomTrailing) {
                         Image(systemName: "arrow.counterclockwise")
-                            .font(.system(size: 7, weight: .bold))
+                            .font(.system(size: 8, weight: .bold))
                             .foregroundStyle(.white)
-                            .padding(3)
-                            .background { Circle().fill(AppTheme.accent) }
-                            .offset(x: 3, y: 3)
+                            .padding(4)
+                            .background {
+                                Circle()
+                                    .fill(
+                                        LinearGradient(
+                                            colors: [AppTheme.accent, AppTheme.accent.opacity(0.85)],
+                                            startPoint: .topLeading, endPoint: .bottomTrailing
+                                        )
+                                    )
+                            }
+                            .offset(x: 4, y: 4)
                     }
 
-                VStack(alignment: .leading, spacing: 3) {
+                VStack(alignment: .leading, spacing: 4) {
                     Text(song.title)
-                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                        .font(.system(size: 16, weight: .semibold, design: .rounded))
                         .foregroundStyle(.primary).lineLimit(1)
                     Text(song.displaySubtitle)
-                        .font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
+                        .font(.system(size: 13)).foregroundStyle(.secondary).lineLimit(1)
                 }
 
                 Spacer()
 
                 Image(systemName: "play.circle.fill")
-                    .font(.system(size: 24))
+                    .font(.system(size: 26))
                     .foregroundStyle(AppTheme.accent)
             }
-            .padding(.horizontal, 12).padding(.vertical, 10)
+            .padding(.horizontal, 14).padding(.vertical, 12)
             .background {
-                RoundedRectangle(cornerRadius: 14, style: .continuous).fill(.regularMaterial)
+                RoundedRectangle(cornerRadius: 18, style: .continuous).fill(AnyShapeStyle(.ultraThinMaterial))
             }
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PressableButtonStyle(scale: 0.98))
     }
 
     // ✅ Componente reutilizable para miniaturas de artwork

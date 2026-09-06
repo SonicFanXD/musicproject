@@ -217,6 +217,11 @@ struct Album: Identifiable, Equatable {
         songs.first(where: { $0.artworkData != nil })?.artwork
     }
 
+    // ✅ Fecha de salida del álbum (la más antigua de las canciones)
+    var releaseDate: Date? {
+        songs.compactMap { $0.releaseDate }.min()
+    }
+
     private static let colorCache: NSCache<NSString, UIColor> = {
         let cache = NSCache<NSString, UIColor>()
         cache.countLimit = 200

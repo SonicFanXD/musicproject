@@ -37,6 +37,16 @@ struct PlayerBar: View {
         return min(max(clock.time / audioEngine.duration, 0), 1)
     }
 
+    // ✅ Color dominante del artwork para indicadores dinámicos
+    private var artworkDominantColor: Color {
+        guard let artwork = audioEngine.currentSong?.artwork else { return AppTheme.accent }
+        let cacheKey = (audioEngine.currentSong?.id.uuidString ?? "none") as NSString
+        if let cached = AppTheme.artworkColorCache.object(forKey: cacheKey) {
+            return AppTheme.readableColor(from: cached)
+        }
+        return AppTheme.accent
+    }
+
     var body: some View {
         Group {
             if let song = audioEngine.currentSong {
@@ -77,22 +87,26 @@ struct PlayerBar: View {
                             openNowPlaying()
                         }
 
-                        // ✅ Botón de me gusta
+                        // ✅ Botón de me gusta con material de vidrio (estilo NowPlayingView)
                         Button {
                             Haptics.light()
                             fileAccessService.toggleLike(song)
                         } label: {
                             Image(systemName: fileAccessService.isLiked(song) ? "heart.fill" : "heart")
-                                .font(.system(size: 14, weight: .medium))
+                                .font(.system(size: 15, weight: .semibold))
                                 .foregroundStyle(fileAccessService.isLiked(song) ? .red : .secondary)
-                                .frame(width: 36, height: 36)
-                                .contentShape(Rectangle())
+                                .frame(width: 38, height: 38)
+                                .background {
+                                    Circle().fill(AnyShapeStyle(.ultraThinMaterial))
+                                        .frame(width: 38, height: 38)
+                                }
+                                .contentShape(Circle())
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(PressableButtonStyle(scale: 0.9))
 
                         // ✅ Controles rediseñados con mejor feedback visual
-                        HStack(spacing: 2) {
-                            // Previous
+                        HStack(spacing: 4) {
+                            // ✅ Previous con material de vidrio (estilo NowPlayingView)
                             Button {
                                 Haptics.light()
                                 audioEngine.playPrevious()
@@ -100,7 +114,10 @@ struct PlayerBar: View {
                                 Image(systemName: "backward.fill")
                                     .font(.system(size: 15, weight: .semibold))
                                     .foregroundStyle(.primary)
-                                    .frame(width: 40, height: 40)
+                                    .frame(width: 42, height: 42)
+                                    .background {
+                                        Circle().fill(AnyShapeStyle(.ultraThinMaterial))
+                                    }
                                     .contentShape(Circle())
                                     .scaleEffect(playButtonScale)
                             }
@@ -118,14 +135,21 @@ struct PlayerBar: View {
                                 }
                             } label: {
                                 ZStack {
+                                    // ✅ Círculo con gradiente del color dominante
                                     Circle()
-                                        .fill(AppTheme.accent)
+                                        .fill(
+                                            LinearGradient(
+                                                colors: [artworkDominantColor, artworkDominantColor.opacity(0.85)],
+                                                startPoint: .topLeading,
+                                                endPoint: .bottomTrailing
+                                            )
+                                        )
 
                                     // ✅ Halo animado cuando reproduce
                                     Circle()
-                                        .stroke(AppTheme.accent.opacity(0.35), lineWidth: 2)
-                                        .scaleEffect(audioEngine.isPlaying ? 1.12 : 1.0)
-                                        .opacity(audioEngine.isPlaying ? 0.9 : 0)
+                                        .stroke(artworkDominantColor.opacity(0.4), lineWidth: 2)
+                                        .scaleEffect(audioEngine.isPlaying ? 1.15 : 1.0)
+                                        .opacity(audioEngine.isPlaying ? 1.0 : 0)
                                         .animation(
                                             audioEngine.isPlaying
                                                 ? .easeInOut(duration: 1.6).repeatForever(autoreverses: true)
@@ -139,14 +163,14 @@ struct PlayerBar: View {
                                         .foregroundStyle(.white)
                                 }
                                 .frame(width: compactPlayerBar ? 40 : 44, height: compactPlayerBar ? 40 : 44)
-                                .shadow(color: AppTheme.accent.opacity(0.35), radius: 8, x: 0, y: 3)
+                                .shadow(color: artworkDominantColor.opacity(0.4), radius: 10, x: 0, y: 4)
                                 .scaleEffect(playButtonScale)
                                 .contentShape(Circle())
                             }
                             .buttonStyle(PressableButtonStyle(scale: 0.88))
                             .accessibilityLabel(Localization.localized("accessibility.playPause"))
 
-                            // Next
+                            // ✅ Next con material de vidrio (estilo NowPlayingView)
                             Button {
                                 Haptics.light()
                                 audioEngine.playNext()
@@ -154,7 +178,10 @@ struct PlayerBar: View {
                                 Image(systemName: "forward.fill")
                                     .font(.system(size: 15, weight: .semibold))
                                     .foregroundStyle(.primary)
-                                    .frame(width: 40, height: 40)
+                                    .frame(width: 42, height: 42)
+                                    .background {
+                                        Circle().fill(AnyShapeStyle(.ultraThinMaterial))
+                                    }
                                     .contentShape(Circle())
                             }
                             .buttonStyle(PressableButtonStyle(scale: 0.85))
@@ -166,33 +193,36 @@ struct PlayerBar: View {
                     .padding(.top, compactPlayerBar ? 8 : 12)
                     .padding(.bottom, 4)
 
-                    // ✅ Barra de progreso mejorada con preview de scrub
+                    // ✅ Barra de progreso mejorada con preview de scrub y color dinámico
                     // ✅ FIX: .frame(maxWidth: .infinity) para que el GeometryReader
                     // se expanda al ancho completo disponible. Sin esto, el ancho
                     // podía colapsar y la barra quedaba desalineada/estrecha.
                     GeometryReader { geometry in
                         ZStack(alignment: .leading) {
+                            // ✅ Track con material de vidrio (estilo NowPlayingView)
                             Capsule()
-                                .fill(Color.secondary.opacity(0.18))
+                                .fill(Color.secondary.opacity(0.2))
                                 .frame(height: compactPlayerBar ? 3 : 4)
 
+                            // ✅ Progreso con gradiente del color dominante del artwork
                             Capsule()
                                 .fill(
                                     LinearGradient(
-                                        colors: [AppTheme.accent.opacity(0.75), AppTheme.accent],
+                                        colors: [artworkDominantColor.opacity(0.8), artworkDominantColor],
                                         startPoint: .leading,
                                         endPoint: .trailing
                                     )
                                 )
                                 .frame(width: max(4, geometry.size.width * progress), height: compactPlayerBar ? 3 : 4)
+                                .shadow(color: artworkDominantColor.opacity(0.4), radius: 4, x: 0, y: 0)
 
                             // ✅ Indicador de posición al hacer scrub
                             if isScrubbing {
                                 Circle()
-                                    .fill(AppTheme.accent)
-                                    .frame(width: 10, height: 10)
-                                    .offset(x: geometry.size.width * scrubPreviewProgress - 5)
-                                    .shadow(color: .black.opacity(0.2), radius: 4, x: 0, y: 2)
+                                    .fill(artworkDominantColor)
+                                    .frame(width: 12, height: 12)
+                                    .offset(x: geometry.size.width * scrubPreviewProgress - 6)
+                                    .shadow(color: .black.opacity(0.25), radius: 6, x: 0, y: 3)
                             }
                         }
                         .frame(height: compactPlayerBar ? 3 : 4)
@@ -232,13 +262,19 @@ struct PlayerBar: View {
                     .padding(.bottom, 8)
                 }
                 .background {
-                    // ✅ Esquinas muy redondeadas (34pt) con material premium
+                    // ✅ Esquinas muy redondeadas (34pt) con material premium (estilo NowPlayingView)
                     RoundedRectangle(cornerRadius: 34, style: .continuous)
-                        .fill(.regularMaterial)
-                        .shadow(color: .black.opacity(0.14), radius: 16, x: 0, y: 6)
+                        .fill(AnyShapeStyle(.ultraThinMaterial))
+                        .shadow(color: .black.opacity(0.18), radius: 20, x: 0, y: 8)
                     // Borde sutil superior para profundidad
                     RoundedRectangle(cornerRadius: 34, style: .continuous)
-                        .strokeBorder(Color.white.opacity(0.08), lineWidth: 0.5)
+                        .strokeBorder(
+                            LinearGradient(
+                                colors: [.white.opacity(0.15), .white.opacity(0.03), .clear],
+                                startPoint: .topLeading, endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 1
+                        )
                 }
                 .sheet(isPresented: $showingNowPlaying) {
                     NowPlayingView(audioEngine: audioEngine, fileAccessService: fileAccessService, clock: audioEngine.clock)
@@ -286,13 +322,20 @@ struct PlayerBar: View {
                 .resizable()
                 .interpolation(.high) // ✅ Mejor calidad de interpolación
                 .scaledToFill()
-                .frame(width: 46, height: 46)
+                .frame(width: 48, height: 48)
                 .clipShape(RoundedRectangle(cornerRadius: CGFloat(artworkCorner * (14.0 / 22.0)), style: .continuous))
-                .shadow(color: .black.opacity(0.15), radius: 4, x: 0, y: 2)
+                .shadow(color: .black.opacity(0.18), radius: 6, x: 0, y: 3)
                 .overlay(
-                    // ✅ Indicador de reproducción con animación suave
+                    // ✅ Indicador de reproducción con color dinámico del artwork
                     RoundedRectangle(cornerRadius: CGFloat(artworkCorner * (14.0 / 22.0)), style: .continuous)
-                        .stroke(AppTheme.accent.opacity(audioEngine.isPlaying ? 0.45 : 0.0), lineWidth: 1.5)
+                        .stroke(
+                            LinearGradient(
+                                colors: [artworkDominantColor.opacity(0.6), artworkDominantColor.opacity(0.3)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ).opacity(audioEngine.isPlaying ? 1.0 : 0.0),
+                            lineWidth: 2
+                        )
                         .animation(.easeInOut(duration: 0.35), value: audioEngine.isPlaying)
                 )
                 .contentShape(Rectangle())
@@ -304,16 +347,17 @@ struct PlayerBar: View {
                 RoundedRectangle(cornerRadius: CGFloat(artworkCorner * (14.0 / 22.0)), style: .continuous)
                     .fill(
                         LinearGradient(
-                            colors: [AppTheme.accent.opacity(0.28), AppTheme.accent.opacity(0.12)],
+                            colors: [artworkDominantColor.opacity(0.32), artworkDominantColor.opacity(0.15)],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         )
                     )
-                    .frame(width: 46, height: 46)
+                    .frame(width: 48, height: 48)
+                    .shadow(color: artworkDominantColor.opacity(0.2), radius: 6, x: 0, y: 3)
 
                 Image(systemName: audioEngine.isPlaying ? "waveform" : "music.note")
-                    .font(.system(size: 19, weight: .medium))
-                    .foregroundStyle(AppTheme.accent)
+                    .font(.system(size: 20, weight: .medium))
+                    .foregroundStyle(artworkDominantColor)
                     .animation(.easeInOut(duration: 0.3), value: audioEngine.isPlaying)
             }
             .contentShape(Rectangle())

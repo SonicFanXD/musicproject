@@ -65,7 +65,7 @@ struct ContentView: View {
                     }
                 }
                 .navigationBarTitleDisplayMode(.inline)
-                .toolbarBackground(Color(UIColor.systemBackground).opacity(0.92), for: .navigationBar)
+                .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
                 .toolbarBackground(.visible, for: .navigationBar)
                 .toolbar {
                     ToolbarItem(placement: .principal) {
@@ -150,16 +150,20 @@ struct ContentView: View {
                     if fileAccessService.isScanning && !fileAccessService.songs.isEmpty {
                         VStack {
                             Spacer()
-                            HStack(spacing: 8) {
-                                ProgressView().controlSize(.small)
+                            HStack(spacing: 10) {
+                                ProgressView()
+                                    .controlSize(.small)
+                                    .tint(AppTheme.accent)
                                 Text(Localization.localized("indexing.updating"))
-                                    .font(.caption)
+                                    .font(.system(size: 13, weight: .medium))
                                     .foregroundStyle(.secondary)
                             }
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 8)
+                            .padding(.horizontal, 18)
+                            .padding(.vertical, 10)
                             .background {
-                                Capsule().fill(.regularMaterial)
+                                Capsule()
+                                    .fill(AnyShapeStyle(.ultraThinMaterial))
+                                    .shadow(color: .black.opacity(0.1), radius: 8, y: 4)
                             }
                             .padding(.bottom, 80)
                         }
@@ -423,72 +427,108 @@ struct ContentView: View {
     }
 
     private var indexingProgressCard: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 18) {
             ZStack {
-                Circle().fill(AppTheme.accent.opacity(0.12)).frame(width: 70, height: 70)
+                // ✅ Círculo con material de vidrio (estilo NowPlayingView)
+                Circle()
+                    .fill(AnyShapeStyle(.ultraThinMaterial))
+                    .frame(width: 80, height: 80)
+                    .overlay {
+                        Circle()
+                            .stroke(
+                                LinearGradient(
+                                    colors: [AppTheme.accent.opacity(0.4), AppTheme.accent.opacity(0.1)],
+                                    startPoint: .topLeading, endPoint: .bottomTrailing
+                                ),
+                                lineWidth: 2
+                            )
+                    }
+                    .shadow(color: AppTheme.accent.opacity(0.15), radius: 10, y: 5)
+
                 Image(systemName: "square.stack.3d.up")
-                    .font(.system(size: 30, weight: .semibold))
-                    .foregroundStyle(AppTheme.accent)
+                    .font(.system(size: 34, weight: .semibold))
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [AppTheme.accent, AppTheme.accent.opacity(0.7)],
+                            startPoint: .top, endPoint: .bottom
+                        )
+                    )
             }
 
             Text(Localization.localized("indexing.indexingLibrary"))
-                .font(.system(size: 18, weight: .bold, design: .rounded))
+                .font(.system(size: 20, weight: .bold, design: .rounded))
                 .foregroundStyle(.primary)
 
-            VStack(spacing: 8) {
+            VStack(spacing: 10) {
                 GeometryReader { geo in
                     ZStack(alignment: .leading) {
-                        Capsule().fill(Color.secondary.opacity(0.15))
-                        Capsule().fill(AppTheme.accent)
+                        Capsule().fill(Color.secondary.opacity(0.18))
+                        Capsule()
+                            .fill(
+                                LinearGradient(
+                                    colors: [AppTheme.accent.opacity(0.8), AppTheme.accent],
+                                    startPoint: .leading, endPoint: .trailing
+                                )
+                            )
                             .frame(width: geo.size.width * indexingProgress)
                             .animation(.easeInOut(duration: 0.3), value: indexingProgress)
+                            .shadow(color: AppTheme.accent.opacity(0.3), radius: 4, y: 0)
                     }
                 }
-                .frame(height: 8)
+                .frame(height: 10)
 
                 HStack {
                     Text("\(fileAccessService.scanProcessed) \(Localization.localized("indexing.progress")) \(fileAccessService.scanTotal)")
-                        .font(.system(size: 12, weight: .medium).monospacedDigit())
+                        .font(.system(size: 13, weight: .medium).monospacedDigit())
                         .foregroundStyle(.secondary)
                     Spacer()
                     Text("\(Int(indexingProgress * 100))%")
-                        .font(.system(size: 12, weight: .bold).monospacedDigit())
+                        .font(.system(size: 13, weight: .bold).monospacedDigit())
                         .foregroundStyle(AppTheme.accent)
                 }
             }
             .padding(.horizontal, 8)
 
             Text(Localization.localized("indexing.preparing"))
-                .font(.system(size: 13))
+                .font(.system(size: 14))
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 28)
-        .padding(.horizontal, 16)
-        .enhancedGlass(cornerRadius: 24)
+        .padding(.vertical, 32)
+        .padding(.horizontal, 18)
+        .enhancedGlass(cornerRadius: 28)
     }
 
     private var compactIndexingRow: some View {
-        HStack(spacing: 10) {
-            ProgressView().controlSize(.small)
+        HStack(spacing: 12) {
+            ProgressView()
+                .controlSize(.small)
+                .tint(AppTheme.accent)
             Text("\(Localization.localized("indexing.processed")) \(fileAccessService.scanProcessed)/\(fileAccessService.scanTotal)")
-                .font(.system(size: 12, weight: .medium).monospacedDigit())
+                .font(.system(size: 13, weight: .medium).monospacedDigit())
                 .foregroundStyle(.secondary)
             Spacer()
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
-                    Capsule().fill(Color.secondary.opacity(0.15))
-                    Capsule().fill(AppTheme.accent)
+                    Capsule().fill(Color.secondary.opacity(0.18))
+                    Capsule()
+                        .fill(
+                            LinearGradient(
+                                colors: [AppTheme.accent.opacity(0.8), AppTheme.accent],
+                                startPoint: .leading, endPoint: .trailing
+                            )
+                        )
                         .frame(width: geo.size.width * indexingProgress)
                         .animation(.easeInOut(duration: 0.3), value: indexingProgress)
                 }
             }
-            .frame(width: 60, height: 4)
+            .frame(width: 70, height: 5)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
+        .padding(.horizontal, 18)
+        .padding(.vertical, 10)
         .background {
-            Capsule().fill(Color.secondary.opacity(0.06))
+            Capsule()
+                .fill(AnyShapeStyle(.ultraThinMaterial))
         }
         .padding(.horizontal, 12)
     }

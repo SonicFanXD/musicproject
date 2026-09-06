@@ -30,7 +30,7 @@ struct PlaylistsView: View {
                 .scrollIndicators(.hidden)
             }
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(Color(UIColor.systemBackground).opacity(0.92), for: .navigationBar)
+            .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 // Título personalizado consistente con la app
@@ -76,30 +76,47 @@ struct PlaylistsView: View {
         }
     }
 
-    // MARK: - Header Section
+    // MARK: - Header Section (diseño premium estilo NowPlayingView)
     private var headerSection: some View {
-        VStack(spacing: 14) {
+        VStack(spacing: 16) {
             ZStack {
+                // ✅ Círculo con material de vidrio (estilo NowPlayingView)
                 Circle()
-                    .fill(AppTheme.accent.opacity(0.16))
-                    .frame(width: 80, height: 80)
+                    .fill(AnyShapeStyle(.ultraThinMaterial))
+                    .frame(width: 88, height: 88)
+                    .overlay {
+                        Circle()
+                            .stroke(
+                                LinearGradient(
+                                    colors: [AppTheme.accent.opacity(0.4), AppTheme.accent.opacity(0.1)],
+                                    startPoint: .topLeading, endPoint: .bottomTrailing
+                                ),
+                                lineWidth: 2
+                            )
+                    }
+                    .shadow(color: AppTheme.accent.opacity(0.15), radius: 12, y: 6)
 
                 Image(systemName: "music.note.list")
-                    .font(.system(size: 34, weight: .semibold))
-                    .foregroundStyle(AppTheme.accent)
+                    .font(.system(size: 38, weight: .semibold))
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [AppTheme.accent, AppTheme.accent.opacity(0.7)],
+                            startPoint: .top, endPoint: .bottom
+                        )
+                    )
             }
 
             Text(Localization.localized("playlists.yourPlaylists"))
-                .font(.system(size: 24, weight: .bold))
+                .font(.system(size: 26, weight: .bold, design: .rounded))
 
             Text(Localization.localized("playlists.subtitle"))
-                .font(.system(size: 15))
+                .font(.system(size: 16))
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 24)
-        .enhancedGlass(cornerRadius: 24)
+        .padding(.vertical, 28)
+        .enhancedGlass(cornerRadius: 28)
     }
 
     // MARK: - Empty State

@@ -70,7 +70,7 @@ struct LyricsView: View {
                 }
             }
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(Color(UIColor.systemBackground).opacity(0.92), for: .navigationBar)
+            .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .principal) {
@@ -137,16 +137,43 @@ struct LyricsView: View {
         .drawingGroup(opaque: true)
     }
 
-    // MARK: - Empty Lyrics View
+    // MARK: - Empty Lyrics View (diseño premium estilo NowPlayingView)
     private var emptyLyricsView: some View {
-        VStack(spacing: 18) {
+        VStack(spacing: 20) {
             ZStack {
-                Circle().fill(AppTheme.accent.opacity(0.12)).frame(width: 100, height: 100)
-                Image(systemName: "quote.bubble").font(.system(size: 48, weight: .semibold)).foregroundStyle(AppTheme.accent)
+                // ✅ Círculo con material de vidrio (estilo NowPlayingView)
+                Circle()
+                    .fill(AnyShapeStyle(.ultraThinMaterial))
+                    .frame(width: 110, height: 110)
+                    .overlay {
+                        Circle()
+                            .stroke(
+                                LinearGradient(
+                                    colors: [AppTheme.accent.opacity(0.4), AppTheme.accent.opacity(0.1)],
+                                    startPoint: .topLeading, endPoint: .bottomTrailing
+                                ),
+                                lineWidth: 2
+                            )
+                    }
+                    .shadow(color: AppTheme.accent.opacity(0.15), radius: 12, y: 6)
+
+                Image(systemName: "quote.bubble")
+                    .font(.system(size: 52, weight: .semibold))
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [AppTheme.accent, AppTheme.accent.opacity(0.7)],
+                            startPoint: .top, endPoint: .bottom
+                        )
+                    )
             }
-            Text(Localization.localized("lyrics.noLyrics")).font(.system(size: 20, weight: .bold)).foregroundStyle(.primary)
+            Text(Localization.localized("lyrics.noLyrics"))
+                .font(.system(size: 22, weight: .bold, design: .rounded))
+                .foregroundStyle(.primary)
             Text(Localization.localized("lyrics.noLyricsSubtitle"))
-                .font(.system(size: 15)).foregroundStyle(.secondary).multilineTextAlignment(.center).padding(.horizontal, 24)
+                .font(.system(size: 16))
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 28)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity).padding(.vertical, 60)
     }

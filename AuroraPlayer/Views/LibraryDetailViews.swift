@@ -1,19 +1,19 @@
-﻿import SwiftUI
+import SwiftUI
 import CoreImage
 
-// MARK: - Album Detail (diseño inmersivo premium con color de carátula)
+// MARK: - Album Detail (dise�o inmersivo premium con color de car�tula)
 struct AlbumDetailView: View {
     let album: Album
     @ObservedObject var audioEngine: AudioEngine
     @Environment(\.dismiss) private var dismiss
 
-    // ✅ Color dominante VIVO (histograma HSB) extraído en segundo plano
+    // ? Color dominante VIVO (histograma HSB) extra�do en segundo plano
     @State private var liveDominantColor: UIColor? = nil
     @State private var appearAnimation = false
-    // ✅ OPT: blur precalculado UNA vez (en background) en vez de re-renderizar .blur(50) en cada frame
+    // ? OPT: blur precalculado UNA vez (en background) en vez de re-renderizar .blur(50) en cada frame
     @State private var heroBlurredArtwork: UIImage? = nil
 
-    // ✅ OPT: cachear cómputos costosos que se leen múltiples veces por frame
+    // ? OPT: cachear c�mputos costosos que se leen m�ltiples veces por frame
     @State private var cachedSongs: [Song] = []
     @State private var cachedTotalDuration: TimeInterval = 0
     @State private var cachedHasMultipleDiscs: Bool = false
@@ -22,11 +22,11 @@ struct AlbumDetailView: View {
     private var totalDuration: TimeInterval { cachedTotalDuration }
     private var hasMultipleDiscs: Bool { cachedHasMultipleDiscs }
     private var songsByDisc: [(disc: Int, songs: [Song])] { cachedSongsByDisc }
-    // ✅ FIX: color normalizado para legibilidad; usa el vivo si ya se extrajo
+    // ? FIX: color normalizado para legibilidad; usa el vivo si ya se extrajo
     private var tintColor: Color { AppTheme.readableColor(from: liveDominantColor ?? album.dominantColor) }
-    // ✅ UIColor crudo para calcular contraste de textos/botones
+    // ? UIColor crudo para calcular contraste de textos/botones
     private var tintUIColor: UIColor { liveDominantColor ?? album.dominantColor ?? AppTheme.accentUIColor }
-    // ✅ Contraste: blanco o negro según luminancia del color de la portada
+    // ? Contraste: blanco o negro seg�n luminancia del color de la portada
     private var onTintColor: Color { AppTheme.contrastingText(on: tintUIColor) }
 
     var body: some View {
@@ -36,7 +36,7 @@ struct AlbumDetailView: View {
                 actionButtons
                     .padding(.horizontal, 20).padding(.top, 20)
                 LazyVStack(spacing: 10) {
-                    sectionHeader(icon: "music.note.list", title: Localization.localized("details.songs"))
+                    sectionHeader(icon: "music.note.list", title: Localization.localized("details.songs"), tintColor: tintColor)
                     if hasMultipleDiscs {
                         ForEach(cachedSongsByDisc, id: \.disc) { discGroup in
                             discSection(disc: discGroup.disc, songs: discGroup.songs)
@@ -50,18 +50,18 @@ struct AlbumDetailView: View {
                     }
                 }
                 .padding(.horizontal, 20).padding(.top, 28)
-                // ✅ FIX: padding inferior amplio para que la última canción
-                // no quede oculta detrás del PlayerBar flotante.
+                // ? FIX: padding inferior amplio para que la �ltima canci�n
+                // no quede oculta detr�s del PlayerBar flotante.
                 .padding(.bottom, 130)
             }
         }
-        .background(Color(UIColor.systemBackground).ignoresSafeArea())
+        .background(AppBackground().ignoresSafeArea())
         .navigationTitle(album.name)
         .navigationBarTitleDisplayMode(.inline)
-        // ✅ Sin banda gris: el hero inmersivo fluye bajo la barra de navegación
+        // ? Sin banda gris: el hero inmersivo fluye bajo la barra de navegaci�n
         .toolbarBackground(.hidden, for: .navigationBar)
         .onAppear {
-            // ✅ Cachear cómputos una sola vez
+            // ? Cachear c�mputos una sola vez
             if cachedSongs.isEmpty {
                 cachedSongs = album.songs
                 cachedTotalDuration = cachedSongs.reduce(0) { $0 + $1.duration }
@@ -69,16 +69,16 @@ struct AlbumDetailView: View {
                 let grouped = Dictionary(grouping: cachedSongs) { $0.discNumber ?? 1 }
                 cachedSongsByDisc = grouped.keys.sorted().map { ($0, grouped[$0]!.sorted { $0.trackNumber < $1.trackNumber }) }
             }
-            // ✅ Animación de entrada suave
+            // ? Animaci�n de entrada suave
             withAnimation(.easeOut(duration: 0.4)) {
                 appearAnimation = true
             }
-            // ✅ OPT: precalcular el blur del hero UNA vez en background
+            // ? OPT: precalcular el blur del hero UNA vez en background
             prepareBlurredArtwork(from: album.artwork)
-            // ✅ Extraer el color dominante VIVO de la carátula en hilo de fondo
+            // ? Extraer el color dominante VIVO de la car�tula en hilo de fondo
             guard liveDominantColor == nil, let artwork = album.artwork else { return }
             DispatchQueue.global(qos: .userInitiated).async {
-                // ✅ Caché compartida: mismo color que NowPlaying para este álbum
+                // ? Cach� compartida: mismo color que NowPlaying para este �lbum
                 let dominant = AppTheme.cachedDominantColor(from: artwork, key: album.id)
                 DispatchQueue.main.async {
                     withAnimation(.easeInOut(duration: 0.3)) {
@@ -89,7 +89,7 @@ struct AlbumDetailView: View {
         }
     }
 
-    // ✅ OPT: gaussian blur costoso → se calcula UNA vez en hilo de fondo y se cachea
+    // ? OPT: gaussian blur costoso ? se calcula UNA vez en hilo de fondo y se cachea
     private func prepareBlurredArtwork(from artwork: UIImage?) {
         guard heroBlurredArtwork == nil, let artwork = artwork else { return }
         DispatchQueue.global(qos: .userInitiated).async {
@@ -99,43 +99,43 @@ struct AlbumDetailView: View {
     }
 
     private var heroSection: some View {
-        VStack(spacing: 20) {
-            // ✅ Artwork con animación de entrada y brillo sutil
-            // ✅ 60fps: sombra ÚNICA consolidada (la doble sombra = 2 pasadas
+        VStack(spacing: 22) {
+            // ? Artwork con animaci�n de entrada y brillo sutil
+            // ? 60fps: sombra �NICA consolidada (la doble sombra = 2 pasadas
             // de offscreen rendering por frame en A11; visualmente equivalente).
             Group {
                 if let artwork = album.artwork {
                     Image(uiImage: artwork)
                         .resizable().interpolation(.high).scaledToFill()
-                        .frame(width: 250, height: 250)
-                        .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
+                        .frame(width: 260, height: 260)
+                        .clipShape(RoundedRectangle(cornerRadius: 32, style: .continuous))
                         .overlay {
-                            // ✅ Brillo premium en el borde
-                            RoundedRectangle(cornerRadius: 26, style: .continuous)
+                            // ? Brillo premium en el borde (estilo NowPlayingView)
+                            RoundedRectangle(cornerRadius: 32, style: .continuous)
                                 .strokeBorder(
                                     LinearGradient(
-                                        colors: [.white.opacity(0.3), .white.opacity(0.05), .clear],
+                                        colors: [.white.opacity(0.35), .white.opacity(0.08), .clear],
                                         startPoint: .topLeading, endPoint: .bottomTrailing
                                     ),
-                                    lineWidth: 1.2
+                                    lineWidth: 1.5
                                 )
                         }
-                        .shadow(color: .black.opacity(0.35), radius: 22, x: 0, y: 12)
+                        .shadow(color: .black.opacity(0.4), radius: 24, x: 0, y: 14)
                 } else {
                     ZStack {
-                        RoundedRectangle(cornerRadius: 26, style: .continuous)
+                        RoundedRectangle(cornerRadius: 32, style: .continuous)
                             .fill(
                                 LinearGradient(
-                                    colors: [tintColor.opacity(0.3), tintColor.opacity(0.1), Color.secondary.opacity(0.15)],
+                                    colors: [tintColor.opacity(0.35), tintColor.opacity(0.12), Color.secondary.opacity(0.18)],
                                     startPoint: .topLeading, endPoint: .bottomTrailing
                                 )
                             )
-                            .frame(width: 250, height: 250)
+                            .frame(width: 260, height: 260)
                         Image(systemName: "square.stack")
-                            .font(.system(size: 65, weight: .light))
+                            .font(.system(size: 70, weight: .light))
                             .foregroundStyle(.secondary.opacity(0.7))
                     }
-                    .shadow(color: .black.opacity(0.2), radius: 20, x: 0, y: 10)
+                    .shadow(color: .black.opacity(0.25), radius: 22, x: 0, y: 12)
                 }
             }
             .padding(.top, 16)
@@ -143,10 +143,10 @@ struct AlbumDetailView: View {
             .opacity(appearAnimation ? 1.0 : 0)
             .animation(.spring(response: 0.5, dampingFraction: 0.8), value: appearAnimation)
 
-            // ✅ Info del álbum con mejor jerarquía visual
-            VStack(spacing: 8) {
+            // ? Info del �lbum con mejor jerarqu�a visual
+            VStack(spacing: 10) {
                 Text(album.name)
-                    .font(.system(size: 26, weight: .bold, design: .rounded))
+                    .font(.system(size: 28, weight: .bold, design: .rounded))
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.primary)
                     .lineLimit(2)
@@ -160,11 +160,14 @@ struct AlbumDetailView: View {
             .opacity(appearAnimation ? 1.0 : 0)
             .animation(.easeOut(duration: 0.5).delay(0.1), value: appearAnimation)
 
-            // ✅ Estadísticas con diseño mejorado
-            HStack(spacing: 12) {
+            // ? Estad�sticas con dise�o mejorado
+            HStack(spacing: 14) {
                 statPill(icon: "music.note", text: "\(songs.count) \(Localization.localized("library.songCount"))")
                 if totalDuration > 60 {
                     statPill(icon: "clock", text: formatLongDuration(totalDuration))
+                }
+                if let releaseDate = album.releaseDate {
+                    statPill(icon: "calendar", text: formatYear(releaseDate))
                 }
             }
             .offset(y: appearAnimation ? 0 : 10)
@@ -183,21 +186,21 @@ struct AlbumDetailView: View {
                                     colors: [
                                         tintColor.opacity(0.3),
                                         tintColor.opacity(0.1),
-                                        Color(UIColor.systemBackground).opacity(0.6)
+                                        Color(UIColor.secondarySystemBackground).opacity(0.6)
                                     ],
                                     startPoint: .top, endPoint: .bottom
                                 )
                             )
                     } else {
                         LinearGradient(
-                            colors: [tintColor.opacity(0.2), Color(UIColor.systemBackground)],
+                            colors: [tintColor.opacity(0.2), Color(UIColor.secondarySystemBackground)],
                             startPoint: .top, endPoint: .bottom
                         )
                     }
                 }
                 .frame(width: geometry.size.width, height: geometry.size.height + 80)
                 .clipped().ignoresSafeArea(edges: .top)
-                .drawingGroup() // ✅ Optimización GPU para 60fps
+                .drawingGroup() // ? Optimizaci�n GPU para 60fps
             }
         }
     }
@@ -233,26 +236,33 @@ struct AlbumDetailView: View {
                 }
             } label: {
                 Image(systemName: "shuffle")
-                    .font(.system(size: 17, weight: .bold)).foregroundStyle(tintColor)
-                    .frame(width: 54, height: 54)
+                    .font(.system(size: 18, weight: .bold)).foregroundStyle(tintColor)
+                    .frame(width: 56, height: 56)
                     .background {
                         Circle().fill(
-                            LinearGradient(colors: [tintColor.opacity(0.18), tintColor.opacity(0.08)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                            LinearGradient(colors: [tintColor.opacity(0.2), tintColor.opacity(0.1)], startPoint: .topLeading, endPoint: .bottomTrailing)
                         )
                     }
-                    .frame(width: 62, height: 62).contentShape(Circle())
+                    .frame(width: 64, height: 64)
+                    .background {
+                        Circle().fill(AnyShapeStyle(.ultraThinMaterial))
+                    }
+                    .contentShape(Circle())
             }
             .buttonStyle(PressableButtonStyle(scale: 0.9))
         }
+        .padding(.horizontal, 4)
     }
 
     private func discSection(disc: Int, songs: [Song]) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
-                Image(systemName: "opticaldisc").font(.system(size: 12, weight: .semibold)).foregroundStyle(tintColor.opacity(0.8))
-                Text("\(Localization.localized("details.disc")) \(disc)").font(.system(size: 14, weight: .semibold)).foregroundStyle(.secondary)
+                Image(systemName: "opticaldisc").font(.system(size: 13, weight: .semibold)).foregroundStyle(tintColor.opacity(0.9))
+                Text("\(Localization.localized("details.disc")) \(disc)").font(.system(size: 15, weight: .semibold)).foregroundStyle(.secondary)
             }
             .padding(.horizontal, 4).padding(.top, 6)
+            .nativeGlassCapsule()
+            .padding(.horizontal, 8)
             ForEach(Array(songs.enumerated()), id: \.element.id) { index, song in
                 AlbumSongRow(song: song, index: index, isCurrent: audioEngine.currentSong?.id == song.id, tintColor: tintColor) {
                     audioEngine.play(song: song, from: songs)
@@ -267,7 +277,7 @@ struct AlbumDetailView: View {
             Text(text).font(.system(size: 13, weight: .medium).monospacedDigit())
         }
         .foregroundStyle(.secondary).padding(.horizontal, 12).padding(.vertical, 6)
-        .background { Capsule().fill(.regularMaterial) }
+        .nativeGlassCapsule()
     }
 
     private func formatLongDuration(_ seconds: TimeInterval) -> String {
@@ -278,6 +288,13 @@ struct AlbumDetailView: View {
             return rem > 0 ? "\(hours) h \(rem) min" : "\(hours) h"
         }
         return "\(minutes) min"
+    }
+
+    // ✅ Formatear año de salida del álbum
+    private func formatYear(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy"
+        return formatter.string(from: date)
     }
 }
 
@@ -316,16 +333,20 @@ struct AlbumSongRow: View {
                 Text(formatDuration(song.duration))
                     .font(.system(size: 11, weight: .medium).monospacedDigit()).foregroundStyle(.tertiary)
             }
-            .padding(.horizontal, 14).padding(.vertical, 12)
+            .padding(.horizontal, 16).padding(.vertical, 14)
             .background {
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(isCurrent ? tintColor.opacity(0.08) : Color(.secondarySystemBackground))
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .fill(isCurrent ? tintColor.opacity(0.12) : Color.clear)
             }
             .contentShape(Rectangle())
             .overlay {
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .fill(isCurrent ? Color.clear : AnyShapeStyle(.ultraThinMaterial))
+            }
+            .overlay {
                 if isCurrent {
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .strokeBorder(tintColor.opacity(0.2), lineWidth: 0.5)
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .strokeBorder(tintColor.opacity(0.3), lineWidth: 1)
                 }
             }
         }
@@ -339,7 +360,7 @@ struct AlbumSongRow: View {
     }
 }
 
-// MARK: - Equalizer Bars (animación optimizada sin bloqueo de hilo)
+// MARK: - Equalizer Bars (animaci�n optimizada sin bloqueo de hilo)
 struct EqualizerBars: View {
     let color: Color
     @State private var animate = false
@@ -360,14 +381,15 @@ struct EqualizerBars: View {
     }
 }
 
-// MARK: - Header de sección reutilizable (con gradiente sutil)
-private func sectionHeader(icon: String, title: String) -> some View {
-    HStack(spacing: 8) {
+// MARK: - Header de secci�n reutilizable (con gradiente sutil y color din�mico)
+private func sectionHeader(icon: String, title: String, tintColor: Color? = nil) -> some View {
+    let gradientColor = tintColor ?? AppTheme.accent
+    return HStack(spacing: 8) {
         Image(systemName: icon)
             .font(.system(size: 14, weight: .semibold))
             .foregroundStyle(
                 LinearGradient(
-                    colors: [AppTheme.accent, AppTheme.accent.opacity(0.7)],
+                    colors: [gradientColor, gradientColor.opacity(0.7)],
                     startPoint: .top, endPoint: .bottom
                 )
             )
@@ -386,10 +408,10 @@ struct ArtistDetailView: View {
 
     @State private var appearAnimation = false
     @State private var liveDominantColor: UIColor? = nil
-    // ✅ OPT: blur precalculado UNA vez (en background)
+    // ? OPT: blur precalculado UNA vez (en background)
     @State private var heroBlurredArtwork: UIImage? = nil
 
-    // ✅ OPT: cachear cómputos
+    // ? OPT: cachear c�mputos
     @State private var cachedAlbums: [Album] = []
     @State private var cachedSongs: [Song] = []
     @State private var cachedTotalDuration: TimeInterval = 0
@@ -398,7 +420,7 @@ struct ArtistDetailView: View {
     private var totalDuration: TimeInterval { cachedTotalDuration }
     private var tintColor: Color { AppTheme.readableColor(from: liveDominantColor ?? artist.albums.first?.dominantColor) }
     private var tintUIColor: UIColor { liveDominantColor ?? artist.albums.first?.dominantColor ?? AppTheme.accentUIColor }
-    // ✅ Contraste para botones (igual que AlbumDetailView)
+    // ? Contraste para botones (igual que AlbumDetailView)
     private var onTintColor: Color { AppTheme.contrastingText(on: tintUIColor) }
 
     var body: some View {
@@ -409,7 +431,7 @@ struct ArtistDetailView: View {
                     .padding(.horizontal, 20).padding(.top, 18)
                 if !albums.isEmpty {
                     VStack(alignment: .leading, spacing: 14) {
-                        sectionHeader(icon: "square.stack", title: Localization.localized("details.albums"))
+                        sectionHeader(icon: "square.stack", title: Localization.localized("details.albums"), tintColor: tintColor)
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 14) {
                                 ForEach(cachedAlbums) { album in
@@ -427,7 +449,7 @@ struct ArtistDetailView: View {
                     .padding(.top, 28)
                 }
                 LazyVStack(spacing: 10) {
-                    sectionHeader(icon: "music.note.list", title: Localization.localized("details.songs"))
+                    sectionHeader(icon: "music.note.list", title: Localization.localized("details.songs"), tintColor: tintColor)
                     ForEach(Array(cachedSongs.enumerated()), id: \.element.id) { index, song in
                         ArtistSongRow(song: song, index: index, isCurrent: audioEngine.currentSong?.id == song.id, tintColor: tintColor) {
                             audioEngine.play(song: song, from: cachedSongs)
@@ -435,17 +457,17 @@ struct ArtistDetailView: View {
                     }
                 }
                 .padding(.horizontal, 20).padding(.top, 28)
-                // ✅ FIX: padding inferior amplio para el PlayerBar flotante
+                // ? FIX: padding inferior amplio para el PlayerBar flotante
                 .padding(.bottom, 130)
             }
         }
-        .background(Color(UIColor.systemBackground).ignoresSafeArea())
+        .background(AppBackground().ignoresSafeArea())
         .navigationTitle(artist.name)
         .navigationBarTitleDisplayMode(.inline)
-        // ✅ Sin banda gris (coherente con AlbumDetailView)
+        // ? Sin banda gris (coherente con AlbumDetailView)
         .toolbarBackground(.hidden, for: .navigationBar)
         .onAppear {
-            // ✅ Cachear cómputos una sola vez
+            // ? Cachear c�mputos una sola vez
             if cachedAlbums.isEmpty {
                 cachedAlbums = artist.albums
                 cachedSongs = artist.songs
@@ -454,12 +476,12 @@ struct ArtistDetailView: View {
             withAnimation(.easeOut(duration: 0.4)) {
                 appearAnimation = true
             }
-            // ✅ OPT: precalcular el blur del hero UNA vez en background
+            // ? OPT: precalcular el blur del hero UNA vez en background
             prepareBlurredArtwork(from: artist.artwork)
-            // ✅ Extraer color del primer álbum
+            // ? Extraer color del primer �lbum
             guard liveDominantColor == nil, let artwork = artist.artwork else { return }
                 DispatchQueue.global(qos: .userInitiated).async {
-                    // ✅ Caché compartida por id de artista
+                    // ? Cach� compartida por id de artista
                     let dominant = AppTheme.cachedDominantColor(from: artwork, key: "artist-" + artist.id)
                     DispatchQueue.main.async {
                         withAnimation(.easeInOut(duration: 0.3)) {
@@ -470,7 +492,7 @@ struct ArtistDetailView: View {
             }
         }
 
-    // ✅ OPT: gaussian blur costoso → se calcula UNA vez en hilo de fondo y se cachea
+    // ? OPT: gaussian blur costoso ? se calcula UNA vez en hilo de fondo y se cachea
     private func prepareBlurredArtwork(from artwork: UIImage?) {
         guard heroBlurredArtwork == nil, let artwork = artwork else { return }
         DispatchQueue.global(qos: .userInitiated).async {
@@ -480,40 +502,40 @@ struct ArtistDetailView: View {
     }
 
     private var artistHeroSection: some View {
-        VStack(spacing: 18) {
-            // ✅ Avatar del artista con animación y efectos mejorados
+        VStack(spacing: 22) {
+            // ? Avatar del artista con animaci�n y efectos mejorados
             Group {
                 if let artwork = artist.artwork {
                     Image(uiImage: artwork)
                         .resizable().interpolation(.high).scaledToFill()
-                        .frame(width: 160, height: 160)
+                        .frame(width: 170, height: 170)
                         .clipShape(Circle())
                         .overlay {
-                            // ✅ Borde con gradiente premium
+                            // ? Borde con gradiente premium (estilo NowPlayingView)
                             Circle().strokeBorder(
                                 LinearGradient(
-                                    colors: [.white.opacity(0.4), tintColor.opacity(0.6), .white.opacity(0.1)],
+                                    colors: [.white.opacity(0.45), tintColor.opacity(0.7), .white.opacity(0.15)],
                                     startPoint: .topLeading, endPoint: .bottomTrailing
                                 ),
-                                lineWidth: 3
+                                lineWidth: 3.5
                             )
                         }
-                        // ✅ 60fps: sombra única consolidada (antes: doble)
-                        .shadow(color: tintColor.opacity(0.25), radius: 18, x: 0, y: 8)
+                        // ? 60fps: sombra �nica consolidada (antes: doble)
+                        .shadow(color: tintColor.opacity(0.3), radius: 22, x: 0, y: 10)
                 } else {
                     ZStack {
                         Circle().fill(
                             LinearGradient(
-                                colors: [tintColor.opacity(0.4), tintColor.opacity(0.15), Color.secondary.opacity(0.2)],
+                                colors: [tintColor.opacity(0.45), tintColor.opacity(0.18), Color.secondary.opacity(0.25)],
                                 startPoint: .topLeading, endPoint: .bottomTrailing
                             )
                         )
-                        .frame(width: 160, height: 160)
+                        .frame(width: 170, height: 170)
                         Image(systemName: "person.fill")
-                            .font(.system(size: 52, weight: .light))
+                            .font(.system(size: 56, weight: .light))
                             .foregroundStyle(.white.opacity(0.9))
                     }
-                    .shadow(color: tintColor.opacity(0.2), radius: 15, x: 0, y: 8)
+                    .shadow(color: tintColor.opacity(0.25), radius: 18, x: 0, y: 10)
                 }
             }
             .padding(.top, 20)
@@ -521,14 +543,14 @@ struct ArtistDetailView: View {
             .opacity(appearAnimation ? 1.0 : 0)
             .animation(.spring(response: 0.5, dampingFraction: 0.8), value: appearAnimation)
 
-            // ✅ Info del artista con mejor jerarquía visual
-            VStack(spacing: 8) {
+            // ? Info del artista con mejor jerarqu�a visual
+            VStack(spacing: 10) {
                 Text(artist.name)
-                    .font(.system(size: 28, weight: .bold, design: .rounded))
+                    .font(.system(size: 30, weight: .bold, design: .rounded))
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.primary)
                     .lineLimit(2)
-                HStack(spacing: 10) {
+                HStack(spacing: 14) {
                     statPill(icon: "music.note", text: "\(songs.count) \(Localization.localized("songs"))")
                     if !albums.isEmpty {
                         statPill(icon: "square.stack", text: "\(albums.count) \(Localization.localized("details.albumsStat"))")
@@ -555,21 +577,21 @@ struct ArtistDetailView: View {
                                     colors: [
                                         tintColor.opacity(0.25),
                                         tintColor.opacity(0.1),
-                                        Color(UIColor.systemBackground).opacity(0.5)
+                                        Color(UIColor.secondarySystemBackground).opacity(0.5)
                                     ],
                                     startPoint: .top, endPoint: .bottom
                                 )
                             )
                     } else {
                         LinearGradient(
-                            colors: [tintColor.opacity(0.2), Color(UIColor.systemBackground)],
+                            colors: [tintColor.opacity(0.2), Color(UIColor.secondarySystemBackground)],
                             startPoint: .top, endPoint: .bottom
                         )
                     }
                 }
                 .frame(width: geometry.size.width, height: geometry.size.height + 80)
                 .clipped().ignoresSafeArea(edges: .top)
-                .drawingGroup() // ✅ Optimización GPU para 60fps
+                .drawingGroup() // ? Optimizaci�n GPU para 60fps
             }
         }
     }
@@ -605,17 +627,22 @@ struct ArtistDetailView: View {
                 }
             } label: {
                 Image(systemName: "shuffle")
-                    .font(.system(size: 17, weight: .bold)).foregroundStyle(tintColor)
-                    .frame(width: 54, height: 54)
+                    .font(.system(size: 18, weight: .bold)).foregroundStyle(tintColor)
+                    .frame(width: 56, height: 56)
                     .background {
                         Circle().fill(
-                            LinearGradient(colors: [tintColor.opacity(0.18), tintColor.opacity(0.08)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                            LinearGradient(colors: [tintColor.opacity(0.2), tintColor.opacity(0.1)], startPoint: .topLeading, endPoint: .bottomTrailing)
                         )
                     }
-                    .frame(width: 62, height: 62).contentShape(Circle())
+                    .frame(width: 64, height: 64)
+                    .background {
+                        Circle().fill(AnyShapeStyle(.ultraThinMaterial))
+                    }
+                    .contentShape(Circle())
             }
             .buttonStyle(PressableButtonStyle(scale: 0.9))
         }
+        .padding(.horizontal, 4)
     }
 
     private func statPill(icon: String, text: String) -> some View {
@@ -624,7 +651,7 @@ struct ArtistDetailView: View {
             Text(text).font(.system(size: 13, weight: .medium).monospacedDigit())
         }
         .foregroundStyle(.secondary).padding(.horizontal, 12).padding(.vertical, 6)
-        .background { Capsule().fill(.regularMaterial) }
+        .nativeGlassCapsule()
     }
 
     private func formatLongDuration(_ seconds: TimeInterval) -> String {
@@ -649,21 +676,22 @@ struct ArtistAlbumCard: View {
                     Image(uiImage: artwork)
                         .resizable().scaledToFill()
                         .frame(width: 150, height: 150)
-                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
                         .overlay {
-                            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                .strokeBorder(.white.opacity(0.1), lineWidth: 1)
+                            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                                .strokeBorder(.white.opacity(0.15), lineWidth: 1)
                         }
-                        .shadow(color: .black.opacity(0.22), radius: 12, x: 0, y: 6)
+                        .shadow(color: .black.opacity(0.25), radius: 14, x: 0, y: 7)
                 } else {
                     ZStack {
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        RoundedRectangle(cornerRadius: 20, style: .continuous)
                             .fill(
-                                LinearGradient(colors: [AppTheme.accent.opacity(0.22), Color.secondary.opacity(0.15)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                                LinearGradient(colors: [AppTheme.accent.opacity(0.25), Color.secondary.opacity(0.18)], startPoint: .topLeading, endPoint: .bottomTrailing)
                             )
                             .frame(width: 150, height: 150)
-                        Image(systemName: "square.stack").font(.system(size: 34)).foregroundStyle(.secondary.opacity(0.7))
+                        Image(systemName: "square.stack").font(.system(size: 36)).foregroundStyle(.secondary.opacity(0.7))
                     }
+                    .shadow(color: .black.opacity(0.2), radius: 12, x: 0, y: 6)
                 }
             }
 
@@ -676,7 +704,7 @@ struct ArtistAlbumCard: View {
             }
         }
         .frame(width: 150)
-        // ✅ Micro-escala al presionar la tarjeta (feedback premium, GPU)
+        // ? Micro-escala al presionar la tarjeta (feedback premium, GPU)
         .contentShape(Rectangle())
     }
 }
@@ -696,7 +724,7 @@ struct ArtistSongRow: View {
         } label: {
             HStack(spacing: 14) {
                 if isCurrent {
-                    EqualizerBars(color: AppTheme.accent)
+                    EqualizerBars(color: tintColor)
                 } else {
                     Text("\(index + 1)")
                         .font(.system(size: 14, weight: .medium).monospacedDigit())
@@ -716,20 +744,24 @@ struct ArtistSongRow: View {
                 Text(formatDuration(song.duration))
                     .font(.system(size: 11, weight: .medium).monospacedDigit()).foregroundStyle(.tertiary)
             }
-            .padding(.horizontal, 14).padding(.vertical, 12)
+            .padding(.horizontal, 16).padding(.vertical, 14)
             .background {
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(isCurrent ? tintColor.opacity(0.08) : Color(.secondarySystemBackground))
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .fill(isCurrent ? tintColor.opacity(0.12) : Color.clear)
             }
             .contentShape(Rectangle())
             .overlay {
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .fill(isCurrent ? Color.clear : AnyShapeStyle(.ultraThinMaterial))
+            }
+            .overlay {
                 if isCurrent {
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .strokeBorder(tintColor.opacity(0.2), lineWidth: 0.5)
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .strokeBorder(tintColor.opacity(0.3), lineWidth: 1)
                 }
             }
         }
-        // ✅ Feedback de presión al tocar (micro-escala, animación GPU)
+        // ? Feedback de presi�n al tocar (micro-escala, animaci�n GPU)
         .buttonStyle(PressableButtonStyle(scale: 0.98))
     }
 

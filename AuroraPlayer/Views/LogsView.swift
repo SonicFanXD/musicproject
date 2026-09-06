@@ -84,7 +84,7 @@ struct LogsView: View {
                 }
             }
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(Color(UIColor.systemBackground).opacity(0.92), for: .navigationBar)
+            .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 // Título personalizado consistente con la app
@@ -264,21 +264,27 @@ struct LogsView: View {
     private func filterChip(title: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(title)
-                .font(.caption.weight(.semibold))
+                .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(isSelected ? .white : .secondary)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
                 .background {
                     if isSelected {
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .fill(AppTheme.accent)
+                        Capsule()
+                            .fill(
+                                LinearGradient(
+                                    colors: [AppTheme.accent, AppTheme.accent.opacity(0.85)],
+                                    startPoint: .topLeading, endPoint: .bottomTrailing
+                                )
+                            )
+                            .shadow(color: AppTheme.accent.opacity(0.3), radius: 6, x: 0, y: 3)
                     } else {
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .fill(Color.secondary.opacity(0.12))
+                        Capsule()
+                            .fill(AnyShapeStyle(.ultraThinMaterial))
                     }
                 }
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PressableButtonStyle(scale: 0.95))
     }
 
     // MARK: - Log Entries List
@@ -310,39 +316,43 @@ struct LogsView: View {
     }
 
     private func logEntryRow(entry: InAppLogEntry) -> some View {
-        HStack(alignment: .top, spacing: 10) {
-            // Level indicator
-            VStack(alignment: .leading, spacing: 4) {
+        HStack(alignment: .top, spacing: 12) {
+            // Level indicator con material de vidrio (estilo NowPlayingView)
+            VStack(alignment: .leading, spacing: 6) {
                 Text(entry.level)
-                    .font(.system(size: 10, weight: .bold))
+                    .font(.system(size: 11, weight: .bold))
                     .foregroundStyle(levelColor(for: entry.level))
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
                     .background {
                         Capsule()
                             .fill(levelColor(for: entry.level).opacity(0.15))
+                            .overlay {
+                                Capsule()
+                                    .strokeBorder(levelColor(for: entry.level).opacity(0.1), lineWidth: 0.5)
+                            }
                     }
 
                 Text(entry.category.displayName)
-                    .font(.caption2)
+                    .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(.secondary)
             }
-            .frame(width: 80, alignment: .leading)
+            .frame(width: 85, alignment: .leading)
 
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 6) {
                 Text(entry.message)
-                    .font(.caption)
+                    .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(.primary)
                     .lineLimit(4)
 
-                HStack(spacing: 8) {
+                HStack(spacing: 10) {
                     Text(formatDate(entry.date))
-                        .font(.caption2)
+                        .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(.tertiary)
 
                     if let duration = entry.duration {
                         Text("· \(String(format: "%.1f", duration * 1000))ms")
-                            .font(.caption2)
+                            .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(.tertiary)
                             .monospacedDigit()
                     }
@@ -351,11 +361,11 @@ struct LogsView: View {
 
             Spacer()
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
         .background {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color.secondary.opacity(0.06))
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(AnyShapeStyle(.ultraThinMaterial))
         }
     }
 
