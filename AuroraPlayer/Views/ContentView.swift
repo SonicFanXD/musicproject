@@ -3,7 +3,6 @@ import SwiftUI
 struct ContentView: View {
     @StateObject private var audioEngine = AudioEngine()
     @StateObject private var fileAccessService = FileAccessService()
-    // ✅ Observar el idioma: al cambiar, esta vista se re-renderiza al instante
     @ObservedObject private var localization = Localization.shared
 
     @State private var hasRestored = false
@@ -12,14 +11,12 @@ struct ContentView: View {
     @State private var showPlaylists = false
     @State private var showFolderPicker = false
 
-    // ✅ Categoría persistida: recordar la última pestaña usada
     @AppStorage("com.aurora.selectedCategory") private var selectedCategoryRaw = LibraryCategory.songs.rawValue
     private var selectedCategory: LibraryCategory {
         LibraryCategory(rawValue: selectedCategoryRaw) ?? .songs
     }
     @State private var searchText = ""
     
-    // ✅ Opciones de ordenamiento para categorías (persistidas)
     @AppStorage("com.aurora.songSort") private var sortOptionRaw = SortOption.title.rawValue
     private var sortOption: SortOption {
         SortOption(rawValue: sortOptionRaw) ?? .title
@@ -41,9 +38,6 @@ struct ContentView: View {
                     VStack(spacing: 0) {
                         categoryPicker
 
-                        // ✅ Cada categoría tiene su propio List, así el scroll
-                        // es independiente: scrollear en Canciones no afecta
-                        // a Álbumes, Artistas ni Listas.
                         Group {
                             switch selectedCategory {
                             case .songs:
@@ -56,15 +50,9 @@ struct ContentView: View {
                                 libraryList(id: "playlists") { playlistsSection }
                             }
                         }
-                        // ✅ FIX: cambio de categoría instantáneo y limpio.
-                        // Sin esto, la animación spring heredada hacía que las
-                        // tarjetas/material (vacío o indexando) aparecieran con
-                        // un efecto feo al alternar secciones.
                         .animation(nil, value: selectedCategory)
-                        // ✅ Pull-to-refresh para re-escanear la biblioteca
                         .refreshable {
                             fileAccessService.refreshAllFolders()
-                            // mantener el indicador visible un momento
                             try? await Task.sleep(nanoseconds: 600_000_000)
                         }
                         .searchable(
@@ -120,13 +108,8 @@ struct ContentView: View {
                 }
                 .onAppear {
                     restoreLibraryIfNeeded()
-                    // ✅ Sincronizar "Mantener pantalla encendida" con el engine
                     audioEngine.isKeepScreenOnEnabled = keepScreenOnUserDefaults
-                    // ✅ Crear playlist "Me Gusta" si no existe
                     fileAccessService.ensureLikedPlaylistExists()
-                    // ✅ Ajuste "Reproducir al iniciar" (antes no se aplicaba):
-                    // reanudar la reproducción si la app arranca con una pista
-                    // restaurada en pausa.
                     if autoPlayOnStart,
                        audioEngine.currentSong != nil,
                        !audioEngine.isPlaying {
@@ -136,13 +119,10 @@ struct ContentView: View {
                             }
                         }
                     }
-                    // ✅ Si el caché ya cargó antes de este onAppear, cerrar splash ya
                     if fileAccessService.isInitialLibraryLoaded {
                         withAnimation(.easeOut(duration: 0.3)) { isInitialLoad = false }
                     }
                 }
-                // ✅ Respaldo del splash con Task (antes dependía de una
-                // notificación que podía no llegar si la app ya estaba activa)
                 .task {
                     try? await Task.sleep(nanoseconds: 8_000_000_000)
                     if isInitialLoad {
@@ -152,9 +132,6 @@ struct ContentView: View {
                 .sheet(isPresented: $showFolderPicker) {
                     FolderPickerView(fileAccessService: fileAccessService)
                 }
-                // ✅ Splash inteligente: permanece hasta que el caché de la
-                // biblioteca termine de cargar, así la app muestra las canciones
-                // desde el primer frame en vez de una interfaz vacía.
                 .onChange(of: fileAccessService.isInitialLibraryLoaded) { loaded in
                     if loaded {
                         hasRestored = false
@@ -200,17 +177,13 @@ struct ContentView: View {
         .animation(.easeInOut(duration: 0.35), value: fileAccessService.isScanning)
     }
 
-    // Acceso al ajuste de pantalla encendida para sincronizar con el engine
     @AppStorage("com.aurora.keepScreenOn") private var keepScreenOnUserDefaults = false
-    // ✅ Ajuste "Reproducir al iniciar" (antes solo existía en Ajustes sin efecto)
     @AppStorage("com.aurora.autoPlayOnStart") private var autoPlayOnStart = false
 
-    // MARK: - Empty State con acción directa
     @ViewBuilder
     private func emptyLibraryView(icon: String, title: String, message: String) -> some View {
         VStack(spacing: 18) {
             ContentUnavailableLibraryView(icon: icon, title: title, message: message)
-            // ✅ Acción directa: agregar carpeta sin ir a Ajustes
             if fileAccessService.folders.isEmpty && fileAccessService.files.isEmpty {
                 Button {
                     Haptics.light()
@@ -237,7 +210,6 @@ struct ContentView: View {
         .listRowBackground(Color.clear)
     }
 
-    // MARK: - Library List (uno por categoría → scroll independiente)
     private func libraryList<Content: View>(
         id: String,
         @ViewBuilder content: () -> Content
@@ -246,19 +218,16 @@ struct ContentView: View {
             content()
                 .id(id)
         }
-        .id(id) // recrea el List al cambiar de categoría → scroll desde arriba
+        .id(id)
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
     }
 
-    // MARK: - Category Picker (cápsulas premium con material)
     private var categoryPicker: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 10) {
                 ForEach(LibraryCategory.allCases, id: \.self) { category in
                     Button {
-                        // ✅ Cambio directo sin animación: la nueva sección
-                        // aparece limpia, sin tarjetas "volando" al entrar.
                         selectedCategoryRaw = category.rawValue
                     } label: {
                         HStack(spacing: 7) {
@@ -312,17 +281,6 @@ struct ContentView: View {
         }
     }
 
-    // MARK: - Library Content
-    @ViewBuilder
-    private var libraryContent: some View {
-        switch selectedCategory {
-        case .songs: songsSection
-        case .albums: albumsSection
-        case .artists: artistsSection
-        case .playlists: playlistsSection
-        }
-    }
-
     @ViewBuilder
     private var songsSection: some View {
         let currentFilteredSongs = filteredSongs
@@ -353,7 +311,6 @@ struct ContentView: View {
                     .listRowSeparator(.hidden)
                     .listRowBackground(Color.clear)
             }
-            // ✅ Botón de ordenamiento
             sortButtonRow
                 .listRowSeparator(.hidden)
                 .listRowBackground(Color.clear)
@@ -363,7 +320,6 @@ struct ContentView: View {
         }
     }
     
-    // ✅ Botón de ordenamiento para canciones
     private var sortButtonRow: some View {
         Menu {
             ForEach(SortOption.allCases, id: \.self) { option in
@@ -379,7 +335,6 @@ struct ContentView: View {
                 }
             }
             Divider()
-            // ✅ Dirección del orden: ascendente / descendente
             Button {
                 songSortAscending = true
             } label: {
@@ -412,7 +367,6 @@ struct ContentView: View {
         .padding(.horizontal, 16)
     }
 
-    // ✅ Botón de ordenamiento para álbumes (con dirección asc/desc)
     private var albumSortButtonRow: some View {
         Menu {
             ForEach(AlbumSortOption.allCases, id: \.self) { option in
@@ -460,7 +414,6 @@ struct ContentView: View {
         .padding(.horizontal, 16)
     }
 
-    // MARK: - Indexing Progress Cards
     private var indexingProgressCard: some View {
         VStack(spacing: 16) {
             ZStack {
@@ -550,7 +503,6 @@ struct ContentView: View {
             )
             .listRowSeparator(.hidden).listRowBackground(Color.clear)
         } else {
-            // ✅ Botón de ordenamiento para álbumes
             albumSortButtonRow
                 .listRowSeparator(.hidden)
                 .listRowBackground(Color.clear)
@@ -626,7 +578,6 @@ struct ContentView: View {
         let isLiked = fileAccessService.isLiked(song)
         
         HStack(spacing: 14) {
-            // Botón de artwork que reproduce la canción
             Button {
                 playSong(song)
             } label: {
@@ -660,6 +611,7 @@ struct ContentView: View {
                     Spacer(minLength: 10)
                     
                     if isCurrent {
+                        // ✅ 60fps: drawingGroup rasteriza las barras animadas
                         HStack(spacing: 2.5) {
                             ForEach(0..<3, id: \.self) { bar in
                                 RoundedRectangle(cornerRadius: 1)
@@ -671,6 +623,7 @@ struct ContentView: View {
                                     )
                             }
                         }
+                        .drawingGroup()
                     } else {
                         Text(formatDuration(song.duration))
                             .font(.system(size: 11, weight: .medium).monospacedDigit())
@@ -680,7 +633,6 @@ struct ContentView: View {
             }
             .buttonStyle(.plain)
             
-            // ✅ Botón de me gusta (separado del botón de reproducción)
             Button {
                 Haptics.light()
                 fileAccessService.toggleLike(song)
@@ -693,7 +645,6 @@ struct ContentView: View {
             }
             .buttonStyle(.plain)
             
-            // ✅ Menú de agregar a playlist (separado del botón de reproducción)
             Menu {
                 if fileAccessService.playlists.isEmpty {
                     Text(Localization.localized("library.noPlaylists"))
@@ -726,7 +677,6 @@ struct ContentView: View {
                     )
             }
         }
-        // ✅ Menú contextual al mantener presionada una canción
         .contextMenu {
             Button {
                 playSong(song)
@@ -793,7 +743,6 @@ struct ContentView: View {
                 .scaledToFill()
                 .frame(width: 48, height: 48)
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .shadow(color: .black.opacity(0.1), radius: 3, x: 0, y: 1.5)
         } else {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(
@@ -812,7 +761,6 @@ struct ContentView: View {
         }
     }
 
-    // MARK: - Filtering & Sorting
     private var normalizedQuery: String {
         searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
@@ -830,16 +778,12 @@ struct ContentView: View {
                 $0.album.lowercased().contains(query)
             }
         }
-        // ✅ Aplicar ordenamiento seleccionado
         return sortSongs(filtered)
     }
     
-    /// ✅ Ordenar canciones según la opción y dirección seleccionadas
     private func sortSongs(_ songs: [Song]) -> [Song] {
         let ascending = songSortAscending
         switch sortOption {
-        // ✅ localizedStandardCompare: orden estilo Finder/Música (tildes correctas,
-        // "Track 2" antes que "Track 10")
         case .title:
             return songs.sorted {
                 let r = $0.title.localizedStandardCompare($1.title)
@@ -878,11 +822,9 @@ struct ContentView: View {
                 $0.artist.lowercased().contains(query)
             }
         }
-        // ✅ Aplicar ordenamiento y dirección seleccionados
         return sortAlbums(filtered)
     }
 
-    /// ✅ Ordenar álbumes según la opción y dirección seleccionadas
     private func sortAlbums(_ albums: [Album]) -> [Album] {
         let ascending = albumSortAscending
         switch albumSort {
@@ -927,7 +869,6 @@ struct ContentView: View {
     }
 }
 
-// MARK: - Splash View
 struct SplashView: View {
     @State private var isAnimating = false
 
@@ -956,8 +897,6 @@ struct SplashView: View {
     }
 }
 
-// MARK: - Library Category
-// ✅ FIX idioma: los títulos usan Localization (antes estaban hardcodeados)
 enum LibraryCategory: String, CaseIterable {
     case songs, albums, artists, playlists
 
@@ -971,8 +910,6 @@ enum LibraryCategory: String, CaseIterable {
     }
 }
 
-// ✅ Opciones de ordenamiento para canciones
-// ✅ FIX idioma: títulos localizados (antes hardcodeados)
 enum SortOption: String, CaseIterable {
     case title, artist, album, duration, year, recentlyAdded
     
@@ -999,8 +936,6 @@ enum SortOption: String, CaseIterable {
     }
 }
 
-// ✅ Opciones de ordenamiento para álbumes
-// ✅ FIX idioma: títulos localizados (antes hardcodeados)
 enum AlbumSortOption: String, CaseIterable {
     case title, artist, songCount, year
 
@@ -1023,7 +958,6 @@ enum AlbumSortOption: String, CaseIterable {
     }
 }
 
-// MARK: - Album List Row
 private func albumListRow(_ album: Album) -> some View {
     HStack(spacing: 14) {
         Group {
@@ -1032,7 +966,6 @@ private func albumListRow(_ album: Album) -> some View {
                     .resizable().interpolation(.medium).scaledToFill()
                     .frame(width: 52, height: 52)
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    .shadow(color: .black.opacity(0.1), radius: 3, x: 0, y: 1.5)
             } else {
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .fill(Color.secondary.opacity(0.12))
@@ -1067,7 +1000,6 @@ private func albumListRow(_ album: Album) -> some View {
     }
 }
 
-// MARK: - Artist List Row
 private func artistListRow(_ artist: Artist) -> some View {
     HStack(spacing: 14) {
         Group {
@@ -1076,7 +1008,6 @@ private func artistListRow(_ artist: Artist) -> some View {
                     .resizable().interpolation(.medium).scaledToFill()
                     .frame(width: 52, height: 52)
                     .clipShape(Circle())
-                    .shadow(color: .black.opacity(0.1), radius: 3, x: 0, y: 1.5)
             } else {
                 Circle().fill(Color.secondary.opacity(0.12))
                     .frame(width: 52, height: 52)
@@ -1108,7 +1039,6 @@ private func artistListRow(_ artist: Artist) -> some View {
     }
 }
 
-// MARK: - Empty Library
 struct ContentUnavailableLibraryView: View {
     let icon: String
     let title: String
@@ -1137,7 +1067,6 @@ struct ContentUnavailableLibraryView: View {
     }
 }
 
-// MARK: - Playlist Library Card
 struct playlistLibraryCard: View {
     let playlist: Playlist
 
@@ -1149,7 +1078,6 @@ struct playlistLibraryCard: View {
                         .resizable().scaledToFill()
                         .frame(width: 140, height: 140)
                         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                        .shadow(color: .black.opacity(0.15), radius: 8, x: 0, y: 4)
                 } else {
                     ZStack {
                         RoundedRectangle(cornerRadius: 16, style: .continuous)
@@ -1172,79 +1100,6 @@ struct playlistLibraryCard: View {
                     .font(.system(size: 14, weight: .semibold, design: .rounded))
                     .foregroundStyle(.primary).lineLimit(1)
                 Text("\(playlist.songIDs.count) \(Localization.localized("library.songCount"))")
-                    .font(.system(size: 12)).foregroundStyle(.secondary)
-            }
-        }
-        .frame(width: 140).padding(.vertical, 8)
-    }
-}
-
-// MARK: - Album Library Row
-struct AlbumLibraryRow: View {
-    let album: Album
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Group {
-                if let artwork = album.artwork {
-                    Image(uiImage: artwork)
-                        .resizable().scaledToFill()
-                        .frame(width: 140, height: 140)
-                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                } else {
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(Color.secondary.opacity(0.15))
-                        .frame(width: 140, height: 140)
-                        .overlay {
-                            Image(systemName: "square.stack")
-                                .font(.system(size: 35))
-                                .foregroundStyle(.secondary)
-                        }
-                }
-            }
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text(album.name)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(.primary).lineLimit(1)
-                Text(album.artist)
-                    .font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
-                Text("\(album.songs.count) \(Localization.localized("library.songCount"))")
-                    .font(.system(size: 11)).foregroundStyle(.tertiary)
-            }
-        }
-        .frame(width: 140).padding(.vertical, 8)
-    }
-}
-
-// MARK: - Artist Library Row
-struct ArtistLibraryRow: View {
-    let artist: Artist
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Group {
-                if let artwork = artist.artwork {
-                    Image(uiImage: artwork)
-                        .resizable().scaledToFill()
-                        .frame(width: 140, height: 140)
-                        .clipShape(Circle())
-                } else {
-                    Circle().fill(Color.secondary.opacity(0.15))
-                        .frame(width: 140, height: 140)
-                        .overlay {
-                            Image(systemName: "person.fill")
-                                .font(.system(size: 35))
-                                .foregroundStyle(.secondary)
-                        }
-                }
-            }
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text(artist.name)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(.primary).lineLimit(1)
-                Text("\(artist.songs.count) \(Localization.localized("library.songCount"))")
                     .font(.system(size: 12)).foregroundStyle(.secondary)
             }
         }

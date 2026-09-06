@@ -49,8 +49,9 @@ struct PlayerBar: View {
                             }
 
                             // ✅ Mini visualizador junto al título cuando reproduce
-                            // (respeta el ajuste "Visualizador en barra")
-                            if audioEngine.isPlaying && showVisualizerInBar {
+                            // ✅ 60fps: drawingGroup rasteriza las 3 barras animadas
+                            // en la GPU una vez (evita re-render por frame en A11)
+                            if audioEngine.isPlaying {
                                 HStack(spacing: 2.5) {
                                     ForEach(0..<3, id: \.self) { bar in
                                         RoundedRectangle(cornerRadius: 1)
@@ -62,6 +63,8 @@ struct PlayerBar: View {
                                             )
                                     }
                                 }
+                                .drawingGroup()
+                            }
                             }
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -116,6 +119,7 @@ struct PlayerBar: View {
                                         .fill(Color.accentColor)
 
                                     // ✅ Halo animado cuando reproduce
+                                    // ✅ 60fps: drawingGroup rasteriza el halo en GPU
                                     Circle()
                                         .stroke(Color.accentColor.opacity(0.35), lineWidth: 2)
                                         .scaleEffect(audioEngine.isPlaying ? 1.12 : 1.0)
@@ -126,6 +130,7 @@ struct PlayerBar: View {
                                                 : .easeOut(duration: 0.2),
                                             value: audioEngine.isPlaying
                                         )
+                                        .drawingGroup()
 
                                     Image(systemName: audioEngine.isPlaying ? "pause.fill" : "play.fill")
                                         .font(.system(size: 16, weight: .bold))

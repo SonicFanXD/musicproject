@@ -367,14 +367,19 @@ struct NowPlayingView: View {
                         .frame(width: geometry.size.width * progress, height: barHeight)
                         // ✅ Glow más notorio mientras se arrastra
                         .shadow(color: isScrubbing ? extractedColor.opacity(0.6) : extractedColor.opacity(0.3), radius: isScrubbing ? 8 : 4, x: 0, y: 0)
-                        // ✅ Indicador circular al final de la barra
-                        .overlay {
+                    // ✅ IndicADOR CIRCULAR: posicionado con .position en vez de
+                        // .offset (el offset causaba el "punto blanco" fuera de lugar).
+                        // Solo visible cuando hay progreso intermedio.
+                        .overlay(alignment: .leading) {
                             Circle()
                                 .fill(.white)
                                 .frame(width: isScrubbing ? 14 : 10, height: isScrubbing ? 14 : 10)
                                 .shadow(color: .black.opacity(0.2), radius: 3, x: 0, y: 1)
-                                .offset(x: (geometry.size.width * progress) - (isScrubbing ? 7 : 5))
-                                .opacity(progress > 0 && progress < 1 ? 1 : 0)
+                                .position(
+                                    x: geometry.size.width * progress,
+                                    y: barHeight / 2
+                                )
+                                .opacity(progress > 0.01 && progress < 0.99 ? 1 : 0)
                         }
                 }
                 .onAppear {
