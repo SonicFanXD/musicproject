@@ -156,6 +156,10 @@ class AudioEngine: NSObject, ObservableObject {
     // detectar cuándo se reinicia la MISMA canción (repeat-one / álbum de una
     // sola canción) y aplicar el re-programado con delay.
     private var currentFileURL: URL?
+    // ✅ PRE-CARGA PARA GAPLESS: archivo siguiente ya cargado en memoria para
+    // transición instantánea sin gap entre canciones consecutivas.
+    private var preloadedNextFile: AVAudioFile?
+    private var preloadedNextSong: Song?
 
     // ✅ CROSSFADE: eliminado por completo (era la fuente principal de bugs
     // ✅ CROSSFADE: eliminado por completo (era la fuente principal de bugs
@@ -720,6 +724,8 @@ class AudioEngine: NSObject, ObservableObject {
             addToHistory(song)
             updateNextUpQueue()
             saveState()
+            // ✅ Pre-cargar la siguiente canción para gapless instantáneo.
+            preloadNextSong()
         } catch {
             // 🔍 LOG: registrar la causa exacta por la que el AVAudioEngine falló
             // (formato no soportado, archivo corrupto, engine no arrancable, etc.)
@@ -854,6 +860,8 @@ class AudioEngine: NSObject, ObservableObject {
         duration = 0
         currentSong = nil
         currentFileURL = nil
+        preloadedNextFile = nil
+        preloadedNextSong = nil
         stopDisplayTimer()
         isStopping = false
         saveState()
@@ -895,6 +903,8 @@ class AudioEngine: NSObject, ObservableObject {
     /// Encadena la siguiente canción directamente en el nodo sin detenerlo,
     /// logrando transición sin silencio (gapless). Si la siguiente canción
     /// requiere reconectar el graph (formato distinto), cae al proceso normal.
+    /// ✅ PRE-CARGA: usa el archivo ya cargado en memoria si coincide con la
+    /// siguiente canción → transacción instantánea sin gap de I/O.
     private func chainNextSong() {
         guard let index = computeNextIndex() else {
             stop()
@@ -902,7 +912,15 @@ class AudioEngine: NSObject, ObservableObject {
         }
         let nextSong = playlist[index]
 
-        guard let file = try? AVAudioFile(forReading: nextSong.url) else {
+        // ✅ PRE-CARGA: si ya tenemos el archivo cargado, usarlo directamente.
+        let file: AVAudioFile
+        if let preloaded = preloadedNextFile, preloadedNextSong?.id == nextSong.id {
+            file = preloaded
+            preloadedNextFile = nil
+            preloadedNextSong = nil
+        } else if let f = try? AVAudioFile(forReading: nextSong.url) {
+            file = f
+        } else {
             currentIndex = index
             playCurrentSong()
             return
@@ -946,11 +964,44 @@ class AudioEngine: NSObject, ObservableObject {
         addToHistory(nextSong)
         updateNextUpQueue()
         saveState()
+        // ✅ Pre-cargar la siguiente canción para el próximo gapless.
+        preloadNextSong()
     }
 
-    /// Programa un segmento encadenado al anterior (at: nil) para gapless.
-    /// Usa AVAudioTime para encadenar en el momento exacto donde termina el
-    /// segmento actual, evitando gaps y reproducciones erráticas.
+    /// ✅ PRE-CARGA: carga el archivo de la siguiente canción en memoria
+    /// para que el gapless sea instantáneo (sin gap de I/O de disco).
+    /// Se llama al terminar una canción y al iniciar reproducción.
+    private func preloadNextSong() {
+        guard !isUsingFallback, !isShuffleEnabled else {
+            preloadedNextFile = nil
+            preloadedNextSong = nil
+            return
+        }
+        guard let nextIndex = computeNextIndex() else {
+            preloadedNextFile = nil
+            preloadedNextSong = nil
+            return
+        }
+        let nextSong = playlist[nextIndex]
+        // Solo pre-cargar si el formato es compatible (evita recargar si no se puede encadenar).
+        if let file = try? AVAudioFile(forReading: nextSong.url) {
+            let fileFormat = file.processingFormat
+            let needsReconnect = connectedFormatKey != nil && formatKey(fileFormat) != connectedFormatKey
+            if !needsReconnect {
+                preloadedNextFile = file
+                preloadedNextSong = nextSong
+            } else {
+                preloadedNextFile = nil
+                preloadedNextSong = nil
+            }
+        } else {
+            preloadedNextFile = nil
+            preloadedNextSong = nil
+        }
+    }
+
+    /// Programa un segmento encadenado al anterior para gapless.
+    /// El sistema decide cuándo encadenar automáticamente (at: nil).
     private func scheduleChainedFile(_ file: AVAudioFile, from startSeconds: TimeInterval) {
         let generation = scheduleGeneration
         let safeStartFrame = AVAudioFramePosition(startSeconds * sampleRate)
@@ -964,27 +1015,11 @@ class AudioEngine: NSObject, ObservableObject {
             return
         }
 
-        // ✅ FIX GAPLESS ROBUSTO: calcular el momento exacto donde termina el
-        // segmento actual usando lastRenderTime. Si no está disponible o el nodo
-        // no está reproduciendo, usar at: nil (el sistema decide cuándo encadenar).
-        let scheduleTime: AVAudioTime?
-        if playerNode.isPlaying,
-           let lastRender = playerNode.lastRenderTime,
-           let playerTime = playerNode.playerTime(forNodeTime: lastRender) {
-            // Calcular frames restantes del segmento actual
-            let elapsedInSegment = playerTime.sampleTime
-            // Estimación: asumimos que el segmento actual tiene ~duration*sampleRate frames
-            // y programamos justo cuando termine
-            scheduleTime = AVAudioTime(sampleTime: elapsedInSegment + AVAudioFramePosition(duration * playerTime.sampleRate), atRate: playerTime.sampleRate)
-        } else {
-            scheduleTime = nil
-        }
-
         playerNode.scheduleSegment(
             file,
             startingFrame: safeStartFrame,
             frameCount: framesToPlay,
-            at: scheduleTime
+            at: nil
         ) { [weak self] in
             DispatchQueue.main.async {
                 guard let self = self,
@@ -995,14 +1030,6 @@ class AudioEngine: NSObject, ObservableObject {
             }
         }
         hasScheduledFile = true
-
-        // ✅ Reiniciar el nodo si se detuvo entre segmentos (evita silencio total)
-        if !playerNode.isPlaying {
-            if !engine.isRunning {
-                try? startEngineSafely()
-            }
-            playerNode.play()
-        }
     }
 
     func playPrevious() {
@@ -1202,22 +1229,9 @@ class AudioEngine: NSObject, ObservableObject {
             return
         }
 
-        // ✅ Gapless: intentar encadenar. Si chainNextSong no puede (fin de playlist,
-        // error de formato, etc.), el flujo normal se encargará de stop() o repeat.
+        // ✅ Gapless: intentar encadenar. chainNextSong maneja stop() si no hay más.
         stopDisplayTimer()
         chainNextSong()
-
-        // ✅ FIX ANTI-CONGELAMIENTO: si después de chainNextSong el estado sigue
-        // siendo "reproduciendo la misma canción sin avance", forzar el motor para
-        // que el watchdog detecte el problema en el próximo tick.
-        if scheduleGeneration == generation, isPlaying {
-            // chainNextSong no pudo avanzar (posible fallo de formato). Programar
-            // un retry en el siguiente runloop para evitar bloquear el completion.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
-                guard let self, self.isPlaying else { return }
-                self.handlePlaybackFinished()
-            }
-        }
     }
 
     // ✅ WATCHDOG: seguridad contra completions perdidos. Si el display timer
