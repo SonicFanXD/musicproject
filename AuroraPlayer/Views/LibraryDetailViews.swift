@@ -67,7 +67,7 @@ struct AlbumDetailView: View {
             guard let artwork = album.artwork else { return }
             DispatchQueue.global(qos: .userInitiated).async {
                 // ✅ Caché compartida: mismo color que NowPlaying para este álbum
-                let dominant = AppTheme.cachedDominantColor(from: artwork, key: album.id.uuidString)
+                let dominant = AppTheme.cachedDominantColor(from: artwork, key: album.id)
                 DispatchQueue.main.async {
                     withAnimation(.easeInOut(duration: 0.3)) {
                         self.liveDominantColor = dominant
@@ -283,7 +283,7 @@ struct AlbumDetailView: View {
             .padding(.horizontal, 14).padding(.vertical, 12)
             .background {
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(isCurrent ? tintColor.opacity(0.08) : .regularMaterial)
+                    .fill(isCurrent ? AnyShapeStyle(tintColor.opacity(0.08)) : AnyShapeStyle(.regularMaterial))
             }
             .contentShape(Rectangle())
             .overlay {
@@ -411,7 +411,7 @@ struct ArtistDetailView: View {
             if let artwork = artist.artwork {
                 DispatchQueue.global(qos: .userInitiated).async {
                     // ✅ Caché compartida por id de artista
-                    let dominant = AppTheme.cachedDominantColor(from: artwork, key: "artist-" + artist.id.uuidString)
+                    let dominant = AppTheme.cachedDominantColor(from: artwork, key: "artist-" + artist.id)
                     DispatchQueue.main.async {
                         withAnimation(.easeInOut(duration: 0.3)) {
                             self.liveDominantColor = dominant
@@ -645,7 +645,7 @@ struct ArtistDetailView: View {
             .padding(.horizontal, 14).padding(.vertical, 12)
             .background {
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(isCurrent ? tintColor.opacity(0.08) : .regularMaterial)
+                    .fill(isCurrent ? AnyShapeStyle(tintColor.opacity(0.08)) : AnyShapeStyle(.regularMaterial))
             }
             .contentShape(Rectangle())
             .overlay {
