@@ -311,6 +311,7 @@ struct PlayerBar: View {
             }
         }
     }
+}
 
 // MARK: - ButtonStyle con feedback de presión (reusable, GPU barato)
 struct PressableButtonStyle: ButtonStyle {
