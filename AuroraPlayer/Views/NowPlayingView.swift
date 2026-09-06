@@ -483,7 +483,6 @@ struct NowPlayingView: View {
             }
 
             featureButton(icon: "airplayaudio", active: audioEngine.outputPortType == AVAudioSession.Port.airPlay.rawValue) {
-            } picker: {
                 AirPlayRoutePickerView()
                     .frame(width: buttonSize, height: buttonSize)
                     .opacity(0.011)
@@ -533,10 +532,11 @@ struct NowPlayingView: View {
     }
 
     @ViewBuilder
-    private func featureButton<Picker: View>(
+    // ✅ Overload sin picker (la mayoría de botones de feature)
+    @ViewBuilder
+    private func featureButton(
         icon: String,
         active: Bool,
-        @ViewBuilder picker: () -> Picker? = { nil },
         action: @escaping () -> Void
     ) -> some View {
         let buttonSize: CGFloat = isCompactScreen ? 56 : 64
@@ -559,10 +559,41 @@ struct NowPlayingView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+        }
+        .frame(width: buttonSize, height: buttonSize)
+    }
 
-            if let picker = picker() {
-                picker
+    // ✅ Overload con picker (AirPlay superpuesto, iOS 16+)
+    @ViewBuilder
+    private func featureButton<Picker: View>(
+        icon: String,
+        active: Bool,
+        @ViewBuilder picker: () -> Picker
+    ) -> some View {
+        let buttonSize: CGFloat = isCompactScreen ? 56 : 64
+        let capsuleWidth: CGFloat = isCompactScreen ? 42 : 48
+        let capsuleHeight: CGFloat = isCompactScreen ? 32 : 36
+        let iconSize: CGFloat = isCompactScreen ? 14 : 16
+
+        ZStack {
+            Button {
+                // El picker nativo maneja el toque
+            } label: {
+                ZStack {
+                    Capsule()
+                        .fill(active ? extractedColor.opacity(0.2) : Color.clear)
+                        .frame(width: capsuleWidth, height: capsuleHeight)
+
+                    Image(systemName: icon)
+                        .font(.system(size: iconSize, weight: active ? .bold : .semibold))
+                        .foregroundStyle(active ? playIconColor : AppTheme.contrastingText(on: extractedUIColor).opacity(0.7))
+                }
+                .frame(width: buttonSize, height: buttonSize)
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+
+            picker()
         }
         .frame(width: buttonSize, height: buttonSize)
     }
