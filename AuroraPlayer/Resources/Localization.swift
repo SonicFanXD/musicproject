@@ -107,6 +107,7 @@ final class Localization: ObservableObject {
 
             // Vista Now Playing
             "nowPlaying.title": [.spanish: "Reproduciendo", .english: "Now Playing"],
+            "nowPlaying.close": [.spanish: "Cerrar", .english: "Close"],
             "nowPlaying.queue": [.spanish: "Cola", .english: "Queue"],
             "nowPlaying.lyrics": [.spanish: "Letras", .english: "Lyrics"],
             "nowPlaying.addQueue": [.spanish: "Añadir a cola", .english: "Add to Queue"],
@@ -175,6 +176,7 @@ final class Localization: ObservableObject {
             "audio.quality.stereo": [.spanish: "Estéreo", .english: "Stereo"],
             "audio.quality.mono": [.spanish: "Mono", .english: "Mono"],
             "audio.quality.hiRes": [.spanish: "Hi-Res", .english: "Hi-Res"],
+            "quality.standard": [.spanish: "Estándar", .english: "Standard"],
             "settings.audioOutput": [.spanish: "Salida de audio", .english: "Audio Output"],
             "settings.playbackRoute": [.spanish: "Ruta de reproducción", .english: "Playback Route"],
             "settings.device": [.spanish: "Dispositivo", .english: "Device"],

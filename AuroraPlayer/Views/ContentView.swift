@@ -84,6 +84,7 @@ struct ContentView: View {
                                 showPlaylists = true
                             } label: {
                                 Image(systemName: "music.note.list")
+                                    .foregroundStyle(AppTheme.accent)
                                     .font(.system(size: 16, weight: .medium))
                                     .frame(width: 44, height: 44)
                                     .contentShape(Rectangle())
@@ -93,6 +94,7 @@ struct ContentView: View {
                                 showSettings = true
                             } label: {
                                 Image(systemName: "gearshape.fill")
+                                    .foregroundStyle(AppTheme.accent)
                                     .font(.system(size: 16, weight: .medium))
                                     .frame(width: 44, height: 44)
                                     .contentShape(Rectangle())

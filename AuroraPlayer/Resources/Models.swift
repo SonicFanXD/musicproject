@@ -163,7 +163,7 @@ extension Song {
         var components: [String] = []
         if !artist.isEmpty { components.append(artist) }
         if !album.isEmpty { components.append(album) }
-        return components.joined(separator: " â€¢ ")
+        return components.joined(separator: " • ")
     }
 
     /// DescripciÃ³n detallada del formato de audio basada en metadatos reales del archivo
@@ -192,7 +192,7 @@ extension Song {
             parts.append(Localization.localized("audio.quality.hiRes"))
         }
 
-        return parts.joined(separator: " Â· ")
+        return parts.joined(separator: " · ")
     }
 }
 

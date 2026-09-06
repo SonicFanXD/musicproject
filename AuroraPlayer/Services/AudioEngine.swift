@@ -40,7 +40,30 @@ class AudioEngine: NSObject, ObservableObject {
             }
         }
     }
-    @Published var currentRouteName: String = "Altavoz"
+    @Published var currentRouteName: String = ""
+
+    /// ✅ Nombre de ruta para mostrar SIEMPRE localizado según el idioma de la
+    /// app (antes el default era "Altavoz" hardcodeado → se veía en español
+    /// con el idioma en inglés). Para salidas con nombre propio (Bluetooth,
+    /// AirPlay) muestra el nombre del dispositivo; para internas, la etiqueta
+    /// localizada del tipo.
+    var routeDisplay: String {
+        switch outputPortType {
+        case AVAudioSession.Port.builtInSpeaker.rawValue: return Localization.localized("quality.internalSpeaker")
+        case AVAudioSession.Port.builtInReceiver.rawValue: return Localization.localized("quality.internalReceiver")
+        case AVAudioSession.Port.headphones.rawValue: return Localization.localized("quality.wiredHeadphones")
+        case AVAudioSession.Port.usbAudio.rawValue: return Localization.localized("quality.wiredUsb")
+        case AVAudioSession.Port.carAudio.rawValue: return Localization.localized("quality.wirelessCar")
+        case AVAudioSession.Port.bluetoothA2DP.rawValue,
+             AVAudioSession.Port.bluetoothLE.rawValue,
+             AVAudioSession.Port.bluetoothHFP.rawValue:
+            return currentRouteName.isEmpty ? Localization.localized("quality.wirelessBt") : currentRouteName
+        case AVAudioSession.Port.airPlay.rawValue:
+            return currentRouteName.isEmpty ? Localization.localized("quality.wirelessAirPlay") : currentRouteName
+        default:
+            return currentRouteName.isEmpty ? Localization.localized("quality.internal") : currentRouteName
+        }
+    }
     // ✅ Tipo de salida (idioma-independiente): la detección por nombre
     // localizado ("Altavoz") fallaba fuera de español. Ahora usamos portType.
     @Published var outputPortType: String = ""
@@ -546,7 +569,18 @@ class AudioEngine: NSObject, ObservableObject {
         if !engine.outputConnectionPoints(for: monoMixerNode, outputBus: 0).isEmpty {
             engine.disconnectNodeOutput(monoMixerNode)
         }
+        // ✅ FIX mono: cambiar el formato de salida de un nodo MIENTRAS el
+        // engine renderiza no siempre se aplica (iOS puede seguir usando la
+        // conexión vieja en el render thread). Detener y relanzar el engine
+        // garantiza que la nueva conexión mono/estéreo tome efecto de inmediato.
+        let wasRunning = engine.isRunning
+        if wasRunning { engine.stop() }
         engine.connect(monoMixerNode, to: engine.mainMixerNode, format: monoMixerOutputFormat())
+        if wasRunning {
+            do { try engine.start() } catch {
+                AppLog.error(.playback, error, context: "applyMonoAudio: relanzar engine")
+            }
+        }
 
         // Si hay reproducción activa, re-programar el segmento para que el
         // cambio se aplique al instante (mismo patrón que toggleEQ).
@@ -968,17 +1002,14 @@ class AudioEngine: NSObject, ObservableObject {
                     AppLog.error(.playback, error, context: "resume: reactivar engine")
                 }
             } else {
-                playerNode.play()
-                // ✅ FIX CRÍTICO (desincronización pausa/play): playerNode.pause()
-                // NO resetea playerTime.sampleTime (persiste al reanudar), pero
-                // pause() recolocó seekOffset a la posición absoluta. El display
-                // timer calcula seekOffset + sampleTime/sampleRate → DOBLE conteo
-                // y la barra (y las letras) saltaban a cualquier lado. Re-anclar:
-                // seekOffset = posición absoluta - muestras ya renderizadas.
                 if let nodeTime = playerNode.lastRenderTime,
                    let playerTime = playerNode.playerTime(forNodeTime: nodeTime) {
                     seekOffset = max(0, currentTime - Double(playerTime.sampleTime) / sampleRate)
                 }
+                clock.time = currentTime
+                playerNode.play()
+                // El bloque original re-anclaba DESPUÉS de play(); ahora el
+                // re-anclaje ocurre arriba, con sampleTime aún congelado.
                 if let nextNode = nextPlayerNode, isCrossfading {
                     nextNode.play()
                     // ✅ FIX: si se pausó a mitad del crossfade, el timer de
@@ -1514,8 +1545,10 @@ class AudioEngine: NSObject, ObservableObject {
         DispatchQueue.main.async {
             self.outputSampleRate = newRate
             self.outputChannelCount = newChannels
-            let rateInfo = newRate >= 48000 ? "Hi-Res" : "Estándar"
-            let channelInfo = newChannels >= 2 ? "Estéreo" : "Mono"
+            // ✅ Localizado: antes "Estándar"/"Estéreo" quedaban fijos en español
+            // aunque la app estuviera en inglés.
+            let rateInfo = newRate >= 48000 ? "Hi-Res" : Localization.localized("quality.standard")
+            let channelInfo = newChannels >= 2 ? Localization.localized("audio.quality.stereo") : Localization.localized("audio.quality.mono")
             self.audioQualityInfo = "\(rateInfo) • \(Int(newRate))Hz • \(channelInfo)"
         }
     }
@@ -1565,6 +1598,13 @@ class AudioEngine: NSObject, ObservableObject {
 
             self.updateRouteName()
             self.updateAudioQuality()
+            // ✅ FIX: algunas rutas (Bluetooth sobre todo) reportan el cambio
+            // con retraso o en dos pasos; re-verificar tras un breve delay
+            // para no quedarnos con la ruta/salida anterior en la UI.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+                self?.updateRouteName()
+                self?.updateAudioQuality()
+            }
         }
     }
 

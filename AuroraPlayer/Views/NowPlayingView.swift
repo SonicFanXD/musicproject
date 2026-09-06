@@ -135,6 +135,40 @@ struct NowPlayingView: View {
                 .padding(.horizontal, 24)
                 .fixedSize(horizontal: false, vertical: true)
             }
+            // ✅ Header personalizado: la navigation bar del sistema pintaba un
+            // recuadro gris/negro sobre el fondo inmersivo. safeAreaInset dibuja
+            // el chevron + título SIN ningún fondo y empuja el contenido.
+            .safeAreaInset(edge: .top, spacing: 0) {
+                HStack(spacing: 0) {
+                    Button {
+                        dismiss()
+                    } label: {
+                        Image(systemName: "chevron.down")
+                            .foregroundStyle(extractedColor)
+                            .font(.system(size: 17, weight: .semibold))
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(Localization.localized("nowPlaying.close"))
+
+                    Spacer()
+
+                    Text(Localization.localized("nowPlaying.title"))
+                        .font(.system(size: 20, weight: .bold, design: .rounded))
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: [extractedColor, extractedColor.opacity(0.75)],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+
+                    Spacer()
+                    Color.clear.frame(width: 44, height: 44)
+                }
+                .padding(.horizontal, 8)
+            }
             .onAppear {
                 extractColorFromArtwork()
                 withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
@@ -170,32 +204,7 @@ struct NowPlayingView: View {
             }
             .presentationDetents([.large])
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(.hidden, for: .navigationBar)
-            .toolbar {
-                ToolbarItem(placement: .principal) {
-                    Text(Localization.localized("nowPlaying.title"))
-                        .font(.system(size: 20, weight: .bold, design: .rounded))
-                        .foregroundStyle(
-                            LinearGradient(
-                                colors: [extractedColor, extractedColor.opacity(0.75)],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                        )
-                        .accessibilityLabel(Localization.localized("nowPlaying.title"))
-                }
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button {
-                        dismiss()
-                    } label: {
-                        Image(systemName: "chevron.down")
-                            .foregroundStyle(extractedColor)
-                            .font(.system(size: 17, weight: .semibold))
-                            .frame(width: 44, height: 44)
-                            .contentShape(Rectangle())
-                    }
-                }
-            }
+            .toolbar(.hidden, for: .navigationBar)
             .sheet(isPresented: $showLyrics) {
                 LyricsView(song: audioEngine.currentSong, audioEngine: audioEngine, clock: audioEngine.clock)
             }
@@ -352,6 +361,24 @@ struct NowPlayingView: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel(Localization.localized("quality.viewDetails"))
             }
+
+            // ✅ Me gusta movido aquí: debajo de las ondas, junto a la info de
+            // calidad de la canción (antes estaba en la fila de transporte).
+            Button {
+                Haptics.light()
+                if let song = audioEngine.currentSong {
+                    fileAccessService.toggleLike(song)
+                }
+            } label: {
+                Image(systemName: isCurrentLiked ? "heart.fill" : "heart")
+                    .font(.system(size: 18, weight: isCurrentLiked ? .bold : .semibold))
+                    .foregroundStyle(isCurrentLiked ? Color.red : AppTheme.contrastingText(on: extractedUIColor).opacity(0.7))
+                    .frame(width: 44, height: 34)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .animation(.spring(response: 0.3, dampingFraction: 0.6), value: isCurrentLiked)
+            .accessibilityLabel(Localization.localized("actions.like"))
         }
         .padding(.horizontal, 6)
     }
@@ -544,27 +571,6 @@ struct NowPlayingView: View {
                 }
                 .frame(width: isCompactScreen ? 56 : 64, height: isCompactScreen ? 56 : 64)
                 .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            // Me gusta (junto a Repeat)
-            Button {
-                Haptics.light()
-                if let song = audioEngine.currentSong {
-                    fileAccessService.toggleLike(song)
-                }
-            } label: {
-                ZStack {
-                    Capsule()
-                        .fill(isCurrentLiked ? Color.red.opacity(0.25) : Color.clear)
-                        .frame(width: isCompactScreen ? 42 : 46, height: isCompactScreen ? 30 : 36)
-
-                    Image(systemName: isCurrentLiked ? "heart.fill" : "heart")
-                        .font(.system(size: isCompactScreen ? 15 : 17, weight: isCurrentLiked ? .bold : .semibold))
-                        .foregroundStyle(isCurrentLiked ? Color.red : AppTheme.contrastingText(on: extractedUIColor).opacity(0.7))
-                }
-                .frame(width: isCompactScreen ? 56 : 64, height: isCompactScreen ? 56 : 64)
-                .contentShape(Rectangle())
-                .animation(.spring(response: 0.3, dampingFraction: 0.6), value: isCurrentLiked)
             }
             .buttonStyle(.plain)
         }

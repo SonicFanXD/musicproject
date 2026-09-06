@@ -182,7 +182,7 @@ struct SettingsView: View {
                             settingsDivider
                             settingsInfoRow(title: Localization.localized("settings.audioOutput"), value: audioEngine.audioQualityInfo.isEmpty ? "\(Int(audioEngine.outputSampleRate / 1000)) kHz · \(audioEngine.outputChannelCount)" : audioEngine.audioQualityInfo, icon: "speaker.wave.2.fill", color: .indigo)
                             settingsDivider
-                            settingsInfoRow(title: Localization.localized("settings.playbackRoute"), value: audioEngine.currentRouteName, icon: "airplayaudio", color: .blue)
+                            settingsInfoRow(title: Localization.localized("settings.playbackRoute"), value: audioEngine.routeDisplay, icon: "airplayaudio", color: .blue)
                             settingsDivider
                             // ✅ Modelo comercial real (ej. "iPhone 13 Pro") en vez de "iPhone"
                             settingsInfoRow(title: Localization.localized("settings.device"), value: audioEngine.deviceModelName, icon: "iphone", color: .gray)

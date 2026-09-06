@@ -271,7 +271,7 @@ struct AudioQualityDetailView: View {
     }
 
     private var outputSummary: String {
-        var parts: [String] = [audioEngine.currentRouteName]
+        var parts: [String] = [audioEngine.routeDisplay]
         if audioEngine.outputSampleRate > 0 { parts.append("\(Int(audioEngine.outputSampleRate / 1000)) kHz") }
         if audioEngine.outputChannelCount > 0 { parts.append(audioEngine.outputChannelCount >= 2 ? Localization.localized("quality.stereo") : Localization.localized("quality.mono")) }
         return parts.joined(separator: " · ")
@@ -293,7 +293,7 @@ struct AudioQualityDetailView: View {
     // MARK: - Detalles de salida
     private var outputDetailsSection: some View {
         settingsSection(title: Localization.localized("quality.outputDetails"), icon: "hifispeaker") {
-            detailRow(Localization.localized("quality.route"), audioEngine.currentRouteName)
+            detailRow(Localization.localized("quality.route"), audioEngine.routeDisplay)
             detailRow(Localization.localized("quality.outputFrequency"), audioEngine.outputSampleRate > 0 ? "\(Int(audioEngine.outputSampleRate)) Hz" : "—")
             detailRow(Localization.localized("quality.outputChannels"), audioEngine.outputChannelCount > 0 ? audioEngine.outputChannelCount.description : "—")
             detailRow(Localization.localized("quality.routeType"), outputTypeLabel)
