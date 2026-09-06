@@ -97,7 +97,12 @@ struct LyricsView: View {
             }
             .onChange(of: audioEngine.currentTime) { newTime in
                 updateCurrentLine(for: newTime)
-                updateWordProgress(for: newTime)
+                // ✅ OPTIMIZACIÓN 60fps: solo recalcular wordProgress si estamos
+                // en modo karaoke palabra-por-palabra (evita crear dicts nuevos
+                // en cada tick de reloj para letras sincronizadas normales).
+                if case .synchronized(let syncLyrics) = parsedLyrics, syncLyrics.isWordByWord {
+                    updateWordProgress(for: newTime)
+                }
             }
         }
     }

@@ -1,5 +1,6 @@
 import SwiftUI
 import AVFoundation
+import QuartzCore
 
 struct AudioVisualizer: View {
     @ObservedObject var audioEngine: AudioEngine
@@ -12,8 +13,6 @@ struct AudioVisualizer: View {
     @State private var isVisible = false
     // ✅ Suavizado por barra (recuerda su valor anterior)
     @State private var smoothedAmplitudes: [CGFloat] = Array(repeating: 0.05, count: 30)
-    // ✅ Timestamp acumulado para transiciones de pausa sin saltos
-    @State private var lastFireTime: CFTimeInterval = 0
 
     var body: some View {
         GeometryReader { geometry in
@@ -74,7 +73,7 @@ struct AudioVisualizer: View {
         stopVisualization()
         displayLink = CADisplayLink(target: VisualizerLinkTarget { [weak self] in
             self?.updateAmplitudes()
-        }, selector: #selector(VisualizerLinkTarget.fire))
+        }, selector: #selector(VisualizerLinkTarget.fire(displayLink:)))
         displayLink?.add(to: .main, forMode: .common)
     }
 
@@ -113,7 +112,7 @@ class VisualizerLinkTarget: NSObject {
         super.init()
     }
 
-    @objc func fire() {
+    @objc func fire(displayLink: CADisplayLink) {
         handler()
     }
 }
@@ -163,7 +162,7 @@ struct CircularAudioVisualizer: View {
         stopVisualization()
         displayLink = CADisplayLink(target: CircularLinkTarget { [weak self] in
             self?.updateAmplitudes()
-        }, selector: #selector(CircularLinkTarget.fire))
+        }, selector: #selector(CircularLinkTarget.fire(displayLink:)))
         displayLink?.add(to: .main, forMode: .common)
     }
 
@@ -196,7 +195,7 @@ class CircularLinkTarget: NSObject {
         super.init()
     }
 
-    @objc func fire() {
+    @objc func fire(displayLink: CADisplayLink) {
         handler()
     }
 }

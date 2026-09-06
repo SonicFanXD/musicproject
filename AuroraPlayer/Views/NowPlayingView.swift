@@ -22,7 +22,6 @@ struct NowPlayingView: View {
     @State private var showEqualizer = false
     @State private var showQueue = false
     @State private var showQualityDetail = false
-    @State private var isAirPlayAvailable = false
     @State private var artworkScale: CGFloat = 1.0
     @State private var progressBarWidth: CGFloat = 0
     @State private var extractedColor: Color = Color.accentColor
