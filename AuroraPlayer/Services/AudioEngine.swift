@@ -478,6 +478,16 @@ class AudioEngine: NSObject, ObservableObject {
     }
 
     func setEQPreset(_ preset: EQPreset) {
+        guard let eq = equalizerNode else { return }
+        eqPreset = preset
+        let gains = preset.gains
+        for (index, gain) in gains.enumerated() {
+            guard index < eq.bands.count else { break }
+            eq.bands[index].gain = gain
+        }
+        AppLog.info(.playback, "EQ preset: \(preset.displayName)")
+    }
+
     // MARK: - Audio Mono
     /// Activa/desactiva audio mono (mezcla ambos canales en uno).
     /// Útil para usuarios con audífono único o pérdida auditiva en un oído.
@@ -491,26 +501,14 @@ class AudioEngine: NSObject, ObservableObject {
         let session = AVAudioSession.sharedInstance()
         do {
             if isMonoAudioEnabled {
-                // ✅ Preferir canal único si el hardware lo soporta
                 try session.setPreferredInputNumberOfChannels(1)
             } else {
-                // ✅ Restaurar estéreo
                 try session.setPreferredInputNumberOfChannels(2)
             }
             try session.setActive(true)
         } catch {
-            // ✅ Algunos dispositivos no soportan cambio de canales de entrada;
-            // no es crítico, el audio sigue funcionando en estéreo.
             AppLog.debug(.playback, "No se pudo configurar canales de entrada: \(error.localizedDescription)")
         }
-    }
-        guard let eq = equalizerNode else { return }
-        eqPreset = preset
-        let gains = preset.gains
-        for (index, gain) in gains.enumerated() {
-            eq.bands[index].gain = gain
-        }
-        AppLog.info(.playback, "Preset EQ: \(preset.displayName)")
     }
 
     func setEQGain(for band: Int, gain: Float) {
