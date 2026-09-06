@@ -86,9 +86,8 @@ struct NowPlayingView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            ZStack {
-                backgroundView
+        ZStack {
+            backgroundView
 
                 // ✅ DISEÑO MEJORADO: distribución equilibrada con Spacers
                 // flexibles (la proporción se adapta a cualquier pantalla,
@@ -203,8 +202,6 @@ struct NowPlayingView: View {
                 }
             }
             .presentationDetents([.large])
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar(.hidden, for: .navigationBar)
             .sheet(isPresented: $showLyrics) {
                 LyricsView(song: audioEngine.currentSong, audioEngine: audioEngine, clock: audioEngine.clock)
             }
@@ -221,7 +218,6 @@ struct NowPlayingView: View {
                 }
             }
             .animation(.spring(response: 0.35, dampingFraction: 0.85), value: showQualityDetail)
-        }
     }
 
     // MARK: - Background (respeta "Reducir transparencia")

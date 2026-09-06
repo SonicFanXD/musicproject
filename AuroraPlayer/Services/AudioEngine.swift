@@ -103,7 +103,27 @@ class AudioEngine: NSObject, ObservableObject {
     private var audioFile: AVAudioFile?
     private var displayTimer: Timer?
     private var sampleRate: Double = 44100
-    private var seekOffset: TimeInterval = 0
+    // ✅ RELOJ DE PARED: la posición de reproducción se extrapola con
+    // CACurrentMediaTime (monótono) desde un ancla (posición + instante).
+    // Es INMUNE a los reinicios del timeline del AVAudioPlayerNode
+    // (stop/pausa/reprogramación y gapless encadenado, donde sampleTime
+    // se ACUMULA entre canciones) — causa raíz de los saltos de la barra
+    // de progreso y de la desincronización en las canciones siguientes.
+    private var posAnchor: TimeInterval = 0
+    private var wallAnchor: TimeInterval = 0
+
+    /// Fija el ancla: la posición actual es `pos` desde este instante.
+    private func anchorPlaybackPosition(_ pos: TimeInterval) {
+        posAnchor = duration > 0 ? min(max(pos, 0), duration) : max(pos, 0)
+        wallAnchor = CACurrentMediaTime()
+    }
+
+    /// Posición de reproducción extrapolada (solo mientras isPlaying).
+    private var wallClockTime: TimeInterval {
+        guard isPlaying, !isUsingFallback else { return posAnchor }
+        let t = posAnchor + (CACurrentMediaTime() - wallAnchor)
+        return duration > 0 ? min(max(t, 0), duration) : max(t, 0)
+    }
     // ✅ FIX "corte feo" entre canciones: recordar el formato ya conectado al
     // graph. Si la siguiente canción tiene el mismo formato, NO se detiene ni
     // reinicia el engine (solo se reprograma el nodo) → transición sin hueco.
@@ -257,7 +277,7 @@ class AudioEngine: NSObject, ObservableObject {
                 try startEngineSafely()
                 let position = min(max(currentTime, 0), duration)
                 scheduleGeneration += 1
-                seekOffset = position
+                anchorPlaybackPosition(position)
                 scheduleFile(file, from: position)
             } catch {
                 AppLog.error(.playback, error, context: "background: reiniciar engine")
@@ -286,7 +306,7 @@ class AudioEngine: NSObject, ObservableObject {
                 try startEngineSafely()
                 let position = min(max(currentTime, 0), duration)
                 scheduleGeneration += 1
-                seekOffset = position
+                anchorPlaybackPosition(position)
                 scheduleFile(file, from: position)
             } catch {
                 AppLog.error(.playback, error, context: "foreground: reiniciar engine")
@@ -294,17 +314,12 @@ class AudioEngine: NSObject, ObservableObject {
         }
     }
 
-    /// Sincroniza currentTime y clock.time con la posición real del render thread.
+    /// Sincroniza currentTime y clock.time con el reloj de pared.
     /// Llamado al volver de segundo plano para evitar que la barra se adelante.
     private func syncCurrentTimeFromRenderThread() {
-        guard !isUsingFallback,
-              let nodeTime = playerNode.lastRenderTime,
-              let playerTime = playerNode.playerTime(forNodeTime: nodeTime) else { return }
-        let current = seekOffset + Double(playerTime.sampleTime) / sampleRate
-        if current >= 0 && current <= duration {
-            currentTime = current
-            clock.time = current
-        }
+        let current = wallClockTime
+        currentTime = current
+        clock.time = current
     }
 
     // MARK: - Recuperación robusta del engine (fix de crashes en segundo plano)
@@ -363,7 +378,7 @@ class AudioEngine: NSObject, ObservableObject {
                     if self.isPlaying, let file = self.audioFile {
                         let position = self.currentTime
                         self.scheduleGeneration += 1
-                        self.seekOffset = position
+                        self.anchorPlaybackPosition(position)
                         self.scheduleFile(file, from: position)
                     }
                 } catch {
@@ -524,7 +539,7 @@ class AudioEngine: NSObject, ObservableObject {
             let currentPosition = currentTime
             playerNode.stop()
             // ✅ Mantener consistencia del reloj de display tras re-programar desde currentPosition
-            seekOffset = currentPosition
+            anchorPlaybackPosition(currentPosition)
             crossfadeTimer?.invalidate()
             crossfadeTimer = nil
             isCrossfading = false
@@ -586,14 +601,13 @@ class AudioEngine: NSObject, ObservableObject {
         // cambio se aplique al instante (mismo patrón que toggleEQ).
         if isPlaying, !isCrossfading, playerNode.isPlaying, let file = audioFile {
             scheduleGeneration += 1
-            let position = currentTime
+            let position = wallClockTime
+            anchorPlaybackPosition(position)
             playerNode.stop()
-            seekOffset = position
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.02) { [weak self] in
-                guard let self = self, self.isPlaying else { return }
-                self.scheduleFile(file, from: position)
-                self.playerNode.play()
-            }
+            // ✅ El engine ya fue reiniciado arriba; reprogramar SINCRÓNICAMENTE
+            // evita la carrera del delay de 0.02s con el nodo recién detenido
+            // (antes el toggle de mono dejaba la reproducción rota/silenciada).
+            scheduleFile(file, from: position)
         }
         AppLog.info(.playback, "Audio mono (downmix de salida): \(isMonoAudioEnabled ? "activado" : "desactivado")")
     }
@@ -672,7 +686,7 @@ class AudioEngine: NSObject, ObservableObject {
         audioFile = nil
         isPlaying = false
         currentTime = 0
-        seekOffset = 0
+        anchorPlaybackPosition(0)
         stopDisplayTimer()
 
         guard FileManager.default.fileExists(atPath: song.url.path) else {
@@ -707,7 +721,7 @@ class AudioEngine: NSObject, ObservableObject {
             }
 
             currentSong = song
-            seekOffset = 0
+            anchorPlaybackPosition(0)
             isPlaying = true
             playbackErrorCount = 0
 
@@ -902,7 +916,7 @@ class AudioEngine: NSObject, ObservableObject {
         audioFile = nextFile
         sampleRate = nextFile.processingFormat.sampleRate
         duration = Double(nextFile.length) / sampleRate
-        seekOffset = 0
+        anchorPlaybackPosition(0)
         playbackErrorCount = 0
 
         // ⚠️ FIX CRÍTICO: NO detach aquí. Solo paramos y silenciamos.
@@ -935,7 +949,7 @@ class AudioEngine: NSObject, ObservableObject {
         }
         framesPlayed = min(max(framesPlayed, 0), AVAudioFramePosition(nextFile.length) - 1)
         let alreadyPlayed = Double(framesPlayed) / sampleRate
-        seekOffset = alreadyPlayed
+        anchorPlaybackPosition(alreadyPlayed)
         scheduleFile(nextFile, from: alreadyPlayed)
 
         isPlaying = true
@@ -953,20 +967,19 @@ class AudioEngine: NSObject, ObservableObject {
         // ✅ FIX: detener el display timer PRIMERO para evitar que siga
         // actualizando currentTime mientras capturamos la posición exacta.
         stopDisplayTimer()
-        // ✅ FIX: capturar la posición EXACTA del render thread ANTES de pausar
-        // y actualizar seekOffset para que al reanudar el display timer calcule
-        // correctamente (seekOffset + sampleTime/sampleRate).
-        if !isUsingFallback,
-           let nodeTime = playerNode.lastRenderTime,
-           let playerTime = playerNode.playerTime(forNodeTime: nodeTime) {
-            let current = seekOffset + Double(playerTime.sampleTime) / sampleRate
-            if current >= 0 && current <= duration {
-                currentTime = current
-                seekOffset = current
-            }
-        } else if isUsingFallback, let current = avPlayer?.currentTime().seconds, current.isFinite, current >= 0 {
+        // ✅ RELOJ DE PARED: congelar la posición extrapolada como nueva ancla.
+        // Independiente del timeline del nodo (que queda congelado a medias
+        // tras engine.pause() y era la fuente del doble conteo al reanudar).
+        if isUsingFallback, let current = avPlayer?.currentTime().seconds, current.isFinite, current >= 0 {
             currentTime = current
+            posAnchor = current
+        } else {
+            let current = wallClockTime
+            currentTime = current
+            posAnchor = current
+            wallAnchor = CACurrentMediaTime()
         }
+        clock.time = currentTime
         if playerNode.isPlaying {
             playerNode.pause()
         }
@@ -995,21 +1008,18 @@ class AudioEngine: NSObject, ObservableObject {
                     if let file = audioFile {
                         let position = min(max(currentTime, 0), duration)
                         scheduleGeneration += 1
-                        seekOffset = position
+                        anchorPlaybackPosition(position)
                         scheduleFile(file, from: position)
                     }
                 } catch {
                     AppLog.error(.playback, error, context: "resume: reactivar engine")
                 }
             } else {
-                if let nodeTime = playerNode.lastRenderTime,
-                   let playerTime = playerNode.playerTime(forNodeTime: nodeTime) {
-                    seekOffset = max(0, currentTime - Double(playerTime.sampleTime) / sampleRate)
-                }
+                // ✅ RELOJ DE PARED: re-anclar la extrapolación en la posición
+                // pausada; la UI y el lock screen arrancan exactos desde aquí.
+                anchorPlaybackPosition(currentTime)
                 clock.time = currentTime
                 playerNode.play()
-                // El bloque original re-anclaba DESPUÉS de play(); ahora el
-                // re-anclaje ocurre arriba, con sampleTime aún congelado.
                 if let nextNode = nextPlayerNode, isCrossfading {
                     nextNode.play()
                     // ✅ FIX: si se pausó a mitad del crossfade, el timer de
@@ -1105,7 +1115,12 @@ class AudioEngine: NSObject, ObservableObject {
         currentSong = nextSong
         currentIndex = index
         currentFileURL = nextSong.url
-        seekOffset = 0
+        // ✅ FIX: actualizar la DURACIÓN antes de anclar el reloj (antes
+        // heredaba la duración de la canción anterior → la barra se clampeaba
+        // al valor viejo, el lock screen mostraba datos incorrectos y la
+        // canción nueva se "atascaba" o saltaba).
+        duration = Double(file.length) / fileFormat.sampleRate
+        anchorPlaybackPosition(0)
         isPlaying = true
         playbackErrorCount = 0
         audioFile = file
@@ -1197,10 +1212,8 @@ class AudioEngine: NSObject, ObservableObject {
 
         let clampedTime = max(0, min(time, duration))
         currentTime = clampedTime
-        // ✅ FIX CRÍTICO (letras reiniciaban al hacer tap): playerTime.sampleTime se reinicia
-        // a 0 tras stop()/play(), y el display timer calcula seekOffset + sampleTime/sampleRate.
-        // Sin actualizar seekOffset, currentTime volvía a ~0 y la letra saltaba al inicio.
-        seekOffset = clampedTime
+        // ✅ RELOJ DE PARED: anclar la extrapolación en la posición buscada.
+        anchorPlaybackPosition(clampedTime)
         // ✅ FIX sincronización: en pausa el seek NO debe iniciar la reproducción.
         scheduleFile(file, from: clampedTime, autostart: isPlaying)
         // ✅ FIX Centro de Control: publicar elapsed exacto inmediatamente
@@ -1317,10 +1330,11 @@ class AudioEngine: NSObject, ObservableObject {
                 if let current = self.avPlayer?.currentTime().seconds, !current.isNaN {
                     self.currentTime = current
                 }
-            } else if let nodeTime = self.playerNode.lastRenderTime,
-                      let playerTime = self.playerNode.playerTime(forNodeTime: nodeTime) {
-                let current = self.seekOffset + Double(playerTime.sampleTime) / self.sampleRate
-                if current >= 0 && current <= self.duration {
+            } else {
+                // ✅ RELOJ DE PARED: extrapolación monótona, inmune a los
+                // reinicios del timeline del nodo (pausa, seek, gapless).
+                let current = self.wallClockTime
+                if current <= self.duration {
                     self.currentTime = current
                 }
             }
@@ -1350,7 +1364,7 @@ class AudioEngine: NSObject, ObservableObject {
         if repeatMode == .one {
             guard let file = audioFile else { return }
             scheduleGeneration += 1
-            seekOffset = 0
+            anchorPlaybackPosition(0)
             currentTime = 0
             rescheduleFileAfterStop(file, from: 0)
             return
@@ -1411,7 +1425,7 @@ class AudioEngine: NSObject, ObservableObject {
         currentSong = song
         currentTime = 0
         duration = song.duration > 0 ? song.duration : 0
-        seekOffset = 0
+        posAnchor = 0
         playbackErrorCount = 0
 
         let player = AVPlayer(url: song.url)
