@@ -69,7 +69,7 @@ struct ContentView: View {
                         }
                         .searchable(
                             text: $searchText,
-                            prompt: "Buscar en tu biblioteca"
+                            prompt: Localization.localized("search.prompt")
                         )
                     }
                 }
@@ -335,14 +335,14 @@ struct ContentView: View {
             } else if searchText.isEmpty {
                 emptyLibraryView(
                     icon: "music.note.list",
-                    title: "Tu biblioteca está vacía",
-                    message: "Agrega una carpeta con tu música para comenzar."
+                    title: Localization.localized("library.empty.title"),
+                    message: Localization.localized("library.empty.message")
                 )
             } else {
                 ContentUnavailableLibraryView(
                     icon: "music.note.list",
-                    title: "No se encontraron canciones",
-                    message: "Prueba con otro término de búsqueda."
+                    title: Localization.localized("library.noSongsFound.title"),
+                    message: Localization.localized("library.noSongsFound.message")
                 )
                 .listRowSeparator(.hidden)
                 .listRowBackground(Color.clear)
@@ -383,20 +383,20 @@ struct ContentView: View {
             Button {
                 songSortAscending = true
             } label: {
-                Label("Ascendente", systemImage: "arrow.up")
+                Label(Localization.localized("library.sortAscending"), systemImage: "arrow.up")
                     .opacity(songSortAscending ? 1 : 0.4)
             }
             Button {
                 songSortAscending = false
             } label: {
-                Label("Descendente", systemImage: "arrow.down")
+                Label(Localization.localized("library.sortDescending"), systemImage: "arrow.down")
                     .opacity(songSortAscending ? 0.4 : 1)
             }
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: sortOption.icon)
                     .font(.system(size: 11, weight: .semibold))
-                Text("Ordenar: \(sortOption.title)")
+                Text("\(Localization.localized("sort.sortBy")): \(sortOption.title)")
                     .font(.system(size: 12, weight: .medium))
                     .lineLimit(1)
             }
@@ -431,20 +431,20 @@ struct ContentView: View {
             Button {
                 albumSortAscending = true
             } label: {
-                Label("Ascendente", systemImage: "arrow.up")
+                Label(Localization.localized("library.sortAscending"), systemImage: "arrow.up")
                     .opacity(albumSortAscending ? 1 : 0.4)
             }
             Button {
                 albumSortAscending = false
             } label: {
-                Label("Descendente", systemImage: "arrow.down")
+                Label(Localization.localized("library.sortDescending"), systemImage: "arrow.down")
                     .opacity(albumSortAscending ? 0.4 : 1)
             }
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: albumSort.icon)
                     .font(.system(size: 11, weight: .semibold))
-                Text("Ordenar: \(albumSort.title)")
+                Text("\(Localization.localized("sort.sortBy")): \(albumSort.title)")
                     .font(.system(size: 12, weight: .medium))
                     .lineLimit(1)
             }
@@ -542,8 +542,11 @@ struct ContentView: View {
         let albums = filteredAlbums
         if albums.isEmpty {
             ContentUnavailableLibraryView(
-                icon: "square.stack", title: "No hay álbumes",
-                message: searchText.isEmpty ? "Tus álbumes aparecerán aquí." : "No se encontraron álbumes."
+                icon: "square.stack",
+                title: Localization.localized("library.noAlbums.title"),
+                message: searchText.isEmpty
+                    ? Localization.localized("library.noAlbums.empty")
+                    : Localization.localized("library.noAlbums.search")
             )
             .listRowSeparator(.hidden).listRowBackground(Color.clear)
         } else {
@@ -568,8 +571,11 @@ struct ContentView: View {
         let artists = filteredArtists
         if artists.isEmpty {
             ContentUnavailableLibraryView(
-                icon: "person.2", title: "No hay artistas",
-                message: searchText.isEmpty ? "Tus artistas aparecerán aquí." : "No se encontraron artistas."
+                icon: "person.2",
+                title: Localization.localized("library.noArtists.title"),
+                message: searchText.isEmpty
+                    ? Localization.localized("library.noArtists.empty")
+                    : Localization.localized("library.noArtists.search")
             )
             .listRowSeparator(.hidden).listRowBackground(Color.clear)
         } else {
@@ -590,8 +596,9 @@ struct ContentView: View {
         let playlists = fileAccessService.playlists
         if playlists.isEmpty {
             ContentUnavailableLibraryView(
-                icon: "music.note.list", title: "Sin listas",
-                message: "Crea tu primera lista de reproducción para organizar tu música."
+                icon: "music.note.list",
+                title: Localization.localized("library.noPlaylists.title"),
+                message: Localization.localized("library.noPlaylists.message")
             )
             .listRowSeparator(.hidden).listRowBackground(Color.clear)
         } else {
@@ -736,7 +743,7 @@ struct ContentView: View {
             
             Menu {
                 if fileAccessService.playlists.isEmpty {
-                    Text("No hay listas disponibles")
+                    Text(Localization.localized("library.noPlaylists"))
                 } else {
                     ForEach(fileAccessService.playlists) { playlist in
                         Button {
@@ -747,7 +754,7 @@ struct ContentView: View {
                     }
                 }
             } label: {
-                Label("Agregar a playlist", systemImage: "plus.circle")
+                Label(Localization.localized("context.addToPlaylist"), systemImage: "plus.circle")
             }
             
             Button {
@@ -758,13 +765,13 @@ struct ContentView: View {
                     }
                 }
             } label: {
-                Label("Reproducir siguiente", systemImage: "text.line.first.and.arrowtriangle.forward")
+                Label(Localization.localized("context.playNext"), systemImage: "text.line.first.and.arrowtriangle.forward")
             }
             
             Button {
                 audioEngine.play(song: song, from: fileAccessService.songs)
             } label: {
-                Label("Reproducir ahora", systemImage: "play.circle.fill")
+                Label(Localization.localized("context.playNow"), systemImage: "play.circle.fill")
             }
         }
         .listRowInsets(EdgeInsets(top: 3, leading: 10, bottom: 3, trailing: 10))
@@ -950,31 +957,33 @@ struct SplashView: View {
 }
 
 // MARK: - Library Category
+// ✅ FIX idioma: los títulos usan Localization (antes estaban hardcodeados)
 enum LibraryCategory: String, CaseIterable {
     case songs, albums, artists, playlists
 
     var title: String {
         switch self {
-        case .songs: return "Canciones"
-        case .albums: return "Álbums"
-        case .artists: return "Artistas"
-        case .playlists: return "Listas"
+        case .songs: return Localization.localized("library.songs")
+        case .albums: return Localization.localized("library.albums")
+        case .artists: return Localization.localized("library.artists")
+        case .playlists: return Localization.localized("library.playlists")
         }
     }
 }
 
 // ✅ Opciones de ordenamiento para canciones
+// ✅ FIX idioma: títulos localizados (antes hardcodeados)
 enum SortOption: String, CaseIterable {
     case title, artist, album, duration, year, recentlyAdded
     
     var title: String {
         switch self {
-        case .title: return "Título"
-        case .artist: return "Artista"
-        case .album: return "Álbum"
-        case .duration: return "Duración"
-        case .year: return "Año"
-        case .recentlyAdded: return "Agregado recientemente"
+        case .title: return Localization.localized("sort.option.title")
+        case .artist: return Localization.localized("sort.option.artist")
+        case .album: return Localization.localized("sort.option.album")
+        case .duration: return Localization.localized("sort.option.duration")
+        case .year: return Localization.localized("sort.option.year")
+        case .recentlyAdded: return Localization.localized("sort.option.recentlyAdded")
         }
     }
     
@@ -991,15 +1000,16 @@ enum SortOption: String, CaseIterable {
 }
 
 // ✅ Opciones de ordenamiento para álbumes
+// ✅ FIX idioma: títulos localizados (antes hardcodeados)
 enum AlbumSortOption: String, CaseIterable {
     case title, artist, songCount, year
 
     var title: String {
         switch self {
-        case .title: return "Título"
-        case .artist: return "Artista"
-        case .songCount: return "Nº de canciones"
-        case .year: return "Año"
+        case .title: return Localization.localized("sort.option.title")
+        case .artist: return Localization.localized("sort.option.artist")
+        case .songCount: return Localization.localized("library.songCount")
+        case .year: return Localization.localized("sort.option.year")
         }
     }
 
@@ -1041,7 +1051,7 @@ private func albumListRow(_ album: Album) -> some View {
                 .foregroundStyle(.primary).lineLimit(1)
             Text(album.artist)
                 .font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
-            Text("\(album.songs.count) canciones")
+            Text("\(album.songs.count) \(Localization.localized("library.songCount"))")
                 .font(.system(size: 11)).foregroundStyle(.tertiary)
         }
 
@@ -1082,7 +1092,7 @@ private func artistListRow(_ artist: Artist) -> some View {
             Text(artist.name)
                 .font(.system(size: 15, weight: .semibold, design: .rounded))
                 .foregroundStyle(.primary).lineLimit(1)
-            Text("\(artist.songs.count) canciones")
+            Text("\(artist.songs.count) \(Localization.localized("library.songCount"))")
                 .font(.system(size: 12)).foregroundStyle(.secondary)
         }
 
@@ -1161,7 +1171,7 @@ struct playlistLibraryCard: View {
                 Text(playlist.name)
                     .font(.system(size: 14, weight: .semibold, design: .rounded))
                     .foregroundStyle(.primary).lineLimit(1)
-                Text("\(playlist.songIDs.count) canciones")
+                Text("\(playlist.songIDs.count) \(Localization.localized("library.songCount"))")
                     .font(.system(size: 12)).foregroundStyle(.secondary)
             }
         }
@@ -1199,7 +1209,7 @@ struct AlbumLibraryRow: View {
                     .foregroundStyle(.primary).lineLimit(1)
                 Text(album.artist)
                     .font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
-                Text("\(album.songs.count) canciones")
+                Text("\(album.songs.count) \(Localization.localized("library.songCount"))")
                     .font(.system(size: 11)).foregroundStyle(.tertiary)
             }
         }
@@ -1234,7 +1244,7 @@ struct ArtistLibraryRow: View {
                 Text(artist.name)
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(.primary).lineLimit(1)
-                Text("\(artist.songs.count) canciones")
+                Text("\(artist.songs.count) \(Localization.localized("library.songCount"))")
                     .font(.system(size: 12)).foregroundStyle(.secondary)
             }
         }

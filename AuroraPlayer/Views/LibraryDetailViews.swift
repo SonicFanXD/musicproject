@@ -20,7 +20,7 @@ struct AlbumDetailView: View {
     // ✅ FIX: color normalizado para legibilidad; usa el vivo si ya se extrajo
     private var tintColor: Color { AppTheme.readableColor(from: liveDominantColor ?? album.dominantColor) }
     // ✅ UIColor crudo para calcular contraste de textos/botones
-    private var tintUIColor: UIColor { liveDominantColor ?? album.dominantColor ?? UIColor.systemPurple }
+    private var tintUIColor: UIColor { liveDominantColor ?? album.dominantColor ?? AppTheme.accentUIColor }
     // ✅ Contraste: blanco o negro según luminancia del color de la portada
     private var onTintColor: Color { AppTheme.contrastingText(on: tintUIColor) }
 
@@ -135,7 +135,7 @@ struct AlbumDetailView: View {
 
             // ✅ Estadísticas con diseño mejorado
             HStack(spacing: 12) {
-                statPill(icon: "music.note", text: "\(songs.count) canciones")
+                statPill(icon: "music.note", text: "\(songs.count) \(Localization.localized("library.songCount"))")
                 if totalDuration > 60 {
                     statPill(icon: "clock", text: formatLongDuration(totalDuration))
                 }
@@ -339,7 +339,7 @@ struct ArtistDetailView: View {
     private var albums: [Album] { artist.albums }
     private var totalDuration: TimeInterval { songs.reduce(0) { $0 + $1.duration } }
     private var tintColor: Color { AppTheme.readableColor(from: liveDominantColor ?? artist.albums.first?.dominantColor) }
-    private var tintUIColor: UIColor { liveDominantColor ?? artist.albums.first?.dominantColor ?? UIColor.systemPurple }
+    private var tintUIColor: UIColor { liveDominantColor ?? artist.albums.first?.dominantColor ?? AppTheme.accentUIColor }
 
     var body: some View {
         ScrollView {
@@ -505,7 +505,7 @@ struct ArtistDetailView: View {
             } label: {
                 HStack(spacing: 10) {
                     Image(systemName: "play.fill").font(.system(size: 16, weight: .bold))
-                    Text("Reproducir").font(.system(size: 16, weight: .bold, design: .rounded))
+                    Text(Localization.localized("details.play")).font(.system(size: 16, weight: .bold, design: .rounded))
                 }
                 .foregroundStyle(.white).frame(maxWidth: .infinity).frame(height: 54)
                 .background {
@@ -568,7 +568,7 @@ struct ArtistDetailView: View {
                 Text(album.name)
                     .font(.system(size: 14, weight: .semibold, design: .rounded))
                     .foregroundStyle(.primary).lineLimit(1)
-                Text("\(album.songs.count) canciones")
+                Text("\(album.songs.count) \(Localization.localized("library.songCount"))")
                     .font(.system(size: 12)).foregroundStyle(.secondary)
             }
         }

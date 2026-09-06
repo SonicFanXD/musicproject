@@ -30,8 +30,10 @@ struct AudioVisualizer: View {
                         )
                         .frame(width: max(2, geometry.size.width / CGFloat(amplitudes.count) - 2))
                         .frame(height: max(3, adjustedAmplitude * geometry.size.height))
-                        // ✅ OPTIMIZACIÓN: sombra removida — 24 barras con shadow = mucho offscreen rendering en A11
-                        .animation(.spring(response: 0.15, dampingFraction: 0.7), value: adjustedAmplitude)
+                        // ✅ OPTIMIZACIÓN 60fps: easeOut corto en vez de spring
+                        // (24 barras con spring = 24 curvas por frame; easeOut es
+                        // una sola interpolación lineal, mucho más barato en A11)
+                        .animation(.easeOut(duration: 0.12), value: adjustedAmplitude)
                 }
             }
             .frame(height: geometry.size.height)

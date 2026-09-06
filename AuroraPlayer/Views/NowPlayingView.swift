@@ -22,13 +22,13 @@ struct NowPlayingView: View {
     @State private var showEqualizer = false
     @State private var showQueue = false
     @State private var showQualityDetail = false
-    @State private var showAirPlayPicker = false
     @State private var isAirPlayAvailable = false
     @State private var artworkScale: CGFloat = 1.0
     @State private var progressBarWidth: CGFloat = 0
     @State private var extractedColor: Color = Color.accentColor
     // ✅ Guardamos el UIColor dominante crudo para calcular contraste
-    @State private var extractedUIColor: UIColor = UIColor.systemPurple
+    // ✅ FIX: usar accentUIColor en vez de systemPurple hardcodeado
+    @State private var extractedUIColor: UIColor = AppTheme.accentUIColor
 
     // ✅ Caché de color dominante por canción: evita recalcular el histograma
     // HSB al reabrir NowPlaying o re-entrar a la misma pista (60fps sin hitch)
@@ -191,10 +191,6 @@ struct NowPlayingView: View {
             }
             .sheet(isPresented: $showQueue) {
                 QueueView(audioEngine: audioEngine)
-            }
-            .sheet(isPresented: $showAirPlayPicker) {
-                AirPlayRoutePickerView()
-                    .presentationDetents([.medium])
             }
             .overlay {
                 if showQualityDetail {
@@ -392,6 +388,12 @@ struct NowPlayingView: View {
             .frame(height: 10)
             .padding(.vertical, 16)
             .contentShape(Rectangle())
+            // ✅ FIX animación rara: antes había UNA animación spring sobre
+            // todo el subárbol disparada por isScrubbing, lo que hacía que el
+            // indicador circular "botara" cada vez que el reloj (0.3s) movía
+            // el progreso. Ahora: easing lineal suave para el avance normal
+            // del reloj + spring SOLO para el cambio de tamaño al arrastrar.
+            .animation(.linear(duration: 0.25), value: progress)
             .animation(.spring(response: 0.3, dampingFraction: 0.8), value: isScrubbing)
             .gesture(
                 DragGesture(minimumDistance: 0)
@@ -595,24 +597,30 @@ struct NowPlayingView: View {
             .buttonStyle(.plain)
             .accessibilityLabel("Cola de reproducción")
 
-            // ✅ AirPlay
-            Button {
-                Haptics.light()
-                showAirPlayPicker = true
-            } label: {
-                ZStack {
-                    Capsule()
-                        .fill(audioEngine.outputPortType == AVAudioSession.Port.airPlay.rawValue ? extractedColor.opacity(0.25) : Color.clear)
-                        .frame(width: capsuleWidth, height: capsuleHeight)
+            // ✅ AirPlay (FIX): en vez de abrir un sheet con un AVRoutePickerView
+            // gigante que fallaba, el picker NATIVO de iOS va superpuesto e
+            // invisible sobre el botón: al tocar, iOS muestra directamente su
+            // menú emergente de AirPlay (comportamiento estándar del sistema).
+            ZStack {
+                // Botón visual (icono + resaltado si la salida es AirPlay)
+                Capsule()
+                    .fill(audioEngine.outputPortType == AVAudioSession.Port.airPlay.rawValue ? extractedColor.opacity(0.25) : Color.clear)
+                    .frame(width: capsuleWidth, height: capsuleHeight)
 
-                    Image(systemName: "airplayaudio")
-                        .font(.system(size: iconSize, weight: audioEngine.outputPortType == AVAudioSession.Port.airPlay.rawValue ? .bold : .semibold))
-                        .foregroundStyle(audioEngine.outputPortType == AVAudioSession.Port.airPlay.rawValue ? playIconColor : AppTheme.contrastingText(on: extractedUIColor).opacity(0.7))
-                }
-                .frame(width: buttonSize, height: buttonSize)
-                .contentShape(Rectangle())
+                Image(systemName: "airplayaudio")
+                    .font(.system(size: iconSize, weight: audioEngine.outputPortType == AVAudioSession.Port.airPlay.rawValue ? .bold : .semibold))
+                    .foregroundStyle(audioEngine.outputPortType == AVAudioSession.Port.airPlay.rawValue ? playIconColor : AppTheme.contrastingText(on: extractedUIColor).opacity(0.7))
+
+                // ✅ Picker nativo invisible encima: captura el toque y muestra
+                // el menú de AirPlay del sistema. opacity 0.011 (no 0) para que
+                // UIKit siga entregando los toques al AVRoutePickerView.
+                AirPlayRoutePickerView()
+                    .frame(width: buttonSize, height: buttonSize)
+                    .opacity(0.011)
+                    .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .frame(width: buttonSize, height: buttonSize)
+            .contentShape(Rectangle())
             .accessibilityLabel("AirPlay")
         }
         .frame(maxWidth: .infinity)
@@ -622,13 +630,16 @@ struct NowPlayingView: View {
     // MARK: - Modal centrado con X (ventana emergente sobre el NowPlaying)
     private var qualityCardModal: some View {
         ZStack {
-            Color.black.opacity(0.35)
+            // ✅ Backdrop con blur (más premium que solo opacidad)
+            Color.black.opacity(0.4)
                 .ignoresSafeArea()
+                .background(.ultraThinMaterial)
                 .onTapGesture {
-                    withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
                         showQualityDetail = false
                     }
                 }
+                .transition(.opacity)
 
             VStack(spacing: 0) {
                 HStack(spacing: 12) {
@@ -644,7 +655,7 @@ struct NowPlayingView: View {
 
                     Button {
                         Haptics.light()
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
                             showQualityDetail = false
                         }
                     } label: {
@@ -666,13 +677,20 @@ struct NowPlayingView: View {
             }
             .frame(maxWidth: 480, maxHeight: 640)
             .background {
-                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                RoundedRectangle(cornerRadius: 32, style: .continuous)
                     .fill(Color(UIColor.systemBackground))
-                    .shadow(color: .black.opacity(0.3), radius: 24, x: 0, y: 12)
+                    // ✅ Sombra doble para mayor profundidad
+                    .shadow(color: .black.opacity(0.35), radius: 30, x: 0, y: 15)
+                    .shadow(color: Color.accentColor.opacity(0.08), radius: 20, x: 0, y: 5)
             }
-            .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 32, style: .continuous))
             .padding(.horizontal, 24)
+            // ✅ ANIMACIÓN DE ENTRADA/SALIDA: scale + opacity + blur
+            .scaleEffect(showQualityDetail ? 1.0 : 0.88)
+            .opacity(showQualityDetail ? 1.0 : 0)
+            .blur(radius: showQualityDetail ? 0 : 8)
         }
+        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: showQualityDetail)
     }
 
     // MARK: - Helpers
@@ -717,7 +735,7 @@ struct NowPlayingView: View {
             return
         }
         DispatchQueue.global(qos: .userInitiated).async {
-            let dominant = AppTheme.dominantColor(from: artwork) ?? UIColor.systemPurple
+            let dominant = AppTheme.dominantColor(from: artwork) ?? AppTheme.accentUIColor
             NowPlayingView.colorCache.setObject(dominant, forKey: cacheKey)
             DispatchQueue.main.async {
                 self.extractedColor = AppTheme.readableColor(from: dominant)
@@ -728,19 +746,20 @@ struct NowPlayingView: View {
 }
 
 // MARK: - AirPlay Route Picker View (UIKit wrapper)
+// ✅ FIX: el picker nativo embebido directamente (no dentro de un contenedor
+// extra). Al tocarlo, iOS muestra su menú emergente de AirPlay del sistema.
 struct AirPlayRoutePickerView: UIViewRepresentable {
-    typealias UIViewType = UIView
+    typealias UIViewType = AVRoutePickerView
 
-    func makeUIView(context: Context) -> UIView {
-        let view = UIView()
+    func makeUIView(context: Context) -> AVRoutePickerView {
         let picker = AVRoutePickerView()
         picker.prioritizesVideoDevices = false
         picker.tintColor = UIColor(Color.accentColor)
-        picker.frame = view.bounds
-        picker.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        view.addSubview(picker)
-        return view
+        // ✅ Sin icono visible: lo superponemos invisible sobre nuestro botón
+        // SwiftUI; solo interesa su comportamiento táctil.
+        picker.routePickerButtonBordered = false
+        return picker
     }
 
-    func updateUIView(_ uiView: UIView, context: Context) {}
+    func updateUIView(_ uiView: AVRoutePickerView, context: Context) {}
 }

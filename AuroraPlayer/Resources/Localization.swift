@@ -123,6 +123,52 @@ final class Localization: ObservableObject {
             "library.sortDescending": [.spanish: "Descendente", .english: "Descending"],
             "library.noPlaylists": [.spanish: "No hay listas disponibles", .english: "No playlists available"],
 
+            // Búsqueda y ordenamiento
+            "search.prompt": [.spanish: "Buscar en tu biblioteca", .english: "Search your library"],
+            "sort.option.title": [.spanish: "Título", .english: "Title"],
+            "sort.option.artist": [.spanish: "Artista", .english: "Artist"],
+            "sort.option.album": [.spanish: "Álbum", .english: "Album"],
+            "sort.option.duration": [.spanish: "Duración", .english: "Duration"],
+            "sort.option.year": [.spanish: "Año", .english: "Year"],
+            "sort.option.recentlyAdded": [.spanish: "Agregado recientemente", .english: "Recently added"],
+            "sort.sortBy": [.spanish: "Ordenar", .english: "Sort by"],
+
+            // Estados vacíos de la biblioteca
+            "library.empty.title": [.spanish: "Tu biblioteca está vacía", .english: "Your library is empty"],
+            "library.empty.message": [.spanish: "Agrega una carpeta con tu música para comenzar.", .english: "Add a folder with your music to get started."],
+            "library.noSongsFound.title": [.spanish: "No se encontraron canciones", .english: "No songs found"],
+            "library.noSongsFound.message": [.spanish: "Prueba con otro término de búsqueda.", .english: "Try another search term."],
+            "library.noAlbums.title": [.spanish: "No hay álbumes", .english: "No albums"],
+            "library.noAlbums.empty": [.spanish: "Tus álbumes aparecerán aquí.", .english: "Your albums will appear here."],
+            "library.noAlbums.search": [.spanish: "No se encontraron álbumes.", .english: "No albums found."],
+            "library.noArtists.title": [.spanish: "No hay artistas", .english: "No artists"],
+            "library.noArtists.empty": [.spanish: "Tus artistas aparecerán aquí.", .english: "Your artists will appear here."],
+            "library.noArtists.search": [.spanish: "No se encontraron artistas.", .english: "No artists found."],
+            "library.noPlaylists.title": [.spanish: "Sin listas", .english: "No playlists"],
+            "library.noPlaylists.message": [.spanish: "Crea tu primera lista de reproducción para organizar tu música.", .english: "Create your first playlist to organize your music."],
+            "library.songCount": [.spanish: "canciones", .english: "songs"],
+            "library.songCountSingular": [.spanish: "canción", .english: "song"],
+
+            // Menú contextual
+            "context.addToPlaylist": [.spanish: "Agregar a playlist", .english: "Add to Playlist"],
+            "context.playNext": [.spanish: "Reproducir siguiente", .english: "Play Next"],
+            "context.playNow": [.spanish: "Reproducir ahora", .english: "Play Now"],
+
+            // Gestión de playlists
+            "actions.cancel": [.spanish: "Cancelar", .english: "Cancel"],
+            "playlists.editPlaylist": [.spanish: "Editar lista", .english: "Edit Playlist"],
+            "playlists.deletePlaylist": [.spanish: "Eliminar lista", .english: "Delete Playlist"],
+            "playlists.deleteConfirm": [.spanish: "¿Eliminar \"%@\"?", .english: "Delete \"%@\"?"],
+            "playlists.deleteConfirmMessage": [.spanish: "Las canciones no se eliminarán de tu biblioteca.", .english: "Songs won't be removed from your library."],
+            "playlists.saveChanges": [.spanish: "Guardar Cambios", .english: "Save Changes"],
+
+            // Secciones de Ajustes
+            "settings.performance": [.spanish: "Rendimiento", .english: "Performance"],
+            "settings.audioOutput": [.spanish: "Salida de audio", .english: "Audio Output"],
+            "settings.playbackRoute": [.spanish: "Ruta de reproducción", .english: "Playback Route"],
+            "settings.device": [.spanish: "Dispositivo", .english: "Device"],
+            "settings.stats": [.spanish: "Estadísticas", .english: "Statistics"],
+
             // App name
             "app.name": [.spanish: "Aurora Player", .english: "Aurora Player"],
 

@@ -53,12 +53,12 @@ struct EqualizerView: View {
         HStack(spacing: 16) {
             ZStack {
                 Circle()
-                    .fill(Color.purple.opacity(0.15))
+                    .fill(Color.accentColor.opacity(0.15))
                     .frame(width: 50, height: 50)
 
                 Image(systemName: "slider.horizontal.3")
                     .font(.system(size: 20, weight: .semibold))
-                    .foregroundStyle(.purple)
+                    .foregroundStyle(Color.accentColor)
             }
 
             VStack(alignment: .leading, spacing: 4) {
@@ -78,7 +78,7 @@ struct EqualizerView: View {
                 set: { _ in audioEngine.toggleEQ() }
             ))
             .labelsHidden()
-            .tint(.purple)
+            .tint(Color.accentColor)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
@@ -108,7 +108,7 @@ struct EqualizerView: View {
                                 .padding(.vertical, 10)
                                 .background {
                                     RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                        .fill(audioEngine.eqPreset == preset && audioEngine.isEQEnabled ? Color.purple : Color.secondary.opacity(0.12))
+                                        .fill(audioEngine.eqPreset == preset && audioEngine.isEQEnabled ? Color.accentColor : Color.secondary.opacity(0.12))
                                 }
                         }
                         .buttonStyle(PressableButtonStyle(scale: 0.92))
@@ -156,7 +156,7 @@ struct EqualizerView: View {
 
                 Text(String(format: "%+.1f dB", currentGain))
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(audioEngine.isEQEnabled ? .purple : .secondary)
+                    .foregroundStyle(audioEngine.isEQEnabled ? Color.accentColor : Color.secondary)
                     .monospacedDigit()
             }
 
@@ -170,7 +170,7 @@ struct EqualizerView: View {
                 in: -12...12,
                 step: 0.5
             )
-            .tint(.purple)
+            .tint(Color.accentColor)
             .disabled(!audioEngine.isEQEnabled)
             .padding(.vertical, 6)
         }

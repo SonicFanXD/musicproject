@@ -58,58 +58,44 @@ struct SettingsView: View {
                         headerSection
 
                         // Biblioteca
-                        settingsSection(icon: "folder.fill", title: "Biblioteca", color: .blue) {
-                            settingsButton(title: "Carpetas de música", subtitle: "\(fileAccessService.folders.count) carpetas", icon: "folder.fill", color: .blue) {
+                        settingsSection(icon: "folder.fill", title: Localization.localized("settings.library"), color: .blue) {
+                            settingsButton(title: Localization.localized("settings.musicFolders"), subtitle: "\(fileAccessService.folders.count) \(Localization.localized("folders"))", icon: "folder.fill", color: .blue) {
                                 showFolderPicker = true
                             }
                             settingsDivider
-                            settingsButton(title: "Actualizar biblioteca", subtitle: fileAccessService.isScanning ? "Escaneando..." : "Rescanear carpetas", icon: "arrow.clockwise", color: .orange) {
+                            settingsButton(title: Localization.localized("settings.updateLibrary"), subtitle: fileAccessService.isScanning ? Localization.localized("settings.scanning") : Localization.localized("settings.rescanFolders"), icon: "arrow.clockwise", color: .orange) {
                                 fileAccessService.refreshAllFolders()
                             }
                             .disabled(fileAccessService.isScanning)
                         }
 
                         // Audio
-                        settingsSection(icon: "waveform", title: "Audio", color: .purple) {
-                            settingsButton(title: "Equalizador", subtitle: audioEngine.isEQEnabled ? "Activado (\(audioEngine.eqPreset.displayName))" : "Desactivado", icon: "slider.horizontal.3", color: .purple) {
+                        // ✅ Crossfade eliminado por completo (fuente de bugs
+                        // de sincronización): ya no aparece en Ajustes.
+                        settingsSection(icon: "waveform", title: Localization.localized("settings.audio"), color: .accentColor) {
+                            settingsButton(title: Localization.localized("settings.equalizer"), subtitle: audioEngine.isEQEnabled ? "\(Localization.localized("equalizer.active")) (\(audioEngine.eqPreset.displayName))" : Localization.localized("equalizer.disabled"), icon: "slider.horizontal.3", color: .accentColor) {
                                 showEqualizerSheet = true
-                            }
-                            settingsDivider
-                            settingsButton(title: "Crossfade", subtitle: audioEngine.isCrossfadeEnabled ? "Transición de \(Int(audioEngine.currentCrossfadeDuration))s" : "Desactivado", icon: "forward.end.fill", color: .teal) {
-                                audioEngine.toggleCrossfade()
-                            }
-                            // ✅ Slider de crossfade: la API ya existía pero no
-                            // estaba expuesta en la UI (rango 1–12s, persistido).
-                            if audioEngine.isCrossfadeEnabled {
-                                settingsSliderRow(
-                                    title: "Duración del crossfade",
-                                    value: Binding(
-                                        get: { audioEngine.currentCrossfadeDuration },
-                                        set: { audioEngine.setCrossfadeDuration($0) }
-                                    ),
-                                    range: 1...12, step: 1, color: .teal, suffix: "s"
-                                )
                             }
                         }
 
                         // Apariencia
-                        settingsSection(icon: "paintbrush.fill", title: "Apariencia", color: .pink) {
-                            settingsMenuButton(title: "Tema", subtitle: themes[selectedThemeIndex], icon: "circle.lefthalf.filled", color: .gray, options: themes, selection: $selectedThemeIndex) { index in
+                        settingsSection(icon: "paintbrush.fill", title: Localization.localized("settings.appearance"), color: .pink) {
+                            settingsMenuButton(title: Localization.localized("settings.theme"), subtitle: themes[selectedThemeIndex], icon: "circle.lefthalf.filled", color: .gray, options: themes, selection: $selectedThemeIndex) { index in
                                 selectedThemeIndex = index
                                 UserDefaults.standard.set(index, forKey: themeDefaultsKey)
                             }
                             settingsDivider
-                            settingsMenuButton(title: "Color de acento", subtitle: accents[theme.accentIndex], icon: "drop.fill", color: theme.accent, options: accents, selection: $theme.accentIndex) { index in
+                            settingsMenuButton(title: Localization.localized("settings.accentColor"), subtitle: accents[theme.accentIndex], icon: "drop.fill", color: theme.accent, options: accents, selection: $theme.accentIndex) { index in
                                 theme.setAccent(index)
                             }
                             settingsDivider
-                            settingsToggleRow(title: "Color dinámico", subtitle: "Extrae el color dominante de la portada", icon: "wand.and.stars", color: .cyan, isOn: $dynamicColor)
+                            settingsToggleRow(title: Localization.localized("settings.dynamicColor"), subtitle: Localization.localized("settings.dynamicColorSubtitle"), icon: "wand.and.stars", color: .cyan, isOn: $dynamicColor)
                             settingsDivider
-                            settingsSliderRow(title: "Esquinas del artwork", value: $artworkCorner, range: 0...44, step: 2, color: .blue, suffix: "pt")
+                            settingsSliderRow(title: Localization.localized("settings.artworkCorners"), value: $artworkCorner, range: 0...44, step: 2, color: .blue, suffix: "pt")
                             settingsDivider
-                            settingsToggleRow(title: "Reducir transparencia", subtitle: "Menos desenfoques, más rendimiento", icon: "circle.slash", color: .gray, isOn: $reduceTransparency)
+                            settingsToggleRow(title: Localization.localized("settings.reduceTransparency"), subtitle: Localization.localized("settings.reduceTransparencySubtitle"), icon: "circle.slash", color: .gray, isOn: $reduceTransparency)
                             settingsDivider
-                            settingsMenuButton(title: "Idioma / Language", subtitle: languages[selectedLanguage], icon: "globe", color: .blue, options: languages, selection: $selectedLanguage) { index in
+                            settingsMenuButton(title: Localization.localized("settings.language"), subtitle: languages[selectedLanguage], icon: "globe", color: .blue, options: languages, selection: $selectedLanguage) { index in
                                 selectedLanguage = index
                                 // ✅ Aplicar el idioma al instante en toda la app
                                 Localization.shared.currentLanguage = Localization.Language(rawValue: index) ?? .spanish
@@ -117,25 +103,25 @@ struct SettingsView: View {
                         }
 
                         // Reproducción
-                        settingsSection(icon: "dial.max.fill", title: "Reproducción", color: .orange) {
-                            settingsToggleRow(title: "Visualizador de audio", subtitle: "Animación de barras en Reproduciendo", icon: "waveform.path.ecg", color: .pink, isOn: $showVisualizer)
+                        settingsSection(icon: "dial.max.fill", title: Localization.localized("settings.playback"), color: .orange) {
+                            settingsToggleRow(title: Localization.localized("settings.visualizer"), subtitle: Localization.localized("settings.visualizerSubtitle"), icon: "waveform.path.ecg", color: .pink, isOn: $showVisualizer)
                             settingsDivider
-                            settingsToggleRow(title: "Respuesta táctil", subtitle: "Vibración al tocar los controles", icon: "iphone.radiowaves.left.and.right", color: .mint, isOn: $enableHaptics)
+                            settingsToggleRow(title: Localization.localized("settings.haptics"), subtitle: Localization.localized("settings.hapticsSubtitle"), icon: "iphone.radiowaves.left.and.right", color: .mint, isOn: $enableHaptics)
                             settingsDivider
-                            settingsToggleRow(title: "Mantener pantalla encendida", subtitle: "Evita que se bloquee mientras se reproduce", icon: "sun.max.fill", color: .yellow, isOn: $keepScreenOn)
+                            settingsToggleRow(title: Localization.localized("settings.keepScreenOn"), subtitle: Localization.localized("settings.keepScreenOnSubtitle"), icon: "sun.max.fill", color: .yellow, isOn: $keepScreenOn)
                             settingsDivider
-                            settingsToggleRow(title: "Reproducir al iniciar", subtitle: "Reanudar reproducción al abrir la app", icon: "play.circle", color: .green, isOn: $autoPlayOnStart)
+                            settingsToggleRow(title: Localization.localized("settings.autoPlayOnStart"), subtitle: Localization.localized("settings.autoPlayOnStartSubtitle"), icon: "play.circle", color: .green, isOn: $autoPlayOnStart)
                         }
                         
                         // ✅ Personalización avanzada
-                        settingsSection(icon: "wand.and.rays", title: "Personalización", color: .indigo) {
-                            settingsSliderRow(title: "Intensidad táctil", value: $hapticIntensity, range: 0.0...1.0, step: 0.1, color: .mint, suffix: "")
+                        settingsSection(icon: "wand.and.rays", title: Localization.localized("settings.customization"), color: .indigo) {
+                            settingsSliderRow(title: Localization.localized("settings.hapticIntensity"), value: $hapticIntensity, range: 0.0...1.0, step: 0.1, color: .mint, suffix: "")
                             settingsDivider
-                            settingsToggleRow(title: "Visualizador en barra", subtitle: "Mostrar barras en la barra de reproducción", icon: "waveform", color: .purple, isOn: $showVisualizerInBar)
+                            settingsToggleRow(title: Localization.localized("settings.showVisualizerInBar"), subtitle: Localization.localized("settings.showVisualizerInBarSubtitle"), icon: "waveform", color: .accentColor, isOn: $showVisualizerInBar)
                             settingsDivider
-                            settingsToggleRow(title: "Barra compacta", subtitle: "Barra de reproducción más pequeña", icon: "rectangle.compress.vertical", color: .gray, isOn: $compactPlayerBar)
+                            settingsToggleRow(title: Localization.localized("settings.compactPlayerBar"), subtitle: Localization.localized("settings.compactPlayerBarSubtitle"), icon: "rectangle.compress.vertical", color: .gray, isOn: $compactPlayerBar)
                             settingsDivider
-                            settingsToggleRow(title: "Mostrar letras", subtitle: "Abrir letras automáticamente", icon: "quote.bubble", color: .blue, isOn: $showLyricsByDefault)
+                            settingsToggleRow(title: Localization.localized("settings.showLyricsByDefault"), subtitle: Localization.localized("settings.showLyricsByDefaultSubtitle"), icon: "quote.bubble", color: .blue, isOn: $showLyricsByDefault)
                         }
                         // ✅ Sincronización en vivo con el engine (antes solo
                         // se aplicaba al reiniciar ContentView)
@@ -144,31 +130,31 @@ struct SettingsView: View {
                         }
 
                         // Rendimiento (info técnica)
-                        settingsSection(icon: "gauge.open.with.needle", title: "Rendimiento", color: .indigo) {
-                            settingsInfoRow(title: "Salida de audio", value: audioEngine.audioQualityInfo.isEmpty ? "\(Int(audioEngine.outputSampleRate / 1000)) kHz · \(audioEngine.outputChannelCount) canales" : audioEngine.audioQualityInfo, icon: "speaker.wave.2.fill", color: .indigo)
+                        settingsSection(icon: "gauge.open.with.needle", title: Localization.localized("settings.performance"), color: .indigo) {
+                            settingsInfoRow(title: Localization.localized("settings.audioOutput"), value: audioEngine.audioQualityInfo.isEmpty ? "\(Int(audioEngine.outputSampleRate / 1000)) kHz · \(audioEngine.outputChannelCount)" : audioEngine.audioQualityInfo, icon: "speaker.wave.2.fill", color: .indigo)
                             settingsDivider
-                            settingsInfoRow(title: "Ruta de reproducción", value: audioEngine.currentRouteName, icon: "airplayaudio", color: .blue)
+                            settingsInfoRow(title: Localization.localized("settings.playbackRoute"), value: audioEngine.currentRouteName, icon: "airplayaudio", color: .blue)
                             settingsDivider
                             // ✅ Modelo comercial real (ej. "iPhone 13 Pro") en vez de "iPhone"
-                            settingsInfoRow(title: "Dispositivo", value: audioEngine.deviceModelName, icon: "iphone", color: .gray)
+                            settingsInfoRow(title: Localization.localized("settings.device"), value: audioEngine.deviceModelName, icon: "iphone", color: .gray)
                         }
 
                         // Estadísticas
-                        settingsSection(icon: "chart.bar.fill", title: "Estadísticas", color: .green) {
-                            statRow(title: "Canciones", value: "\(fileAccessService.songs.count)")
+                        settingsSection(icon: "chart.bar.fill", title: Localization.localized("settings.stats"), color: .green) {
+                            statRow(title: Localization.localized("library.songs"), value: "\(fileAccessService.songs.count)")
                             settingsDivider
-                            statRow(title: "Álbumes", value: "\(fileAccessService.albums.count)")
+                            statRow(title: Localization.localized("library.albums"), value: "\(fileAccessService.albums.count)")
                             settingsDivider
-                            statRow(title: "Artistas", value: "\(fileAccessService.artists.count)")
+                            statRow(title: Localization.localized("library.artists"), value: "\(fileAccessService.artists.count)")
                         }
 
                         // Avanzado
-                        settingsSection(icon: "wrench.and.screwdriver.fill", title: "Avanzado", color: .orange) {
-                            settingsButton(title: "Registros", subtitle: "Ver logs de la app", icon: "doc.text.magnifyingglass", color: .gray) {
+                        settingsSection(icon: "wrench.and.screwdriver.fill", title: Localization.localized("settings.advanced"), color: .orange) {
+                            settingsButton(title: Localization.localized("settings.logs"), subtitle: Localization.localized("settings.logsSubtitle"), icon: "doc.text.magnifyingglass", color: .gray) {
                                 showLogs = true
                             }
                             settingsDivider
-                            settingsButton(title: "Acerca de", subtitle: "Aurora Player v\(appVersion)", icon: "info.circle.fill", color: .blue) {
+                            settingsButton(title: Localization.localized("settings.about"), subtitle: "Aurora Player v\(appVersion)", icon: "info.circle.fill", color: .blue) {
                                 showAbout = true
                             }
                         }

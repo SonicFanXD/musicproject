@@ -49,20 +49,17 @@ class AudioEngine: NSObject, ObservableObject {
     private var sampleRate: Double = 44100
     private var seekOffset: TimeInterval = 0
 
-    // MARK: - Crossfade y Gapless Playback (Corregido y optimizado)
+    // MARK: - Crossfade (✅ ELIMINADO)
+    // El crossfade era la fuente principal de bugs de sincronización
+    // (saltos "al azar" al terminar canciones y drift del reloj).
+    // Las propiedades se mantienen (en false) por compatibilidad con las
+    // vistas que las referencian, pero NUNCA se activa.
     private var crossfadeTimer: Timer?
-    private var crossfadeDuration: TimeInterval = 3.0 // 3 segundos estándar para notar el crossfade con fluidez
+    private var crossfadeDuration: TimeInterval = 3.0
     private var isCrossfading = false
     private var nextPlayerNode: AVAudioPlayerNode?
     private var nextAudioFile: AVAudioFile?
-    // ✅ Persistido: recordar la preferencia del usuario entre sesiones
-    @Published var isCrossfadeEnabled: Bool = true {
-        didSet {
-            if oldValue != isCrossfadeEnabled {
-                UserDefaults.standard.set(isCrossfadeEnabled, forKey: "com.aurora.crossfadeEnabled")
-            }
-        }
-    }
+    @Published var isCrossfadeEnabled: Bool = false
 
     // ✅ "Mantener pantalla encendida" gestionado aquí (centralizado):
     // antes solo vivía en NowPlayingView y se perdía al cerrarla.
@@ -93,9 +90,9 @@ class AudioEngine: NSObject, ObservableObject {
 
     override init() {
         super.init()
-        // Cargar duración de crossfade persistida
-        crossfadeDuration = UserDefaults.standard.object(forKey: "com.aurora.crossfadeDuration") as? TimeInterval ?? 3.0
-        isCrossfadeEnabled = UserDefaults.standard.object(forKey: "com.aurora.crossfadeEnabled") as? Bool ?? true
+        // ✅ Crossfade eliminado: limpiar preferencias obsoletas
+        UserDefaults.standard.removeObject(forKey: "com.aurora.crossfadeEnabled")
+        UserDefaults.standard.removeObject(forKey: "com.aurora.crossfadeDuration")
         setupSession()
         setupEngine()
         setupEqualizer()
@@ -463,11 +460,8 @@ class AudioEngine: NSObject, ObservableObject {
             return
         }
 
-        // Programar Crossfade si está activo y hay siguiente canción
-        let timeRemaining = Double(file.length - safeStartFrame) / sampleRate
-        if isCrossfadeEnabled && timeRemaining > crossfadeDuration && currentIndex + 1 < playlist.count {
-            scheduleCrossfade(for: file, startFrame: safeStartFrame, framesToPlay: framesToPlay)
-        }
+        // ✅ Crossfade eliminado: nunca se programa (era la fuente de los
+        // saltos "al azar" al terminar canciones y el drift de sincronización)
 
         playerNode.scheduleSegment(
             file,
@@ -808,6 +802,9 @@ class AudioEngine: NSObject, ObservableObject {
         if isPlaying {
             playerNode.play()
         }
+        // ✅ FIX Centro de Control: publicar elapsed exacto inmediatamente
+        // tras el seek para que la barra del sistema salte al mismo punto.
+        updateNowPlayingInfo()
     }
 
     func toggleShuffle() {
@@ -906,6 +903,7 @@ class AudioEngine: NSObject, ObservableObject {
 
     private func startDisplayTimer() {
         stopDisplayTimer()
+        var tickCount = 0
         // 0.3s interval reduces UI churn on iPhone 8 Plus (A11) while remaining accurate
         displayTimer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: true) { [weak self] _ in
             guard let self = self, self.isPlaying else { return }
@@ -919,6 +917,15 @@ class AudioEngine: NSObject, ObservableObject {
                 if current >= 0 && current <= self.duration {
                     self.currentTime = current
                 }
+            }
+            // ✅ FIX Centro de Control / pantalla de bloqueo: refrescar
+            // nowPlayingInfo cada ~1s con el elapsed EXACTO del reloj de
+            // render. Sin esto, iOS interpolaba su propio tiempo y la barra
+            // se desincronizaba tras pausas/seeks/interrupciones largas.
+            tickCount += 1
+            if tickCount >= 3 {
+                tickCount = 0
+                self.updateNowPlayingInfo()
             }
         }
     }

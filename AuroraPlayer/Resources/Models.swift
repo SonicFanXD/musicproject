@@ -333,7 +333,7 @@ enum ColorExtractor {
                 }
             }
         }
-        guard count > 0 else { return UIColor.systemPurple }
+        guard count > 0 else { return AppTheme.accentUIColor }
         return UIColor(red: totalR / CGFloat(count), green: totalG / CGFloat(count), blue: totalB / CGFloat(count), alpha: 1.0)
     }
 }

@@ -45,6 +45,12 @@ final class ThemeManager: ObservableObject {
 enum AppTheme {
     static var accent: Color { ThemeManager.shared.accent }
 
+    /// ✅ Acento como UIColor: reemplaza los antiguos fallbacks
+    /// `UIColor.systemPurple` hardcodeados (no respetaban el ajuste).
+    static var accentUIColor: UIColor {
+        UIColor(ThemeManager.shared.accent)
+    }
+
     /// Normaliza un color extraído de una portada para que siempre sea
     /// legible como color de acento: saturación y brillo dentro de un
     /// rango que garantiza contraste sobre fondos claro/oscuro.

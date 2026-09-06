@@ -168,17 +168,16 @@ struct AudioQualityDetailView: View {
     private var signalChainSection: some View {
         settingsSection(title: "Cadena de procesamiento", icon: "arrow.triangle.branch") {
             VStack(spacing: 0) {
-                chainNode(icon: "doc.fill", title: "Archivo fuente", detail: fileSummary, color: .purple, isFirst: true)
+                chainNode(icon: "doc.fill", title: "Archivo fuente", detail: fileSummary, color: .accentColor, isFirst: true)
                 chainArrow
                 // ✅ Icono válido (antes era un SF Symbol inexistente) + calidad real
                 chainNode(icon: "waveform", title: "Decodificador", detail: "AVAudioFile · \(isLossless ? "Lossless" : "Comprimido")", color: .indigo)
                 chainArrow
-                chainNode(icon: "engine.combustion", title: "Motor de audio", detail: "AVAudioEngine · \(Int(audioEngine.sampleRateDisplay / 1000)) kHz", color: .blue)
+                chainNode(icon: "engine.combustion", title: "Motor de audio", detail: "AVAudioEngine · \(Int(audioEngine.sampleRateDisplay / 1000)) kHz", color: .accentColor)
                 chainArrow
-                chainNode(icon: "slider.horizontal.3", title: "Ecualizador", detail: audioEngine.isEQEnabled ? "Activo · \(audioEngine.eqPreset.displayName) · 10 bandas" : "Bypass · 10 bandas", color: audioEngine.isEQEnabled ? .pink : .gray)
+                chainNode(icon: "slider.horizontal.3", title: "Ecualizador", detail: audioEngine.isEQEnabled ? "Activo · \(audioEngine.eqPreset.displayName) · 10 bandas" : "Bypass · 10 bandas", color: audioEngine.isEQEnabled ? .accentColor : .gray)
                 chainArrow
-                chainNode(icon: "forward.end.fill", title: "Crossfade", detail: audioEngine.isCrossfadeEnabled ? "Activo · \(Int(audioEngine.currentCrossfadeDuration)) s" : "Desactivado", color: audioEngine.isCrossfadeEnabled ? .teal : .gray)
-                chainArrow
+                // ✅ Crossfade eliminado del motor: ya no aparece en la cadena
                 chainNode(icon: outputIcon, title: "Salida", detail: outputSummary, color: .orange, isLast: true)
             }
         }

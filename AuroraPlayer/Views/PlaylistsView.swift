@@ -209,7 +209,7 @@ struct PlaylistsView: View {
                         .lineLimit(1)
                 }
 
-                Text("\(playlist.songIDs.count) canciones")
+                Text("\(playlist.songIDs.count) \(Localization.localized("library.songCount"))")
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
             }
@@ -318,7 +318,7 @@ struct PlaylistsView: View {
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Cancelar") {
+                    Button(Localization.localized("actions.cancel")) {
                         showCreatePlaylist = false
                     }
                     .foregroundStyle(.secondary)
@@ -401,13 +401,13 @@ struct PlaylistDetailView: View {
                         editedDescription = playlist.description
                         showEditPlaylist = true
                     } label: {
-                        Label("Editar lista", systemImage: "pencil")
+                        Label(Localization.localized("playlists.editPlaylist"), systemImage: "pencil")
                     }
 
                     Button(role: .destructive) {
                         showDeleteConfirmation = true
                     } label: {
-                        Label("Eliminar lista", systemImage: "trash")
+                        Label(Localization.localized("playlists.deletePlaylist"), systemImage: "trash")
                     }
                 } label: {
                     Image(systemName: "ellipsis.circle")
@@ -420,14 +420,14 @@ struct PlaylistDetailView: View {
         .sheet(isPresented: $showEditPlaylist) {
             editPlaylistSheet
         }
-        .alert("¿Eliminar \"\(playlist.name)\"?", isPresented: $showDeleteConfirmation) {
-            Button("Cancelar", role: .cancel) {}
-            Button("Eliminar", role: .destructive) {
+        .alert(String(format: Localization.localized("playlists.deleteConfirm"), playlist.name), isPresented: $showDeleteConfirmation) {
+            Button(Localization.localized("actions.cancel"), role: .cancel) {}
+            Button(Localization.localized("queue.remove"), role: .destructive) {
                 fileAccessService.deletePlaylist(playlist)
                 dismiss()
             }
         } message: {
-            Text("Las canciones no se eliminarán de tu biblioteca.")
+            Text(Localization.localized("playlists.deleteConfirmMessage"))
         }
     }
 
@@ -488,7 +488,7 @@ struct PlaylistDetailView: View {
                 }
 
                 HStack(spacing: 10) {
-                    statPill(icon: "music.note", text: "\(songs.count) canciones")
+                    statPill(icon: "music.note", text: "\(songs.count) \(Localization.localized("library.songCount"))")
 
                     let totalDuration = songs.reduce(0) { $0 + $1.duration }
                     if totalDuration > 60 {
@@ -507,12 +507,12 @@ struct PlaylistDetailView: View {
                             audioEngine.play(song: firstSong, from: songs)
                         }
                     } label: {
-                        HStack(spacing: 10) {
-                            Image(systemName: "play.fill")
-                                .font(.system(size: 16, weight: .semibold))
-                            Text("Reproducir")
-                                .font(.system(size: 16, weight: .semibold))
-                        }
+                HStack(spacing: 10) {
+                    Image(systemName: "play.fill")
+                        .font(.system(size: 16, weight: .semibold))
+                    Text(Localization.localized("details.play"))
+                        .font(.system(size: 16, weight: .semibold))
+                }
                         .foregroundStyle(.white)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 18) // Expanded touch target (15→18)
@@ -666,7 +666,7 @@ struct PlaylistDetailView: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Quitar de la lista")
+            .accessibilityLabel(Localization.localized("queue.remove"))
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
@@ -690,25 +690,25 @@ struct PlaylistDetailView: View {
                 ScrollView {
                     VStack(spacing: 24) {
                         VStack(spacing: 16) {
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text("Nombre")
-                                    .font(.system(size: 14, weight: .semibold))
-                                    .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 8) {
+                Text(Localization.localized("playlists.name"))
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(.secondary)
 
-                                TextField("Nombre de la lista", text: $editedName)
-                                    .textFieldStyle(.roundedBorder)
-                                    .padding(.horizontal, 4)
-                            }
+                TextField(Localization.localized("playlists.placeholderName"), text: $editedName)
+                    .textFieldStyle(.roundedBorder)
+                    .padding(.horizontal, 4)
+            }
 
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text("Descripción")
-                                    .font(.system(size: 14, weight: .semibold))
-                                    .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 8) {
+                Text(Localization.localized("playlists.description"))
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(.secondary)
 
-                                TextField("Descripción", text: $editedDescription)
-                                    .textFieldStyle(.roundedBorder)
-                                    .padding(.horizontal, 4)
-                            }
+                TextField(Localization.localized("playlists.placeholderDescription"), text: $editedDescription)
+                    .textFieldStyle(.roundedBorder)
+                    .padding(.horizontal, 4)
+            }
                         }
                         .padding(.horizontal, 4)
 
@@ -719,7 +719,7 @@ struct PlaylistDetailView: View {
                                 Image(systemName: "checkmark.circle.fill")
                                     .font(.system(size: 18, weight: .semibold))
 
-                                Text("Guardar Cambios")
+                                Text(Localization.localized("playlists.saveChanges"))
                                     .font(.system(size: 17, weight: .semibold))
                             }
                             .foregroundStyle(.white)
@@ -758,7 +758,7 @@ struct PlaylistDetailView: View {
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Cancelar") {
+                    Button(Localization.localized("actions.cancel")) {
                         showEditPlaylist = false
                     }
                     .foregroundStyle(.secondary)

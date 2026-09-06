@@ -174,10 +174,10 @@ struct LyricsView: View {
             }
             .onChange(of: scrollTarget) { target in
                 if let target = target {
-                    // ✅ Spring críticamente amortiguado (damping 1.0): desplazamiento
-                    // suave y directo SIN rebote (antes "subía y bajaba" con easeInOut
-                    // + anchos de línea distintos). Animación de offset → GPU, 60fps.
-                    withAnimation(.spring(response: 0.55, dampingFraction: 1.0)) {
+                    // ✅ ANIMACIÓN MEJORADA: spring con rebote suave (antes damping
+                    // 1.0 = rígido). Ahora damping 0.85 da un scroll más natural y
+                    // fluido, con un rebote sutil que se siente premium.
+                    withAnimation(.spring(response: 0.6, dampingFraction: 0.85)) {
                         proxy.scrollTo(target, anchor: .center)
                     }
                 }
@@ -210,8 +210,8 @@ struct LyricsView: View {
             }
             .onChange(of: scrollTarget) { target in
                 if let target = target {
-                    // ✅ Misma animación amortiguada que el auto-scroll (consistencia)
-                    withAnimation(.spring(response: 0.55, dampingFraction: 1.0)) {
+                    // ✅ Misma animación suave que el auto-scroll (consistencia)
+                    withAnimation(.spring(response: 0.6, dampingFraction: 0.85)) {
                         proxy.scrollTo(target, anchor: .center)
                     }
                 }
@@ -224,8 +224,8 @@ struct LyricsView: View {
         Haptics.light()
         audioEngine.seek(to: time)
         currentLineIndex = index
-        // ✅ Misma animación amortiguada que el auto-scroll (consistencia)
-        withAnimation(.spring(response: 0.55, dampingFraction: 1.0)) {
+        // ✅ Misma animación suave que el auto-scroll (consistencia)
+        withAnimation(.spring(response: 0.6, dampingFraction: 0.85)) {
             proxy.scrollTo(index, anchor: .center)
         }
     }
@@ -246,8 +246,10 @@ struct LyricsView: View {
             .scaleEffect(isActive ? 1.0 : 0.95)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.vertical, 10)
-            // ✅ Amortiguación crítica: transición de línea sin rebote (60fps, GPU)
-            .animation(.spring(response: 0.4, dampingFraction: 1.0), value: isActive)
+            // ✅ ANIMACIÓN MEJORADA: spring con rebote suave (antes damping 1.0
+            // = críticamente amortiguado, se sentía rígido/robótico). Ahora
+            // damping 0.82 da un rebote sutil que se siente orgánico y vivo.
+            .animation(.spring(response: 0.45, dampingFraction: 0.82), value: isActive)
     }
 
     // MARK: - Word by Word Line View
