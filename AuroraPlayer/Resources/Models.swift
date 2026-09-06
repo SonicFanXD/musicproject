@@ -1,4 +1,4 @@
-﻿import Foundation
+import Foundation
 import UIKit
 
 extension String {
@@ -106,7 +106,7 @@ struct Song: Identifiable, Equatable, Codable {
     ) {
         self.id = id
         self.url = url
-        self.title = title?.isEmpty == false ? title! : url.deletingPathExtension().lastPathComponent
+        self.title = (title?.isEmpty == false) ? title! : url.deletingPathExtension().lastPathComponent
         self.artist = artist
         self.albumArtist = albumArtist
         self.album = album
@@ -126,22 +126,23 @@ struct Song: Identifiable, Equatable, Codable {
         lhs.id == rhs.id
     }
 
-    /// âœ… FIX multi-disco: orden canÃ³nico (disco 1 antes que disco 2, luego pista).
-    /// Antes solo se ordenaba por trackNumber â†’ en Ã¡lbumes con Disc 1 y Disc 2
-    /// (ambos arrancan en pista 1) el sort inestable podÃ­a poner primero el Disc 2.
+    /// ✅ FIX multi-disco: orden canónico (disco 1 antes que disco 2, luego pista).
+    /// Antes solo se ordenaba por trackNumber → en álbumes con Disc 1 y Disc 2
+    /// (ambos arrancan en pista 1) el sort inestable podía poner primero el Disc 2.
     static func discAwareOrder(_ lhs: Song, _ rhs: Song) -> Bool {
         let ld = lhs.discNumber ?? 1
         let rd = rhs.discNumber ?? 1
         if ld != rd { return ld < rd }
         if lhs.trackNumber != rhs.trackNumber { return lhs.trackNumber < rhs.trackNumber }
-        return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
+        // ✅ localizedStandardCompare: orden natural ("Track 2" < "Track 10").
+        return lhs.title.localizedStandardCompare(rhs.title) == .orderedAscending
     }
 }
 
 extension Song {
     private static let artworkCache: NSCache<NSUUID, UIImage> = {
         let cache = NSCache<NSUUID, UIImage>()
-        cache.countLimit = 500 // âœ… Aumentado para mantener mÃ¡s portadas en cachÃ©
+        cache.countLimit = 500 // ✅ Aumentado para mantener más portadas en caché
         return cache
     }()
 
@@ -156,7 +157,10 @@ extension Song {
     }
 
     var displayName: String {
-        album.isEmpty ? "\(title) â€¢ \(artist)" : title
+        if album.isEmpty && !artist.isEmpty {
+            return "\(title) • \(artist)"
+        }
+        return title
     }
 
     var displaySubtitle: String {
@@ -166,7 +170,7 @@ extension Song {
         return components.joined(separator: " • ")
     }
 
-    /// DescripciÃ³n detallada del formato de audio basada en metadatos reales del archivo
+    /// Descripción detallada del formato de audio basada en metadatos reales del archivo
     var audioQualityDescription: String {
         var parts: [String] = []
         let format = formatDescription.isEmpty ? url.pathExtension.uppercased() : formatDescription
@@ -177,7 +181,14 @@ extension Song {
         }
 
         if sampleRate > 0 {
-            parts.append(sampleRate >= 48000 ? "\(Int(sampleRate / 1000))kHz" : "\(Int(sampleRate))Hz")
+            // ✅ Formato consistente en kHz: 44100 → "44.1kHz" (antes "44100Hz"
+            // mientras 48000 mostraba "48kHz"). String(format:) no usa el locale,
+            // así que el punto decimal es estable en todos los idiomas.
+            let kHz = sampleRate / 1000.0
+            let formatted = kHz.truncatingRemainder(dividingBy: 1) == 0
+                ? "\(Int(kHz))kHz"
+                : String(format: "%.1f", kHz) + "kHz"
+            parts.append(formatted)
         }
 
         if channelCount == 2 {
@@ -217,8 +228,8 @@ struct Album: Identifiable, Equatable {
         if let cached = Album.colorCache.object(forKey: id as NSString) {
             return cached
         }
-        // âœ… Unificado: usa el mismo extractor HSB mejorado (con fallback para
-        // carÃ¡tulas oscuras/grises) que NowPlaying/ThemeManager â€” antes habÃ­a
+        // ✅ Unificado: usa el mismo extractor HSB mejorado (con fallback para
+        // carátulas oscuras/grises) que NowPlaying/ThemeManager — antes había
         // DOS implementaciones distintas y esta daba resultados diferentes.
         let color = AppTheme.dominantColor(from: artwork)
         if let color = color {
@@ -237,11 +248,11 @@ struct Artist: Identifiable, Equatable {
         let grouped = Dictionary(grouping: songs) { $0.album }
         return grouped.map { (albumName, songs) in
             Album(
-                name: albumName.isEmpty ? "Ãlbum desconocido" : albumName,
+                name: albumName.isEmpty ? "Álbum desconocido" : albumName,
                 artist: name,
                 songs: songs.sorted(by: Song.discAwareOrder)
             )
-        }.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        }.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }
 
     var artwork: UIImage? {
