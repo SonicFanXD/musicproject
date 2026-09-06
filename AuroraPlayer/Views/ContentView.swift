@@ -170,21 +170,15 @@ struct ContentView: View {
             }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            PlayerBar(audioEngine: audioEngine, fileAccessService: fileAccessService)
+            PlayerBar(audioEngine: audioEngine, fileAccessService: fileAccessService, clock: audioEngine.clock)
                 .padding(.horizontal, 10)
                 .padding(.bottom, 6)
         }
         .animation(.easeInOut(duration: 0.35), value: fileAccessService.isScanning)
-        // ✅ Contador FPS superpuesto en la esquina superior derecha,
-        // debajo de los status del iPhone (batería, wifi, etc.)
-        .overlay {
-            FPSCounterOverlay(showFPS: showFPS)
-        }
     }
 
     @AppStorage("com.aurora.keepScreenOn") private var keepScreenOnUserDefaults = false
     @AppStorage("com.aurora.autoPlayOnStart") private var autoPlayOnStart = false
-    @AppStorage("com.aurora.showFPS") private var showFPS = false
 
     @ViewBuilder
     private func emptyLibraryView(icon: String, title: String, message: String) -> some View {

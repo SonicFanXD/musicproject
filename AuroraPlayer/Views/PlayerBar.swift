@@ -3,6 +3,9 @@ import SwiftUI
 struct PlayerBar: View {
     @ObservedObject var audioEngine: AudioEngine
     @ObservedObject var fileAccessService: FileAccessService
+    // ✅ Reloj aislado: este view re-renderiza cada tick de tiempo sin
+    // arrastrar al ContentView/la biblioteca (60fps estables al reproducir)
+    @ObservedObject var clock: PlaybackClock
     // ✅ Observar el idioma: al cambiar, esta vista se re-renderiza al instante
     @ObservedObject private var localization = Localization.shared
     @State private var showingNowPlaying = false
@@ -23,7 +26,7 @@ struct PlayerBar: View {
     private var progress: Double {
         if isScrubbing { return scrubPreviewProgress }
         guard audioEngine.duration > 0 else { return 0 }
-        return min(max(audioEngine.currentTime / audioEngine.duration, 0), 1)
+        return min(max(clock.time / audioEngine.duration, 0), 1)
     }
 
     var body: some View {
@@ -236,7 +239,7 @@ struct PlayerBar: View {
                     artworkAppear()
                 }
                 .sheet(isPresented: $showingNowPlaying) {
-                    NowPlayingView(audioEngine: audioEngine, fileAccessService: fileAccessService)
+                    NowPlayingView(audioEngine: audioEngine, fileAccessService: fileAccessService, clock: audioEngine.clock)
                 }
             }
         }

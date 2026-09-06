@@ -91,28 +91,42 @@ class DisplayLinkTarget: NSObject {
     }
 }
 
-/// Overlay que posiciona el FPS counter en la esquina INFERIOR DERECHA,
-/// justo encima del player bar (área claramente visible sin tapar nada).
-struct FPSCounterOverlay: View {
-    let showFPS: Bool
+/// Overlay que posiciona el FPS counter en una UIWindow independiente con
+/// windowLevel superior a los sheets/modales: visible en TODAS las pantallas
+/// (biblioteca, Now Playing, ajustes, letras, etc.) y deja pasar los toques.
+@MainActor
+final class FPSOverlayController {
+    static let shared = FPSOverlayController()
+    private var window: UIWindow?
 
-    var body: some View {
-        if showFPS {
-            GeometryReader { geometry in
-                VStack {
-                    Spacer()
-                    HStack {
-                        Spacer()
-                        FPSCounter()
-                            // ✅ 76pt = altura del player bar + padding inferior
-                            .padding(.trailing, 14)
-                            .padding(.bottom, geometry.safeAreaInsets.bottom + 82)
-                    }
-                }
+    func setEnabled(_ enabled: Bool) {
+        if enabled {
+            if window == nil {
+                guard let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene else { return }
+                let newWindow = PassThroughWindow(windowScene: scene)
+                newWindow.windowLevel = .alert + 1
+                newWindow.backgroundColor = .clear
+                newWindow.rootViewController = UIHostingController(
+                    rootView: FPSCounter()
+                        // ✅ Esquina superior izquierda, debajo del Dynamic Island:
+                        // zona libre en todas las pantallas (títulos centrados)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                        .padding(.leading, 12)
+                        .padding(.top, 56)
+                )
+                window = newWindow
             }
-            .ignoresSafeArea()
-            .allowsHitTesting(false)
-            .transition(.opacity.combined(with: .scale(scale: 0.85)))
+            window?.isHidden = false
+        } else {
+            window?.isHidden = true
         }
+    }
+}
+
+/// UIWindow invisible al tacto: hitTest devuelve nil para que los toques
+/// pasen a la ventana de la app de abajo.
+final class PassThroughWindow: UIWindow {
+    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        nil
     }
 }

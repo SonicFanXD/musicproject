@@ -40,6 +40,7 @@ struct MaskedLyricText: View {
 struct LyricsView: View {
     let song: Song?
     @ObservedObject var audioEngine: AudioEngine
+    @ObservedObject var clock: PlaybackClock
     @Environment(\.dismiss) private var dismiss
 
     @State private var parsedLyrics: LyricsType = .none
@@ -95,7 +96,7 @@ struct LyricsView: View {
             .onAppear {
                 parseLyrics()
             }
-            .onChange(of: audioEngine.currentTime) { newTime in
+            .onChange(of: clock.time) { newTime in
                 updateCurrentLine(for: newTime)
                 // ✅ OPTIMIZACIÓN 60fps: solo recalcular wordProgress si estamos
                 // en modo karaoke palabra-por-palabra (evita crear dicts nuevos

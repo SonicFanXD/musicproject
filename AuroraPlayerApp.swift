@@ -3,8 +3,8 @@ import SwiftUI
 @main
 struct AuroraPlayerApp: App {
     @StateObject private var theme = ThemeManager.shared
-    // ✅ Observar el idioma: al cambiar, toda la app se re-renderiza al instante
-    @ObservedObject private var localization = Localization.shared
+    // ✅ HUD de FPS global (UIWindow independiente, visible en todas las pantallas)
+    @AppStorage("com.aurora.showFPS") private var showFPS = false
 
     var body: some Scene {
         WindowGroup {
@@ -15,6 +15,12 @@ struct AuroraPlayerApp: App {
                 // el color a TODOS los componentes de SwiftUI nativamente.
                 .tint(theme.accent)
                 .preferredColorScheme(nil)
+                .onAppear {
+                    FPSOverlayController.shared.setEnabled(showFPS)
+                }
+                .onChange(of: showFPS) { newValue in
+                    FPSOverlayController.shared.setEnabled(newValue)
+                }
         }
     }
 }

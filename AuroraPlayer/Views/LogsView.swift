@@ -130,7 +130,7 @@ struct LogsView: View {
                 }
 
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Listo") {
+                    Button(Localization.localized("actions.done")) {
                         dismiss()
                     }
                     .frame(width: 44, height: 44) // Bigger invisible touch target

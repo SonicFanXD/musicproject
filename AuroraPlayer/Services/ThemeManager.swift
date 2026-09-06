@@ -12,6 +12,23 @@ final class ThemeManager: ObservableObject {
     @Published var accentIndex: Int {
         didSet {
             UserDefaults.standard.set(accentIndex, forKey: Self.key)
+            // ✅ FIX "rastros del color por defecto": propagar el acento a
+            // UIKit globalmente (ventanas, route picker, alertas nativas,
+            // controles heredados) — .tint() de SwiftUI no cubre UIKit.
+            applyGlobalUIKitTint()
+        }
+    }
+
+    /// Aplica el color de acento a todas las ventanas UIKit existentes.
+    private func applyGlobalUIKitTint() {
+        let uiColor = UIColor(accent)
+        DispatchQueue.main.async {
+            UIWindow.appearance().tintColor = uiColor
+            for scene in UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }) {
+                for window in scene.windows {
+                    window.tintColor = uiColor
+                }
+            }
         }
     }
 
@@ -19,6 +36,8 @@ final class ThemeManager: ObservableObject {
         // ✅ FIX CI: 'key' es estático, debe referenciarse como Self.key
         let saved = UserDefaults.standard.integer(forKey: Self.key)
         accentIndex = (saved >= 0 && saved < 5) ? saved : 0
+        // ✅ Aplicar el tint UIKit al arrancar (restaura el ajuste guardado)
+        applyGlobalUIKitTint()
     }
 
     func setAccent(_ index: Int) {

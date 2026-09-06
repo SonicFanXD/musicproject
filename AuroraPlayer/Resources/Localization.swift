@@ -307,6 +307,17 @@ final class Localization: ObservableObject {
             "quality.wirelessCar": [.spanish: "Inalámbrica (Auto)", .english: "Wireless (Car)"],
             "quality.internal": [.spanish: "Interna", .english: "Internal"],
 
+            // Temas y acentos (Ajustes)
+            "settings.theme.system": [.spanish: "Sistema (claro/oscuro)", .english: "System (light/dark)"],
+            "settings.theme.light": [.spanish: "Modo Claro", .english: "Light Mode"],
+            "settings.theme.dark": [.spanish: "Modo Oscuro", .english: "Dark Mode"],
+            "settings.accent.purple": [.spanish: "Morado (predeterminado)", .english: "Purple (default)"],
+            "settings.accent.blue": [.spanish: "Azul Aurora", .english: "Aurora Blue"],
+            "settings.accent.emerald": [.spanish: "Esmeralda", .english: "Emerald"],
+            "settings.accent.pink": [.spanish: "Rosa Neón", .english: "Neon Pink"],
+            "settings.accent.amber": [.spanish: "Ámbar Solar", .english: "Solar Amber"],
+            "common.ok": [.spanish: "OK", .english: "OK"],
+
             // Presets de EQ
             "eq.flat": [.spanish: "Plano", .english: "Flat"],
             "eq.bass": [.spanish: "Graves", .english: "Bass"],

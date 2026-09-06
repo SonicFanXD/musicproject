@@ -29,9 +29,26 @@ struct SettingsView: View {
     @AppStorage("com.aurora.language") private var selectedLanguage = 0 // 0 = español, 1 = inglés
     @AppStorage("com.aurora.showFPS") private var showFPS = false
 
-    private let themes = ["Sistema (claro/oscuro)", "Modo Claro", "Modo Oscuro"]
-    private let accents = ["Morado (predeterminado)", "Azul Aurora", "Esmeralda", "Rosa Neón", "Ámbar Solar"]
-    private let languages = ["Español", "English"]
+    // ✅ LOCALIZADOS: computados para reaccionar al cambio de idioma al
+    // instante (antes eran `let` hardcodeados en español → el inglés no
+    // se aplicaba en los pickers de Tema, Color de acento e Idioma).
+    private var themes: [String] {
+        [
+            Localization.localized("settings.theme.system"),
+            Localization.localized("settings.theme.light"),
+            Localization.localized("settings.theme.dark")
+        ]
+    }
+    private var accents: [String] {
+        [
+            Localization.localized("settings.accent.purple"),
+            Localization.localized("settings.accent.blue"),
+            Localization.localized("settings.accent.emerald"),
+            Localization.localized("settings.accent.pink"),
+            Localization.localized("settings.accent.amber")
+        ]
+    }
+    private var languages: [String] { ["Español", "English"] }
 
     private let themeDefaultsKey = "com.aurora.uiTheme"
 
@@ -200,7 +217,7 @@ struct SettingsView: View {
                 EqualizerView(audioEngine: audioEngine)
             }
             .alert("Aurora Player v\(appVersion)", isPresented: $showAbout) {
-                Button("OK", role: .cancel) {}
+                Button(Localization.localized("common.ok"), role: .cancel) {}
             } message: {
                 Text(Localization.localized("settings.description"))
             }

@@ -5,6 +5,7 @@ import AVKit
 struct NowPlayingView: View {
     @ObservedObject var audioEngine: AudioEngine
     @ObservedObject var fileAccessService: FileAccessService
+    @ObservedObject var clock: PlaybackClock
     // ✅ Observar el idioma: al cambiar, esta vista se re-renderiza al instante
     @ObservedObject private var localization = Localization.shared
     @Environment(\.dismiss) private var dismiss
@@ -57,11 +58,11 @@ struct NowPlayingView: View {
             return min(max(scrubPreviewTime / audioEngine.duration, 0), 1)
         }
         guard audioEngine.duration > 0 else { return 0 }
-        return min(max(audioEngine.currentTime / audioEngine.duration, 0), 1)
+        return min(max(clock.time / audioEngine.duration, 0), 1)
     }
 
     private var scrubPreviewText: String {
-        formatTime(isScrubbing ? scrubPreviewTime : audioEngine.currentTime)
+        formatTime(isScrubbing ? scrubPreviewTime : clock.time)
     }
 
     // ✅ Contraste: si el color dominante es claro → texto oscuro; si es oscuro → texto blanco
@@ -182,7 +183,7 @@ struct NowPlayingView: View {
                 }
             }
             .sheet(isPresented: $showLyrics) {
-                LyricsView(song: audioEngine.currentSong, audioEngine: audioEngine)
+                LyricsView(song: audioEngine.currentSong, audioEngine: audioEngine, clock: audioEngine.clock)
             }
             .sheet(isPresented: $showEqualizer) {
                 EqualizerView(audioEngine: audioEngine)
@@ -761,7 +762,9 @@ struct AirPlayRoutePickerView: UIViewRepresentable {
     func makeUIView(context: Context) -> AVRoutePickerView {
         let picker = AVRoutePickerView()
         picker.prioritizesVideoDevices = false
-        picker.tintColor = UIColor(Color.accentColor)
+        // ✅ FIX: usar AppTheme.accent (UIColor(Color.accentColor) resolvía el
+        // asset por defecto y no respetaba el ajuste "Color de acento")
+        picker.tintColor = AppTheme.accentUIColor
         return picker
     }
 

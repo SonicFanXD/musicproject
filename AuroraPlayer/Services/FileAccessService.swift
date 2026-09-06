@@ -35,8 +35,11 @@ class FileAccessService: ObservableObject {
     // (causa principal del crash durante la indexación).
     private var queuedBatches: [(urls: [URL], generation: Int)] = []
     private var inFlightBatches = 0
-    private let maxInFlightBatches = 2 // Reducido para evitar sobrecarga
-    private let metadataBatchSize = 60 // Aumentado para procesar más en paralelo con menos actualizaciones de UI
+    // ✅ INDEXACIÓN MÁS RÁPIDA: más lotes en paralelo (AVAsset.load es I/O
+    // bound; 5 lotes concurrentes saturan mejor el disco/caché de metadata)
+    private let maxInFlightBatches = 5
+    // ✅ Lotes más grandes: menos overhead de scheduling y menos flushes de UI
+    private let metadataBatchSize = 100
     private var lastUIUpdate: Date = Date()
     private let uiUpdateInterval: TimeInterval = 0.05 // Actualizar UI cada 50ms máximo
 
@@ -336,10 +339,23 @@ class FileAccessService: ObservableObject {
             guard let self = self else { return }
             defer { self.inFlightBatches -= 1 }
 
-            var foundSongs: [Song] = []
-            for url in batch.urls {
-                let song = await self.makeSong(from: url)
-                foundSongs.append(song)
+            // ✅ INDEXACIÓN PARALELA: procesar las URLs del lote CONCURRENTEMENTE
+            // con TaskGroup (antes: await secuencial por URL → el disco esperaba
+            // a que cada archivo terminara su carga de metadata). Los índices
+            // preservan el orden original para resultados deterministas.
+            var foundSongs: [Song] = await withTaskGroup(of: (Int, Song?).self) { group in
+                for (index, url) in batch.urls.enumerated() {
+                    group.addTask { [weak self] in
+                        guard let self = self else { return (index, nil) }
+                        let song = await self.makeSong(from: url)
+                        return (index, song)
+                    }
+                }
+                var results = Array<Song?>(repeating: nil, count: batch.urls.count)
+                for await (index, song) in group {
+                    results[index] = song
+                }
+                return results.compactMap { $0 }
             }
 
             // ✅ Throttling de actualizaciones de UI para evitar congelamiento

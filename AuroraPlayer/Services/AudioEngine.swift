@@ -3,6 +3,15 @@ import AVFoundation
 import MediaPlayer
 import UIKit
 
+// ✅ Reloj de reproducción aislado: publica el tiempo SOLO a las vistas que
+// lo necesitan (PlayerBar, NowPlaying, Lyrics). Antes `currentTime` era
+// @Published en AudioEngine → cada tick (0.4s) re-renderizaba TODO el árbol
+// de ContentView (lista completa de canciones = drops a 40-50fps al reproducir).
+final class PlaybackClock: ObservableObject {
+    @Published var time: TimeInterval = 0
+}
+
+class AudioEngine: NSObject, ObservableObject {
 class AudioEngine: NSObject, ObservableObject {
     // MARK: - Publicado para la UI
     @Published var isPlaying: Bool = false {
@@ -13,7 +22,15 @@ class AudioEngine: NSObject, ObservableObject {
             updateIdleTimer()
         }
     }
-    @Published var currentTime: TimeInterval = 0
+    // ✅ Ya no es @Published: el reloj de UI vive en `clock` (PlaybackClock)
+    // para no re-renderizar la biblioteca completa en cada tick.
+    var currentTime: TimeInterval = 0 {
+        didSet {
+            if oldValue != currentTime {
+                clock.time = currentTime
+            }
+        }
+    }
     @Published var duration: TimeInterval = 0
     @Published var currentSong: Song?
     @Published var currentRouteName: String = "Altavoz"
@@ -40,6 +57,9 @@ class AudioEngine: NSObject, ObservableObject {
     private var playlist: [Song] = []
     private var originalPlaylist: [Song] = []
     private(set) var currentIndex: Int = 0
+
+    // ✅ Reloj de reproducción publicado para las vistas de UI
+    let clock = PlaybackClock()
 
     // MARK: - Motor de audio mejorado
     private let engine = AVAudioEngine()
