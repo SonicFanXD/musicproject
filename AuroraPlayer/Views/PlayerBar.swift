@@ -65,7 +65,6 @@ struct PlayerBar: View {
                                 }
                                 .drawingGroup()
                             }
-                            }
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .contentShape(Rectangle())
@@ -312,7 +311,6 @@ struct PlayerBar: View {
             }
         }
     }
-}
 
 // MARK: - ButtonStyle con feedback de presión (reusable, GPU barato)
 struct PressableButtonStyle: ButtonStyle {
