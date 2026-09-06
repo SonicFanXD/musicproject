@@ -789,6 +789,16 @@ class AudioEngine: NSObject, ObservableObject {
             nextNode.pause()
         }
         avPlayer?.pause()
+        // ✅ FIX sincronización Centro de Control/pantalla de bloqueo: iOS
+        // ignoraba el update del now playing porque la sesión seguía
+        // "sonando" (el engine seguía corriendo con solo el playerNode
+        // pausado). Pausar el engine completo detiene el render real →
+        // iOS acepta el rate=0 y el widget se pausa al instante.
+        // resume() ya tiene el path de reactivación (startEngineSafely +
+        // reprogramar desde currentTime), así que no se pierde la posición.
+        if !isUsingFallback, !isCrossfading, engine.isRunning {
+            engine.pause()
+        }
         isPlaying = false
         stopDisplayTimer()
         // ✅ Publicar la info de Now Playing explícitamente (rate 0 + elapsed exacto)
@@ -1358,6 +1368,15 @@ class AudioEngine: NSObject, ObservableObject {
     }
 
     private func updateNowPlayingInfo() {
+        // ✅ FIX: MPNowPlayingInfoCenter debe actualizarse SIEMPRE en el
+        // hilo principal; desde un hilo secundario iOS puede ignorar el
+        // update (síntoma: el widget solo se refrescaba al reiniciar).
+        DispatchQueue.main.async {
+            self.publishNowPlayingInfo()
+        }
+    }
+
+    private func publishNowPlayingInfo() {
         var info = [String: Any]()
         if let song = currentSong {
             info[MPMediaItemPropertyTitle] = song.title

@@ -106,14 +106,27 @@ final class FPSOverlayController {
                 let newWindow = PassThroughWindow(windowScene: scene)
                 newWindow.windowLevel = .alert + 1
                 newWindow.backgroundColor = .clear
-                newWindow.rootViewController = UIHostingController(
+
+                // ✅ FIX pantalla negra: el UIHostingController pinta su fondo
+                // por defecto (opaco, negro en dark mode) sobre toda la ventana.
+                // Fondo transparente + frame pequeño solo para el HUD.
+                let hosting = UIHostingController(
                     rootView: FPSCounter()
-                        // ✅ Esquina superior izquierda, debajo del Dynamic Island:
-                        // zona libre en todas las pantallas (títulos centrados)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                        .padding(.leading, 12)
-                        .padding(.top, 56)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
                 )
+                hosting.view.backgroundColor = .clear
+                hosting.view.isOpaque = false
+                newWindow.rootViewController = hosting
+
+                // ✅ Ventana del tamaño exacto del HUD (esquina superior
+                // izquierda, debajo del Dynamic Island) — el resto de la
+                // pantalla queda intacto y los toques pasan a la app.
+                let hudWidth: CGFloat = 130
+                let hudHeight: CGFloat = 46
+                let safeTop = scene.windows.first?.safeAreaInsets.top ?? 50
+                newWindow.frame = CGRect(x: 0, y: safeTop, width: hudWidth, height: hudHeight)
+
                 window = newWindow
             }
             window?.isHidden = false
