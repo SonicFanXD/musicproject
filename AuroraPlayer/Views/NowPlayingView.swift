@@ -755,9 +755,6 @@ struct AirPlayRoutePickerView: UIViewRepresentable {
         let picker = AVRoutePickerView()
         picker.prioritizesVideoDevices = false
         picker.tintColor = UIColor(Color.accentColor)
-        // ✅ Sin icono visible: lo superponemos invisible sobre nuestro botón
-        // SwiftUI; solo interesa su comportamiento táctil.
-        picker.routePickerButtonBordered = false
         return picker
     }
 
