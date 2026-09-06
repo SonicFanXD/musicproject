@@ -545,7 +545,7 @@ struct NowPlayingView: View {
                 .frame(width: isCompactScreen ? 56 : 64, height: isCompactScreen ? 56 : 64)
                 .contentShape(Rectangle())
             }
-`            .buttonStyle(.plain)
+            .buttonStyle(.plain)
             // Me gusta (junto a Repeat)
             Button {
                 Haptics.light()
@@ -567,7 +567,7 @@ struct NowPlayingView: View {
                 .animation(.spring(response: 0.3, dampingFraction: 0.6), value: isCurrentLiked)
             }
             .buttonStyle(.plain)
-`        }
+        }
         .frame(maxWidth: .infinity)
         .fixedSize()
     }
@@ -715,8 +715,8 @@ struct NowPlayingView: View {
                 .contentShape(Rectangle())
             }
             .accessibilityLabel(Localization.localized("nowPlaying.more"))
-`        }
-`        .frame(maxWidth: .infinity)
+        }
+        .frame(maxWidth: .infinity)
         .fixedSize()
     }
 
