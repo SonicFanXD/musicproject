@@ -709,12 +709,13 @@ struct ContentView: View {
                         }
                     }
                 } label: {
-                    // ✅ Brillo aumentado: el + ahora usa secondary a 0.7 (antes
-                    // .tertiary, casi invisible) + resalta con accent cuando la
-                    // canción está sonando para mantenerse legible en cualquier fondo.
-                    Image(systemName: "plus.circle.fill")
-                        .font(.system(size: 15))
-                        .foregroundStyle(isCurrent ? AppTheme.accent : Color.secondary.opacity(0.7))
+                    // ✅ Icono "plus" estándar (existente en todas las versiones de
+                    // SF Symbols, a diferencia de "plus.circle.fill" que en ciertos
+                    // SDKs + drawingGroup + opacidad falla al rasterizar y pinta un
+                    // placeholder). Secundario a 0.7; accent cuando suena la canción.
+                    Image(systemName: "plus")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(isCurrent ? AppTheme.accent : Color.secondary.opacity(0.85))
                         .frame(width: 36, height: 36)
                         .contentShape(Rectangle())
                 }
@@ -765,7 +766,7 @@ struct ContentView: View {
                         }
                     }
                 } label: {
-                    Label(Localization.localized("context.addToPlaylist"), systemImage: "plus.circle.fill")
+                    Label(Localization.localized("context.addToPlaylist"), systemImage: "plus")
                 }
             }
             
