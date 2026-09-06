@@ -731,6 +731,7 @@ class AudioEngine: NSObject, ObservableObject {
             isPlaying = true
             playbackErrorCount = 0
             currentFileURL = song.url
+            AppLog.info(.playback, String(format: "▶ Reproduciendo '%@' (%.1fs, %.0f Hz)", song.displayName, duration, sampleRate))
 
             // ✅ Programar el segmento PRIMERO, luego anclar reloj y reproducir.
             // Esto elimina la ventana de carrera donde el timer marcaba 0
@@ -748,6 +749,10 @@ class AudioEngine: NSObject, ObservableObject {
             updateNextUpQueue()
             saveState()
         } catch {
+            // 🔍 LOG: registrar la causa exacta por la que el AVAudioEngine falló
+            // (formato no soportado, archivo corrupto, engine no arrancable, etc.)
+            AppLog.error(.playback, error, context: "playCurrentSong: cargar/programar \(song.displayName)")
+            AppLog.warning(.playback, "Fallback a AVPlayer para '\(song.displayName)' (AVAudioEngine falló)")
             startFallbackPlayback(song: song)
         }
     }
@@ -995,6 +1000,7 @@ class AudioEngine: NSObject, ObservableObject {
             engine.pause()
         }
         isPlaying = false
+        AppLog.info(.playback, String(format: "Pausa en %.1fs — '%@'", currentTime, currentSong?.displayName ?? "—"))
         updateNowPlayingInfo()
         saveState()
     }
@@ -1037,6 +1043,7 @@ class AudioEngine: NSObject, ObservableObject {
                 }
             }
         }
+        AppLog.info(.playback, String(format: "Resume desde %.1fs — '%@' (engine running: %@, fallback: %@)", currentTime, currentSong?.displayName ?? "—", engine.isRunning ? "sí" : "no", isUsingFallback ? "sí" : "no"))
         isPlaying = true
         // ✅ FIX Centro de Control: publicar rate 1.0 + elapsed al reanudar
         updateNowPlayingInfo()
@@ -1084,8 +1091,14 @@ class AudioEngine: NSObject, ObservableObject {
 
     func playNext() {
         // ✅ FIX CRÍTICO: Evitar crash si estamos en medio de un crossfade
-        guard !isCrossfading else { return }
-        guard let index = computeNextIndex() else { return }
+        guard !isCrossfading else {
+            AppLog.warning(.playback, "playNext ignorado: crossfade en curso")
+            return
+        }
+        guard let index = computeNextIndex() else {
+            AppLog.info(.playback, "Fin de la playlist (repeat: \(repeatMode.rawValue)). No hay siguiente.")
+            return
+        }
         currentIndex = index
         playCurrentSong()
     }
@@ -1211,6 +1224,7 @@ class AudioEngine: NSObject, ObservableObject {
         // sin esto, el handler obsoleto llamaba a handlePlaybackFinished() → playNext()
         // y SALTABA DE CANCIÓN al tocar/arrastrar la barra de progreso o las letras.
         scheduleGeneration += 1
+        AppLog.info(.playback, String(format: "Seek a %.1fs en '%@' (isPlaying: %@)", time, currentSong?.displayName ?? "—", isPlaying ? "sí" : "no"))
         playerNode.stop()
         crossfadeTimer?.invalidate()
         crossfadeTimer = nil
@@ -1372,6 +1386,7 @@ class AudioEngine: NSObject, ObservableObject {
         // AVAudioEngine que puede dispararlo más de una vez). Incrementar
         // scheduleGeneration invalida cualquier handler anterior pendiente.
         scheduleGeneration += 1
+        AppLog.info(.playback, "Canción terminada: '\(currentSong?.displayName ?? "—")' (\(String(format: "%.1f", duration))s, repeat: \(repeatMode.rawValue))")
 
         if repeatMode == .one {
             guard let file = audioFile else { return }
@@ -1471,7 +1486,9 @@ class AudioEngine: NSObject, ObservableObject {
 
     private func handlePlaybackFailure(song: Song) {
         playbackErrorCount += 1
+        AppLog.error(.playback, "Fallo de reproducción #\(playbackErrorCount)/5: '\(song.displayName)' — \(song.url.lastPathComponent). ¿Existe: \(FileManager.default.fileExists(atPath: song.url.path))")
         if playbackErrorCount >= 5 {
+            AppLog.warning(.playback, "Demasiados fallos consecutivos (5). Deteniendo reproducción.")
             stop()
             playbackErrorCount = 0
             return
