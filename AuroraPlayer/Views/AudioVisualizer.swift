@@ -18,13 +18,17 @@ final class VisualizerFrameRate: ObservableObject {
     private init() {
         update()
         NotificationCenter.default.addObserver(
-            forName: NSProcessInfo.powerStateDidChangeNotification,
+            forName: ProcessInfo.powerStateDidChangeNotification,
             object: nil, queue: .main
-        ) { [weak self] _ in self?.update() }
+        ) { [weak self] _ in
+            Task { @MainActor in self?.update() }
+        }
         NotificationCenter.default.addObserver(
-            forName: NSProcessInfo.thermalStateDidChangeNotification,
+            forName: ProcessInfo.thermalStateDidChangeNotification,
             object: nil, queue: .main
-        ) { [weak self] _ in self?.update() }
+        ) { [weak self] _ in
+            Task { @MainActor in self?.update() }
+        }
     }
 
     private func update() {
