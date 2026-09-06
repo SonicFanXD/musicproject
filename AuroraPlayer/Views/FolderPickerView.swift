@@ -349,14 +349,15 @@ struct FolderPickerView: View {
                             .padding(.horizontal, 15)
                             .padding(.vertical, 10)
                             .background {
+                                // ✅ 60fps: color OPACO (no material blur) para listas largas
                                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                    .fill(.ultraThinMaterial)
+                                    .fill(Color(UIColor.secondarySystemBackground).opacity(0.6))
                             }
                         }
                     }
                     .background {
                         RoundedRectangle(cornerRadius: 18, style: .continuous)
-                            .fill(.ultraThinMaterial)
+                            .fill(AnyShapeStyle(.ultraThinMaterial))
                     }
                 }
             }
@@ -410,14 +411,15 @@ struct FolderPickerView: View {
                             .padding(.horizontal, 15)
                             .padding(.vertical, 10)
                             .background {
+                                // ✅ 60fps: color OPACO (no material blur) para listas largas
                                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                    .fill(.ultraThinMaterial)
+                                    .fill(Color(UIColor.secondarySystemBackground).opacity(0.6))
                             }
                         }
                     }
                     .background {
                         RoundedRectangle(cornerRadius: 18, style: .continuous)
-                            .fill(.ultraThinMaterial)
+                            .fill(AnyShapeStyle(.ultraThinMaterial))
                     }
                 }
             }

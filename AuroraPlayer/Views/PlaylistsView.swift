@@ -198,8 +198,10 @@ struct PlaylistsView: View {
                         Spacer()
 
                         ZStack {
+                            // ✅ 60fps: fondo OPACO (no material blur) — el grid de
+                            // playlists puede tener varias tarjetas con blur simultáneo
                             Circle()
-                                .fill(.regularMaterial)
+                                .fill(Color(UIColor.secondarySystemBackground).opacity(0.8))
                                 .frame(width: 32, height: 32)
 
                             Text("\(playlist.songIDs.count)")
@@ -603,9 +605,7 @@ struct PlaylistDetailView: View {
         .foregroundStyle(.secondary)
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
-        .background {
-            Capsule().fill(.regularMaterial)
-        }
+        .nativeGlassCapsule()
     }
 
     private func formatLongDuration(_ seconds: TimeInterval) -> String {

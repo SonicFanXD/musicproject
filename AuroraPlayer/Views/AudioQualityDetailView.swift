@@ -45,6 +45,14 @@ struct AudioQualityDetailView: View {
                 }
             }
         }
+        // ✅ Batería: detener el pulso infinito al salir de la vista
+        // (sin transacción animada para que el ring vuelva a escala 1 al instante,
+        // sin disparar de nuevo la animación repeatForever).
+        .onDisappear {
+            var t = Transaction()
+            t.disablesAnimations = true
+            withTransaction(t) { headerPulse = false }
+        }
     }
 
     // MARK: - Contenido embebido (para tarjeta modal)
@@ -69,15 +77,8 @@ struct AudioQualityDetailView: View {
     private var fullScreenContent: some View {
         NavigationStack {
             ZStack {
-                // ✅ Fondo con gradiente sutil y profundidad
-                LinearGradient(
-                    colors: [
-                        Color(UIColor.systemBackground),
-                        Color(UIColor.tertiarySystemBackground).opacity(0.5),
-                        Color(UIColor.systemBackground)
-                    ],
-                    startPoint: .top, endPoint: .bottom
-                ).ignoresSafeArea()
+                // ✅ Fondo premium consistente con NowPlayingView
+                AppBackground()
 
                 ScrollView {
                     // ✅ OPTIMIZACIÓN: LazyVStack para lazy-loading de secciones.
@@ -93,7 +94,7 @@ struct AudioQualityDetailView: View {
                 .scrollIndicators(.hidden)
             }
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(Color(UIColor.systemBackground).opacity(0.92), for: .navigationBar)
+            .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .principal) {

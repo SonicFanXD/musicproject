@@ -336,13 +336,9 @@ struct AlbumSongRow: View {
             .padding(.horizontal, 16).padding(.vertical, 14)
             .background {
                 RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .fill(isCurrent ? tintColor.opacity(0.12) : Color.clear)
+                    .fill(isCurrent ? tintColor.opacity(0.12) : Color(UIColor.secondarySystemBackground).opacity(0.6))
             }
             .contentShape(Rectangle())
-            .overlay {
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .fill(isCurrent ? AnyShapeStyle(Color.clear) : AnyShapeStyle(.ultraThinMaterial))
-            }
             .overlay {
                 if isCurrent {
                     RoundedRectangle(cornerRadius: 20, style: .continuous)
@@ -747,13 +743,9 @@ struct ArtistSongRow: View {
             .padding(.horizontal, 16).padding(.vertical, 14)
             .background {
                 RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .fill(isCurrent ? tintColor.opacity(0.12) : Color.clear)
+                    .fill(isCurrent ? tintColor.opacity(0.12) : Color(UIColor.secondarySystemBackground).opacity(0.6))
             }
             .contentShape(Rectangle())
-            .overlay {
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .fill(isCurrent ? AnyShapeStyle(Color.clear) : AnyShapeStyle(.ultraThinMaterial))
-            }
             .overlay {
                 if isCurrent {
                     RoundedRectangle(cornerRadius: 20, style: .continuous)

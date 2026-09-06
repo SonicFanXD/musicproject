@@ -268,7 +268,9 @@ struct ContentView: View {
                                 }
                                 .shadow(color: AppTheme.accent.opacity(0.35), radius: 8, x: 0, y: 4)
                             } else {
-                                Capsule().fill(.regularMaterial)
+                                // ✅ 60fps: color OPACO (sin blur) para los chips
+                                // no seleccionados (se re-renderizan al scrollear)
+                                Capsule().fill(Color(UIColor.secondarySystemBackground))
                                 Capsule().strokeBorder(Color.secondary.opacity(0.1), lineWidth: 0.5)
                             }
                         }
@@ -725,15 +727,17 @@ struct ContentView: View {
             .background {
                 if isCurrent {
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(AppTheme.accent.opacity(0.07))
+                        .fill(AppTheme.accent.opacity(0.08))
                         .overlay(
                             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                .strokeBorder(AppTheme.accent.opacity(0.15), lineWidth: 0.5)
+                                .strokeBorder(AppTheme.accent.opacity(0.2), lineWidth: 0.5)
                         )
                 } else {
-                    // ✅ Misma tarjeta material que álbumes/artistas (diseño unificado)
+                    // ✅ 60fps: color OPACO (no material blur) — en listas largas
+                    // iOS degrada con muchos blurs simultáneos. IDÉNTICO look,
+                    // pero sin re-render de blur por fila.
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(.regularMaterial)
+                        .fill(Color(UIColor.secondarySystemBackground).opacity(0.6))
                 }
             }
             .contextMenu {
@@ -752,10 +756,17 @@ struct ContentView: View {
             
             Menu {
                 if fileAccessService.playlists.isEmpty {
-                    Text(Localization.localized("library.noPlaylists"))
+                    Button {
+                        // No hay playlists - acción vacía
+                    } label: {
+                        Label(Localization.localized("playlists.createFirst"), systemImage: "plus.circle")
+                            .foregroundStyle(.secondary)
+                    }
+                    .disabled(true)
                 } else {
                     ForEach(fileAccessService.playlists) { playlist in
                         Button {
+                            Haptics.light()
                             fileAccessService.addSongToPlaylist(song, playlist: playlist)
                         } label: {
                             Label(playlist.name, systemImage: "music.note.list")
@@ -929,20 +940,22 @@ struct ContentView: View {
 }
 
 struct SplashView: View {
-    @State private var phase: CGFloat = 0
     @State private var appear = false
+    @State private var spin = false
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         ZStack {
-            // ✅ Fondo sólido con gradiente sutil (sin blur costoso)
-            LinearGradient(
-                colors: [Color.black, Color(red: 0.05, green: 0.05, blue: 0.12)],
-                startPoint: .top,
-                endPoint: .bottom
-            )
+            // ✅ Fondo que respeta el esquema de color: evita el flash
+            // negro→blanco cuando la app abre en modo claro
+            (colorScheme == .dark
+                ? Color.black
+                : Color(UIColor.systemBackground))
             .ignoresSafeArea()
 
-            // ✅ Aurora animada con drawingGroup (GPU-accelerated, sin blur)
+            // ✅ Aurora rotatoria: el gradiente es ESTÁTICO y se rota con
+            // rotationEffect (transform puro de GPU). Se rasteriza UNA vez
+            // en lugar de re-rasterizar 600px por frame.
             AngularGradient(
                 colors: [
                     AppTheme.accent.opacity(0.0),
@@ -952,12 +965,13 @@ struct SplashView: View {
                     AppTheme.accent.opacity(0.0)
                 ],
                 center: .center,
-                startAngle: .degrees(phase * 360),
-                endAngle: .degrees(phase * 360 + 180)
+                startAngle: .degrees(0),
+                endAngle: .degrees(200)
             )
-            .frame(width: 600, height: 600)
-            .opacity(0.6)
-            .drawingGroup() // ✅ Renderiza en GPU sin costo de CPU
+            .frame(width: 480, height: 480)
+            .rotationEffect(.degrees(spin ? 360 : 0))
+            .animation(.linear(duration: 12).repeatForever(autoreverses: false), value: spin)
+            .opacity(colorScheme == .dark ? 0.6 : 0.4)
 
             VStack(spacing: 32) {
                 // ✅ Logo con pulse sutil (una sola animación)
@@ -988,8 +1002,10 @@ struct SplashView: View {
                     Text("Aurora Player")
                         .font(.system(size: 30, weight: .bold, design: .rounded))
                         .foregroundStyle(
+                            // En modo claro el blanco puro sería invisible
+                            // sobre el fondo claro: usamos el color primario
                             LinearGradient(
-                                colors: [.white, AppTheme.accent],
+                                colors: [colorScheme == .dark ? .white : Color(UIColor.label), AppTheme.accent],
                                 startPoint: .topLeading,
                                 endPoint: .bottomTrailing
                             )
@@ -1006,12 +1022,11 @@ struct SplashView: View {
                 .animation(.easeOut(duration: 0.6).delay(0.25), value: appear)
             }
         }
+        .allowsHitTesting(false) // No bloquea toques durante la transición
         .onAppear {
             appear = true
-            // ✅ Una sola animación continua, sin repeatForever costoso
-            withAnimation(.linear(duration: 8).repeatForever(autoreverses: false)) {
-                phase = 1
-            }
+            // ✅ Rotación por transform (GPU): sin re-render del gradiente
+            spin = true
         }
     }
 }
@@ -1113,8 +1128,9 @@ private func albumListRow(_ album: Album) -> some View {
     }
     .padding(.horizontal, 14).padding(.vertical, 12)
     .background {
+        // ✅ 60fps: color OPACO (no material blur) para listas largas
         RoundedRectangle(cornerRadius: 16, style: .continuous)
-            .fill(.regularMaterial)
+            .fill(Color(UIColor.secondarySystemBackground).opacity(0.6))
     }
 }
 
@@ -1151,8 +1167,9 @@ private func artistListRow(_ artist: Artist) -> some View {
     }
     .padding(.horizontal, 14).padding(.vertical, 12)
     .background {
+        // ✅ 60fps: color OPACO (no material blur) para listas largas
         RoundedRectangle(cornerRadius: 16, style: .continuous)
-            .fill(.regularMaterial)
+            .fill(Color(UIColor.secondarySystemBackground).opacity(0.6))
     }
 }
 

@@ -1,10 +1,52 @@
 import SwiftUI
 import AVFoundation
 import QuartzCore
+import UIKit
+
+// MARK: - Optimizador de batería para el visualizador
+// ✅ Ajusta dinámicamente el frame rate del visualizador según el estado de
+// energía/térmico del dispositivo:
+//   · 60fps: energía normal y estado térmico nominal (pantalla activa)
+//   · 30fps: modo bajo consumo activado, o estado térmico fair/serious/critical
+// Cuando la app pasa a segundo plano o la pantalla se apaga, iOS PAUSA el
+// CADisplayLink automáticamente (no pide frames), así que no hay que hacer más.
+@MainActor
+final class VisualizerFrameRate: ObservableObject {
+    static let shared = VisualizerFrameRate()
+    @Published private(set) var fps: Int = 60
+
+    private init() {
+        update()
+        NotificationCenter.default.addObserver(
+            forName: NSProcessInfo.powerStateDidChangeNotification,
+            object: nil, queue: .main
+        ) { [weak self] _ in self?.update() }
+        NotificationCenter.default.addObserver(
+            forName: NSProcessInfo.thermalStateDidChangeNotification,
+            object: nil, queue: .main
+        ) { [weak self] _ in self?.update() }
+    }
+
+    private func update() {
+        if ProcessInfo.processInfo.isLowPowerModeEnabled {
+            fps = 30
+            return
+        }
+        switch ProcessInfo.processInfo.thermalState {
+        case .fair, .serious, .critical:
+            fps = 30
+        default:
+            fps = 60
+        }
+    }
+}
 
 struct AudioVisualizer: View {
     @ObservedObject var audioEngine: AudioEngine
     var tintColor: Color = AppTheme.accent
+    // ✅ Observa el frame rate óptimo según batería/térmica para adaptarse
+    // en tiempo real (60↔30fps) sin reiniciar el CADisplayLink.
+    @ObservedObject private var frameRate = VisualizerFrameRate.shared
     @State private var amplitudes: [CGFloat] = Array(repeating: 0.08, count: 24)
     @State private var displayLink: CADisplayLink?
     @State private var phase: Double = 0
@@ -61,6 +103,11 @@ struct AudioVisualizer: View {
                 isVisible = false
             }
         }
+        // ✅ Batería: adapta los fps en tiempo real (60↔30) al cambiar el estado
+        // de bajo consumo/térmico, sin reiniciar el CADisplayLink.
+        .onReceive(frameRate.$fps) { fps in
+            displayLink?.preferredFramesPerSecond = fps
+        }
     }
 
     private func startVisualization() {
@@ -68,7 +115,9 @@ struct AudioVisualizer: View {
         displayLink = CADisplayLink(target: VisualizerLinkTarget { [self] in
             updateAmplitudes()
         }, selector: #selector(VisualizerLinkTarget.fire(displayLink:)))
-        displayLink?.preferredFramesPerSecond = 60
+        // ✅ Batería: usar el frame rate adaptativo (60fps normal, 30fps en
+        // bajo consumo o calor)
+        displayLink?.preferredFramesPerSecond = frameRate.fps
         displayLink?.add(to: .main, forMode: .common)
     }
 
@@ -111,6 +160,8 @@ final class VisualizerLinkTarget: NSObject {
 // MARK: - Visualizador Circular (optimizado)
 struct CircularAudioVisualizer: View {
     @ObservedObject var audioEngine: AudioEngine
+    // ✅ Batería: mismo controlador de frame rate adaptativo (60↔30fps)
+    @ObservedObject private var frameRate = VisualizerFrameRate.shared
     @State private var amplitudes: [CGFloat] = Array(repeating: 0, count: 48)
     @State private var displayLink: CADisplayLink?
     @State private var isVisible = false
@@ -153,6 +204,11 @@ struct CircularAudioVisualizer: View {
                 stopVisualization()
             }
         }
+        // ✅ Batería: adapta los fps en tiempo real (60↔30) al cambiar el estado
+        // de bajo consumo/térmico, sin reiniciar el CADisplayLink.
+        .onReceive(frameRate.$fps) { fps in
+            displayLink?.preferredFramesPerSecond = fps
+        }
     }
 
     private func startVisualization() {
@@ -160,7 +216,9 @@ struct CircularAudioVisualizer: View {
         displayLink = CADisplayLink(target: VisualizerLinkTarget { [self] in
             updateCircularAmplitudes()
         }, selector: #selector(VisualizerLinkTarget.fire(displayLink:)))
-        displayLink?.preferredFramesPerSecond = 60
+        // ✅ Batería: usar el frame rate adaptativo (60fps normal, 30fps en
+        // bajo consumo o calor)
+        displayLink?.preferredFramesPerSecond = frameRate.fps
         displayLink?.add(to: .main, forMode: .common)
     }
 

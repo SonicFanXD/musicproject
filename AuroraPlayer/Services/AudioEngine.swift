@@ -574,17 +574,20 @@ class AudioEngine: NSObject, ObservableObject {
             }
         }
 
-        // Si hay reproducción activa, re-programar el segmento para que el
-        // cambio se aplique al instante (mismo patrón que toggleEQ).
-        if isPlaying, playerNode.isPlaying, let file = audioFile {
+        // Si hay una canción cargada (reproduciendo O en pausa), re-programar el
+        // segmento para que el cambio mono se aplique al instante.
+        // ✅ FIX MONO-EN-PAUSA: el reinicio del engine BORRA el segmento programado;
+        // si no se reprograma aquí, `resume()` hace playerNode.play() sin segmento
+        // y la reproducción queda rota/silenciada al reanudar.
+        if let file = audioFile {
             scheduleGeneration += 1
-            let position = wallClockTime
+            let position = isPlaying ? wallClockTime : min(max(currentTime, 0), duration)
             anchorPlaybackPosition(position)
             playerNode.stop()
-            // ✅ El engine ya fue reiniciado arriba; reprogramar SINCRÓNICAMENTE
-            // evita la carrera del delay de 0.02s con el nodo recién detenido
-            // (antes el toggle de mono dejaba la reproducción rota/silenciada).
-            scheduleFile(file, from: position)
+            // Reprogramar SINCRÓNICAMENTE (evita la carrera del delay de 0.02s).
+            // Si estaba en pausa, reprogramar SIN reproducir para que resume()
+            // solo haga play() desde la posición correcta.
+            scheduleFile(file, from: position, autostart: isPlaying)
         }
         AppLog.info(.playback, "Audio mono (downmix de salida): \(isMonoAudioEnabled ? "activado" : "desactivado")")
     }
@@ -898,6 +901,11 @@ class AudioEngine: NSObject, ObservableObject {
         // al valor viejo, el lock screen mostraba datos incorrectos y la
         // canción nueva se "atascaba" o saltaba).
         duration = Double(file.length) / fileFormat.sampleRate
+        // ✅ FIX: resetear el reloj de UI ANTES de anclar para que la barra de
+        // progreso de la NUEVA canción arranque en 0 (antes conservaba el valor
+        // de la canción anterior → mostraba progreso = 100% en el primer frame).
+        currentTime = 0
+        clock.time = 0
         anchorPlaybackPosition(0)
         isPlaying = true
         playbackErrorCount = 0

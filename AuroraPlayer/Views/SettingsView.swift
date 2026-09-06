@@ -292,9 +292,9 @@ struct SettingsView: View {
     private var headerSection: some View {
         VStack(spacing: 16) {
             ZStack {
-                // ✅ Círculo con material de vidrio (estilo NowPlayingView)
+                // ✅ Círculo con tinte suave (sin blur: cero re-muestreo en scroll)
                 Circle()
-                    .fill(AnyShapeStyle(.ultraThinMaterial))
+                    .fill(AppTheme.accent.opacity(0.12))
                     .frame(width: 88, height: 88)
                     .overlay {
                         Circle()
@@ -330,7 +330,22 @@ struct SettingsView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 18)
-        .nativeGlass(cornerRadius: 24)
+        .background {
+            // ✅ Fondo opaco + borde gradiente sutil (look vidrio sin blur)
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .fill(Color(UIColor.secondarySystemGroupedBackground))
+                .shadow(color: .black.opacity(0.06), radius: 10, x: 0, y: 4)
+        }
+        .overlay {
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .strokeBorder(
+                    LinearGradient(
+                        colors: [.white.opacity(0.14), .clear, .white.opacity(0.06)],
+                        startPoint: .topLeading, endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 1
+                )
+        }
     }
 
     // MARK: - Section Builder (diseño premium estilo NowPlayingView)
@@ -364,9 +379,11 @@ struct SettingsView: View {
                 content()
             }
             .background {
+                // ✅ Color opaco del sistema (look Settings nativo de iOS):
+                // sin blur, cero re-muestreo al hacer scroll = scroll fluido
                 RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .fill(AnyShapeStyle(.ultraThinMaterial))
-                    .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 4)
+                    .fill(Color(UIColor.secondarySystemGroupedBackground))
+                    .shadow(color: .black.opacity(0.06), radius: 8, x: 0, y: 4)
             }
         }
     }

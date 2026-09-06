@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct QueueView: View {
     @ObservedObject var audioEngine: AudioEngine
@@ -114,7 +115,8 @@ struct QueueView: View {
                             Capsule().fill(AppTheme.accent)
                                 .shadow(color: AppTheme.accent.opacity(0.3), radius: 6, x: 0, y: 3)
                         } else {
-                            Capsule().fill(.regularMaterial)
+                            // ✅ 60fps: color OPACO (sin blur) para el selector
+                            Capsule().fill(Color(UIColor.secondarySystemBackground))
                         }
                     }
                 }
@@ -259,7 +261,7 @@ struct QueueView: View {
             }
             .padding(.horizontal, 14).padding(.vertical, 12)
             .background {
-                RoundedRectangle(cornerRadius: 18, style: .continuous).fill(AnyShapeStyle(.ultraThinMaterial))
+                RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Color(UIColor.secondarySystemBackground).opacity(0.6))
             }
             .contentShape(Rectangle())
         }
@@ -306,7 +308,7 @@ struct QueueView: View {
             }
             .padding(.horizontal, 14).padding(.vertical, 12)
             .background {
-                RoundedRectangle(cornerRadius: 18, style: .continuous).fill(AnyShapeStyle(.ultraThinMaterial))
+                RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Color(UIColor.secondarySystemBackground).opacity(0.6))
             }
             .contentShape(Rectangle())
         }

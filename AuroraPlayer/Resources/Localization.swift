@@ -200,6 +200,7 @@ final class Localization: ObservableObject {
             "playlists.empty": [.spanish: "No hay listas", .english: "No playlists"],
             "playlists.emptySubtitle": [.spanish: "Crea tu primera lista de reproducción", .english: "Create your first playlist"],
             "playlists.emptySubtitle2": [.spanish: "Crea tu primera lista para organizar tu música", .english: "Create your first list to organize your music"],
+            "playlists.createFirst": [.spanish: "Crea una lista primero", .english: "Create a playlist first"],
 
             // Indexing / Escaneo
             "indexing.updating": [.spanish: "Actualizando...", .english: "Updating..."],
