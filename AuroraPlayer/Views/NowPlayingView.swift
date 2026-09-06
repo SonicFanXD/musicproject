@@ -531,7 +531,6 @@ struct NowPlayingView: View {
         .fixedSize()
     }
 
-    @ViewBuilder
     // ✅ Overload sin picker (la mayoría de botones de feature)
     @ViewBuilder
     private func featureButton(
