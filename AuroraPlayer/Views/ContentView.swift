@@ -38,7 +38,10 @@ struct ContentView: View {
                     VStack(spacing: 0) {
                         categoryPicker
 
-                        Group {
+                        // ✅ Transición animada entre categorías: el contenido
+                        // entra con fade + slide suave, sale con fade + micro-escala.
+                        // Solo transform/opacity → renderizado por GPU, 60fps estables.
+                        ZStack {
                             switch selectedCategory {
                             case .songs:
                                 libraryList(id: "songs") { songsSection }
@@ -50,7 +53,7 @@ struct ContentView: View {
                                 libraryList(id: "playlists") { playlistsSection }
                             }
                         }
-                        .animation(nil, value: selectedCategory)
+                        .animation(.spring(response: 0.32, dampingFraction: 0.88), value: selectedCategory)
                         .refreshable {
                             fileAccessService.refreshAllFolders()
                             try? await Task.sleep(nanoseconds: 600_000_000)
@@ -642,9 +645,12 @@ struct ContentView: View {
                 Haptics.light()
                 fileAccessService.toggleLike(song)
             } label: {
+                // ✅ Brillo aumentado: el corazón sin like ahora usa secondary
+                // a 0.7 (antes 0.4, casi invisible) + resalta con accent cuando
+                // la canción está sonando para mantenerse legible en cualquier fondo.
                 Image(systemName: isLiked ? "heart.fill" : "heart")
                     .font(.system(size: 16, weight: .medium))
-                    .foregroundStyle(isLiked ? Color.red : Color.secondary.opacity(0.4))
+                    .foregroundStyle(isLiked ? Color.red : (isCurrent ? AppTheme.accent : Color.secondary.opacity(0.7)))
                     .frame(width: 36, height: 36)
                     .contentShape(Rectangle())
             }
@@ -663,9 +669,12 @@ struct ContentView: View {
                     }
                 }
             } label: {
+                // ✅ Brillo aumentado: el + ahora usa secondary a 0.7 (antes
+                // .tertiary, casi invisible) + resalta con accent cuando la
+                // canción está sonando para mantenerse legible en cualquier fondo.
                 Image(systemName: "plus.circle")
                     .font(.system(size: 15))
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(isCurrent ? AppTheme.accent : Color.secondary.opacity(0.7))
                     .frame(width: 36, height: 36)
                     .contentShape(Rectangle())
             }

@@ -12,6 +12,10 @@ struct AudioQualityDetailView: View {
     @State private var appearAnimation = false
     @State private var signalFlow = false
     @State private var headerPulse = false
+    // ✅ OPTIMIZACIÓN: cachear valores que requieren acceso a disco para no
+    // leer el archivo en cada renderizado (fileSizeLabel, bitrateLabel).
+    @State private var cachedFileSize: Int = 0
+    @State private var cachedDuration: TimeInterval = 0
 
     private var song: Song? { audioEngine.currentSong }
 
@@ -29,13 +33,27 @@ struct AudioQualityDetailView: View {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                 withAnimation(.easeInOut(duration: 0.8)) { signalFlow = true }
             }
+            // ✅ OPTIMIZACIÓN: cargar valores de disco UNA VEZ en background.
+            if let song = song {
+                let path = song.url.path
+                DispatchQueue.global(qos: .userInitiated).async {
+                    let size = (try? FileManager.default.attributesOfItem(atPath: path)[.size] as? Int) ?? 0
+                    DispatchQueue.main.async {
+                        self.cachedFileSize = size
+                        self.cachedDuration = song.duration
+                    }
+                }
+            }
         }
     }
 
     // MARK: - Contenido embebido (para tarjeta modal)
     private var embeddedContent: some View {
         ScrollView {
-            VStack(spacing: 16) {
+            // ✅ OPTIMIZACIÓN: LazyVStack para que las secciones solo se
+            // rendericen cuando entran en pantalla (crítico en dispositivos
+            // antiguos o con muchas secciones visibles a la vez).
+            LazyVStack(spacing: 16) {
                 headerCard
                 signalChainSection
                 fileDetailsSection
@@ -62,7 +80,8 @@ struct AudioQualityDetailView: View {
                 ).ignoresSafeArea()
 
                 ScrollView {
-                    VStack(spacing: 18) {
+                    // ✅ OPTIMIZACIÓN: LazyVStack para lazy-loading de secciones.
+                    LazyVStack(spacing: 18) {
                         headerCard
                         signalChainSection
                         fileDetailsSection
@@ -345,17 +364,14 @@ struct AudioQualityDetailView: View {
     }
 
     private var fileSizeLabel: String {
-        guard let song = song else { return "—" }
-        let size = (try? FileManager.default.attributesOfItem(atPath: song.url.path)[.size] as? Int) ?? 0
-        guard size > 0 else { return "—" }
-        if size > 1_048_576 { return String(format: "%.1f MB", Double(size) / 1_048_576) }
-        return String(format: "%.0f KB", Double(size) / 1024)
+        guard song != nil, cachedFileSize > 0 else { return "—" }
+        if cachedFileSize > 1_048_576 { return String(format: "%.1f MB", Double(cachedFileSize) / 1_048_576) }
+        return String(format: "%.0f KB", Double(cachedFileSize) / 1024)
     }
 
     private var bitrateLabel: String {
-        guard let song = song, song.duration > 0,
-              let size = (try? FileManager.default.attributesOfItem(atPath: song.url.path)[.size] as? Int), size > 0 else { return "—" }
-        let kbps = Int((Double(size) * 8) / song.duration / 1000)
+        guard let song = song, cachedDuration > 0, cachedFileSize > 0 else { return "—" }
+        let kbps = Int((Double(cachedFileSize) * 8) / cachedDuration / 1000)
         return "\(kbps) kbps"
     }
 
@@ -380,14 +396,11 @@ struct AudioQualityDetailView: View {
     private func chainNode(icon: String, title: String, detail: String, color: Color, index: Int) -> some View {
         HStack(spacing: 12) {
             ZStack {
-                // ✅ Fondo del icono con glow sutil
+                // ✅ OPTIMIZACIÓN: glow simplificado (sin overlay con stroke
+                // separado → una sola capa en vez de dos).
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .fill(color.opacity(0.15))
                     .frame(width: 36, height: 36)
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .stroke(color.opacity(0.2), lineWidth: 0.5)
-                    }
 
                 Image(systemName: icon)
                     .font(.system(size: 15, weight: .semibold))
@@ -414,9 +427,11 @@ struct AudioQualityDetailView: View {
                 .opacity(signalFlow ? 1 : 0.3)
         }
         .padding(.horizontal, 14).padding(.vertical, 12)
+        // ✅ OPTIMIZACIÓN: animación única con spring (antes: easeOut con
+        // delay encadenado por index → múltiples curvas simultáneas).
         .opacity(appearAnimation ? 1 : 0)
-        .offset(x: appearAnimation ? 0 : -20)
-        .animation(.easeOut(duration: 0.4).delay(0.15 + Double(index) * 0.08), value: appearAnimation)
+        .offset(x: appearAnimation ? 0 : -12)
+        .animation(.spring(response: 0.45, dampingFraction: 0.85).delay(Double(index) * 0.05), value: appearAnimation)
     }
 
     @ViewBuilder

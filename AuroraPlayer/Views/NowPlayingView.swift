@@ -226,11 +226,15 @@ struct NowPlayingView: View {
             if let artwork = audioEngine.currentSong?.artwork, !reduceTransparency {
                 GeometryReader { geometry in
                     ZStack {
+                        // ✅ FIX barra negra: scaledToFill + clipped para cubrir
+                        // TODA la pantalla (scaledToFit dejaba franjas en pantallas
+                        // altas/anchas por encima y debajo de la imagen cuadrada).
                         Image(uiImage: artwork)
                             .resizable()
                             .interpolation(.medium)
-                            .scaledToFit()
-                            .frame(width: geometry.size.width, height: geometry.size.height)
+                            .scaledToFill()
+                            .frame(width: geometry.size.width + 60, height: geometry.size.height + 60)
+                            .clipped()
                             .blur(radius: 25)
                             .opacity(0.45)
 

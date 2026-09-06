@@ -119,9 +119,17 @@ class AudioEngine: NSObject, ObservableObject {
     }
 
     /// Posición de reproducción extrapolada (solo mientras isPlaying).
+    // ✅ TRACKING de archivo programado: permite a `resume()` detectar si el
+    // nodo quedó sin archivo programado (por pausa durante una reprogramación
+    // asíncrona) y re-programarlo en vez de quedarse en silencio.
+    private var hasScheduledFile = false
+
     private var wallClockTime: TimeInterval {
         guard isPlaying, !isUsingFallback else { return posAnchor }
         let t = posAnchor + (CACurrentMediaTime() - wallAnchor)
+        // ✅ FIX: clampear a duración para evitar que el reloj se extrapole más
+        // allá del final de la canción (lo que causaba que el display timer
+        // dejara de actualizar currentTime y el reloj de UI se quedara "atrasado").
         return duration > 0 ? min(max(t, 0), duration) : max(t, 0)
     }
     // ✅ FIX "corte feo" entre canciones: recordar el formato ya conectado al
@@ -652,9 +660,11 @@ class AudioEngine: NSObject, ObservableObject {
         }
 
         updatePlaybackQueue()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
-            self?.playCurrentSong()
-        }
+        // ✅ FIX: reproducción INMEDIATA (sin retraso de 0.1s) para que el reloj
+        // de UI, la barra de progreso y el audio se reinicien de forma atómica.
+        // El retraso anterior creaba una ventana donde el UI seguía mostrando
+        // la canción anterior mientras el audio ya había cambiado → "punto random".
+        playCurrentSong()
         saveState()
     }
 
@@ -679,15 +689,22 @@ class AudioEngine: NSObject, ObservableObject {
             nextPlayerNode = nil
         }
 
+        // ✅ FIX REINICIO ATÓMICO: detener TODO antes de reprogramar.
+        // playerNode.stop() no resetea el timeline inmediatamente; si se
+        // programa justo después, el nodo puede arrancar desde un punto
+        // residual (el bug de "reiniciar en cualquier punto random").
+        // Solución: detener engine completo, programar, y relanzar.
         isUsingFallback = false
-        if playerNode.isPlaying {
-            playerNode.stop()
-        }
-        audioFile = nil
-        isPlaying = false
-        currentTime = 0
-        anchorPlaybackPosition(0)
+        crossfadeTimer?.invalidate()
+        isCrossfading = false
+        isStopping = true
         stopDisplayTimer()
+        playerNode.stop()
+        if let nextNode = nextPlayerNode, nextNode.isPlaying { nextNode.stop() }
+        engine.stop()
+        isPlaying = false
+        isStopping = false
+        audioFile = nil
 
         guard FileManager.default.fileExists(atPath: song.url.path) else {
             handlePlaybackFailure(song: song)
@@ -706,38 +723,23 @@ class AudioEngine: NSObject, ObservableObject {
                 return
             }
 
-            // ✅ FIX "corte feo" entre canciones: solo detener/reiniciar el engine
-            // si cambió el formato (sample rate, canales o EQ). Si es el mismo,
-            // se mantiene el engine corriendo y solo se reprograma el nodo →
-            // la transición entre canciones queda sin hueco de silencio.
-            let needsReconnect = !engine.isRunning || connectedFormatKey != formatKey(file.processingFormat)
-            playerNode.stop()
-            if needsReconnect {
-                engine.stop()
-                reconnectPlayerNode(format: file.processingFormat)
-                // ✅ FIX crash en segundo plano: arranque robusto con reactivación
-                // de sesión y reintento (antes: try engine.start() directo)
-                try startEngineSafely()
-            }
+            // ✅ Reconectar el graph y relanzar el engine desde estado limpio.
+            reconnectPlayerNode(format: file.processingFormat)
+            try startEngineSafely()
 
             currentSong = song
-            anchorPlaybackPosition(0)
             isPlaying = true
             playbackErrorCount = 0
-
-            // ✅ FIX reinicio desde punto aleatorio (repeat-one / álbum de una
-            // sola canción): si se carga el MISMO archivo que ya estaba en el
-            // nodo y no hubo que reconectar el graph, reprogramar con un breve
-            // delay. Detener el nodo y re-programar de inmediato deja sampleTime
-            // residual → la canción arranca desde un punto aleatorio. Con el
-            // delay el reloj del nodo se resetea y arranca limpio desde 0.
-            let isSameFileRestart = (song.url == currentFileURL) && !needsReconnect
             currentFileURL = song.url
-            if isSameFileRestart {
-                rescheduleFileAfterStop(file, from: 0)
-            } else {
-                scheduleFile(file, from: 0)
-            }
+
+            // ✅ Programar el segmento PRIMERO, luego anclar reloj y reproducir.
+            // Esto elimina la ventana de carrera donde el timer marcaba 0
+            // pero el audio arrancaba tarde o desde otra posición.
+            scheduleFile(file, from: 0, autostart: false)
+            anchorPlaybackPosition(0)
+            currentTime = 0
+            clock.time = 0
+            playerNode.play()
 
             startDisplayTimer()
             updateNowPlayingInfo()
@@ -782,6 +784,8 @@ class AudioEngine: NSObject, ObservableObject {
                 self.handlePlaybackFinished()
             }
         }
+
+        hasScheduledFile = true
 
         // ✅ FIX sincronización: `autostart=false` permite reprogramar el nodo
         // SIN iniciar la reproducción (ej. seek en pausa). Antes scheduleFile
@@ -1167,6 +1171,8 @@ class AudioEngine: NSObject, ObservableObject {
                 self.handlePlaybackFinished()
             }
         }
+        hasScheduledFile = true
+
         // ✅ Reiniciar el nodo si se detuvo entre segmentos (evita silencio total)
         if !playerNode.isPlaying {
             if !engine.isRunning {
@@ -1333,10 +1339,12 @@ class AudioEngine: NSObject, ObservableObject {
             } else {
                 // ✅ RELOJ DE PARED: extrapolación monótona, inmune a los
                 // reinicios del timeline del nodo (pausa, seek, gapless).
+                // ✅ FIX: SIEMPRE actualizar currentTime y clock.time, incluso si
+                // current > duration (evita que el reloj de UI se quede atrasado
+                // cuando el reloj de pared se extrapola más allá del final).
                 let current = self.wallClockTime
-                if current <= self.duration {
-                    self.currentTime = current
-                }
+                self.currentTime = current
+                self.clock.time = current
             }
             // ✅ FIX Centro de Control / pantalla de bloqueo: refrescar
             // nowPlayingInfo cada ~0.8s en fg / ~1.5s en bg con el elapsed
@@ -1360,10 +1368,13 @@ class AudioEngine: NSObject, ObservableObject {
     // nueva generación para garantizar que suene sin cortes ni silencios.
     private func handlePlaybackFinished() {
         guard isPlaying, !isStopping, !isCrossfading else { return }
+        // ✅ FIX: evitar llamadas múltiples del completion handler (bug de
+        // AVAudioEngine que puede dispararlo más de una vez). Incrementar
+        // scheduleGeneration invalida cualquier handler anterior pendiente.
+        scheduleGeneration += 1
 
         if repeatMode == .one {
             guard let file = audioFile else { return }
-            scheduleGeneration += 1
             anchorPlaybackPosition(0)
             currentTime = 0
             rescheduleFileAfterStop(file, from: 0)
@@ -1388,14 +1399,16 @@ class AudioEngine: NSObject, ObservableObject {
         scheduleGeneration += 1
         let generation = scheduleGeneration
         playerNode.stop()
+        hasScheduledFile = false
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
             guard let self = self,
                   self.scheduleGeneration == generation,
-                  self.isPlaying,
+                  self.isPlaying,              // ✅ FIX: solo reproducir si SIGUE reproduciendo (evita audio fantasma al pausar durante el delay)
                   !self.isStopping,
                   !self.isCrossfading else { return }
-            self.scheduleFile(file, from: seconds)
+            self.scheduleFile(file, from: seconds, autostart: true)
             self.updateNowPlayingInfo()
+            self.startDisplayTimer()
         }
     }
 
