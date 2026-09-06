@@ -18,8 +18,6 @@ struct PlayerBar: View {
 
     // Animaciones optimizadas (una sola @State, triggers discretos = 60fps)
     @State private var playButtonScale: CGFloat = 1.0
-    // ✅ Opacidad del visualizador para transición suave (no crear/destruir)
-    @State private var visualizerOpacity: Double = 0
 
     // ✅ Esquinas del artwork sincronizadas con el ajuste de Apariencia
     @AppStorage("com.aurora.artworkCorner") private var artworkCorner: Double = 22
@@ -66,16 +64,10 @@ struct PlayerBar: View {
                             if showVisualizerInBar {
                                 AudioVisualizer(audioEngine: audioEngine)
                                     .frame(width: 18, height: 14)
-                                    .opacity(visualizerOpacity)
-                                    .animation(.easeInOut(duration: 0.3), value: visualizerOpacity)
-                                    .onAppear {
-                                        visualizerOpacity = audioEngine.isPlaying ? 1 : 0
-                                    }
-                                    .onChange(of: audioEngine.isPlaying) { _, playing in
-                                        withAnimation(.easeInOut(duration: 0.3)) {
-                                            visualizerOpacity = playing ? 1 : 0
-                                        }
-                                    }
+                                    // ✅ iOS 16 compatible: animar opacidad con value: isPlaying
+                                    // (audioEngine es ObservedObject → re-renderiza al cambiar)
+                                    .opacity(audioEngine.isPlaying ? 1 : 0)
+                                    .animation(.easeInOut(duration: 0.3), value: audioEngine.isPlaying)
                             }
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -247,10 +239,6 @@ struct PlayerBar: View {
                     // Borde sutil superior para profundidad
                     RoundedRectangle(cornerRadius: 34, style: .continuous)
                         .strokeBorder(Color.white.opacity(0.08), lineWidth: 0.5)
-                }
-                .onAppear {
-                    // ✅ Sincronizar estado visual inicial
-                    visualizerOpacity = audioEngine.isPlaying ? 1 : 0
                 }
                 .sheet(isPresented: $showingNowPlaying) {
                     NowPlayingView(audioEngine: audioEngine, fileAccessService: fileAccessService, clock: audioEngine.clock)
