@@ -5,6 +5,7 @@ import AVFoundation
 /// y la cadena de procesamiento completa hasta la salida física.
 struct AudioQualityDetailView: View {
     @ObservedObject var audioEngine: AudioEngine
+    @ObservedObject private var localization = Localization.shared
     var embeddedInCard: Bool = false
     @Environment(\.dismiss) private var dismiss
 
@@ -59,7 +60,7 @@ struct AudioQualityDetailView: View {
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .principal) {
-                    Text("Calidad de audio")
+                    Text(Localization.localized("audio.quality.title"))
                         .font(.system(size: 18, weight: .bold, design: .rounded))
                         .foregroundStyle(
                             LinearGradient(
@@ -67,10 +68,10 @@ struct AudioQualityDetailView: View {
                                 startPoint: .leading, endPoint: .trailing
                             )
                         )
-                        .accessibilityLabel("Calidad de audio")
+                        .accessibilityLabel(Localization.localized("audio.quality.title"))
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Listo") { dismiss() }
+                    Button(Localization.localized("quality.done")) { dismiss() }
                         .foregroundStyle(Color.accentColor)
                         .frame(width: 44, height: 44)
                         .contentShape(Rectangle())
@@ -80,12 +81,9 @@ struct AudioQualityDetailView: View {
     }
 
     // MARK: - Header (resumen de calidad)
-    // ✅ DISEÑO MEJORADO: badge en cápsula con gradiente (jerarquía clara),
-    // icono de salida con anillo decorativo, y orden: salida → calidad → pista.
     private var headerCard: some View {
         VStack(spacing: 14) {
             ZStack {
-                // Anillo decorativo sutil (CPU gratis: formas estáticas)
                 Circle()
                     .stroke(Color.accentColor.opacity(0.18), lineWidth: 1.5)
                     .frame(width: 78, height: 78)
@@ -113,7 +111,7 @@ struct AudioQualityDetailView: View {
                 }
 
             VStack(spacing: 4) {
-                Text(song?.title ?? "Sin canción")
+                Text(song?.title ?? Localization.localized("quality.noSong"))
                     .font(.system(size: 16, weight: .semibold, design: .rounded))
                     .foregroundStyle(.primary)
                     .lineLimit(2)
@@ -129,36 +127,26 @@ struct AudioQualityDetailView: View {
         .nativeGlass(cornerRadius: 24)
     }
 
-    // ✅ Decodificador: lossless solo si el formato lo es de verdad
     private var isLossless: Bool {
         guard let song = song else { return false }
         let ext = song.url.pathExtension.uppercased()
         return ["FLAC", "WAV", "WAVE", "AIFF", "AIF", "ALAC", "M4A"].contains(ext)
     }
 
-    // ✅ Calidad honesta: lo que importa es el bitrate real, no solo el
-    // sample rate (antes todas las canciones digitaban "HI-RES"). Aproximamos
-    // el bitrate con sampleRate × bitDepth × canales (los lossless reales
-    // rondan ≥ 705 kbps para estéreo 16-bit/44.1 kHz).
     private var qualityBadge: String {
         guard let song = song else { return "—" }
         let rate = song.sampleRate
         let bits = song.bitDepth
         let bitrate = estimatedBitrateKBPS(song)
-        // Hi-Res: 24-bit/96 kHz o superior
-        if bits >= 24 && rate >= 96000 { return "HI-RES AUDIO" }
-        // Lossless: FLAC/ALAC/WAV/AIFF con bitrate alto (≥ 700 kbps estéreo)
-        if bitrate >= 700 { return "CALIDAD LOSSLESS" }
-        // Lossy comprimido: MP3/AAC por debajo de 700 kbps
-        if bitrate > 0 { return "CALIDAD COMPRIMIDA" }
-        // Sin datos fiables
-        if rate > 0 { return "CALIDAD ESTÁNDAR" }
-        return "CALIDAD DESCONOCIDA"
+        if bits >= 24 && rate >= 96000 { return Localization.localized("quality.hiResAudio") }
+        if bitrate >= 700 { return Localization.localized("quality.losslessQuality") }
+        if bitrate > 0 { return Localization.localized("quality.compressedQuality") }
+        if rate > 0 { return Localization.localized("quality.standardQuality") }
+        return Localization.localized("quality.unknownQuality")
     }
 
     private func estimatedBitrateKBPS(_ song: Song) -> Int {
         guard song.sampleRate > 0 && song.bitDepth > 0 && song.channelCount > 0 else {
-            // Fallback: usar el bitrate real del archivo si está disponible
             return 0
         }
         return Int(song.sampleRate * Double(song.bitDepth) * Double(song.channelCount) / 1000)
@@ -166,19 +154,17 @@ struct AudioQualityDetailView: View {
 
     // MARK: - Cadena de procesamiento
     private var signalChainSection: some View {
-        settingsSection(title: "Cadena de procesamiento", icon: "arrow.triangle.branch") {
+        settingsSection(title: Localization.localized("quality.signalChain"), icon: "arrow.triangle.branch") {
             VStack(spacing: 0) {
-                chainNode(icon: "doc.fill", title: "Archivo fuente", detail: fileSummary, color: .accentColor, isFirst: true)
+                chainNode(icon: "doc.fill", title: Localization.localized("quality.sourceFile"), detail: fileSummary, color: .accentColor, isFirst: true)
                 chainArrow
-                // ✅ Icono válido (antes era un SF Symbol inexistente) + calidad real
-                chainNode(icon: "waveform", title: "Decodificador", detail: "AVAudioFile · \(isLossless ? "Lossless" : "Comprimido")", color: .indigo)
+                chainNode(icon: "waveform", title: Localization.localized("quality.decoder"), detail: "AVAudioFile · \(isLossless ? Localization.localized("quality.lossless") : Localization.localized("quality.compressed"))", color: .indigo)
                 chainArrow
-                chainNode(icon: "engine.combustion", title: "Motor de audio", detail: "AVAudioEngine · \(Int(audioEngine.sampleRateDisplay / 1000)) kHz", color: .accentColor)
+                chainNode(icon: "engine.combustion", title: Localization.localized("quality.audioEngine"), detail: "AVAudioEngine · \(Int(audioEngine.sampleRateDisplay / 1000)) kHz", color: .accentColor)
                 chainArrow
-                chainNode(icon: "slider.horizontal.3", title: "Ecualizador", detail: audioEngine.isEQEnabled ? "Activo · \(audioEngine.eqPreset.displayName) · 10 bandas" : "Bypass · 10 bandas", color: audioEngine.isEQEnabled ? .accentColor : .gray)
+                chainNode(icon: "slider.horizontal.3", title: Localization.localized("quality.equalizer"), detail: audioEngine.isEQEnabled ? "\(Localization.localized("quality.active")) · \(audioEngine.eqPreset.displayName) · 10 \(Localization.localized("format.bands"))" : "\(Localization.localized("quality.bypass")) · 10 \(Localization.localized("format.bands"))", color: audioEngine.isEQEnabled ? .accentColor : .gray)
                 chainArrow
-                // ✅ Crossfade eliminado del motor: ya no aparece en la cadena
-                chainNode(icon: outputIcon, title: "Salida", detail: outputSummary, color: .orange, isLast: true)
+                chainNode(icon: outputIcon, title: Localization.localized("quality.output"), detail: outputSummary, color: .orange, isLast: true)
             }
         }
     }
@@ -200,9 +186,6 @@ struct AudioQualityDetailView: View {
         return parts.joined(separator: " · ")
     }
 
-    // ✅ Detección por portType (idioma-independiente). Antes se basaba en el
-    // nombre localizado de la ruta ("Altavoz"), que fallaba fuera de español
-    // y mostraba audífonos para el altavoz interno.
     private var outputIcon: String {
         switch audioEngine.outputPortType {
         case AVAudioSession.Port.airPlay.rawValue: return "airplayaudio"
@@ -219,38 +202,38 @@ struct AudioQualityDetailView: View {
     private var outputSummary: String {
         var parts: [String] = [audioEngine.currentRouteName]
         if audioEngine.outputSampleRate > 0 { parts.append("\(Int(audioEngine.outputSampleRate / 1000)) kHz") }
-        if audioEngine.outputChannelCount > 0 { parts.append(audioEngine.outputChannelCount >= 2 ? "Estéreo" : "Mono") }
+        if audioEngine.outputChannelCount > 0 { parts.append(audioEngine.outputChannelCount >= 2 ? Localization.localized("quality.stereo") : Localization.localized("quality.mono")) }
         return parts.joined(separator: " · ")
     }
 
     // MARK: - Detalles del archivo
     private var fileDetailsSection: some View {
-        settingsSection(title: "Archivo", icon: "info.circle") {
-            detailRow("Formato", formatLabel)
-            detailRow("Tasa de muestreo", sampleRateLabel)
-            detailRow("Profundidad de bits", song?.bitDepth.description ?? "—")
-            detailRow("Canales", channelsLabel)
-            detailRow("Duración", durationLabel)
-            detailRow("Tamaño", fileSizeLabel)
-            detailRow("Bitrate estimado", bitrateLabel)
+        settingsSection(title: Localization.localized("quality.file"), icon: "info.circle") {
+            detailRow(Localization.localized("quality.format"), formatLabel)
+            detailRow(Localization.localized("quality.sampleRate"), sampleRateLabel)
+            detailRow(Localization.localized("quality.bitDepth"), song?.bitDepth.description ?? "—")
+            detailRow(Localization.localized("quality.channels"), channelsLabel)
+            detailRow(Localization.localized("quality.duration"), durationLabel)
+            detailRow(Localization.localized("quality.fileSize"), fileSizeLabel)
+            detailRow(Localization.localized("quality.estBitrate"), bitrateLabel)
         }
     }
 
     // MARK: - Detalles de salida
     private var outputDetailsSection: some View {
-        settingsSection(title: "Salida", icon: "hifispeaker") {
-            detailRow("Ruta", audioEngine.currentRouteName)
-            detailRow("Frecuencia de salida", audioEngine.outputSampleRate > 0 ? "\(Int(audioEngine.outputSampleRate)) Hz" : "—")
-            detailRow("Canales de salida", audioEngine.outputChannelCount > 0 ? audioEngine.outputChannelCount.description : "—")
-            detailRow("Tipo de ruta", outputTypeLabel)
+        settingsSection(title: Localization.localized("quality.outputDetails"), icon: "hifispeaker") {
+            detailRow(Localization.localized("quality.route"), audioEngine.currentRouteName)
+            detailRow(Localization.localized("quality.outputFrequency"), audioEngine.outputSampleRate > 0 ? "\(Int(audioEngine.outputSampleRate)) Hz" : "—")
+            detailRow(Localization.localized("quality.outputChannels"), audioEngine.outputChannelCount > 0 ? audioEngine.outputChannelCount.description : "—")
+            detailRow(Localization.localized("quality.routeType"), outputTypeLabel)
         }
     }
 
-    // MARK: - Dispositivo (nuevo: modelo comercial real)
+    // MARK: - Dispositivo
     private var deviceSection: some View {
-        settingsSection(title: "Dispositivo", icon: "iphone") {
-            detailRow("Modelo", audioEngine.deviceModelName)
-            detailRow("Sistema", "\(UIDevice.current.systemName) \(UIDevice.current.systemVersion)")
+        settingsSection(title: Localization.localized("quality.device"), icon: "iphone") {
+            detailRow(Localization.localized("quality.model"), audioEngine.deviceModelName)
+            detailRow(Localization.localized("quality.system"), "\(UIDevice.current.systemName) \(UIDevice.current.systemVersion)")
         }
     }
 
@@ -259,13 +242,13 @@ struct AudioQualityDetailView: View {
         guard let song = song else { return "—" }
         let ext = song.url.pathExtension.uppercased()
         switch ext {
-        case "FLAC": return "FLAC (Free Lossless Audio Codec)"
-        case "ALAC", "M4A": return "ALAC/M4A (Apple Lossless)"
-        case "MP3": return "MP3 (MPEG Layer III)"
-        case "WAV", "WAVE": return "WAV (PCM sin comprimir)"
-        case "AIFF", "AIF": return "AIFF (PCM sin comprimir)"
-        case "AAC": return "AAC (Advanced Audio Coding)"
-        default: return ext.isEmpty ? "Desconocido" : ext
+        case "FLAC": return Localization.localized("format.flac")
+        case "ALAC", "M4A": return Localization.localized("format.alac")
+        case "MP3": return Localization.localized("format.mp3")
+        case "WAV", "WAVE": return Localization.localized("format.wav")
+        case "AIFF", "AIF": return Localization.localized("format.aiff")
+        case "AAC": return Localization.localized("format.aac")
+        default: return ext.isEmpty ? Localization.localized("quality.unknown") : ext
         }
     }
 
@@ -277,9 +260,9 @@ struct AudioQualityDetailView: View {
     private var channelsLabel: String {
         guard let song = song, song.channelCount > 0 else { return "—" }
         switch song.channelCount {
-        case 1: return "1 (Mono)"
-        case 2: return "2 (Estéreo)"
-        default: return "\(song.channelCount) (Multicanal)"
+        case 1: return "1 (\(Localization.localized("quality.mono")))"
+        case 2: return "2 (\(Localization.localized("quality.stereo")))"
+        default: return "\(song.channelCount) (\(Localization.localized("quality.surround")))"
         }
     }
 
@@ -310,14 +293,14 @@ struct AudioQualityDetailView: View {
         switch audioEngine.outputPortType {
         case AVAudioSession.Port.bluetoothA2DP.rawValue,
              AVAudioSession.Port.bluetoothLE.rawValue,
-             AVAudioSession.Port.bluetoothHFP.rawValue: return "Inalámbrica (Bluetooth)"
-        case AVAudioSession.Port.airPlay.rawValue: return "Inalámbrica (AirPlay)"
-        case AVAudioSession.Port.builtInSpeaker.rawValue: return "Interna (Altavoz)"
-        case AVAudioSession.Port.builtInReceiver.rawValue: return "Interna (Auricular)"
-        case AVAudioSession.Port.headphones.rawValue: return "Conectada (Audífonos)"
-        case AVAudioSession.Port.usbAudio.rawValue: return "Conectada (USB/DAC)"
-        case AVAudioSession.Port.carAudio.rawValue: return "Inalámbrica (Auto)"
-        default: return "Interna"
+             AVAudioSession.Port.bluetoothHFP.rawValue: return Localization.localized("quality.wirelessBt")
+        case AVAudioSession.Port.airPlay.rawValue: return Localization.localized("quality.wirelessAirPlay")
+        case AVAudioSession.Port.builtInSpeaker.rawValue: return Localization.localized("quality.internalSpeaker")
+        case AVAudioSession.Port.builtInReceiver.rawValue: return Localization.localized("quality.internalReceiver")
+        case AVAudioSession.Port.headphones.rawValue: return Localization.localized("quality.wiredHeadphones")
+        case AVAudioSession.Port.usbAudio.rawValue: return Localization.localized("quality.wiredUsb")
+        case AVAudioSession.Port.carAudio.rawValue: return Localization.localized("quality.wirelessCar")
+        default: return Localization.localized("quality.internal")
         }
     }
 

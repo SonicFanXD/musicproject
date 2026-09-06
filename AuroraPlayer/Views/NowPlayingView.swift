@@ -80,18 +80,20 @@ struct NowPlayingView: View {
                     Spacer(minLength: isCompactScreen ? 4 : 10)
 
                     artworkView
-                        .scaleEffect(artworkScale)
-                        .animation(.spring(response: 0.5, dampingFraction: 0.82), value: audioEngine.isPlaying)
-                        .animation(.easeInOut(duration: 0.25), value: audioEngine.currentSong?.id)
+                        // ✅ MEJORADO: la portada solo anima al CAMBIAR de canción,
+                        // no al pausar/resumir. Antes había una animación rara de
+                        // escala (1.02 → 1.0) que se veía artificial al tocar play/pause.
+                        .animation(.easeInOut(duration: 0.3), value: audioEngine.currentSong?.id)
 
                     Spacer(minLength: isCompactScreen ? 10 : 16)
 
-                    if audioEngine.isPlaying && showVisualizer {
+                    if showVisualizer {
+                        // ✅ MEJORADO: AudioVisualizer ya rasteriza internamente
+                        // con .drawingGroup() y maneja la atenuación al pausar.
+                        // Nada de animaciones raras de escala aquí.
                         AudioVisualizer(audioEngine: audioEngine, tintColor: extractedColor)
-                            .frame(height: isCompactScreen ? 30 : 44)
-                            .padding(.horizontal, 40)
-                            // ✅ 60fps: rasteriza las 24 barras en la GPU una vez
-                            .drawingGroup()
+                            .frame(height: isCompactScreen ? 32 : 48)
+                            .padding(.horizontal, 36)
                     }
 
                     Spacer(minLength: isCompactScreen ? 8 : 14)
@@ -129,9 +131,6 @@ struct NowPlayingView: View {
                 }
             }
             .onChange(of: audioEngine.isPlaying) { isPlaying in
-                withAnimation(.spring(response: 0.45, dampingFraction: 0.8)) {
-                    artworkScale = isPlaying ? 1.02 : 1.0
-                }
                 UIApplication.shared.isIdleTimerDisabled = keepScreenOn && isPlaying
             }
             .onChange(of: audioEngine.currentSong?.id) { _ in
@@ -291,7 +290,7 @@ struct NowPlayingView: View {
             // ✅ Título con gradiente sutil del color extraído (mejor tipografía)
             // ✅ 60fps: shadow removido del texto con gradiente (forzaba blur
             // offscreen por frame; el gradiente ya da suficiente profundidad).
-            Text(audioEngine.currentSong?.displayName ?? "Sin canción")
+            Text(audioEngine.currentSong?.displayName ?? Localization.localized("quality.noSong"))
                 .font(.system(size: isCompactScreen ? 20 : 24, weight: .bold, design: .rounded))
                 .multilineTextAlignment(.center)
                 .foregroundStyle(
@@ -331,10 +330,13 @@ struct NowPlayingView: View {
                     .background {
                         Capsule().fill(extractedColor.opacity(0.2))
                     }
+                    .overlay {
+                        Capsule().strokeBorder(playIconColor.opacity(0.15), lineWidth: 0.5)
+                    }
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Ver detalles de calidad de audio")
+                .accessibilityLabel(Localization.localized("quality.viewDetails"))
             }
         }
         .padding(.horizontal, 6)
@@ -481,15 +483,16 @@ struct NowPlayingView: View {
             } label: {
                 ZStack {
                     Circle().fill(extractedColor).frame(width: isCompactScreen ? 62 : 72, height: isCompactScreen ? 62 : 72)
+                    // ✅ El icono cambia con crossfade de opacidad al pausar/resumir
+                    // (sin animación de scale rara; compatible iOS 16)
                     Image(systemName: audioEngine.isPlaying ? "pause.fill" : "play.fill")
                         .font(.system(size: isCompactScreen ? 22 : 26, weight: .bold))
                         .foregroundStyle(playIconColor)
-                        // ✅ Micro-animación del icono al cambiar estado (GPU)
-                        .scaleEffect(audioEngine.isPlaying ? 1.0 : 1.08)
-                        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: audioEngine.isPlaying)
+                        .transition(.opacity)
+                        .id(audioEngine.isPlaying ? "playing" : "paused")
                 }
-                .shadow(color: extractedColor.opacity(audioEngine.isPlaying ? 0.4 : 0.25), radius: audioEngine.isPlaying ? 12 : 8, x: 0, y: 4)
-                .animation(.easeInOut(duration: 0.3), value: audioEngine.isPlaying)
+                .shadow(color: extractedColor.opacity(0.35), radius: 10, x: 0, y: 4)
+                .animation(.easeInOut(duration: 0.2), value: audioEngine.isPlaying)
                 .frame(width: isCompactScreen ? 76 : 88, height: isCompactScreen ? 76 : 88)
                 .contentShape(Rectangle())
             }
@@ -560,7 +563,7 @@ struct NowPlayingView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Ecualizador")
+            .accessibilityLabel(Localization.localized("quality.accessibility.equalizer"))
 
             // Letras
             Button {
@@ -580,7 +583,7 @@ struct NowPlayingView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Letras")
+            .accessibilityLabel(Localization.localized("quality.accessibility.lyrics"))
 
             // Cola
             Button {
@@ -600,7 +603,7 @@ struct NowPlayingView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Cola de reproducción")
+            .accessibilityLabel(Localization.localized("quality.accessibility.queue"))
 
             // ✅ AirPlay (FIX): en vez de abrir un sheet con un AVRoutePickerView
             // gigante que fallaba, el picker NATIVO de iOS va superpuesto e
@@ -626,7 +629,7 @@ struct NowPlayingView: View {
             }
             .frame(width: buttonSize, height: buttonSize)
             .contentShape(Rectangle())
-            .accessibilityLabel("AirPlay")
+            .accessibilityLabel(Localization.localized("quality.accessibility.airplay"))
         }
         .frame(maxWidth: .infinity)
         .fixedSize()
@@ -652,7 +655,7 @@ struct NowPlayingView: View {
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundStyle(Color.accentColor)
 
-                    Text("Calidad de audio")
+                    Text(Localization.localized("audio.quality.title"))
                         .font(.system(size: 17, weight: .bold, design: .rounded))
                         .foregroundStyle(.primary)
 
@@ -674,7 +677,7 @@ struct NowPlayingView: View {
                             .contentShape(Circle())
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("Cerrar")
+                    .accessibilityLabel(Localization.localized("audio.quality.close"))
                 }
                 .padding(.horizontal, 18).padding(.top, 16).padding(.bottom, 8)
 

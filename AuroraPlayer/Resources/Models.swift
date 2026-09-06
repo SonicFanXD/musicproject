@@ -41,15 +41,15 @@ enum EQPreset: String, CaseIterable, Codable {
 
     var displayName: String {
         switch self {
-        case .flat: return "Plano"
-        case .bass: return "Graves"
-        case .treble: return "Agudos"
-        case .vocal: return "Vocales"
-        case .classical: return "Clásica"
-        case .electronic: return "Electrónica"
-        case .pop: return "Pop"
-        case .rock: return "Rock"
-        case .jazz: return "Jazz"
+        case .flat: return Localization.localized("eq.flat")
+        case .bass: return Localization.localized("eq.bass")
+        case .treble: return Localization.localized("eq.treble")
+        case .vocal: return Localization.localized("eq.vocal")
+        case .classical: return Localization.localized("eq.classical")
+        case .electronic: return Localization.localized("eq.electronic")
+        case .pop: return Localization.localized("eq.pop")
+        case .rock: return Localization.localized("eq.rock")
+        case .jazz: return Localization.localized("eq.jazz")
         }
     }
 
@@ -170,15 +170,15 @@ extension Song {
         }
 
         if channelCount == 2 {
-            parts.append("Estéreo")
+            parts.append(Localization.localized("audio.quality.stereo"))
         } else if channelCount == 1 {
-            parts.append("Mono")
+            parts.append(Localization.localized("audio.quality.mono"))
         } else if channelCount > 2 {
             parts.append("\(channelCount).1")
         }
 
         if sampleRate > 48000 || bitDepth > 16 {
-            parts.append("Hi-Res")
+            parts.append(Localization.localized("audio.quality.hiRes"))
         }
 
         return parts.joined(separator: " · ")

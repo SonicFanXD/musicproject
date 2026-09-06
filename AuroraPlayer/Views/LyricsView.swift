@@ -14,10 +14,9 @@ struct MaskedLyricText: View {
     let fontWeight: Font.Weight
 
     var body: some View {
-        // ✅ FIX: la máscara usa un GeometryReader LOCAL (mask alignment .leading),
-        // así cada línea mide su propio ancho. La versión anterior usaba una
-        // PreferenceKey compartida: con varias líneas en el LazyVStack todas
-        // recibían el mismo ancho y el efecto karaoke no se veía.
+        // ✅ El GeometryReader del mask solo se evalúa cuando CAMBIA EL TAMAÑO
+        // del texto (no por cada tick de progress). El progress se lee como
+        // input → solo re-dibuja el frame del mask, no el layout completo.
         Text(text)
             .font(.system(size: fontSize, weight: fontWeight))
             .foregroundStyle(baseColor)
@@ -31,6 +30,8 @@ struct MaskedLyricText: View {
                                 .frame(width: geo.size.width * CGFloat(min(max(progress, 0), 1)))
                         }
                     }
+                    // ✅ 60fps: rasteriza el overlay karaoke en la GPU una sola vez
+                    .drawingGroup()
             }
             .lineLimit(1)
     }

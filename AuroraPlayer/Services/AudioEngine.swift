@@ -106,6 +106,12 @@ class AudioEngine: NSObject, ObservableObject {
         loadPlaybackState()
     }
 
+    // ✅ Caché del artwork para Now Playing: se genera UNA vez por canción,
+    // no en cada refresh (cada 0.8s fg / 1.5s bg) como antes. Antes renderizaba
+    // una imagen 1200×1200 en cada tick → gasto enorme de CPU/batería.
+    private var cachedArtworkSongID: UUID?
+    private var cachedNowPlayingArtwork: MPMediaItemArtwork?
+
     // MARK: - Persistencia del motor en segundo plano
     // ✅ Mejora de batería + estabilidad: cuando la app pasa a segundo plano,
     // iOS puede suspender timers/render y en algunos casos detener el engine.
@@ -1158,9 +1164,15 @@ class AudioEngine: NSObject, ObservableObject {
     private func updateRouteName() {
         let session = AVAudioSession.sharedInstance()
         guard let output = session.currentRoute.outputs.first else { return }
+        let newName = output.portName
+        let newType = output.portType.rawValue
+        // ✅ OPTIMIZACIÓN BATERÍA: solo publicar si la ruta CAMBIÓ de verdad.
+        // Evita dispatch al main + re-render de la UI en cada cambio de ruta
+        // innecesario (antes publicaba siempre, incluso con mismos valores).
+        guard newName != currentRouteName || newType != outputPortType else { return }
         DispatchQueue.main.async {
-            self.currentRouteName = output.portName
-            self.outputPortType = output.portType.rawValue
+            self.currentRouteName = newName
+            self.outputPortType = newType
             // ✅ FIX: Forzar actualización de la info de calidad al cambiar ruta
             self.updateAudioQuality()
         }
@@ -1208,12 +1220,17 @@ class AudioEngine: NSObject, ObservableObject {
 
     private func updateAudioQuality() {
         let session = AVAudioSession.sharedInstance()
+        let newRate = session.sampleRate
+        let newChannels = Int(session.outputNumberOfChannels)
+        // ✅ OPTIMIZACIÓN BATERÍA: no recrear el string de calidad ni publicar
+        // si no hubo cambios reales en la salida (evita re-render UI + dispatch).
+        guard outputSampleRate != newRate || outputChannelCount != newChannels else { return }
         DispatchQueue.main.async {
-            self.outputSampleRate = session.sampleRate
-            self.outputChannelCount = Int(session.outputNumberOfChannels)
-            let rateInfo = session.sampleRate >= 48000 ? "Hi-Res" : "Estándar"
-            let channelInfo = session.outputNumberOfChannels >= 2 ? "Estéreo" : "Mono"
-            self.audioQualityInfo = "\(rateInfo) • \(Int(session.sampleRate))Hz • \(channelInfo)"
+            self.outputSampleRate = newRate
+            self.outputChannelCount = newChannels
+            let rateInfo = newRate >= 48000 ? "Hi-Res" : "Estándar"
+            let channelInfo = newChannels >= 2 ? "Estéreo" : "Mono"
+            self.audioQualityInfo = "\(rateInfo) • \(Int(newRate))Hz • \(channelInfo)"
         }
     }
 
@@ -1328,17 +1345,30 @@ class AudioEngine: NSObject, ObservableObject {
             info[MPMediaItemPropertyArtist] = song.artist
             info[MPMediaItemPropertyAlbumTitle] = song.album
             if let art = song.artwork {
-                // ✅ MEJORADO: Proporcionar artwork de alta calidad para Centro de Control
-                // Usamos un tamaño de bounds más grande para que el sistema escale correctamente
-                let artworkSize = CGSize(width: 1200, height: 1200)
-                info[MPMediaItemPropertyArtwork] = MPMediaItemArtwork(boundsSize: artworkSize) { size in
-                    // ✅ Redimensionar manteniendo calidad
-                    let renderer = UIGraphicsImageRenderer(size: size)
-                    return renderer.image { _ in
-                        art.draw(in: CGRect(origin: .zero, size: size))
+                // ✅ OPTIMIZACIÓN BATERÍA: el artwork se renderiza UNA sola vez
+                // por canción y se cachea. Antes se generaba una imagen 1200×1200
+                // en cada refresh (0.8s fg / 1.5s bg) → consumo CPU enorme
+                // mientras la pantalla estaba bloqueada o en otra app.
+                if cachedArtworkSongID != song.id || cachedNowPlayingArtwork == nil {
+                    let artworkSize = CGSize(width: 1200, height: 1200)
+                    let newArtwork = MPMediaItemArtwork(boundsSize: artworkSize) { size in
+                        // ✅ Redimensionar manteniendo calidad (image renderer GPU)
+                        let renderer = UIGraphicsImageRenderer(size: size)
+                        return renderer.image { _ in
+                            art.draw(in: CGRect(origin: .zero, size: size))
+                        }
                     }
+                    cachedArtworkSongID = song.id
+                    cachedNowPlayingArtwork = newArtwork
                 }
+                info[MPMediaItemPropertyArtwork] = cachedNowPlayingArtwork
+            } else {
+                cachedArtworkSongID = nil
+                cachedNowPlayingArtwork = nil
             }
+        } else {
+            cachedArtworkSongID = nil
+            cachedNowPlayingArtwork = nil
         }
         // ✅ Sincronización correcta con Centro de Control / Bloquear pantalla:
         // - PlaybackRate  1.0 → reproduciendo; 0.0 → pausa
