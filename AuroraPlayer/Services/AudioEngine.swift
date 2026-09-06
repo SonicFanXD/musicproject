@@ -12,7 +12,6 @@ final class PlaybackClock: ObservableObject {
 }
 
 class AudioEngine: NSObject, ObservableObject {
-class AudioEngine: NSObject, ObservableObject {
     // MARK: - Publicado para la UI
     @Published var isPlaying: Bool = false {
         didSet {
