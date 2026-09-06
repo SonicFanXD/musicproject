@@ -81,6 +81,7 @@ class AudioEngine: NSObject, ObservableObject {
         didSet {
             if isShuffleEnabled != oldValue {
                 UserDefaults.standard.set(isShuffleEnabled, forKey: "com.aurora.shuffleEnabled")
+                UserDefaults.standard.synchronize()
             }
         }
     }
@@ -92,6 +93,7 @@ class AudioEngine: NSObject, ObservableObject {
         didSet {
             if repeatMode != oldValue {
                 UserDefaults.standard.set(repeatMode.rawValue, forKey: "com.aurora.repeatMode")
+                UserDefaults.standard.synchronize()
             }
         }
     }
@@ -231,7 +233,28 @@ class AudioEngine: NSObject, ObservableObject {
         setupPlaybackStateObserver()
         observeEngineConfigurationChanges()
         setupBackgroundLifecycleObservers()
+        setupPersistOnBackgroundObserver()
         loadPlaybackState()
+    }
+
+    // ✅ Persistencia forzada: cuando la app se cierra o va a segundo plano,
+    // sincroniza UserDefaults inmediatamente para evitar perder shuffle/repeat
+    // si iOS termina el proceso antes del sync automático.
+    private func setupPersistOnBackgroundObserver() {
+        NotificationCenter.default.addObserver(
+            forName: UIApplication.willResignActiveNotification,
+            object: nil, queue: .main
+        ) { [weak self] _ in
+            self?.saveState()
+            UserDefaults.standard.synchronize()
+        }
+        NotificationCenter.default.addObserver(
+            forName: UIApplication.willTerminateNotification,
+            object: nil, queue: .main
+        ) { [weak self] _ in
+            self?.saveState()
+            UserDefaults.standard.synchronize()
+        }
     }
 
     // ✅ Caché del artwork para Now Playing: se genera UNA vez por canción,
@@ -576,38 +599,36 @@ class AudioEngine: NSObject, ObservableObject {
         // ✅ Mono REAL (downmix de salida): reconectar la salida del mezclador
         // intermedio con formato de 1 canal. AVAudioMixerNode hace el downmix
         // estéreo→mono por DSP, y iOS reproduce la señal monofónica por ambos
-        // altavoces/auriculares. (El método anterior tocaba los canales de
-        // ENTRADA del micrófono → no tenía ningún efecto audible.)
+        // altavoces/auriculares.
         if !engine.outputConnectionPoints(for: monoMixerNode, outputBus: 0).isEmpty {
             engine.disconnectNodeOutput(monoMixerNode)
         }
+        
         // ✅ FIX mono: cambiar el formato de salida de un nodo MIENTRAS el
-        // engine renderiza no siempre se aplica (iOS puede seguir usando la
-        // conexión vieja en el render thread). Detener y relanzar el engine
+        // engine renderiza no siempre se aplica. Detener y relanzar el engine
         // garantiza que la nueva conexión mono/estéreo tome efecto de inmediato.
+        // ✅ OPTIMIZACIÓN: solo detener/reiniciar si hay reproducción activa.
+        // Si no hay audio cargado, solo reconectar (sin detener el engine).
         let wasRunning = engine.isRunning
-        if wasRunning { engine.stop() }
+        let hasAudio = audioFile != nil
+        
+        if wasRunning && hasAudio { engine.stop() }
         engine.connect(monoMixerNode, to: engine.mainMixerNode, format: monoMixerOutputFormat())
-        if wasRunning {
+        if wasRunning && hasAudio {
             do { try engine.start() } catch {
                 AppLog.error(.playback, error, context: "applyMonoAudio: relanzar engine")
             }
         }
 
-        // Si hay una canción cargada (reproduciendo O en pausa), re-programar el
-        // segmento para que el cambio mono se aplique al instante.
-        // ✅ FIX MONO-EN-PAUSA: el reinicio del engine BORRA el segmento programado;
-        // si no se reprograma aquí, `resume()` hace playerNode.play() sin segmento
-        // y la reproducción queda rota/silenciada al reanudar.
+        // ✅ FIX mono fluido: reprogramar el segmento SIN detener el playerNode
+        // para evitar el "atasco" audible al cambiar entre mono/estéreo.
+        // Si el engine no estaba corriendo (sin reproducción), no hace falta reprogramar.
         if let file = audioFile {
             scheduleGeneration += 1
             let position = isPlaying ? wallClockTime : min(max(currentTime, 0), duration)
             anchorPlaybackPosition(position)
-            playerNode.stop()
-            // Reprogramar SINCRÓNICAMENTE (evita la carrera del delay de 0.02s).
-            // Si estaba en pausa, reprogramar SIN reproducir para que resume()
-            // solo haga play() desde la posición correcta.
-            scheduleFile(file, from: position, autostart: isPlaying)
+            // Reprogramar manteniendo el estado de reproducción (sin stop brusco)
+            scheduleFile(file, from: position, autostart: isPlaying && wasRunning)
         }
         AppLog.info(.playback, "Audio mono (downmix de salida): \(isMonoAudioEnabled ? "activado" : "desactivado")")
     }
@@ -1229,7 +1250,12 @@ class AudioEngine: NSObject, ObservableObject {
             return
         }
 
-        // ✅ Gapless: intentar encadenar. chainNextSong maneja stop() si no hay más.
+        // ✅ Gapless: invalidar handlers duplicados/pendientes del segmento que
+        // acaba de terminar antes de encadenar. AVAudioEngine puede disparar el
+        // completion handler más de una vez; sin este incremento, el duplicado
+        // compartía generación con el segmento NUEVO (chainNextSong la lee igual)
+        // y pasaba el guard → se encadenaban DOS canciones o saltaba a punto random.
+        scheduleGeneration += 1
         stopDisplayTimer()
         chainNextSong()
     }
@@ -1644,11 +1670,7 @@ class AudioEngine: NSObject, ObservableObject {
         let state: [String: Any] = [
             "isPlaying": isPlaying,
             "currentTime": currentTime,
-            "currentIndex": currentIndex,
-            // ✅ Persistir repeat/shuffle para que al cerrar la app por
-            // voluntad o ahorro de rendimiento no se pierdan estos ajustes.
-            "isShuffleEnabled": isShuffleEnabled,
-            "repeatMode": repeatMode.rawValue
+            "currentIndex": currentIndex
         ]
         UserDefaults.standard.set(state, forKey: stateDefaultsKey)
     }
@@ -1658,13 +1680,11 @@ class AudioEngine: NSObject, ObservableObject {
         if let time = state["currentTime"] as? TimeInterval {
             currentTime = time
         }
-        // ✅ Restaurar repeat/shuffle persistidos
-        if let shuffle = state["isShuffleEnabled"] as? Bool {
-            isShuffleEnabled = shuffle
-        }
-        if let repeatRaw = state["repeatMode"] as? String,
-           let mode = RepeatMode(rawValue: repeatRaw) {
-            repeatMode = mode
-        }
+        // ✅ FIX: NO restaurar isShuffleEnabled ni repeatMode desde el diccionario.
+        // Estas propiedades se inicializan directamente desde sus claves dedicadas
+        // (com.aurora.shuffleEnabled y com.aurora.repeatMode) que se guardan
+        // INMEDIATAMENTE con cada cambio (didSet). El diccionario solo se guarda
+        // en background/terminate y puede tener valores viejos que sobrescriban
+        // los valores correctos.
     }
 }

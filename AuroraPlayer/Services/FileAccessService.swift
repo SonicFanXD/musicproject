@@ -43,6 +43,9 @@ class FileAccessService: ObservableObject {
     @Published private(set) var scanTotal = 0
     @Published private(set) var scanProcessed = 0
     @Published private(set) var isScanning = false
+    
+    // ✅ Contador de canciones pendientes de indexación (para UI)
+    var pendingSongsCount: Int { pendingSongs.count }
     // ✅ Splash: indica si el caché de biblioteca ya terminó de cargar,
     // para que la UI muestre las canciones desde el primer frame.
     @Published private(set) var isInitialLibraryLoaded = false
@@ -451,6 +454,7 @@ class FileAccessService: ObservableObject {
                 self.isSortScheduled = false
                 self.songs = sortedSongs
                 self.pendingSongs.removeAll(keepingCapacity: true)
+                self.needsRebuild = true // ✅ Reconstruir álbumes/artistas con nuevas canciones
                 self.scheduleCacheSave()
             }
         }
@@ -485,6 +489,7 @@ class FileAccessService: ObservableObject {
                     self.isSortScheduled = false
                     self.songs = sortedSongs
                     self.pendingSongs.removeAll(keepingCapacity: true)
+                    self.needsRebuild = true // ✅ Reconstruir álbumes/artistas con nuevas canciones
                     self.scheduleCacheSave()
                     AppLog.info(.library, "Indexación completada: \(self.songs.count) canciones")
                 }

@@ -203,9 +203,11 @@ struct SettingsView: View {
                             settingsInfoRow(title: Localization.localized("settings.device"), value: audioEngine.deviceModelName, icon: "iphone", color: .gray)
                         }
 
-                        // Estadísticas
+                        // Estadísticas (✅ incluye canciones en proceso de indexación)
+                        let totalSongs = fileAccessService.songs.count + fileAccessService.pendingSongsCount
+                        let isIndexing = fileAccessService.isScanning || fileAccessService.pendingSongsCount > 0
                         settingsSection(icon: "chart.bar.fill", title: Localization.localized("settings.stats"), color: .green) {
-                            statRow(title: Localization.localized("library.songs"), value: "\(fileAccessService.songs.count)")
+                            statRow(title: Localization.localized("library.songs"), value: isIndexing ? "\(totalSongs)+" : "\(totalSongs)")
                             settingsDivider
                             statRow(title: Localization.localized("library.albums"), value: "\(fileAccessService.albums.count)")
                             settingsDivider
