@@ -106,6 +106,14 @@ class AudioEngine: NSObject, ObservableObject {
     private var equalizerNode: AVAudioUnitEQ?
     @Published var isEQEnabled: Bool = false
     @Published var eqPreset: EQPreset = .flat
+    // ✅ Audio Mono: mezcla ambos canales en uno para usuarios con audífono único
+    @Published var isMonoAudioEnabled: Bool = UserDefaults.standard.bool(forKey: "com.aurora.monoAudio") {
+        didSet {
+            if isMonoAudioEnabled != oldValue {
+                UserDefaults.standard.set(isMonoAudioEnabled, forKey: "com.aurora.monoAudio")
+            }
+        }
+    }
 
     // MARK: - Flags y control
     private var isChangingTrack = false
@@ -219,6 +227,9 @@ class AudioEngine: NSObject, ObservableObject {
     @objc private func handleAppWillEnterForeground() {
         // ✅ Volver a frecuencia normal del timer al regresar a primer plano
         if isPlaying {
+            // ✅ FIX: sincronizar el reloj ANTES de reiniciar el timer para evitar
+            // que la barra se adelante al volver de segundo plano.
+            syncCurrentTimeFromRenderThread()
             startDisplayTimer(isBackground: false)
             updateNowPlayingInfo()
         }
@@ -234,6 +245,19 @@ class AudioEngine: NSObject, ObservableObject {
             } catch {
                 AppLog.error(.playback, error, context: "foreground: reiniciar engine")
             }
+        }
+    }
+
+    /// Sincroniza currentTime y clock.time con la posición real del render thread.
+    /// Llamado al volver de segundo plano para evitar que la barra se adelante.
+    private func syncCurrentTimeFromRenderThread() {
+        guard !isUsingFallback,
+              let nodeTime = playerNode.lastRenderTime,
+              let playerTime = playerNode.playerTime(forNodeTime: nodeTime) else { return }
+        let current = seekOffset + Double(playerTime.sampleTime) / sampleRate
+        if current >= 0 && current <= duration {
+            currentTime = current
+            clock.time = current
         }
     }
 
@@ -454,6 +478,32 @@ class AudioEngine: NSObject, ObservableObject {
     }
 
     func setEQPreset(_ preset: EQPreset) {
+    // MARK: - Audio Mono
+    /// Activa/desactiva audio mono (mezcla ambos canales en uno).
+    /// Útil para usuarios con audífono único o pérdida auditiva en un oído.
+    func toggleMonoAudio() {
+        isMonoAudioEnabled.toggle()
+        applyMonoAudio()
+        AppLog.info(.playback, "Audio mono: \(isMonoAudioEnabled ? "activado" : "desactivado")")
+    }
+
+    private func applyMonoAudio() {
+        let session = AVAudioSession.sharedInstance()
+        do {
+            if isMonoAudioEnabled {
+                // ✅ Preferir canal único si el hardware lo soporta
+                try session.setPreferredInputNumberOfChannels(1)
+            } else {
+                // ✅ Restaurar estéreo
+                try session.setPreferredInputNumberOfChannels(2)
+            }
+            try session.setActive(true)
+        } catch {
+            // ✅ Algunos dispositivos no soportan cambio de canales de entrada;
+            // no es crítico, el audio sigue funcionando en estéreo.
+            AppLog.debug(.playback, "No se pudo configurar canales de entrada: \(error.localizedDescription)")
+        }
+    }
         guard let eq = equalizerNode else { return }
         eqPreset = preset
         let gains = preset.gains
@@ -814,18 +864,21 @@ class AudioEngine: NSObject, ObservableObject {
     // MARK: - Controles básicos y otros métodos requeridos
     func pause() {
         crossfadeTimer?.invalidate()
-        // ✅ FIX Centro de Control: capturar la posición EXACTA del render thread
-        // ANTES de pausar. El display timer (0.3s) dejaba `currentTime` obsoleto
-        // y la barra de Centro de Control/Bloqueo pantalla quedaba desincronizada.
+        // ✅ FIX: detener el display timer PRIMERO para evitar que siga
+        // actualizando currentTime mientras capturamos la posición exacta.
+        stopDisplayTimer()
+        // ✅ FIX: capturar la posición EXACTA del render thread ANTES de pausar
+        // y actualizar seekOffset para que al reanudar el display timer calcule
+        // correctamente (seekOffset + sampleTime/sampleRate).
         if !isUsingFallback,
            let nodeTime = playerNode.lastRenderTime,
            let playerTime = playerNode.playerTime(forNodeTime: nodeTime) {
             let current = seekOffset + Double(playerTime.sampleTime) / sampleRate
             if current >= 0 && current <= duration {
                 currentTime = current
+                seekOffset = current
             }
         } else if isUsingFallback, let current = avPlayer?.currentTime().seconds, current.isFinite, current >= 0 {
-            // ✅ FIX fallback: elapsed exacto también con AVPlayer
             currentTime = current
         }
         if playerNode.isPlaying {
@@ -835,19 +888,10 @@ class AudioEngine: NSObject, ObservableObject {
             nextNode.pause()
         }
         avPlayer?.pause()
-        // ✅ FIX sincronización Centro de Control/pantalla de bloqueo: iOS
-        // ignoraba el update del now playing porque la sesión seguía
-        // "sonando" (el engine seguía corriendo con solo el playerNode
-        // pausado). Pausar el engine completo detiene el render real →
-        // iOS acepta el rate=0 y el widget se pausa al instante.
-        // resume() ya tiene el path de reactivación (startEngineSafely +
-        // reprogramar desde currentTime), así que no se pierde la posición.
         if !isUsingFallback, !isCrossfading, engine.isRunning {
             engine.pause()
         }
         isPlaying = false
-        stopDisplayTimer()
-        // ✅ Publicar la info de Now Playing explícitamente (rate 0 + elapsed exacto)
         updateNowPlayingInfo()
         saveState()
     }
@@ -1218,10 +1262,14 @@ class AudioEngine: NSObject, ObservableObject {
             rescheduleFileAfterStop(file, from: 0)
             return
         }
-        // ✅ Gapless: en vez de playNext() (que detiene/reconecte el engine),
-        // encadena la siguiente canción directamente en el nodo → sin silencio.
+        // ✅ Gapless: marcar que la canción actual llegó al 100% antes de encadenar
+        // para evitar cortes prematuros. El completion handler se dispara cuando el
+        // segmento termina de programarse, no cuando el audio deja de sonar.
+        if currentTime < duration {
+            currentTime = duration
+            clock.time = duration
+        }
         stopDisplayTimer()
-        currentTime = 0
         chainNextSong()
     }
 

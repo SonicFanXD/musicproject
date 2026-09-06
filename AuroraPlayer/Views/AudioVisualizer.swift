@@ -5,47 +5,43 @@ import QuartzCore
 struct AudioVisualizer: View {
     @ObservedObject var audioEngine: AudioEngine
     var tintColor: Color = AppTheme.accent
-    // ✅ 30 barras: mejor definición de onda sin sobrecargar A11
-    @State private var amplitudes: [CGFloat] = Array(repeating: 0.05, count: 30)
-    // ✅ CADisplayLink a 60fps reales (antes Timer de 12.5Hz = 8x menos fluido)
+    @State private var amplitudes: [CGFloat] = Array(repeating: 0.08, count: 24)
     @State private var displayLink: CADisplayLink?
     @State private var phase: Double = 0
     @State private var isVisible = false
-    // ✅ Suavizado por barra (recuerda su valor anterior)
-    @State private var smoothedAmplitudes: [CGFloat] = Array(repeating: 0.05, count: 30)
+    @State private var smoothedAmplitudes: [CGFloat] = Array(repeating: 0.08, count: 24)
 
     var body: some View {
         GeometryReader { geometry in
-            HStack(spacing: 3) {
+            HStack(spacing: 2.5) {
                 ForEach(0..<amplitudes.count, id: \.self) { index in
-                    // ✅ Onda senoidal + centro elevado (movimiento de agua)
-                    let sineWave = sin(phase + Double(index) * 0.5) * 0.22
-                    let centerBoost = 0.18 * (1 - abs(Double(index - amplitudes.count/2) / Double(amplitudes.count/2)))
-                    let adjustedAmplitude = max(0.04, min(1.0, smoothedAmplitudes[index] + CGFloat(sineWave) + CGFloat(centerBoost)))
+                    let normalizedIndex = Double(index) / Double(amplitudes.count - 1)
+                    let sineWave = sin(phase + Double(index) * 0.6) * 0.18
+                    let centerBoost = 0.15 * (1.0 - pow(normalizedIndex - 0.5, 2) * 4)
+                    let adjustedAmplitude = max(0.05, min(1.0, smoothedAmplitudes[index] + CGFloat(sineWave) + CGFloat(centerBoost)))
 
-                    // ✅ Gradiente vertical con color extraído + base brillante
                     Capsule()
                         .fill(
                             LinearGradient(
                                 colors: [
                                     tintColor.opacity(0.95),
-                                    tintColor.opacity(0.55),
-                                    tintColor.opacity(0.25)
+                                    tintColor.opacity(0.5),
+                                    tintColor.opacity(0.2)
                                 ],
                                 startPoint: .bottom,
                                 endPoint: .top
                             )
                         )
-                        .frame(width: max(3, geometry.size.width / CGFloat(amplitudes.count) - 2.5))
-                        .frame(height: max(4, adjustedAmplitude * geometry.size.height))
+                        .frame(width: max(2.5, geometry.size.width / CGFloat(amplitudes.count) - 2))
+                        .frame(height: max(3, adjustedAmplitude * geometry.size.height))
                 }
             }
-            .frame(height: geometry.size.height)
-            .shadow(color: tintColor.opacity(0.12), radius: 6, x: 0, y: 2)
+            .frame(height: geometry.size.height, alignment: .bottom)
+            .shadow(color: tintColor.opacity(0.1), radius: 4, y: 1)
         }
         .drawingGroup()
-        .opacity(audioEngine.isPlaying ? 1.0 : 0.55)
-        .animation(.easeInOut(duration: 0.35), value: audioEngine.isPlaying)
+        .opacity(audioEngine.isPlaying ? 1.0 : 0.4)
+        .animation(.easeInOut(duration: 0.3), value: audioEngine.isPlaying)
         .onAppear {
             isVisible = true
             startVisualization()
@@ -69,13 +65,10 @@ struct AudioVisualizer: View {
 
     private func startVisualization() {
         stopVisualization()
-        // ✅ Las vistas SwiftUI son STRUCTS (value types): capturar self copia
-        // el valor, así que NO hay retain cycle. @State escribe en storage
-        // compartido vía setter no-mutante del wrapper. stopVisualization()
-        // invalida el link en onDisappear/pausa.
         displayLink = CADisplayLink(target: VisualizerLinkTarget { [self] in
             updateAmplitudes()
         }, selector: #selector(VisualizerLinkTarget.fire(displayLink:)))
+        displayLink?.preferredFramesPerSecond = 60
         displayLink?.add(to: .main, forMode: .common)
     }
 
@@ -87,19 +80,15 @@ struct AudioVisualizer: View {
     private func updateAmplitudes() {
         guard isVisible, audioEngine.isPlaying else { return }
 
-        // ✅ Onda senoidal con variación orgánica: viaja de izq a derecha
-        phase += 0.35
+        phase += 0.25
 
-        let baseAmplitude: CGFloat = 0.38
+        let baseAmplitude: CGFloat = 0.35
         for i in 0..<smoothedAmplitudes.count {
-            // Componente de onda principal (movimiento sincronizado)
-            let travel = sin(phase * 1.15 + Double(i) * 0.75) * 0.25
-            // Variación aleatoria suave por barra (no es ruido puro)
-            let variation = CGFloat.random(in: 0.10...0.35)
-            let target = min(1.0, max(0.06, baseAmplitude + CGFloat(travel) + variation * 0.45))
+            let travel = sin(phase * 1.1 + Double(i) * 0.7) * 0.22
+            let variation = CGFloat.random(in: 0.08...0.28)
+            let target = min(1.0, max(0.05, baseAmplitude + CGFloat(travel) + variation * 0.4))
 
-            // ✅ Interpolación suave hacia el objetivo (60fps = imperceptible)
-            smoothedAmplitudes[i] += (target - smoothedAmplitudes[i]) * 0.75
+            smoothedAmplitudes[i] += (target - smoothedAmplitudes[i]) * 0.65
         }
         amplitudes = smoothedAmplitudes
     }
@@ -119,23 +108,29 @@ final class VisualizerLinkTarget: NSObject {
     }
 }
 
-// MARK: - Visualizador Circular
+// MARK: - Visualizador Circular (optimizado)
 struct CircularAudioVisualizer: View {
     @ObservedObject var audioEngine: AudioEngine
     @State private var amplitudes: [CGFloat] = Array(repeating: 0, count: 48)
     @State private var displayLink: CADisplayLink?
     @State private var isVisible = false
+    @State private var phase: Double = 0
 
     var body: some View {
         ZStack {
             ForEach(0..<amplitudes.count, id: \.self) { index in
                 let angle = Double(index) / Double(amplitudes.count) * 360
-                let height = amplitudes[index] * 50
+                let height = 8 + amplitudes[index] * 45
 
-                RoundedRectangle(cornerRadius: 2)
-                    .fill(AppTheme.accent.opacity(0.7))
-                    .frame(width: 3, height: height)
-                    .offset(y: -height / 2)
+                Capsule()
+                    .fill(
+                        LinearGradient(
+                            colors: [AppTheme.accent, AppTheme.accent.opacity(0.4)],
+                            startPoint: .bottom, endPoint: .top
+                        )
+                    )
+                    .frame(width: 2.5, height: height)
+                    .offset(y: -height / 2 - 35)
                     .rotationEffect(.degrees(angle))
             }
         }
@@ -162,10 +157,10 @@ struct CircularAudioVisualizer: View {
 
     private func startVisualization() {
         stopVisualization()
-        // ✅ Captura directa de self (struct): sin retain cycle posible
         displayLink = CADisplayLink(target: VisualizerLinkTarget { [self] in
             updateCircularAmplitudes()
         }, selector: #selector(VisualizerLinkTarget.fire(displayLink:)))
+        displayLink?.preferredFramesPerSecond = 60
         displayLink?.add(to: .main, forMode: .common)
     }
 
@@ -177,14 +172,13 @@ struct CircularAudioVisualizer: View {
     private func updateCircularAmplitudes() {
         guard isVisible, audioEngine.isPlaying else { return }
 
-        let baseAmplitude: CGFloat = 0.12
-        let randomVariation: CGFloat = CGFloat.random(in: 0.15...0.45)
+        phase += 0.15
 
         amplitudes = amplitudes.map { current in
-            let variation = CGFloat.random(in: 0.3...0.9)
-            let target = min(1.0, baseAmplitude + (variation * randomVariation))
-            // ✅ Suavizado: se acerca al 70% del objetivo cada frame
-            return current + (target - current) * 0.7
+            let index = amplitudes.firstIndex(of: current) ?? 0
+            let travel = sin(phase + Double(index) * 0.4) * 0.3
+            let target = min(1.0, max(0.05, 0.25 + travel + CGFloat.random(in: 0.1...0.4) * 0.5))
+            return current + (target - current) * 0.6
         }
     }
 }

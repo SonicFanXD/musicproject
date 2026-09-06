@@ -46,6 +46,8 @@ final class Localization: ObservableObject {
 
             // Audio
             "settings.equalizer": [.spanish: "Equalizador", .english: "Equalizer"],
+            "settings.monoAudio": [.spanish: "Audio Mono", .english: "Mono Audio"],
+            "settings.monoAudioSubtitle": [.spanish: "Mezcla ambos canales para audífono único", .english: "Mix both channels for single earphone"],
             "settings.crossfade": [.spanish: "Crossfade", .english: "Crossfade"],
             "settings.crossfadeDuration": [.spanish: "Duración del crossfade", .english: "Crossfade Duration"],
             "settings.crossfadeTransition": [.spanish: "Transición de", .english: "Transition of"],
@@ -118,6 +120,8 @@ final class Localization: ObservableObject {
             "library.favorites": [.spanish: "Favoritos", .english: "Favorites"],
             "library.playlists": [.spanish: "Listas", .english: "Playlists"],
             "library.history": [.spanish: "Historial", .english: "History"],
+            "library.title": [.spanish: "Biblioteca", .english: "Library"],
+            "library.subtitle": [.spanish: "Añade tu música para empezar", .english: "Add your music to get started"],
             "library.sort": [.spanish: "Ordenar", .english: "Sort"],
             "library.sortAscending": [.spanish: "Ascendente", .english: "Ascending"],
             "library.sortDescending": [.spanish: "Descendente", .english: "Descending"],

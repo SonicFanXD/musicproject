@@ -7,6 +7,8 @@ struct FolderPickerView: View {
 
     @State private var showImporter = false
     @State private var importMode: ImportMode = .both
+    @State private var appearAnimation = false
+    @State private var headerPulse = false
 
     enum ImportMode {
         case folders
@@ -17,10 +19,17 @@ struct FolderPickerView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                AppBackground()
+                LinearGradient(
+                    colors: [
+                        Color(UIColor.systemBackground),
+                        Color(UIColor.tertiarySystemBackground).opacity(0.4),
+                        Color(UIColor.systemBackground)
+                    ],
+                    startPoint: .top, endPoint: .bottom
+                ).ignoresSafeArea()
 
                 ScrollView {
-                    VStack(spacing: 20) {
+                    VStack(spacing: 18) {
                         headerSection
 
                         actionButtons
@@ -31,8 +40,8 @@ struct FolderPickerView: View {
 
                         libraryContent
                     }
-                    .padding(.horizontal, 20)
-                    .padding(.top, 10)
+                    .padding(.horizontal, 18)
+                    .padding(.top, 8)
                 }
                 .scrollIndicators(.hidden)
             }
@@ -69,34 +78,62 @@ struct FolderPickerView: View {
             ) { result in
                 handleImportResult(result)
             }
+            .onAppear {
+                withAnimation(.easeOut(duration: 0.5)) { appearAnimation = true }
+                withAnimation(.easeInOut(duration: 1.5).repeatForever(autoreverses: true)) { headerPulse = true }
+            }
         }
     }
 
-    // MARK: - Header Section
+    // MARK: - Header Section con animación
 
     private var headerSection: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 14) {
             ZStack {
+                // ✅ Anillo pulsante
                 Circle()
-                    .fill(AppTheme.accent.opacity(0.16))
-                    .frame(width: 70, height: 70)
+                    .stroke(AppTheme.accent.opacity(0.2), lineWidth: 2)
+                    .frame(width: 80, height: 80)
+                    .scaleEffect(headerPulse ? 1.1 : 0.95)
+                    .opacity(headerPulse ? 0.5 : 0.2)
+
+                Circle()
+                    .fill(
+                        LinearGradient(
+                            colors: [AppTheme.accent.opacity(0.15), AppTheme.accent.opacity(0.05)],
+                            startPoint: .topLeading, endPoint: .bottomTrailing
+                        )
+                    )
+                    .frame(width: 68, height: 68)
 
                 Image(systemName: "music.note.list")
                     .font(.system(size: 28, weight: .semibold))
                     .foregroundStyle(AppTheme.accent)
             }
+            .opacity(appearAnimation ? 1 : 0)
+            .scaleEffect(appearAnimation ? 1 : 0.7)
 
-            Text("Tu Biblioteca")
-                .font(.system(size: 22, weight: .bold))
+            VStack(spacing: 6) {
+                Text(Localization.localized("library.title"))
+                    .font(.system(size: 22, weight: .bold, design: .rounded))
+                    .foregroundStyle(.primary)
 
-            Text("Añade tu música para empezar")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
+                Text(Localization.localized("library.subtitle"))
+                    .font(.system(size: 14))
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+            .opacity(appearAnimation ? 1 : 0)
+            .offset(y: appearAnimation ? 0 : 10)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 20)
-        .nativeGlass(cornerRadius: 24)
+        .padding(.vertical, 18)
+        .background {
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .fill(.ultraThinMaterial)
+                .shadow(color: .black.opacity(0.05), radius: 10, y: 4)
+        }
+        .animation(.easeOut(duration: 0.5).delay(0.1), value: appearAnimation)
     }
 
     // MARK: - Action Buttons

@@ -96,6 +96,17 @@ struct SettingsView: View {
                             settingsButton(title: Localization.localized("settings.equalizer"), subtitle: audioEngine.isEQEnabled ? "\(Localization.localized("equalizer.active")) (\(audioEngine.eqPreset.displayName))" : Localization.localized("equalizer.disabled"), icon: "slider.horizontal.3", color: .accentColor) {
                                 showEqualizerSheet = true
                             }
+                            settingsDivider
+                            settingsToggleRow(
+                                title: Localization.localized("settings.monoAudio"),
+                                subtitle: Localization.localized("settings.monoAudioSubtitle"),
+                                icon: "ear",
+                                color: .cyan,
+                                isOn: Binding(
+                                    get: { audioEngine.isMonoAudioEnabled },
+                                    set: { _ in audioEngine.toggleMonoAudio() }
+                                )
+                            )
                         }
 
                         // Apariencia
