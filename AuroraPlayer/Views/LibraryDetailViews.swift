@@ -1,4 +1,4 @@
-import SwiftUI
+﻿import SwiftUI
 import CoreImage
 
 // MARK: - Album Detail (diseño inmersivo premium con color de carátula)
@@ -13,13 +13,15 @@ struct AlbumDetailView: View {
     // ✅ OPT: blur precalculado UNA vez (en background) en vez de re-renderizar .blur(50) en cada frame
     @State private var heroBlurredArtwork: UIImage? = nil
 
-    private var songs: [Song] { album.songs }
-    private var totalDuration: TimeInterval { songs.reduce(0) { $0 + $1.duration } }
-    private var hasMultipleDiscs: Bool { Set(songs.compactMap { $0.discNumber }).count > 1 }
-    private var songsByDisc: [(disc: Int, songs: [Song])] {
-        let grouped = Dictionary(grouping: songs) { $0.discNumber ?? 1 }
-        return grouped.keys.sorted().map { ($0, grouped[$0]!.sorted { $0.trackNumber < $1.trackNumber }) }
-    }
+    // ✅ OPT: cachear cómputos costosos que se leen múltiples veces por frame
+    @State private var cachedSongs: [Song] = []
+    @State private var cachedTotalDuration: TimeInterval = 0
+    @State private var cachedHasMultipleDiscs: Bool = false
+    @State private var cachedSongsByDisc: [(disc: Int, songs: [Song])] = []
+    private var songs: [Song] { cachedSongs }
+    private var totalDuration: TimeInterval { cachedTotalDuration }
+    private var hasMultipleDiscs: Bool { cachedHasMultipleDiscs }
+    private var songsByDisc: [(disc: Int, songs: [Song])] { cachedSongsByDisc }
     // ✅ FIX: color normalizado para legibilidad; usa el vivo si ya se extrajo
     private var tintColor: Color { AppTheme.readableColor(from: liveDominantColor ?? album.dominantColor) }
     // ✅ UIColor crudo para calcular contraste de textos/botones
@@ -36,12 +38,14 @@ struct AlbumDetailView: View {
                 LazyVStack(spacing: 10) {
                     sectionHeader(icon: "music.note.list", title: Localization.localized("details.songs"))
                     if hasMultipleDiscs {
-                        ForEach(songsByDisc, id: \.disc) { discGroup in
+                        ForEach(cachedSongsByDisc, id: \.disc) { discGroup in
                             discSection(disc: discGroup.disc, songs: discGroup.songs)
                         }
                     } else {
-                        ForEach(Array(songs.enumerated()), id: \.element.id) { index, song in
-                            songRow(song, index: index)
+                        ForEach(Array(cachedSongs.enumerated()), id: \.element.id) { index, song in
+                            AlbumSongRow(song: song, index: index, isCurrent: audioEngine.currentSong?.id == song.id, tintColor: tintColor) {
+                                audioEngine.play(song: song, from: cachedSongs)
+                            }
                         }
                     }
                 }
@@ -57,6 +61,14 @@ struct AlbumDetailView: View {
         // ✅ Sin banda gris: el hero inmersivo fluye bajo la barra de navegación
         .toolbarBackground(.hidden, for: .navigationBar)
         .onAppear {
+            // ✅ Cachear cómputos una sola vez
+            if cachedSongs.isEmpty {
+                cachedSongs = album.songs
+                cachedTotalDuration = cachedSongs.reduce(0) { $0 + $1.duration }
+                cachedHasMultipleDiscs = Set(cachedSongs.compactMap { $0.discNumber }).count > 1
+                let grouped = Dictionary(grouping: cachedSongs) { $0.discNumber ?? 1 }
+                cachedSongsByDisc = grouped.keys.sorted().map { ($0, grouped[$0]!.sorted { $0.trackNumber < $1.trackNumber }) }
+            }
             // ✅ Animación de entrada suave
             withAnimation(.easeOut(duration: 0.4)) {
                 appearAnimation = true
@@ -64,7 +76,7 @@ struct AlbumDetailView: View {
             // ✅ OPT: precalcular el blur del hero UNA vez en background
             prepareBlurredArtwork(from: album.artwork)
             // ✅ Extraer el color dominante VIVO de la carátula en hilo de fondo
-            guard let artwork = album.artwork else { return }
+            guard liveDominantColor == nil, let artwork = album.artwork else { return }
             DispatchQueue.global(qos: .userInitiated).async {
                 // ✅ Caché compartida: mismo color que NowPlaying para este álbum
                 let dominant = AppTheme.cachedDominantColor(from: artwork, key: album.id)
@@ -242,59 +254,11 @@ struct AlbumDetailView: View {
             }
             .padding(.horizontal, 4).padding(.top, 6)
             ForEach(Array(songs.enumerated()), id: \.element.id) { index, song in
-                songRow(song, index: index)
-            }
-        }
-    }
-
-    private func songRow(_ song: Song, index: Int) -> some View {
-        let isCurrent = audioEngine.currentSong?.id == song.id
-        return Button {
-            Haptics.light()
-            audioEngine.play(song: song, from: songs)
-        } label: {
-            HStack(spacing: 14) {
-                if isCurrent {
-                    HStack(spacing: 2.5) {
-                        ForEach(0..<3, id: \.self) { bar in
-                            RoundedRectangle(cornerRadius: 1).fill(tintColor)
-                                .frame(width: 2.5, height: bar % 2 == 0 ? 13 : 8)
-                                .animation(.easeInOut(duration: 0.45 + Double(bar) * 0.12).repeatForever(autoreverses: true), value: isCurrent)
-                        }
-                    }.frame(width: 24)
-                } else {
-                    Text("\(index + 1)")
-                        .font(.system(size: 14, weight: .medium).monospacedDigit())
-                        .foregroundStyle(Color.secondary.opacity(0.5)).frame(width: 24)
-                }
-
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(song.title)
-                        .font(.system(size: 15, weight: isCurrent ? .bold : .semibold, design: .rounded))
-                        .foregroundStyle(isCurrent ? tintColor : .primary).lineLimit(1)
-                    Text(song.displaySubtitle).font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
-                }
-
-                Spacer()
-
-                Text(formatDuration(song.duration))
-                    .font(.system(size: 11, weight: .medium).monospacedDigit()).foregroundStyle(.tertiary)
-            }
-            .padding(.horizontal, 14).padding(.vertical, 12)
-            .background {
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(isCurrent ? AnyShapeStyle(tintColor.opacity(0.08)) : AnyShapeStyle(.regularMaterial))
-            }
-            .contentShape(Rectangle())
-            .overlay {
-                if isCurrent {
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .strokeBorder(tintColor.opacity(0.2), lineWidth: 0.5)
+                AlbumSongRow(song: song, index: index, isCurrent: audioEngine.currentSong?.id == song.id, tintColor: tintColor) {
+                    audioEngine.play(song: song, from: songs)
                 }
             }
         }
-        // ✅ Feedback de presión al tocar (micro-escala, animación GPU)
-        .buttonStyle(PressableButtonStyle(scale: 0.98))
     }
 
     private func statPill(icon: String, text: String) -> some View {
@@ -306,12 +270,6 @@ struct AlbumDetailView: View {
         .background { Capsule().fill(.regularMaterial) }
     }
 
-    private func formatDuration(_ seconds: TimeInterval) -> String {
-        guard seconds.isFinite, seconds >= 0 else { return "0:00" }
-        let totalSeconds = Int(seconds)
-        return String(format: "%d:%02d", totalSeconds / 60, totalSeconds % 60)
-    }
-
     private func formatLongDuration(_ seconds: TimeInterval) -> String {
         let minutes = Int(seconds) / 60
         if minutes >= 60 {
@@ -320,6 +278,85 @@ struct AlbumDetailView: View {
             return rem > 0 ? "\(hours) h \(rem) min" : "\(hours) h"
         }
         return "\(minutes) min"
+    }
+}
+
+// MARK: - Song Row optimizado (View struct para diffing correcto y 60fps)
+struct AlbumSongRow: View {
+    let song: Song
+    let index: Int
+    let isCurrent: Bool
+    let tintColor: Color
+    let action: () -> Void
+
+    var body: some View {
+        Button {
+            Haptics.light()
+            action()
+        } label: {
+            HStack(spacing: 14) {
+                if isCurrent {
+                    EqualizerBars(color: tintColor)
+                } else {
+                    Text("\(index + 1)")
+                        .font(.system(size: 14, weight: .medium).monospacedDigit())
+                        .foregroundStyle(Color.secondary.opacity(0.5)).frame(width: 24)
+                }
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(song.title)
+                        .font(.system(size: 15, weight: isCurrent ? .bold : .semibold, design: .rounded))
+                        .foregroundStyle(isCurrent ? tintColor : .primary).lineLimit(1)
+                    Text(song.album.isEmpty ? song.displaySubtitle : song.album)
+                        .font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
+                }
+
+                Spacer()
+
+                Text(formatDuration(song.duration))
+                    .font(.system(size: 11, weight: .medium).monospacedDigit()).foregroundStyle(.tertiary)
+            }
+            .padding(.horizontal, 14).padding(.vertical, 12)
+            .background {
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(isCurrent ? tintColor.opacity(0.08) : Color(.secondarySystemBackground))
+            }
+            .contentShape(Rectangle())
+            .overlay {
+                if isCurrent {
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .strokeBorder(tintColor.opacity(0.2), lineWidth: 0.5)
+                }
+            }
+        }
+        .buttonStyle(PressableButtonStyle(scale: 0.98))
+    }
+
+    private func formatDuration(_ seconds: TimeInterval) -> String {
+        guard seconds.isFinite, seconds >= 0 else { return "0:00" }
+        let totalSeconds = Int(seconds)
+        return String(format: "%d:%02d", totalSeconds / 60, totalSeconds % 60)
+    }
+}
+
+// MARK: - Equalizer Bars (animación optimizada sin bloqueo de hilo)
+struct EqualizerBars: View {
+    let color: Color
+    @State private var animate = false
+
+    var body: some View {
+        HStack(spacing: 2.5) {
+            ForEach(0..<3, id: \.self) { bar in
+                RoundedRectangle(cornerRadius: 1).fill(color)
+                    .frame(width: 2.5, height: animate ? (bar % 2 == 0 ? 13 : 8) : (bar % 2 == 0 ? 8 : 13))
+            }
+        }
+        .frame(width: 24)
+        .onAppear {
+            withAnimation(.easeInOut(duration: 0.5).repeatForever(autoreverses: true)) {
+                animate = true
+            }
+        }
     }
 }
 
@@ -352,9 +389,13 @@ struct ArtistDetailView: View {
     // ✅ OPT: blur precalculado UNA vez (en background)
     @State private var heroBlurredArtwork: UIImage? = nil
 
-    private var songs: [Song] { artist.songs }
-    private var albums: [Album] { artist.albums }
-    private var totalDuration: TimeInterval { songs.reduce(0) { $0 + $1.duration } }
+    // ✅ OPT: cachear cómputos
+    @State private var cachedAlbums: [Album] = []
+    @State private var cachedSongs: [Song] = []
+    @State private var cachedTotalDuration: TimeInterval = 0
+    private var songs: [Song] { cachedSongs }
+    private var albums: [Album] { cachedAlbums }
+    private var totalDuration: TimeInterval { cachedTotalDuration }
     private var tintColor: Color { AppTheme.readableColor(from: liveDominantColor ?? artist.albums.first?.dominantColor) }
     private var tintUIColor: UIColor { liveDominantColor ?? artist.albums.first?.dominantColor ?? AppTheme.accentUIColor }
     // ✅ Contraste para botones (igual que AlbumDetailView)
@@ -371,11 +412,11 @@ struct ArtistDetailView: View {
                         sectionHeader(icon: "square.stack", title: Localization.localized("details.albums"))
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 14) {
-                                ForEach(albums) { album in
+                                ForEach(cachedAlbums) { album in
                                     NavigationLink {
                                         AlbumDetailView(album: album, audioEngine: audioEngine)
                                     } label: {
-                                        albumCard(album)
+                                        ArtistAlbumCard(album: album)
                                     }
                                     .buttonStyle(.plain)
                                 }
@@ -387,8 +428,10 @@ struct ArtistDetailView: View {
                 }
                 LazyVStack(spacing: 10) {
                     sectionHeader(icon: "music.note.list", title: Localization.localized("details.songs"))
-                    ForEach(Array(songs.enumerated()), id: \.element.id) { index, song in
-                        songRow(song, index: index)
+                    ForEach(Array(cachedSongs.enumerated()), id: \.element.id) { index, song in
+                        ArtistSongRow(song: song, index: index, isCurrent: audioEngine.currentSong?.id == song.id, tintColor: tintColor) {
+                            audioEngine.play(song: song, from: cachedSongs)
+                        }
                     }
                 }
                 .padding(.horizontal, 20).padding(.top, 28)
@@ -402,13 +445,19 @@ struct ArtistDetailView: View {
         // ✅ Sin banda gris (coherente con AlbumDetailView)
         .toolbarBackground(.hidden, for: .navigationBar)
         .onAppear {
+            // ✅ Cachear cómputos una sola vez
+            if cachedAlbums.isEmpty {
+                cachedAlbums = artist.albums
+                cachedSongs = artist.songs
+                cachedTotalDuration = cachedSongs.reduce(0) { $0 + $1.duration }
+            }
             withAnimation(.easeOut(duration: 0.4)) {
                 appearAnimation = true
             }
             // ✅ OPT: precalcular el blur del hero UNA vez en background
             prepareBlurredArtwork(from: artist.artwork)
             // ✅ Extraer color del primer álbum
-            if let artwork = artist.artwork {
+            guard liveDominantColor == nil, let artwork = artist.artwork else { return }
                 DispatchQueue.global(qos: .userInitiated).async {
                     // ✅ Caché compartida por id de artista
                     let dominant = AppTheme.cachedDominantColor(from: artwork, key: "artist-" + artist.id)
@@ -420,7 +469,6 @@ struct ArtistDetailView: View {
                 }
             }
         }
-    }
 
     // ✅ OPT: gaussian blur costoso → se calcula UNA vez en hilo de fondo y se cachea
     private func prepareBlurredArtwork(from artwork: UIImage?) {
@@ -570,7 +618,31 @@ struct ArtistDetailView: View {
         }
     }
 
-    private func albumCard(_ album: Album) -> some View {
+    private func statPill(icon: String, text: String) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: icon).font(.system(size: 11, weight: .semibold))
+            Text(text).font(.system(size: 13, weight: .medium).monospacedDigit())
+        }
+        .foregroundStyle(.secondary).padding(.horizontal, 12).padding(.vertical, 6)
+        .background { Capsule().fill(.regularMaterial) }
+    }
+
+    private func formatLongDuration(_ seconds: TimeInterval) -> String {
+        let minutes = Int(seconds) / 60
+        if minutes >= 60 {
+            let hours = minutes / 60
+            let rem = minutes % 60
+            return rem > 0 ? "\(hours) h \(rem) min" : "\(hours) h"
+        }
+        return "\(minutes) min"
+    }
+}
+
+// MARK: - Album Card optimizado para Artist Detail
+struct ArtistAlbumCard: View {
+    let album: Album
+
+    var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Group {
                 if let artwork = album.artwork {
@@ -607,22 +679,24 @@ struct ArtistDetailView: View {
         // ✅ Micro-escala al presionar la tarjeta (feedback premium, GPU)
         .contentShape(Rectangle())
     }
+}
 
-    private func songRow(_ song: Song, index: Int) -> some View {
-        let isCurrent = audioEngine.currentSong?.id == song.id
-        return Button {
+// MARK: - Song Row optimizado para Artist Detail
+struct ArtistSongRow: View {
+    let song: Song
+    let index: Int
+    let isCurrent: Bool
+    let tintColor: Color
+    let action: () -> Void
+
+    var body: some View {
+        Button {
             Haptics.light()
-            audioEngine.play(song: song, from: songs)
+            action()
         } label: {
             HStack(spacing: 14) {
                 if isCurrent {
-                    HStack(spacing: 2.5) {
-                        ForEach(0..<3, id: \.self) { bar in
-                            RoundedRectangle(cornerRadius: 1).fill(AppTheme.accent)
-                                .frame(width: 2.5, height: bar % 2 == 0 ? 13 : 8)
-                                .animation(.easeInOut(duration: 0.45 + Double(bar) * 0.12).repeatForever(autoreverses: true), value: isCurrent)
-                        }
-                    }.frame(width: 24)
+                    EqualizerBars(color: AppTheme.accent)
                 } else {
                     Text("\(index + 1)")
                         .font(.system(size: 14, weight: .medium).monospacedDigit())
@@ -645,7 +719,7 @@ struct ArtistDetailView: View {
             .padding(.horizontal, 14).padding(.vertical, 12)
             .background {
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(isCurrent ? AnyShapeStyle(tintColor.opacity(0.08)) : AnyShapeStyle(.regularMaterial))
+                    .fill(isCurrent ? tintColor.opacity(0.08) : Color(.secondarySystemBackground))
             }
             .contentShape(Rectangle())
             .overlay {
@@ -659,40 +733,23 @@ struct ArtistDetailView: View {
         .buttonStyle(PressableButtonStyle(scale: 0.98))
     }
 
-    private func statPill(icon: String, text: String) -> some View {
-        HStack(spacing: 5) {
-            Image(systemName: icon).font(.system(size: 11, weight: .semibold))
-            Text(text).font(.system(size: 13, weight: .medium).monospacedDigit())
-        }
-        .foregroundStyle(.secondary).padding(.horizontal, 12).padding(.vertical, 6)
-        .background { Capsule().fill(.regularMaterial) }
-    }
-
     private func formatDuration(_ seconds: TimeInterval) -> String {
         guard seconds.isFinite, seconds >= 0 else { return "0:00" }
         let totalSeconds = Int(seconds)
         return String(format: "%d:%02d", totalSeconds / 60, totalSeconds % 60)
     }
-
-    private func formatLongDuration(_ seconds: TimeInterval) -> String {
-        let minutes = Int(seconds) / 60
-        if minutes >= 60 {
-            let hours = minutes / 60
-            let rem = minutes % 60
-            return rem > 0 ? "\(hours) h \(rem) min" : "\(hours) h"
-        }
-        return "\(minutes) min"
-    }
 }
 // MARK: - Blur en background (OPT: evita re-renderizar .blur(50) en cada frame)
 extension UIImage {
+    private static let blurContext = CIContext(options: [.useSoftwareRenderer: false])
+
     func applyingGaussianBlur(radius: Double) -> UIImage {
         guard let ciImage = CIImage(image: self) else { return self }
         let filter = CIFilter(name: "CIGaussianBlur")
         filter?.setValue(ciImage, forKey: kCIInputImageKey)
         filter?.setValue(radius, forKey: kCIInputRadiusKey)
         guard let output = filter?.outputImage,
-              let cg = CIContext().createCGImage(output.clampedToExtent(), from: ciImage.extent.insetBy(dx: -radius, dy: -radius)) else { return self }
+              let cg = Self.blurContext.createCGImage(output.clampedToExtent(), from: ciImage.extent.insetBy(dx: -radius, dy: -radius)) else { return self }
         return UIImage(cgImage: cg, scale: scale, orientation: imageOrientation)
     }
 }
