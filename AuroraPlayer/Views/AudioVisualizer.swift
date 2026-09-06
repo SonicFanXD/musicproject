@@ -38,11 +38,9 @@ struct AudioVisualizer: View {
                         )
                         .frame(width: max(3, geometry.size.width / CGFloat(amplitudes.count) - 2.5))
                         .frame(height: max(4, adjustedAmplitude * geometry.size.height))
-                        // ✅ Sin .animation individual (CADisplayLink ya interpola 60fps)
                 }
             }
             .frame(height: geometry.size.height)
-            // ✅ Sombra sutil del conjunto (GPU barata, rasterizada por drawingGroup)
             .shadow(color: tintColor.opacity(0.12), radius: 6, x: 0, y: 2)
         }
         .drawingGroup()
@@ -71,8 +69,12 @@ struct AudioVisualizer: View {
 
     private func startVisualization() {
         stopVisualization()
-        displayLink = CADisplayLink(target: VisualizerLinkTarget { [weak self] in
-            self?.updateAmplitudes()
+        // ✅ Las vistas SwiftUI son STRUCTS (value types): capturar self copia
+        // el valor, así que NO hay retain cycle. @State escribe en storage
+        // compartido vía setter no-mutante del wrapper. stopVisualization()
+        // invalida el link en onDisappear/pausa.
+        displayLink = CADisplayLink(target: VisualizerLinkTarget { [self] in
+            updateAmplitudes()
         }, selector: #selector(VisualizerLinkTarget.fire(displayLink:)))
         displayLink?.add(to: .main, forMode: .common)
     }
@@ -103,8 +105,8 @@ struct AudioVisualizer: View {
     }
 }
 
-/// Wrapper para CADisplayLink con closure (evita retain cycle con @StateObject)
-class VisualizerLinkTarget: NSObject {
+/// Wrapper para CADisplayLink (retención segura del selector)
+final class VisualizerLinkTarget: NSObject {
     private let handler: () -> Void
 
     init(handler: @escaping () -> Void) {
@@ -160,9 +162,10 @@ struct CircularAudioVisualizer: View {
 
     private func startVisualization() {
         stopVisualization()
-        displayLink = CADisplayLink(target: CircularLinkTarget { [weak self] in
-            self?.updateAmplitudes()
-        }, selector: #selector(CircularLinkTarget.fire(displayLink:)))
+        // ✅ Captura directa de self (struct): sin retain cycle posible
+        displayLink = CADisplayLink(target: VisualizerLinkTarget { [self] in
+            updateCircularAmplitudes()
+        }, selector: #selector(VisualizerLinkTarget.fire(displayLink:)))
         displayLink?.add(to: .main, forMode: .common)
     }
 
@@ -171,7 +174,7 @@ struct CircularAudioVisualizer: View {
         displayLink = nil
     }
 
-    private func updateAmplitudes() {
+    private func updateCircularAmplitudes() {
         guard isVisible, audioEngine.isPlaying else { return }
 
         let baseAmplitude: CGFloat = 0.12
@@ -183,19 +186,5 @@ struct CircularAudioVisualizer: View {
             // ✅ Suavizado: se acerca al 70% del objetivo cada frame
             return current + (target - current) * 0.7
         }
-    }
-}
-
-/// Wrapper para CADisplayLink circular
-class CircularLinkTarget: NSObject {
-    private let handler: () -> Void
-
-    init(handler: @escaping () -> Void) {
-        self.handler = handler
-        super.init()
-    }
-
-    @objc func fire(displayLink: CADisplayLink) {
-        handler()
     }
 }
