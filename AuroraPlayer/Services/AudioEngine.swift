@@ -141,17 +141,10 @@ class AudioEngine: NSObject, ObservableObject {
     // sola canción) y aplicar el re-programado con delay.
     private var currentFileURL: URL?
 
-    // MARK: - Crossfade (✅ ELIMINADO)
-    // El crossfade era la fuente principal de bugs de sincronización
-    // (saltos "al azar" al terminar canciones y drift del reloj).
-    // Las propiedades se mantienen (en false) por compatibilidad con las
-    // vistas que las referencian, pero NUNCA se activa.
-    private var crossfadeTimer: Timer?
-    private var crossfadeDuration: TimeInterval = 3.0
-    private var isCrossfading = false
-    private var nextPlayerNode: AVAudioPlayerNode?
-    private var nextAudioFile: AVAudioFile?
-    @Published var isCrossfadeEnabled: Bool = false
+    // ✅ CROSSFADE: eliminado por completo (era la fuente principal de bugs
+    // ✅ CROSSFADE: eliminado por completo (era la fuente principal de bugs
+    // de sincronización y el gapless de chainNextSong lo hace innecesario).
+    // Las referencias en vistas también fueron removidas.
 
     // ✅ "Mantener pantalla encendida" gestionado aquí (centralizado):
     // antes solo vivía en NowPlayingView y se perdía al cerrarla.
@@ -188,8 +181,6 @@ class AudioEngine: NSObject, ObservableObject {
     }
 
     // MARK: - Flags y control
-    private var isChangingTrack = false
-    private var isSeeking = false
     private var isStopping = false
     private var playbackErrorCount = 0
     private var scheduleGeneration = 0
@@ -515,25 +506,6 @@ class AudioEngine: NSObject, ObservableObject {
             ?? engine.mainMixerNode.outputFormat(forBus: 0)
     }
 
-    func toggleCrossfade() {
-        isCrossfadeEnabled.toggle()
-
-        // Si se activa durante la reproducción actual, programar crossfade si es posible
-        if isCrossfadeEnabled, isPlaying, let file = audioFile {
-            let timeRemaining = duration - currentTime
-            if timeRemaining > crossfadeDuration && currentIndex + 1 < playlist.count {
-                scheduleCrossfade(for: file, startFrame: AVAudioFramePosition(currentTime * sampleRate), framesToPlay: AVAudioFrameCount(file.length))
-            }
-        } else if !isCrossfadeEnabled {
-            // Al desactivar, cancelar cualquier crossfade pendiente
-            crossfadeTimer?.invalidate()
-            crossfadeTimer = nil
-            isCrossfading = false
-        }
-
-        AppLog.info(.playback, "Crossfade: \(isCrossfadeEnabled ? "activado" : "desactivado")")
-    }
-
     func toggleEQ() {
         isEQEnabled.toggle()
         equalizerNode?.bypass = !isEQEnabled
@@ -548,9 +520,6 @@ class AudioEngine: NSObject, ObservableObject {
             playerNode.stop()
             // ✅ Mantener consistencia del reloj de display tras re-programar desde currentPosition
             anchorPlaybackPosition(currentPosition)
-            crossfadeTimer?.invalidate()
-            crossfadeTimer = nil
-            isCrossfading = false
 
             // Reprogramar en el siguiente runloop para evitar glitches de audio
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.02) { [weak self] in
@@ -607,7 +576,7 @@ class AudioEngine: NSObject, ObservableObject {
 
         // Si hay reproducción activa, re-programar el segmento para que el
         // cambio se aplique al instante (mismo patrón que toggleEQ).
-        if isPlaying, !isCrossfading, playerNode.isPlaying, let file = audioFile {
+        if isPlaying, playerNode.isPlaying, let file = audioFile {
             scheduleGeneration += 1
             let position = wallClockTime
             anchorPlaybackPosition(position)
@@ -628,16 +597,6 @@ class AudioEngine: NSObject, ObservableObject {
     /// Sample rate del motor de audio para UI (publicado para que las vistas se actualicen)
     var sampleRateDisplay: Double {
         sampleRate
-    }
-
-    /// Configura la duración del crossfade (1–12 segundos) y la persiste
-    func setCrossfadeDuration(_ seconds: TimeInterval) {
-        crossfadeDuration = max(1.0, min(12.0, seconds))
-        UserDefaults.standard.set(crossfadeDuration, forKey: "com.aurora.crossfadeDuration")
-    }
-
-    var currentCrossfadeDuration: TimeInterval {
-        crossfadeDuration
     }
 
     func getEQGain(for band: Int) -> Float {
@@ -679,15 +638,6 @@ class AudioEngine: NSObject, ObservableObject {
 
         scheduleGeneration += 1
         stopFallbackPlayback()
-        crossfadeTimer?.invalidate()
-        crossfadeTimer = nil
-        isCrossfading = false
-
-        if let nextNode = nextPlayerNode {
-            nextNode.stop()
-            engine.detach(nextNode)
-            nextPlayerNode = nil
-        }
 
         // ✅ FIX REINICIO ATÓMICO: detener TODO antes de reprogramar.
         // playerNode.stop() no resetea el timeline inmediatamente; si se
@@ -701,12 +651,9 @@ class AudioEngine: NSObject, ObservableObject {
         // esto, el handler viejo pasaba los guards con la generación vigente
         // y saltaba de canción antes de que la actual llegara al 100%.
         scheduleGeneration += 1
-        crossfadeTimer?.invalidate()
-        isCrossfading = false
         isStopping = true
         stopDisplayTimer()
         playerNode.stop()
-        if let nextNode = nextPlayerNode, nextNode.isPlaying { nextNode.stop() }
         engine.stop()
         isPlaying = false
         isStopping = false
@@ -790,8 +737,7 @@ class AudioEngine: NSObject, ObservableObject {
                 guard let self = self,
                       self.scheduleGeneration == generation,
                       self.isPlaying,
-                      !self.isStopping,
-                      !self.isCrossfading else { return }
+                      !self.isStopping else { return }
                 self.handlePlaybackFinished()
             }
         }
@@ -812,173 +758,8 @@ class AudioEngine: NSObject, ObservableObject {
         "\(format.sampleRate)-\(format.channelCount)-\(equalizerNode != nil)"
     }
 
-    // MARK: - Crossfade implementado con precisión
-    private func scheduleCrossfade(for file: AVAudioFile, startFrame: AVAudioFramePosition, framesToPlay: AVAudioFrameCount) {
-        let crossfadeStartFrame = AVAudioFramePosition(Double(file.length) - (crossfadeDuration * sampleRate))
-
-        crossfadeTimer?.invalidate()
-        crossfadeTimer = Timer.scheduledTimer(withTimeInterval: 0.15, repeats: true) { [weak self] _ in
-            guard let self = self,
-                  let nodeTime = self.playerNode.lastRenderTime,
-                  let playerTime = self.playerNode.playerTime(forNodeTime: nodeTime) else {
-                return
-            }
-
-            let currentFrame = playerTime.sampleTime + AVAudioFramePosition(startFrame)
-            if currentFrame >= crossfadeStartFrame && !self.isCrossfading {
-                self.crossfadeTimer?.invalidate()
-                self.startCrossfadeToNext()
-            }
-        }
-    }
-
-    private func startCrossfadeToNext() {
-        guard !isCrossfading, currentIndex + 1 < playlist.count else { return }
-        isCrossfading = true
-
-        let nextIndex = currentIndex + 1
-        let nextSong = playlist[nextIndex]
-
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            guard let self = self else { return }
-            do {
-                let nextFile = try AVAudioFile(forReading: nextSong.url)
-                self.nextAudioFile = nextFile
-
-                DispatchQueue.main.async {
-                    self.setupNextPlayer(with: nextFile)
-                }
-            } catch {
-                self.isCrossfading = false
-            }
-        }
-    }
-
-    private func setupNextPlayer(with file: AVAudioFile) {
-        let nextPlayer = AVAudioPlayerNode()
-        engine.attach(nextPlayer)
-
-        if let eq = equalizerNode {
-            engine.connect(nextPlayer, to: eq, format: file.processingFormat)
-        } else {
-            // ✅ Mono: pasar por el mezclador downmix, no directo al mainMixer
-            engine.connect(nextPlayer, to: monoMixerNode, format: file.processingFormat)
-        }
-
-        nextPlayerNode = nextPlayer
-        nextPlayer.scheduleFile(file, at: nil) { [weak self] in
-            DispatchQueue.main.async {
-                self?.completeCrossfade()
-            }
-        }
-
-        nextPlayer.volume = 0
-        nextPlayer.play()
-
-        // ✅ CROSSFADE SUAVE con curvas EQUAL-POWER (cos/sin): la potencia sumada
-        // de ambas canciones se mantiene constante durante todo el cruce (sin el
-        // "hoyo" de -3dB del fundido lineal). Pasos a ~60Hz → inaudible, sin
-        // zipper noise (el escalón es <0.02% de amplitud por frame).
-        let duration = crossfadeDuration
-        let stepInterval = 1.0 / 60.0
-        let totalSteps = max(10, Int(duration / stepInterval))
-        var step = 0
-
-        crossfadeTimer?.invalidate()
-        crossfadeTimer = Timer.scheduledTimer(withTimeInterval: duration / Double(totalSteps), repeats: true) { [weak self] timer in
-            guard let self = self else { timer.invalidate(); return }
-            step += 1
-            let progress = Double(step) / Double(totalSteps)
-            if progress >= 1.0 {
-                timer.invalidate()
-                self.playerNode.volume = 0
-                nextPlayer.volume = 1.0
-                // ✅ Migración al terminar el fundido (single-shot: pause/stop/seek
-                // ya invalidan este mismo timer y cancelan la migración también)
-                self.completeCrossfade()
-                return
-            }
-            // Curvas equal-power: cos sale / sin entra
-            let angle = progress * Double.pi / 2
-            self.playerNode.volume = Float(cos(angle))
-            nextPlayer.volume = Float(sin(angle))
-        }
-    }
-
-    private func completeCrossfade() {
-        // ✅ FIX: Crash + audio feo del crossfade
-        // El problema raíz era detach(nextPlayer) mientras el engine estaba
-        // corriendo, lo que causaba crashes y glitches de audio.
-        // SOLUCIÓN: NO hacemos detach. Simplemente detenemos el nodo temporal
-        // y lo dejamos conectado pero silencioso, sin quitarlo del graph.
-        // El siguiente program se encargará de desconectarlo de forma segura.
-        guard isCrossfading, let nextPlayer = nextPlayerNode else { return }
-        guard let nextFile = nextAudioFile else {
-            isCrossfading = false
-            return
-        }
-        guard currentIndex + 1 < playlist.count else {
-            nextPlayer.stop()
-            nextPlayer.volume = 0
-            nextPlayerNode = nil
-            isCrossfading = false
-            return
-        }
-
-        // Actualizar estado del reproductor antes de migrar
-        currentIndex += 1
-        currentSong = playlist[currentIndex]
-        audioFile = nextFile
-        sampleRate = nextFile.processingFormat.sampleRate
-        duration = Double(nextFile.length) / sampleRate
-        anchorPlaybackPosition(0)
-        playbackErrorCount = 0
-
-        // ⚠️ FIX CRÍTICO: NO detach aquí. Solo paramos y silenciamos.
-        // El playerNode principal se reprogramará en scheduleFile() y
-        // el nodo temporal se reutilizará/destruirá de forma segura.
-        nextPlayer.stop()
-        nextPlayer.volume = 0
-        nextPlayerNode = nil
-        nextAudioFile = nil
-
-        // ⚠️ FIX CRÍTICO (crash + doble "Reproduciendo"): incrementar la generación
-        // ANTES de poner isCrossfading=false. Si lo hacemos después, el completion
-        // del segmento VIEJO del playerNode pasa el guard (!isCrossfading) y sus
-        // scheduleGeneration aún coincide → dispara playNext() duplicado que
-        // colisiona con la reprogramación del crossfade (crash).
-        scheduleGeneration += 1
-        isCrossfading = false
-        if playerNode.isPlaying {
-            playerNode.stop()
-        }
-        playerNode.volume = 1.0
-
-        // ✅ FIX CRÍTICO del crossfade: medir la posición REAL del nextPlayer
-        // (reloj del render thread) en vez de asumir crossfadeDuration teórico.
-        // Antes, cualquier drift del fundido causaba un salto audible al migrar.
-        var framesPlayed = AVAudioFramePosition(crossfadeDuration * sampleRate)
-        if let nodeTime = nextPlayer.lastRenderTime,
-           let playerTime = nextPlayer.playerTime(forNodeTime: nodeTime) {
-            framesPlayed = playerTime.sampleTime
-        }
-        framesPlayed = min(max(framesPlayed, 0), AVAudioFramePosition(nextFile.length) - 1)
-        let alreadyPlayed = Double(framesPlayed) / sampleRate
-        anchorPlaybackPosition(alreadyPlayed)
-        scheduleFile(nextFile, from: alreadyPlayed)
-
-        isPlaying = true
-        startDisplayTimer()
-        updateNowPlayingInfo()
-        updateAudioQuality()
-        addToHistory(currentSong!)
-        updateNextUpQueue()
-        saveState()
-    }
-
     // MARK: - Controles básicos y otros métodos requeridos
     func pause() {
-        crossfadeTimer?.invalidate()
         // ✅ FIX: detener el display timer PRIMERO para evitar que siga
         // actualizando currentTime mientras capturamos la posición exacta.
         stopDisplayTimer()
@@ -998,11 +779,8 @@ class AudioEngine: NSObject, ObservableObject {
         if playerNode.isPlaying {
             playerNode.pause()
         }
-        if let nextNode = nextPlayerNode, nextNode.isPlaying {
-            nextNode.pause()
-        }
         avPlayer?.pause()
-        if !isUsingFallback, !isCrossfading, engine.isRunning {
+        if !isUsingFallback, engine.isRunning {
             engine.pause()
         }
         isPlaying = false
@@ -1036,17 +814,6 @@ class AudioEngine: NSObject, ObservableObject {
                 anchorPlaybackPosition(currentTime)
                 clock.time = currentTime
                 playerNode.play()
-                if let nextNode = nextPlayerNode, isCrossfading {
-                    nextNode.play()
-                    // ✅ FIX: si se pausó a mitad del crossfade, el timer de
-                    // migración fue invalidado. Reprogramarlo para que el
-                    // fundido termine de migrar a la canción siguiente.
-                    crossfadeTimer?.invalidate()
-                    let remaining = max(0.1, crossfadeDuration * 0.25 + 0.05)
-                    crossfadeTimer = Timer.scheduledTimer(withTimeInterval: remaining, repeats: false) { [weak self] _ in
-                        self?.completeCrossfade()
-                    }
-                }
             }
         }
         AppLog.info(.playback, String(format: "Resume desde %.1fs — '%@' (engine running: %@, fallback: %@)", currentTime, currentSong?.displayName ?? "—", engine.isRunning ? "sí" : "no", isUsingFallback ? "sí" : "no"))
@@ -1059,16 +826,9 @@ class AudioEngine: NSObject, ObservableObject {
 
     func stop() {
         isStopping = true
-        crossfadeTimer?.invalidate()
-        crossfadeTimer = nil
         stopFallbackPlayback()
         if playerNode.isPlaying {
             playerNode.stop()
-        }
-        if let nextNode = nextPlayerNode {
-            nextNode.stop()
-            engine.detach(nextNode)
-            nextPlayerNode = nil
         }
         isPlaying = false
         currentTime = 0
@@ -1096,11 +856,6 @@ class AudioEngine: NSObject, ObservableObject {
     }
 
     func playNext() {
-        // ✅ FIX CRÍTICO: Evitar crash si estamos en medio de un crossfade
-        guard !isCrossfading else {
-            AppLog.warning(.playback, "playNext ignorado: crossfade en curso")
-            return
-        }
         guard let index = computeNextIndex() else {
             AppLog.info(.playback, "Fin de la playlist (repeat: \(repeatMode.rawValue)). No hay siguiente.")
             return
@@ -1185,8 +940,7 @@ class AudioEngine: NSObject, ObservableObject {
                 guard let self = self,
                       self.scheduleGeneration == generation,
                       self.isPlaying,
-                      !self.isStopping,
-                      !self.isCrossfading else { return }
+                      !self.isStopping else { return }
                 self.handlePlaybackFinished()
             }
         }
@@ -1232,9 +986,6 @@ class AudioEngine: NSObject, ObservableObject {
         scheduleGeneration += 1
         AppLog.info(.playback, String(format: "Seek a %.1fs en '%@' (isPlaying: %@)", time, currentSong?.displayName ?? "—", isPlaying ? "sí" : "no"))
         playerNode.stop()
-        crossfadeTimer?.invalidate()
-        crossfadeTimer = nil
-        isCrossfading = false
 
         let clampedTime = max(0, min(time, duration))
         currentTime = clampedTime
@@ -1387,7 +1138,7 @@ class AudioEngine: NSObject, ObservableObject {
     // el engine se detuvo), reprograma el segmento completo desde 0 con una
     // nueva generación para garantizar que suene sin cortes ni silencios.
     private func handlePlaybackFinished() {
-        guard isPlaying, !isStopping, !isCrossfading else { return }
+        guard isPlaying, !isStopping else { return }
         // ✅ ANTI-SALTO PREMATURO (red de seguridad): el completion handler se
         // dispara cuando el segmento TERMINA de sonar, así que el reloj de
         // pared DEBE estar (casi) al final. Si está muy atrás, es un handler
@@ -1434,8 +1185,7 @@ class AudioEngine: NSObject, ObservableObject {
             guard let self = self,
                   self.scheduleGeneration == generation,
                   self.isPlaying,              // ✅ FIX: solo reproducir si SIGUE reproduciendo (evita audio fantasma al pausar durante el delay)
-                  !self.isStopping,
-                  !self.isCrossfading else { return }
+                  !self.isStopping else { return }
             self.scheduleFile(file, from: seconds, autostart: true)
             self.updateNowPlayingInfo()
             self.startDisplayTimer()
