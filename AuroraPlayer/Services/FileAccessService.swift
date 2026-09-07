@@ -381,19 +381,32 @@ class FileAccessService: ObservableObject {
 
         inFlightBatches += 1
 
-        // ✅ Mover procesamiento a background thread para no bloquear UI
-        Task { @MainActor [weak self] in
-            guard let self = self else { return }
-            defer { self.inFlightBatches -= 1 }
+        // ✅ METADATA FUERA DEL MAIN ACTOR: la lectura de AVAsset (asset.load,
+        // item.load) y TaskGroup se ejecutan en background. Antes todo el lote
+        // (### 50 URLs × 3 lotes en vuelo) se esperaba/serializaba en el main
+        // actor → UI bloqueada, tirones y mayor probabilidad de que la indexación
+        // se ralentizara o quedara incompleta en bibliotecas grandes. La mutación
+        // del estado @Published (scanProcessed, pendingSongs, songs) sigue en el
+        // main actor, pero el trabajo pesado corre fuera.
+        Task.detached(priority: .utility) { [weak self, weak batchOwner = self] in
+            guard let self else { return }
 
-            // ✅ INDEXACIÓN PARALELA: procesar las URLs del lote CONCURRENTEMENTE
-            // con TaskGroup (antes: await secuencial por URL → el disco esperaba
-            // a que cada archivo terminara su carga de metadata). Los índices
-            // preservan el orden original para resultados deterministas.
+            // ✅ DEcremento garantizado: "defer" que siempe devuelve el cupo del
+            // lote, SIN importar si la generación cambió o hubo error. Se
+            // ejecuta en el main actor porque inFlightBatches es estado de la
+            // clase (no-atomic). Sin este defer, un lote con generación vieja
+            // (rescan iniciado mientras se procesaba) dejaba inFlightBatches
+            // alto y la indexación se atascaba → no se procesaban más lotes.
+            defer {
+                Task { @MainActor in batchOwner?.inFlightBatches -= 1 }
+            }
+
+            // INDEXACIÓN PARALELA: procesar las URLs del lote CONCURRENTEMENTE.
+            // Los índices preservan el orden original para resultados deterministas.
             let foundSongs: [Song] = await withTaskGroup(of: (Int, Song?).self) { group in
                 for (index, url) in batch.urls.enumerated() {
                     group.addTask { [weak self] in
-                        guard let self = self else { return (index, nil) }
+                        guard let self else { return (index, nil) }
                         let song = await self.makeSong(from: url)
                         return (index, song)
                     }
@@ -405,28 +418,22 @@ class FileAccessService: ObservableObject {
                 return results.compactMap { $0 }
             }
 
-            guard generation == self.scanGeneration else {
+            // ✅ Actualizar el estado @Published en el main actor.
+            await MainActor.run {
+                guard self.scanGeneration == generation else {
+                    // Lote obsoleto (nuevo rescan): descartarlo, no encadenar.
+                    return
+                }
+                self.scanProcessed += batch.urls.count
+                let uniqueSongs = foundSongs.filter { self.indexedSongURLs.insert($0.url).inserted }
+                if !uniqueSongs.isEmpty {
+                    self.pendingSongs.append(contentsOf: uniqueSongs)
+                    self.scheduleSortAndCache()
+                    AppLog.debug(.library, "Lote cargado: \(uniqueSongs.count); total: \(self.pendingSongs.count)")
+                }
+                self.updateScanningState()
                 self.processNextMetadataBatchIfNeeded()
-                return
             }
-
-            self.scanProcessed += batch.urls.count
-            let uniqueSongs = foundSongs.filter { self.indexedSongURLs.insert($0.url).inserted }
-            if !uniqueSongs.isEmpty {
-                // Acumular sin ordenar en cada lote (O(n log n) por lote es demasiado para 1254+ canciones)
-                self.pendingSongs.append(contentsOf: uniqueSongs)
-                self.scheduleSortAndCache()
-                AppLog.debug(.library, "Lote cargado: \(uniqueSongs.count); total: \(self.pendingSongs.count)")
-            }
-
-            // ✅ SIEMPRE actualizar el estado de escaneo (isScanning + sort final),
-            // sin depender del throttle. ▶️ FIX BUG "NO SE CARGAN TODAS LAS
-            // CANCIONES": si el ÚLTIMO lote caía dentro de la ventana del
-            // throttle, updateScanningState se saltaba y el pendingSongs del
-            // final NUNCA se fusionaba con songs → quedaban canciones sin cargar.
-            self.updateScanningState()
-
-            self.processNextMetadataBatchIfNeeded()
         }
     }
 

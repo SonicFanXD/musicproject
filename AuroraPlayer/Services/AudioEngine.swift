@@ -978,13 +978,13 @@ class AudioEngine: NSObject, ObservableObject {
         if connectedFormatKey == nil {
             connectedFormatKey = formatKey(fileFormat)
         }
-        // ✅ TRANSPARICIÓN ROBUSTA: reinicio limpio del nodo → scheduleFile.
-        // El encadenamiento por scheduleSegment(at: nil) dependía del completion
-        // handler y del estado incierto del node tras terminar la canción, lo que
-        // causaba fallos intermitentes (no avanzaba, punto aleatorio, barra
-        // congelada). rescheduleFileAfterStop detiene el nodo, espera un ciclo y
-        // reprograma desde 0 de forma atómica → arranque SIEMPRE garantizado.
-        rescheduleFileAfterStop(file, from: 0)
+        // ✅ TRANSPARICIÓN CONTIGUA (sin micro-corte): se programa el siguiente
+        // segmento directamente (scheduleSegment at: nil) SIN detener el nodo,
+        // de modo que la canción actual llega a su último frame y la siguiente
+        // arranca justo después, respetando el inicio a fin.
+        // (Usar playerNode.stop()+delay 0.05s como antes provocaba un
+        // micro-silencio audible entre canciones.)
+        scheduleFile(file, from: 0, autostart: true)
         startDisplayTimer()
         updateNowPlayingInfo()
         updateAudioQuality()

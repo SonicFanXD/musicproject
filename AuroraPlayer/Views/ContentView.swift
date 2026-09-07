@@ -431,9 +431,13 @@ struct ContentView: View {
     private var indexingProgressCard: some View {
         VStack(spacing: 18) {
             ZStack {
-                // ✅ Círculo con material de vidrio (estilo NowPlayingView)
+                // ✅ SIN BLUR: durante la indexación esta vista se re-renderiza en
+                // cada lote (scanProcessed cambia constantemente). Un material blur
+                // re-computado decenas de veces por segundo es la principal fuente
+                // de calor/BCM del dispositivo. Fondo opaco = mismo look, cero
+                // re-computo de blur.
                 Circle()
-                    .fill(AnyShapeStyle(.ultraThinMaterial))
+                    .fill(Color(UIColor.secondarySystemBackground))
                     .frame(width: 80, height: 80)
                     .overlay {
                         Circle()
@@ -498,7 +502,18 @@ struct ContentView: View {
         .frame(maxWidth: .infinity)
         .padding(.vertical, 32)
         .padding(.horizontal, 18)
-        .enhancedGlass(cornerRadius: 28)
+        // ✅ SIN BLUR (era enhancedGlass/.ultraThinMaterial): esta tarjeta se
+        // re-renderiza en cada lote de indexación → blur re-computado constante
+        // = calor. Fondo opaco + borde sutil = mismo look premium, cero costo.
+        .background {
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .fill(Color(UIColor.secondarySystemGroupedBackground))
+                .shadow(color: .black.opacity(0.06), radius: 12, y: 5)
+        }
+        .overlay {
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.06), lineWidth: 0.5)
+        }
     }
 
     private var compactIndexingRow: some View {
@@ -529,8 +544,10 @@ struct ContentView: View {
         .padding(.horizontal, 18)
         .padding(.vertical, 10)
         .background {
+            // ✅ SIN BLUR: se re-renderiza en cada lote → blur constante = calor.
             Capsule()
-                .fill(AnyShapeStyle(.ultraThinMaterial))
+                .fill(Color(UIColor.secondarySystemBackground))
+                .shadow(color: .black.opacity(0.08), radius: 6, y: 2)
         }
         .padding(.horizontal, 12)
     }
