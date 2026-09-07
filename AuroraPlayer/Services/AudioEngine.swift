@@ -1350,17 +1350,45 @@ class AudioEngine: NSObject, ObservableObject {
                 advanceToNextSong()
                 return 
             }
+            // ✅ FIX corte al final en repeat-one: el completion handler del
+            // segmento se dispara cuando el render thread CONSUME el archivo,
+            // antes de que el último buffer salga por el hardware. El
+            // playerNode.stop() de rescheduleFileAfterStop DESCARTABA ese buffer
+            // pendiente → los últimos milisegundos del final se cortaban.
+            // Solución: encadenar la MISMA canción con at: nil, como el gapless:
+            // el nodo encola el nuevo segmento DETRÁS de los buffers pendientes
+            // de la canción actual → el final suena completo y sin hueco.
+            let repeatGeneration = scheduleGeneration
+            let repeatFrames = AVAudioFrameCount(file.length)
+            if repeatFrames > 0, engine.isRunning, playerNode.isPlaying {
+                // Reloj a 0 + nowPlayingInfo inmediato (CC/lock reinician su barra)
+                anchorPlaybackPosition(0)
+                currentTime = 0
+                clock.time = 0
+                updateNowPlayingInfo()
+                hasScheduledFile = true
+                playerNode.scheduleSegment(
+                    file,
+                    startingFrame: 0,
+                    frameCount: repeatFrames,
+                    at: nil
+                ) { [weak self] in
+                    DispatchQueue.main.async {
+                        guard let self = self,
+                              self.scheduleGeneration == repeatGeneration,
+                              self.isPlaying,
+                              !self.isStopping else { return }
+                        self.handlePlaybackFinished()
+                    }
+                }
+                return
+            }
+            // Fallback (nodo no en condiciones / archivo vacío): reinicio atómico
+            // con espera. Puede recortar el tail, pero es el camino de seguridad.
             anchorPlaybackPosition(0)
             currentTime = 0
             clock.time = 0
-            // FIX: publicar elapsed=0 AQUI, sin esperar el delay del
-            // reschedule. El Centro de Control / pantalla de bloqueo
-            // interpolan su barra desde el ultimo elapsedTime publicado;
-            // si no llega el reinicio a tiempo, la barra externa sigue
-            // avanzando desde el final y nunca vuelve a cero.
             updateNowPlayingInfo()
-            // ✅ FIX: Establecer isStopping=true para evitar que completion handlers
-            // ejecuten handlePlaybackFinished() durante el delay de reschedule
             isStopping = true
             rescheduleFileAfterStop(file, from: 0, force: true)
             // ✅ FIX: isStopping se establece en false dentro de rescheduleFileAfterStop

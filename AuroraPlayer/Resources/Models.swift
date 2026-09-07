@@ -137,6 +137,35 @@ struct Song: Identifiable, Equatable, Codable {
         // ✅ localizedStandardCompare: orden natural ("Track 2" < "Track 10").
         return lhs.title.localizedStandardCompare(rhs.title) == .orderedAscending
     }
+
+    /// ✅ FIX multi-disco: normaliza el nombre de álbum para AGRUPAR los discos
+    /// del mismo álbum que llegan con nombres distintos en los metadatos
+    /// ("Álbum (Disc 1)" / "Álbum (Disc 2)", "Álbum - CD1", "Álbum [Disc 1 of 2]"...).
+    /// Quita el sufijo de disco al final del nombre y colapsa espacios. La
+    /// comparación de agrupación es además insensible a mayúsculas/minúsculas.
+    /// Si al quitar el sufijo queda vacío (p.ej. un álbum que se llama solo
+    /// "Disc 1"), devuelve el nombre original sin partirlo.
+    static func normalizedAlbumName(_ raw: String) -> String {
+        var s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !s.isEmpty, let regex = try? NSRegularExpression(
+            pattern: "[\\s\\-–—_:·]*[\\(\\[\\{]?\\s*(?:disc|disco|cd)\\s*[0-9]+(?:\\s*(?:of|de|/)\\s*[0-9]+)?\\s*[\\)\\]\\}]?\\s*$",
+            options: [.caseInsensitive]
+        ) {
+            let range = NSRange(s.startIndex..., in: s)
+            s = regex.stringByReplacingMatches(in: s, options: [], range: range, withTemplate: "")
+                .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return s.isEmpty ? raw.trimmingCharacters(in: .whitespacesAndNewlines) : s
+    }
+
+    /// Clave de agrupación de álbumes: artista + álbum normalizados (une los
+    /// discos del mismo álbum y evita duplicados por capitalización distinta).
+    static func albumGroupKey(album rawAlbum: String, artist rawArtist: String) -> String {
+        let album = normalizedAlbumName(rawAlbum).lowercased()
+        let artist = rawArtist.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return artist + "|" + album
+    }
 }
 
 extension Song {
@@ -245,12 +274,20 @@ struct Artist: Identifiable, Equatable {
     let songs: [Song]
 
     var albums: [Album] {
-        let grouped = Dictionary(grouping: songs) { $0.album }
-        return grouped.map { (albumName, songs) in
-            Album(
-                name: albumName.isEmpty ? "Álbum desconocido" : albumName,
+        // ✅ FIX multi-disco: misma normalización que la biblioteca — los discos
+        // del mismo álbum con nombres distintos en los metadatos se unen en uno.
+        let grouped = Dictionary(grouping: songs) { song -> String in
+            Song.albumGroupKey(album: song.album, artist: name)
+        }
+        return grouped.map { (key, albumSongs) in
+            let originalAlbums = albumSongs.map { $0.album.isEmpty ? "Álbum desconocido" : $0.album }
+            let albumName = originalAlbums.count > 1
+                ? Song.normalizedAlbumName(originalAlbums.first ?? "")
+                : (originalAlbums.first ?? "Álbum desconocido")
+            return Album(
+                name: albumName,
                 artist: name,
-                songs: songs.sorted(by: Song.discAwareOrder)
+                songs: albumSongs.sorted(by: Song.discAwareOrder)
             )
         }.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }

@@ -1480,16 +1480,33 @@ class FileAccessService: ObservableObject {
     }
 
     private func rebuildDerivedCollections() {
-        let groupedAlbums = Dictionary(grouping: songs) { song -> AlbumKey in
+        // ✅ FIX multi-disco: agrupar por (artista, álbum) NORMALIZADOS. Los discos
+        // del mismo álbum suelen traer nombres distintos por disco
+        // ("X (Disc 1)" / "X (Disc 2)") o capitalización distinta; antes cada
+        // variante creaba un álbum separado → no se reproducían de corrido y
+        // repeat-all no volvía a empezar por el disco 1.
+        let groupedAlbums = Dictionary(grouping: songs) { song -> String in
             let albumName = song.album.isEmpty ? "Álbum desconocido" : song.album
             let artistName = song.albumArtist.isEmpty ? (song.artist.isEmpty ? "Artista desconocido" : song.artist) : song.albumArtist
-            return AlbumKey(album: albumName, artist: artistName)
+            return Song.albumGroupKey(album: albumName, artist: artistName)
         }
 
         cachedAlbums = groupedAlbums.map { (key, albumSongs) in
-            Album(
-                name: key.album,
-                artist: key.artist,
+            // Nombre visible: si el grupo unió varios nombres originales (discos),
+            // mostrar la versión normalizada; si solo hay uno, respetar el original.
+            let originalAlbums = albumSongs.map { $0.album.isEmpty ? "Álbum desconocido" : $0.album }
+            let name = originalAlbums.count > 1
+                ? Song.normalizedAlbumName(originalAlbums.first ?? "")
+                : (originalAlbums.first ?? key)
+            // Artista visible: el más frecuente entre las canciones del grupo
+            // (respeta la capitalización original de los metadatos).
+            let artistCounts = Dictionary(grouping: albumSongs) { song in
+                song.albumArtist.isEmpty ? (song.artist.isEmpty ? "Artista desconocido" : song.artist) : song.albumArtist
+            }
+            let artist = artistCounts.max { $0.value.count < $1.value.count }?.key ?? key
+            return Album(
+                name: name,
+                artist: artist,
                 songs: albumSongs.sorted(by: Song.discAwareOrder)
             )
         }.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
@@ -1518,7 +1535,3 @@ class FileAccessService: ObservableObject {
     }
 }
 
-private struct AlbumKey: Hashable {
-    let album: String
-    let artist: String
-}
