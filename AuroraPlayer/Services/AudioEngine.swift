@@ -158,6 +158,14 @@ class AudioEngine: NSObject, ObservableObject {
             stop()
             return
         }
+        // ✅ SEGURIDAD: si el engine o el nodo no están en condiciones de
+        // encadenar (pausa/seek/reconexión en curso), caer al reinicio
+        // atómico normal en vez de programar sobre un nodo detenido.
+        guard engine.isRunning, playerNode.isPlaying else {
+            currentIndex = index
+            playCurrentSong()
+            return
+        }
         
         let nextSong = playlist[index]
         guard let file = try? AVAudioFile(forReading: nextSong.url) else {
@@ -1262,8 +1270,13 @@ class AudioEngine: NSObject, ObservableObject {
             return
         }
 
-        stopDisplayTimer()
-        advanceToNextSong()
+        // ✅ TRANSICIÓN GAPLESS: encadenar la siguiente canción en el MISMO
+        // nodo sin detener el engine. Antes se llamaba a advanceToNextSong()
+        // → playCurrentSong(), que hacía engine.stop() + reconectar + relanzar,
+        // generando un hueco y un clic audible entre canciones. chainGaplessNext()
+        // reprograma el segmento siguiente con at: nil (encadenado automático)
+        // y solo cae al reinicio atómico si el formato cambia o falla la carga.
+        chainGaplessNext()
     }
 
     // ✅ WATCHDOG: red de seguridad contra completions perdidos. Usa el reloj SIN

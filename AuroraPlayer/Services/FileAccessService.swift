@@ -391,14 +391,22 @@ class FileAccessService: ObservableObject {
         Task.detached(priority: .utility) { [weak self, weak batchOwner = self] in
             guard let self else { return }
 
-            // ✅ DEcremento garantizado: "defer" que siempe devuelve el cupo del
+            // ✅ DEcremento garantizado: "defer" que siempre devuelve el cupo del
             // lote, SIN importar si la generación cambió o hubo error. Se
             // ejecuta en el main actor porque inFlightBatches es estado de la
             // clase (no-atomic). Sin este defer, un lote con generación vieja
             // (rescan iniciado mientras se procesaba) dejaba inFlightBatches
             // alto y la indexación se atascaba → no se procesaban más lotes.
+            // ✅ FIX: tras bajar el contador, re-evaluar isScanning y lanzar el
+            // siguiente lote. Antes, el defer bajaba inFlightBatches DESPUÉS de
+            // la última llamada a updateScanningState(), por lo que isScanning
+            // quedaba atascado en true y la fila de progreso no desaparecía.
             defer {
-                Task { @MainActor in batchOwner?.inFlightBatches -= 1 }
+                Task { @MainActor in
+                    batchOwner?.inFlightBatches -= 1
+                    batchOwner?.updateScanningState()
+                    batchOwner?.processNextMetadataBatchIfNeeded()
+                }
             }
 
             // INDEXACIÓN PARALELA: procesar las URLs del lote CONCURRENTEMENTE.

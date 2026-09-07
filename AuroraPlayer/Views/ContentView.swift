@@ -184,10 +184,20 @@ struct ContentView: View {
                 .padding(.bottom, 6)
         }
         .animation(.easeInOut(duration: 0.35), value: fileAccessService.isScanning)
+        .onChange(of: fileAccessService.isScanning) { scanning in
+            withAnimation(.easeInOut(duration: 0.3)) {
+                compactIndexingVisible = scanning
+            }
+        }
     }
 
     @AppStorage("com.aurora.keepScreenOn") private var keepScreenOnUserDefaults = false
     @AppStorage("com.aurora.autoPlayOnStart") private var autoPlayOnStart = false
+    // ✅ Visibilidad de la fila compacta de indexación, animada por opacidad.
+    // La fila se mantiene SIEMPRE en la lista (colapsada a ~0px cuando está
+    // oculta) para que aparezca/desaparezca con un fade suave en vez de
+    // insertarse/eliminarse como fila (lo que desplazaba la lista bruscamente).
+    @State private var compactIndexingVisible = false
 
     @ViewBuilder
     private func emptyLibraryView(icon: String, title: String, message: String) -> some View {
@@ -317,11 +327,9 @@ struct ContentView: View {
                 .listRowBackground(Color.clear)
             }
         } else {
-            if fileAccessService.isScanning {
-                compactIndexingRow
-                    .listRowSeparator(.hidden)
-                    .listRowBackground(Color.clear)
-            }
+            compactIndexingRow
+                .listRowSeparator(.hidden)
+                .listRowBackground(Color.clear)
             sortButtonRow
                 .listRowSeparator(.hidden)
                 .listRowBackground(Color.clear)
@@ -549,8 +557,11 @@ struct ContentView: View {
                 .shadow(color: .black.opacity(0.08), radius: 6, y: 2)
         }
         .padding(.horizontal, 12)
-        .opacity(fileAccessService.isScanning ? 1 : 0)
-        .animation(.easeInOut(duration: 0.3), value: fileAccessService.isScanning)
+        .opacity(compactIndexingVisible ? 1 : 0)
+        // ✅ Colapsar la altura cuando está oculta (con fade animado) para no
+        // dejar una fila vacía persistente ni desplazar la lista al aparecer.
+        .frame(height: compactIndexingVisible ? nil : CGFloat(1))
+        .clipped()
     }
 
     private var indexingProgress: Double {
