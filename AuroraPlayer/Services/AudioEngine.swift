@@ -158,14 +158,6 @@ class AudioEngine: NSObject, ObservableObject {
             stop()
             return
         }
-        // ✅ SEGURIDAD: si el engine o el nodo no están en condiciones de
-        // encadenar (pausa/seek/reconexión en curso), caer al reinicio
-        // atómico normal en vez de programar sobre un nodo detenido.
-        guard engine.isRunning, playerNode.isPlaying else {
-            currentIndex = index
-            playCurrentSong()
-            return
-        }
         
         let nextSong = playlist[index]
         guard let file = try? AVAudioFile(forReading: nextSong.url) else {
@@ -1270,13 +1262,15 @@ class AudioEngine: NSObject, ObservableObject {
             return
         }
 
-        // ✅ TRANSICIÓN GAPLESS: encadenar la siguiente canción en el MISMO
-        // nodo sin detener el engine. Antes se llamaba a advanceToNextSong()
-        // → playCurrentSong(), que hacía engine.stop() + reconectar + relanzar,
-        // generando un hueco y un clic audible entre canciones. chainGaplessNext()
-        // reprograma el segmento siguiente con at: nil (encadenado automático)
-        // y solo cae al reinicio atómico si el formato cambia o falla la carga.
-        chainGaplessNext()
+        // ✅ TRANSICIÓN DETERMINISTA (reinicio atómico): al terminar la canción
+        // se avanza con playCurrentSong(), que hace engine.stop() → reconectar →
+        // programar en 0 → play. Esto garantiza arrancar SIEMPRE desde el inicio
+        // y NO corta el final de la canción actual. El encadenado con
+        // scheduleSegment(at: nil) (chainGaplessNext) causaba saltos a puntos
+        // aleatorios por milisegundos y cortes al final (cola del node + handlers
+        // duplicados + reloj de pared desincronizado), por lo que se descarta.
+        stopDisplayTimer()
+        advanceToNextSong()
     }
 
     // ✅ WATCHDOG: red de seguridad contra completions perdidos. Usa el reloj SIN
