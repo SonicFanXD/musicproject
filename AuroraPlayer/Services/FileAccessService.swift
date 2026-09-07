@@ -558,7 +558,8 @@ class FileAccessService: ObservableObject {
             async let commonMetadataTask = asset.load(.commonMetadata)
             
             let commonMetadata = try await commonMetadataTask
-            duration = try await durationTask.duration.seconds
+            let durationTime = try await durationTask
+            duration = durationTime.seconds
 
             // ✅ Cancelar timeout si carga fue exitosa
             timeoutTask.cancel()
