@@ -252,6 +252,15 @@ class AudioEngine: NSObject, ObservableObject {
     // detectar cuándo se reinicia la MISMA canción (repeat-one / álbum de una
     // sola canción) y aplicar el re-programado con delay.
     private var currentFileURL: URL?
+    // ✅ PRECARGA de la siguiente canción: mientras suena la actual, abrimos
+    // el AVAudioFile de la siguiente en background para que la transición sea
+    // casi instantánea. Se limpia si cambia la playlist o al parar.
+    // Es DISTINTA del encadenado gapless (que causaba saltos aleatorios):
+    // aquí solo se deja el archivo "caliente"; la reproducción sigue pasando
+    // por el reinicio atómico de playCurrentSong(), que arranca siempre en 0.
+    private var preloadedNextIndex: Int?
+    private var preloadedNextURL: URL?
+    private var preloadedNextFile: AVAudioFile?
     // ✅ CROSSFADE: eliminado por completo (era la fuente principal de bugs
     // ✅ CROSSFADE: eliminado por completo (era la fuente principal de bugs
     // de sincronización y el gapless de chainNextSong lo hace innecesario).
@@ -811,7 +820,17 @@ class AudioEngine: NSObject, ObservableObject {
         }
 
         do {
-            let file = try AVAudioFile(forReading: song.url)
+            // PRECARGA: si la siguiente cancion ya se precargo en background,
+            // se usa directamente en vez de leerla de disco (elimina el hueco).
+            // La reproduccion sigue pasando por el reinicio atomico — solo se
+            // evita la parte lenta (lectura del archivo del disco).
+            let file: AVAudioFile
+            if let cached = preloadedNextFile, preloadedNextIndex == currentIndex, preloadedNextURL == song.url {
+                clearPreloadedNext()
+                file = cached
+            } else {
+                file = try AVAudioFile(forReading: song.url)
+            }
             audioFile = file
             sampleRate = file.processingFormat.sampleRate
             sourceSampleRate = sampleRate
@@ -840,8 +859,21 @@ class AudioEngine: NSObject, ObservableObject {
             anchorPlaybackPosition(0)
             currentTime = 0
             clock.time = 0
-            playerNode.play()
-            isStopping = false  // ✅ FIX: Ahora podemos permitir completion handlers
+            // FIX punto aleatorio: tras engine.stop(), el reloj interno del nodo
+            // (sampleTime) no se resetea hasta el proximo render. Programar + play
+            // inmediato arranca desde un punto residual al azar por milisegundos.
+            // Este retraso da tiempo al render thread a resetear el timeline antes.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+                guard let self = self,
+                      self.scheduleGeneration == currentGeneration,
+                      !self.isStopping else { return }
+                // Re-anclar el reloj a 0 JUSTO antes de play(): el audio arranca
+                // aqui (tras el delay), no cuando se lanzo el schedule. Sin esto el
+                // reloj de pared iria 0.15s adelantado durante toda la cancion.
+                self.anchorPlaybackPosition(0)
+                self.playerNode.play()
+            }
+            isStopping = false  // FIX: Ahora podemos permitir completion handlers
 
             startDisplayTimer()
             updateNowPlayingInfo()
@@ -849,6 +881,10 @@ class AudioEngine: NSObject, ObservableObject {
             addToHistory(song)
             updateNextUpQueue()
             saveState()
+            // PRECARGA de la siguiente cancion mientras suena la actual,
+            // para que la transicion al final sea casi instantanea.
+
+            preloadNextSong()
             // ✅ Pre-carga eliminada: era parte del sistema de encadenamiento
             // frágil. Toda transición ahora pasa por playCurrentSong() atómico.
         } catch {
@@ -987,6 +1023,9 @@ class AudioEngine: NSObject, ObservableObject {
         duration = 0
         currentSong = nil
         currentFileURL = nil
+        // Limpiar el archivo precargado (evita dejar handlers de archivo
+        // abiertos al parar la reproduccion).
+        clearPreloadedNext()
         stopDisplayTimer()
         isStopping = false
         saveState()
@@ -1014,6 +1053,54 @@ class AudioEngine: NSObject, ObservableObject {
             return repeatMode == .all ? 0 : nil
         }
         return next
+    }
+
+    /// ✅ PRECARGA de la siguiente canción en background: mientras suena la
+    /// actual, abrimos el AVAudioFile de la siguiente para que, al terminar,
+    /// el reinicio atómico de playCurrentSong() use el archivo ya "caliente"
+    /// en vez de leerlo de disco — eliminando el grueso del hueco entre pistas.
+
+    private func preloadNextSong() {
+        guard let index = computeNextIndex() else {
+            clearPreloadedNext()
+            return
+        }
+        // Ya está precargada la misma siguiente → no volver a abrirla.
+        guard playlist[index].url != preloadedNextURL else { return }
+        preloadedNextIndex = index
+        preloadedNextURL = playlist[index].url
+        preloadedNextFile = nil
+        let url = playlist[index].url
+
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+
+            guard let self else { return }
+            guard FileManager.default.fileExists(atPath: url.path) else {
+                DispatchQueue.main.async { self.clearPreloadedNext() }
+                return
+            }
+            do {
+                let file = try AVAudioFile(forReading: url)
+                DispatchQueue.main.async {
+                    // Solo guardar si SIGUE siendo la misma siguiente (el
+                    // usuario pudo saltar/esperar mientras se precargaba).
+                    guard self.preloadedNextIndex == index, self.preloadedNextURL == url else { return }
+                    self.preloadedNextFile = file
+                }
+            } catch {
+                AppLog.debug(.playback, "Precarga fallida para " + url.lastPathComponent + ": " + error.localizedDescription)
+                DispatchQueue.main.async { self.clearPreloadedNext() }
+            }
+        }
+    }
+
+    /// ✅ Limpia el archivo precargado (cambio de playlist, parada, o precarga
+    /// que ya no aplica). Evita dejar handlers de archivo abiertos en el sistema.
+
+    private func clearPreloadedNext() {
+        preloadedNextFile = nil
+        preloadedNextIndex = nil
+        preloadedNextURL = nil
     }
 
     func playNext() {
