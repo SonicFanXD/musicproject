@@ -142,7 +142,12 @@ struct Song: Identifiable, Equatable, Codable {
 extension Song {
     private static let artworkCache: NSCache<NSUUID, UIImage> = {
         let cache = NSCache<NSUUID, UIImage>()
-        cache.countLimit = 500 // ✅ Aumentado para mantener más portadas en caché
+        // ✅ ANTI-CRASH: límite por MEMORIA (costo), no solo por conteo.
+        // Cada UIImage decodificada ocupa ancho×alto×4 bytes en RAM (768²×4 =
+        // 2.4MB a la resolución actual). countLimit 500 sin costLimit permitía
+        // >1GB de bitmaps → jetsam kill al scrollear listas grandes.
+        cache.countLimit = 120
+        cache.totalCostLimit = 200 * 1024 * 1024 // 200MB de bitmaps decodificados
         return cache
     }()
 
@@ -152,7 +157,10 @@ extension Song {
             return cached
         }
         guard let image = UIImage(data: data) else { return nil }
-        Song.artworkCache.setObject(image, forKey: id as NSUUID)
+        // Costo = bytes del bitmap decodificado (RGBA), para que totalCostLimit
+        // refleje la RAM real consumida y NSCache expulse bajo presión.
+        let cost = Int(image.size.width * image.scale * image.size.height * image.scale * 4)
+        Song.artworkCache.setObject(image, forKey: id as NSUUID, cost: cost)
         return image
     }
 

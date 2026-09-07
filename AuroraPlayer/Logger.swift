@@ -1,9 +1,15 @@
 import Foundation
 import os
 import UIKit
+import AVFoundation
 
 enum LogCategory: String, CaseIterable {
     case playback, library, metadata, interface, system, network, equalizer, artwork
+    // ✅ Nuevas categorías técnicas/visuales (diagnóstico completo de la app)
+    case performance   // FPS, memoria, advertencias del sistema, térmico
+    case cache         // guardado/carga del caché de biblioteca
+    case settings      // cambios de ajustes del usuario
+    case lifecycle     // foreground/background/terminación de la app
 
     var displayName: String {
         switch self {
@@ -15,6 +21,28 @@ enum LogCategory: String, CaseIterable {
         case .network: return "Red"
         case .equalizer: return "Ecualizador"
         case .artwork: return "Portadas"
+        case .performance: return "Rendimiento"
+        case .cache: return "Caché"
+        case .settings: return "Ajustes"
+        case .lifecycle: return "Ciclo de vida"
+        }
+    }
+
+    /// Color asociado para la UI de logs (hex). nil = color por defecto.
+    var tintHex: String {
+        switch self {
+        case .playback: return "#7C5CFF"   // morado
+        case .library: return "#2E9E5B"    // verde
+        case .metadata: return "#0A84FF"   // azul
+        case .interface: return "#FF9F0A"  // naranja
+        case .system: return "#8E8E93"     // gris
+        case .network: return "#32ADE6"    // celeste
+        case .equalizer: return "#FF375F"  // rosa
+        case .artwork: return "#BF5AF2"    // violeta
+        case .performance: return "#FFD60A"// amarillo
+        case .cache: return "#30D158"      // verde claro
+        case .settings: return "#64D2FF"   // cian
+        case .lifecycle: return "#FF453A"  // rojo
         }
     }
 }
@@ -78,6 +106,95 @@ enum AppLog {
             guard let url = logFileURL else { return }
             try? FileManager.default.removeItem(at: url)
         }
+    }
+
+    // MARK: - Observación técnica global (memoria, térmico, ciclo de vida)
+
+    private static var bootstrapped = false
+
+    /// Registra observadores de eventos técnicos del sistema. Llamar UNA vez
+    /// al arrancar la app (AuroraPlayerApp). Loguea:
+    /// - Advertencias de memoria (performance)
+    /// - Estado térmico del dispositivo (performance)
+    /// - Entrada/salida a segundo plano (lifecycle)
+    /// - Cambios de ruta de audio (auriculares/Bluetooth) (system)
+    static func bootstrap() {
+        bufferLock.lock()
+        if bootstrapped {
+            bufferLock.unlock()
+            return
+        }
+        bootstrapped = true
+        bufferLock.unlock()
+
+        let center = NotificationCenter.default
+
+        // Advertencia de memoria del sistema (precursor de jetsam kill)
+        center.addObserver(
+            forName: UIApplication.didReceiveMemoryWarningNotification,
+            object: nil, queue: .main
+        ) { _ in
+            AppLog.warning(.performance, "⚠️ Advertencia de memoria del sistema (didReceiveMemoryWarning)")
+        }
+
+        // Estado térmico: nominal / fair / serious / critical
+        center.addObserver(
+            forName: ProcessInfo.thermalStateDidChangeNotification,
+            object: nil, queue: .main
+        ) { _ in
+            let state = ProcessInfo.processInfo.thermalState
+            let name: String
+            switch state {
+            case .nominal: name = "nominal (frío)"
+            case .fair: name = "fair (templado)"
+            case .serious: name = "serious (caliente)"
+            case .critical: name = "critical (muy caliente)"
+            @unknown default: name = "desconocido"
+            }
+            AppLog.info(.performance, "Estado térmico del dispositivo: \(name)")
+        }
+
+        // Ciclo de vida: background / foreground
+        center.addObserver(
+            forName: UIApplication.didEnterBackgroundNotification,
+            object: nil, queue: .main
+        ) { _ in
+            AppLog.info(.lifecycle, "App pasó a segundo plano")
+        }
+        center.addObserver(
+            forName: UIApplication.willEnterForegroundNotification,
+            object: nil, queue: .main
+        ) { _ in
+            AppLog.info(.lifecycle, "App volvió a primer plano")
+        }
+        center.addObserver(
+            forName: UIApplication.willTerminateNotification,
+            object: nil, queue: .main
+        ) { _ in
+            AppLog.info(.lifecycle, "App será terminada")
+        }
+
+        // Cambio de ruta de audio (auriculares conectados/desconectados, Bluetooth)
+        center.addObserver(
+            forName: AVAudioSession.routeChangeNotification,
+            object: nil, queue: .main
+        ) { notification in
+            guard let info = notification.userInfo,
+                  let reasonRaw = info[AVAudioSessionRouteChangeReasonKey] as? UInt,
+                  let reason = AVAudioSession.RouteChangeReason(rawValue: reasonRaw) else { return }
+            let reasonName: String
+            switch reason {
+            case .newDeviceAvailable: reasonName = "nueva salida disponible"
+            case .oldDeviceUnavailable: reasonName = "salida desconectada"
+            case .categoryChange: reasonName = "cambio de categoría"
+            case .override: reasonName = "override (ej. altavoz)"
+            case .routeConfigurationChange: reasonName = "reconfiguración de ruta"
+            default: reasonName = "otro (\(reasonRaw))"
+            }
+            AppLog.info(.system, "Ruta de audio cambió: \(reasonName)")
+        }
+
+        AppLog.info(.system, "Observadores técnicos de logs registrados (memoria, térmico, ciclo de vida, rutas)")
     }
 
     // MARK: - API de registro

@@ -19,6 +19,9 @@ struct AuroraPlayerApp: App {
                 .preferredColorScheme(savedThemeIndex == 1 ? .light : savedThemeIndex == 2 ? .dark : nil)
                 .onAppear {
                     FPSOverlayController.shared.setEnabled(showFPS)
+                    // ✅ Logs técnicos: memoria, térmico, ciclo de vida, rutas de audio
+                    AppLog.bootstrap()
+                    AppLog.info(.lifecycle, "App iniciada (v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"))")
                 }
                 .onChange(of: showFPS) { newValue in
                     FPSOverlayController.shared.setEnabled(newValue)

@@ -169,6 +169,7 @@ struct NowPlayingView: View {
             }
             .onAppear {
                 extractColorFromArtwork()
+                AppLog.info(.interface, "NowPlaying abierto: '\(audioEngine.currentSong?.displayName ?? "—")'")
                 withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
                     artworkScale = 1.0
                 }

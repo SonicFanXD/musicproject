@@ -620,15 +620,28 @@ class AudioEngine: NSObject, ObservableObject {
             }
         }
 
-        // ✅ FIX mono fluido: reprogramar el segmento SIN detener el playerNode
-        // para evitar el "atasco" audible al cambiar entre mono/estéreo.
-        // Si el engine no estaba corriendo (sin reproducción), no hace falta reprogramar.
+        // ✅ FIX mono fluido: reprogramar el segmento. CRÍTICO: scheduleFile usa
+        // scheduleSegment(at: nil) que ENCOLA el segmento detrás del que ya está
+        // programado. Sin flushear el playerNode, el RESTO del segmento viejo
+        // (formato anterior) seguía sonando primero y el nuevo arrancaba desde
+        // `position` después → el audio "saltaba hacia atrás" y parecía atascado.
+        // Mismo patrón que el toggle del EQ: stop (descarta la cola) +
+        // reprogramar en el siguiente runloop desde la posición exacta.
         if let file = audioFile {
             scheduleGeneration += 1
+            let generation = scheduleGeneration
             let position = isPlaying ? wallClockTime : min(max(currentTime, 0), duration)
+            playerNode.stop()          // descarta el resto del segmento viejo
+            hasScheduledFile = false
             anchorPlaybackPosition(position)
-            // Reprogramar manteniendo el estado de reproducción (sin stop brusco)
-            scheduleFile(file, from: position, autostart: isPlaying && wasRunning)
+            // Reprogramar en el siguiente runloop (el engine ya está corriendo
+            // si había audio; el formato mono/estéreo ya tomó efecto).
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) { [weak self] in
+                guard let self = self,
+                      self.scheduleGeneration == generation,
+                      !self.isStopping else { return }
+                self.scheduleFile(file, from: position, autostart: self.isPlaying)
+            }
         }
         AppLog.info(.playback, "Audio mono (downmix de salida): \(isMonoAudioEnabled ? "activado" : "desactivado")")
     }

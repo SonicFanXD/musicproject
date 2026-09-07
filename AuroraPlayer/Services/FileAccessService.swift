@@ -234,6 +234,7 @@ class FileAccessService: ObservableObject {
         scanProcessed = 0
         activeDiscoveries = 0
         isScanning = !folders.isEmpty || !files.isEmpty
+        AppLog.info(.library, "Re-escaneo iniciado: \(folders.count) carpetas, \(files.count) archivos sueltos")
         guard !folders.isEmpty || !files.isEmpty else {
             removeCachedSongs()
             return
@@ -797,22 +798,23 @@ class FileAccessService: ObservableObject {
     }
 
     private func thumbnailArtwork(_ data: Data) -> Data {
-        // ✅ OPTIMIZADO con nitidez: 1280px con calidad 0.9 como tope.
-        // Antes 640px@0.85 aplanaba las portadas y se veían borrosas al
-        // mostrarlas en tamaño grande (álbum 260px, fondo NowPlaying). El
-        // downsampling a 1280px conserva nitidez mientras mantiene el caché
-        // JSON en un tamaño razonable (imágenes >1280px no aportan por arriba
-        // del rendimiento visual del dispositivo).
+        // ✅ PUNTO DULCE NITIDEZ/MEMORIA: 768px @ 0.8.
+        // - 640px (original) se veía borroso en NowPlaying (350pt @2x = 700px).
+        // - 1280px (intento anterior) CRASHEABA a ~900 canciones: ~300KB de Data
+        //   por portada × 900 = ~270MB en el JSON de caché, y 6.5MB decodificados
+        //   por imagen en el artworkCache → jetsam kill.
+        // - 768px: cubre el tamaño máximo de display (350pt@2x) con nitidez,
+        //   ~120KB por Data y 2.4MB decodificados → 3× menos memoria.
         guard data.count > 100_000,
               let source = CGImageSourceCreateWithData(data as CFData, nil) else { return data }
         let options: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
-            kCGImageSourceThumbnailMaxPixelSize: 1280,
+            kCGImageSourceThumbnailMaxPixelSize: 768,
             kCGImageSourceCreateThumbnailWithTransform: true,
             kCGImageSourceShouldCacheImmediately: true
         ]
         guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary),
-              let compressed = UIImage(cgImage: image).jpegData(compressionQuality: 0.9) else { return data }
+              let compressed = UIImage(cgImage: image).jpegData(compressionQuality: 0.8) else { return data }
         return compressed
     }
 
@@ -1340,8 +1342,13 @@ class FileAccessService: ObservableObject {
             return
         }
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let cachedSongs = (try? Data(contentsOf: url)).flatMap { try? JSONDecoder().decode([Song].self, from: $0) } ?? []
+            let start = Date()
+            let rawData = try? Data(contentsOf: url)
+            let cachedSongs = rawData.flatMap { try? JSONDecoder().decode([Song].self, from: $0) } ?? []
+            let elapsed = Date().timeIntervalSince(start)
+            let sizeKB = (rawData?.count ?? 0) / 1024
             DispatchQueue.main.async {
+                AppLog.info(.cache, "Caché de biblioteca cargado: \(cachedSongs.count) canciones, \(sizeKB) KB, \(String(format: "%.2f", elapsed))s")
                 self?.finishInitialLibraryLoad(with: cachedSongs)
             }
         }
@@ -1376,18 +1383,29 @@ class FileAccessService: ObservableObject {
         cacheSaveWorkItem?.cancel()
         let workItem = DispatchWorkItem { [weak self] in self?.saveCachedSongs() }
         cacheSaveWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1, execute: workItem)
+        // ✅ ANTI-CRASH: delay 5s (antes 1s). Con bibliotecas grandes el JSON
+        // pesa ~200-300MB (portadas incluidas); serializarlo tras cada lote del
+        // escaneo multiplicaba los picos de memoria → jetsam kill ~900 canciones.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5, execute: workItem)
     }
 
     private func saveCachedSongs() {
-        guard let url = libraryCacheURL,
-              let data = try? JSONEncoder().encode(songs) else { return }
-        do {
-            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try data.write(to: url, options: .atomic)
-            AppLog.debug(.library, "Caché de biblioteca guardada: \(songs.count) canciones")
-        } catch {
-            AppLog.error(.library, "No se pudo guardar caché: \(error.localizedDescription)")
+        guard let url = libraryCacheURL else { return }
+        // ✅ ANTI-CRASH: encode en background. JSONEncoder().encode() sobre
+        // 900+ canciones con artworkData construía el Data completo (y una copia
+        // para escribir .atomic) en el MAIN THREAD → freeze + pico de memoria
+        // doble + crash. La instantánea de `songs` se captura aquí (main) y el
+        // encode/escritura corren fuera.
+        let snapshot = songs
+        DispatchQueue.global(qos: .utility).async {
+            guard let data = try? JSONEncoder().encode(snapshot) else { return }
+            do {
+                try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try data.write(to: url, options: .atomic)
+                AppLog.info(.cache, "Caché de biblioteca guardado: \(snapshot.count) canciones, \(data.count / 1024) KB")
+            } catch {
+                AppLog.error(.library, "No se pudo guardar caché: \(error.localizedDescription)")
+            }
         }
     }
 

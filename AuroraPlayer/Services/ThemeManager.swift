@@ -16,6 +16,7 @@ final class ThemeManager: ObservableObject {
     @Published var accentFromArtwork: Bool {
         didSet {
             UserDefaults.standard.set(accentFromArtwork, forKey: Self.artworkAccentKey)
+            AppLog.info(.settings, "Acento desde carátula: \(accentFromArtwork ? "activado" : "desactivado")")
             if accentFromArtwork {
                 // ✅ FIX: al ACTIVAR el toggle, re-extraer al instante el color de
                 // la última canción. Sin esto, artworkAccentColor quedaba nil y
@@ -91,6 +92,7 @@ final class ThemeManager: ObservableObject {
     @Published var accentIndex: Int {
         didSet {
             UserDefaults.standard.set(accentIndex, forKey: Self.key)
+            AppLog.info(.settings, "Color de acento cambiado (índice \(accentIndex))")
             // ✅ FIX "rastros del color por defecto": propagar el acento a
             // UIKit globalmente (ventanas, route picker, alertas nativas,
             // controles heredados) — .tint() de SwiftUI no cubre UIKit.

@@ -189,7 +189,17 @@ struct SettingsView: View {
                         // se aplicaba al reiniciar ContentView)
                         .onChange(of: keepScreenOn) { newValue in
                             audioEngine.isKeepScreenOnEnabled = newValue
+                            AppLog.info(.settings, "Mantener pantalla encendida: \(newValue ? "activado" : "desactivado")")
                         }
+                        // ✅ LOGS TÉCNICOS: cambios de ajustes del usuario
+                        .onChange(of: showVisualizer) { v in AppLog.info(.settings, "Visualizador: \(v ? "activado" : "desactivado")") }
+                        .onChange(of: enableHaptics) { v in AppLog.info(.settings, "Haptics: \(v ? "activado" : "desactivado")") }
+                        .onChange(of: autoPlayOnStart) { v in AppLog.info(.settings, "Reproducir al iniciar: \(v ? "activado" : "desactivado")") }
+                        .onChange(of: reduceTransparency) { v in AppLog.info(.settings, "Reducir transparencia: \(v ? "activado" : "desactivado")") }
+                        .onChange(of: showVisualizerInBar) { v in AppLog.info(.settings, "Visualizador en barra: \(v ? "activado" : "desactivado")") }
+                        .onChange(of: compactPlayerBar) { v in AppLog.info(.settings, "Barra compacta: \(v ? "activado" : "desactivado")") }
+                        .onChange(of: showLyricsByDefault) { v in AppLog.info(.settings, "Letras por defecto: \(v ? "activado" : "desactivado")") }
+                        .onChange(of: showFPS) { v in AppLog.info(.settings, "Contador FPS: \(v ? "activado" : "desactivado")") }
 
                         // Rendimiento (info técnica)
                         settingsSection(icon: "gauge.open.with.needle", title: Localization.localized("settings.performance"), color: .indigo) {
