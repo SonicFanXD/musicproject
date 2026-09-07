@@ -321,7 +321,7 @@ struct QueueView: View {
         if let artwork = artwork {
             Image(uiImage: artwork)
                 .resizable()
-                .interpolation(.medium)
+                .interpolation(.high)
                 .scaledToFill()
                 .frame(width: size, height: size)
                 .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))

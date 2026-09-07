@@ -978,7 +978,13 @@ class AudioEngine: NSObject, ObservableObject {
         if connectedFormatKey == nil {
             connectedFormatKey = formatKey(fileFormat)
         }
-        scheduleChainedFile(file, from: 0)
+        // ✅ TRANSPARICIÓN ROBUSTA: reinicio limpio del nodo → scheduleFile.
+        // El encadenamiento por scheduleSegment(at: nil) dependía del completion
+        // handler y del estado incierto del node tras terminar la canción, lo que
+        // causaba fallos intermitentes (no avanzaba, punto aleatorio, barra
+        // congelada). rescheduleFileAfterStop detiene el nodo, espera un ciclo y
+        // reprograma desde 0 de forma atómica → arranque SIEMPRE garantizado.
+        rescheduleFileAfterStop(file, from: 0)
         startDisplayTimer()
         updateNowPlayingInfo()
         updateAudioQuality()
@@ -1019,38 +1025,6 @@ class AudioEngine: NSObject, ObservableObject {
             preloadedNextFile = nil
             preloadedNextSong = nil
         }
-    }
-
-    /// Programa un segmento encadenado al anterior para gapless.
-    /// El sistema decide cuándo encadenar automáticamente (at: nil).
-    private func scheduleChainedFile(_ file: AVAudioFile, from startSeconds: TimeInterval) {
-        let generation = scheduleGeneration
-        let safeStartFrame = AVAudioFramePosition(startSeconds * sampleRate)
-        guard safeStartFrame < file.length else {
-            handlePlaybackFinished()
-            return
-        }
-        let framesToPlay = AVAudioFrameCount(file.length - safeStartFrame)
-        guard framesToPlay > 0 else {
-            handlePlaybackFinished()
-            return
-        }
-
-        playerNode.scheduleSegment(
-            file,
-            startingFrame: safeStartFrame,
-            frameCount: framesToPlay,
-            at: nil
-        ) { [weak self] in
-            DispatchQueue.main.async {
-                guard let self = self,
-                      self.scheduleGeneration == generation,
-                      self.isPlaying,
-                      !self.isStopping else { return }
-                self.handlePlaybackFinished()
-            }
-        }
-        hasScheduledFile = true
     }
 
     func playPrevious() {

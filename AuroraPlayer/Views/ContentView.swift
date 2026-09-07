@@ -697,31 +697,6 @@ struct ContentView: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            
-            // ✅ Botón "Añadir a playlist" — solo visible si hay playlists
-            if !fileAccessService.playlists.isEmpty {
-                Menu {
-                    ForEach(fileAccessService.playlists) { playlist in
-                        Button {
-                            fileAccessService.addSongToPlaylist(song, playlist: playlist)
-                        } label: {
-                            Label(playlist.name, systemImage: "music.note.list")
-                        }
-                    }
-                } label: {
-                    // ✅ Text("+") literal (Unicode universal): no depende de SF
-                    // Symbols ni de la versión del SDK/iOS del dispositivo. Evita
-                    // el placeholder de "símbolo no encontrado" que iOS pinta como
-                    // un cuadro con 🚫 cuando el systemImage no existe en el OS del
-                    // usuario (el build de CI compila con SDK 26, pero el teléfono
-                    // puede correr iOS anterior).
-                    Text("+")
-                        .font(.system(size: 20, weight: .bold))
-                        .foregroundStyle(isCurrent ? AppTheme.accent : Color.secondary.opacity(0.85))
-                        .frame(width: 36, height: 36)
-                        .contentShape(Rectangle())
-                }
-            }
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
@@ -803,7 +778,7 @@ struct ContentView: View {
         if let artwork = song.artwork {
             Image(uiImage: artwork)
                 .resizable()
-                .interpolation(.medium)
+                .interpolation(.high)
                 .scaledToFill()
                 .frame(width: 48, height: 48)
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
@@ -1091,7 +1066,7 @@ private func albumListRow(_ album: Album) -> some View {
         Group {
             if let artwork = album.artwork {
                 Image(uiImage: artwork)
-                    .resizable().interpolation(.medium).scaledToFill()
+                    .resizable().interpolation(.high).scaledToFill()
                     .frame(width: 52, height: 52)
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             } else {
@@ -1133,7 +1108,7 @@ private func artistListRow(_ artist: Artist) -> some View {
         Group {
             if let artwork = artist.artwork {
                 Image(uiImage: artwork)
-                    .resizable().interpolation(.medium).scaledToFill()
+                    .resizable().interpolation(.high).scaledToFill()
                     .frame(width: 52, height: 52)
                     .clipShape(Circle())
             } else {

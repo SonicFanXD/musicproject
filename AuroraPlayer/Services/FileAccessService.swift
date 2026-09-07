@@ -468,7 +468,12 @@ class FileAccessService: ObservableObject {
 
     private func updateScanningState() {
         let wasScanning = isScanning
-        isScanning = activeDiscoveries > 0 || scanProcessed < scanTotal
+        // ✅ FIX: isScanning también debe considerar los lotes pendientes de
+        // procesar. Antes, si finishDiscovery bajaba activeDiscoveries a 0 pero
+        // quedaban lotes en la cola, isScanning pasaba a false prematuramente y
+        // el sort final tomaba `songs + pendingSongs` INCOMPLETO.
+        let hasPendingWork = !queuedBatches.isEmpty || inFlightBatches > 0
+        isScanning = activeDiscoveries > 0 || scanProcessed < scanTotal || hasPendingWork
 
         // ✅ Al finalizar: verificar si hay sort pendiente que ejecutar
         if wasScanning && !isScanning && !pendingSongs.isEmpty && !isSortScheduled {
@@ -785,20 +790,22 @@ class FileAccessService: ObservableObject {
     }
 
     private func thumbnailArtwork(_ data: Data) -> Data {
-        // ✅ OPTIMIZADO: 640px con calidad 0.85 para reducir drásticamente
-        // el tamaño del caché JSON (1000+ canciones a 1280px causaba crashes
-        // y re-indexación completa al reiniciar por desbordamiento de memoria).
-        // iOS escalará la imagen hacia arriba sin pérdida visible en UI.
+        // ✅ OPTIMIZADO con nitidez: 1280px con calidad 0.9 como tope.
+        // Antes 640px@0.85 aplanaba las portadas y se veían borrosas al
+        // mostrarlas en tamaño grande (álbum 260px, fondo NowPlaying). El
+        // downsampling a 1280px conserva nitidez mientras mantiene el caché
+        // JSON en un tamaño razonable (imágenes >1280px no aportan por arriba
+        // del rendimiento visual del dispositivo).
         guard data.count > 100_000,
               let source = CGImageSourceCreateWithData(data as CFData, nil) else { return data }
         let options: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
-            kCGImageSourceThumbnailMaxPixelSize: 640,
+            kCGImageSourceThumbnailMaxPixelSize: 1280,
             kCGImageSourceCreateThumbnailWithTransform: true,
             kCGImageSourceShouldCacheImmediately: true
         ]
         guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary),
-              let compressed = UIImage(cgImage: image).jpegData(compressionQuality: 0.85) else { return data }
+              let compressed = UIImage(cgImage: image).jpegData(compressionQuality: 0.9) else { return data }
         return compressed
     }
 
