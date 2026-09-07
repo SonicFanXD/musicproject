@@ -68,7 +68,19 @@ class FileAccessService: ObservableObject {
     // límite por lote, saturando memoria/CPU con bibliotecas grandes
     // (causa principal del crash durante la indexación).
     private var queuedBatches: [(urls: [URL], generation: Int)] = []
-    private var inFlightBatches = 0
+    // ✅ Nº de lotes en vuelo POR generación de escaneo. Un contador único por
+    // generación evita que un lote OBSOLETO (de un rescan anterior que todavía
+    // se estaba procesando) corrompa el contador global: antes, un rescan hacía
+    // inFlightBatches=0 y, cuando terminaba un lote viejo, su defer hacía -=1
+    // dejándolo en -1 → el límite de concurrencia se rompía (se lanzaban más de
+    // 4 lotes a la vez, saturando memoria/CPU) y el cálculo de isScanning
+    // (hasPendingWork) quedaba sin sentido. Ahora cada lote descuenta su propia
+    // generación y el total se obtiene sumando todas — los lotes viejos siguen
+    // contando capacidad mientras corren y nunca dejan el contador en negativo.
+    private var inFlightByGeneration: [Int: Int] = [:]
+    private var inFlightBatches: Int {
+        inFlightByGeneration.values.reduce(0, +)
+    }
     // ✅ CONCURRENCIA OPTIMIZADA: 4 lotes en paralelo × 75 URLs = máx 300
     // AVAsset.load simultáneos. Aumentamos la velocidad sin saturar memoria.
     private let maxInFlightBatches = 4
@@ -224,7 +236,6 @@ class FileAccessService: ObservableObject {
     private func rescanAllFolders() {
         scanGeneration += 1
         queuedBatches.removeAll(keepingCapacity: true)
-        inFlightBatches = 0
         songs = []
         pendingSongs = []
         isSortScheduled = false
@@ -374,12 +385,25 @@ class FileAccessService: ObservableObject {
         processNextMetadataBatchIfNeeded()
     }
 
+    // ✅ Descarga un cupo de lote para una generación concreta. Nunca deja el
+    // contador en negativo: si la generación ya no tiene cupos (lote doblemente
+    // finalizado o un reset) se ignora. Esto protege el límite de concurrencia
+    // frente a lotes obsoletos que terminan después de un rescan.
+    private func decrementInFlight(generation: Int) {
+        guard let count = inFlightByGeneration[generation], count > 0 else { return }
+        if count == 1 {
+            inFlightByGeneration.removeValue(forKey: generation)
+        } else {
+            inFlightByGeneration[generation] = count - 1
+        }
+    }
+
     private func processNextMetadataBatchIfNeeded() {
         guard inFlightBatches < maxInFlightBatches, !queuedBatches.isEmpty else { return }
         let batch = queuedBatches.removeFirst()
         let generation = batch.generation
 
-        inFlightBatches += 1
+        inFlightByGeneration[generation, default: 0] += 1
 
         // ✅ METADATA FUERA DEL MAIN ACTOR: la lectura de AVAsset (asset.load,
         // item.load) y TaskGroup se ejecutan en background. Antes todo el lote
@@ -403,7 +427,7 @@ class FileAccessService: ObservableObject {
             // quedaba atascado en true y la fila de progreso no desaparecía.
             defer {
                 Task { @MainActor in
-                    batchOwner?.inFlightBatches -= 1
+                    batchOwner?.decrementInFlight(generation: generation)
                     batchOwner?.updateScanningState()
                     batchOwner?.processNextMetadataBatchIfNeeded()
                 }
@@ -456,17 +480,28 @@ class FileAccessService: ObservableObject {
             guard let self = self else { return }
 
             // ✅ Sort en background (sin sleep, sin bloqueo)
-            let allSongs = self.songs + self.pendingSongs
-            let sortedSongs = allSongs.sorted {
+            let sortedSongs = (self.songs + self.pendingSongs).sorted {
                 $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
             }
 
             DispatchQueue.main.async {
                 self.isSortScheduled = false
                 self.songs = sortedSongs
-                self.pendingSongs.removeAll(keepingCapacity: true)
+                // ✅ ANTES `pendingSongs.removeAll()` borraba TODO, incluso las
+                // canciones que llegaron (desde el main) MIENTRAS se ordenaba en
+                // background → se perdían del índice (biblioteca incompleta).
+                // Ahora solo se descartan las que SÍ influyeron en el sort; las
+                // recién llegadas permanecen en pendingSongs y se incorporan en
+                // el siguiente flush / sort final.
+                let includedIDs = Set(sortedSongs.map { $0.id })
+                self.pendingSongs.removeAll { includedIDs.contains($0.id) }
                 self.needsRebuild = true // ✅ Reconstruir álbumes/artistas con nuevas canciones
                 self.scheduleCacheSave()
+                // Si quedaron canciones por incorporar (caso límite de orden de
+                // llegada), re-intentar el flush/sort final.
+                if !self.pendingSongs.isEmpty {
+                    self.updateScanningState()
+                }
             }
         }
 
@@ -504,10 +539,17 @@ class FileAccessService: ObservableObject {
                 DispatchQueue.main.async {
                     self.isSortScheduled = false
                     self.songs = sortedSongs
-                    self.pendingSongs.removeAll(keepingCapacity: true)
+                    // ✅ Solo descartar las canciones que entraron en el sort. Las
+                    // que llegaron mientras se ordenaba (p.ej. del lote final) NO
+                    // se borran: permanecen en pendingSongs para una pasada final.
+                    let includedIDs = Set(sortedSongs.map { $0.id })
+                    self.pendingSongs.removeAll { includedIDs.contains($0.id) }
                     self.needsRebuild = true // ✅ Reconstruir álbumes/artistas con nuevas canciones
                     self.scheduleCacheSave()
                     AppLog.info(.library, "Indexación completada: \(self.songs.count) canciones")
+                    if !self.pendingSongs.isEmpty {
+                        self.updateScanningState()
+                    }
                 }
             }
         }
