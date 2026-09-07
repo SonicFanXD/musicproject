@@ -168,21 +168,6 @@ struct AudioQualityDetailView: View {
         .scaleEffect(appearAnimation ? 1 : 0.95)
         .animation(.easeOut(duration: 0.3), value: appearAnimation)
     }
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
-            .opacity(appearAnimation ? 1 : 0)
-            .offset(y: appearAnimation ? 0 : 12)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 22)
-        .background {
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .fill(.ultraThinMaterial)
-                .shadow(color: .black.opacity(0.06), radius: 12, y: 5)
-        }
-        .animation(.easeOut(duration: 0.5).delay(0.1), value: appearAnimation)
-    }
 
     private var isLossless: Bool {
         guard let song = song else { return false }
