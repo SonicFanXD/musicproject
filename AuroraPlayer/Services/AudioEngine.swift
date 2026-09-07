@@ -152,35 +152,50 @@ class AudioEngine: NSObject, ObservableObject {
     /// Encadena la siguiente canción directamente sin detener el engine.
     /// Usa at: nil para que el sistema encadene automáticamente cuando el
     /// segmento actual termina — transición sin gap ni corte.
-    private func chainGaplessNext() {
+@discardableResult
+    private func chainGaplessPlayNext() -> Bool {
         guard let index = computeNextIndex() else {
-            // No hay siguiente → parar
+            // No hay siguiente cancion
             stop()
-            return
+            return true
         }
-        
         let nextSong = playlist[index]
-        guard let file = try? AVAudioFile(forReading: nextSong.url) else {
-            // No se puede cargar → fallback a reinicio normal
-            advanceToNextSong()
-            return
+        let url = nextSong.url
+
+        // Reutilizar el archivo precargado en background si aplica; si no, abrirlo.
+        let file: AVAudioFile
+        if preloadedNextIndex == index, preloadedNextURL == url, let cached = preloadedNextFile {
+            clearPreloadedNext()
+            file = cached
+        } else {
+            guard let opened = try? AVAudioFile(forReading: url) else {
+                // No se puede cargar -> reinicio atomico normal
+                advanceToNextSong()
+                return true
+            }
+            file = opened
         }
-        
+
         let fileFormat = file.processingFormat
         let needsReconnect = connectedFormatKey != nil && formatKey(fileFormat) != connectedFormatKey
-        
+
         if needsReconnect {
-            // Formato distinto → reinicio atómico (necesario reconectar el graph)
+            // Formato distinto -> reinicio atomico (necesario reconectar el graph).
+            // Aqui NO se toca la precarga: playCurrentSong la reutilizara.
             currentIndex = index
             playCurrentSong()
-            return
+            return true
         }
-        
-        // Actualizar estado ANTES de programar (para que la UI refleje la nueva canción)
+
+        // Formato identico: encadenar en el MISMO nodo con at: nil. El audio
+        // fluye continuo, sin silencio ni salto, ideal para canciones que se
+        // unen entre si. Como NO se reinicia el engine, no hay riesgo de que
+        // arranque desde un punto residual (el bug del "punto aleatorio").
         let generation = scheduleGeneration
         currentSong = nextSong
         currentIndex = index
-        currentFileURL = nextSong.url
+        currentFileURL = url
+        audioFile = file
         duration = Double(file.length) / fileFormat.sampleRate
         currentTime = 0
         clock.time = 0
@@ -189,20 +204,16 @@ class AudioEngine: NSObject, ObservableObject {
         if connectedFormatKey == nil {
             connectedFormatKey = formatKey(fileFormat)
         }
-        audioFile = file
-        
-        // Programar el segmento siguiente — at: nil para encadenamiento automático
-        let safeStartFrame: AVAudioFramePosition = 0
-        let framesToPlay = AVAudioFrameCount(file.length - safeStartFrame)
-        
+
+        let framesToPlay = AVAudioFrameCount(file.length)
         guard framesToPlay > 0 else {
-            handlePlaybackFinished()
-            return
+            advanceToNextSong()
+            return true
         }
-        
+
         playerNode.scheduleSegment(
             file,
-            startingFrame: safeStartFrame,
+            startingFrame: 0,
             frameCount: framesToPlay,
             at: nil
         ) { [weak self] in
@@ -214,7 +225,7 @@ class AudioEngine: NSObject, ObservableObject {
                 self.handlePlaybackFinished()
             }
         }
-        
+
         hasScheduledFile = true
         startDisplayTimer()
         updateNowPlayingInfo()
@@ -222,8 +233,10 @@ class AudioEngine: NSObject, ObservableObject {
         addToHistory(nextSong)
         updateNextUpQueue()
         saveState()
-        
+        preloadNextSong()
+
         AppLog.info(.playback, "Gapless: encadenado '\(nextSong.displayName)'")
+        return true
     }
     
    
@@ -1349,15 +1362,15 @@ class AudioEngine: NSObject, ObservableObject {
             return
         }
 
-        // ✅ TRANSICIÓN DETERMINISTA (reinicio atómico): al terminar la canción
-        // se avanza con playCurrentSong(), que hace engine.stop() → reconectar →
-        // programar en 0 → play. Esto garantiza arrancar SIEMPRE desde el inicio
-        // y NO corta el final de la canción actual. El encadenado con
-        // scheduleSegment(at: nil) (chainGaplessNext) causaba saltos a puntos
-        // aleatorios por milisegundos y cortes al final (cola del node + handlers
-        // duplicados + reloj de pared desincronizado), por lo que se descarta.
+        // Transicion a la siguiente: si el formato coincide (mismo sample rate,
+        // canales y EQ), chainGaplessPlayNext() encadena el segmento en el MISMO
+        // nodo con at: nil: audio continuo, sin silencio, ideal para canciones
+        // que se unen entre si. Como no se reinicia el engine, no hay salto
+        // aleatorio ni corte al final. Si el formato difiere (necesita reconectar
+        // el graph) o no hay siguiente, hace el reinicio atomico con espera
+        // (0.15s) o se detiene.
         stopDisplayTimer()
-        advanceToNextSong()
+        chainGaplessPlayNext()
     }
 
     // ✅ WATCHDOG: red de seguridad contra completions perdidos. Usa el reloj SIN

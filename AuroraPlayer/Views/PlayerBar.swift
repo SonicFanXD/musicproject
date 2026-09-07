@@ -3,18 +3,15 @@ import SwiftUI
 struct PlayerBar: View {
     @ObservedObject var audioEngine: AudioEngine
     @ObservedObject var fileAccessService: FileAccessService
-    // ✅ Reloj aislado: este view re-renderiza cada tick de tiempo sin
-    // arrastrar al ContentView/la biblioteca (60fps estables al reproducir)
-    @ObservedObject var clock: PlaybackClock
+    // ✅ FIX TÁCTIL: el reloj de reproducción YA NO se observa en PlayerBar.
+    // Vive en la subvista PlayerScrubBar (la única que necesita el tiempo).
+    // Antes, cada tick (0.4s) re-renderizaba TODA la barra incluidos los
+    // botones, y un re-render justo en el instante del toque descartaba el
+    // primer tap → los botones a veces requerían dos pulsaciones.
+    var clock: PlaybackClock
     // ✅ Observar el idioma: al cambiar, esta vista se re-renderiza al instante
     @ObservedObject private var localization = Localization.shared
     @State private var showingNowPlaying = false
-
-    // ✅ Scrub optimizado: preview local a 60fps, seek real solo al soltar
-    @State private var isScrubbing = false
-    @State private var scrubPreviewProgress: Double = 0
-    // ✅ Inicializar scrub con progreso actual para evitar salto a 0
-    @State private var scrubStartProgress: Double = 0
 
     // Animaciones optimizadas (una sola @State, triggers discretos = 60fps)
     @State private var playButtonScale: CGFloat = 1.0
@@ -28,18 +25,6 @@ struct PlayerBar: View {
     // ✅ Observar ThemeManager para que los cambios de acento (manual o desde carátula)
     // se apliquen instantáneamente sin necesidad de cambiar de canción.
     @ObservedObject private var theme = ThemeManager.shared
-
-    private var progress: Double {
-        if isScrubbing { return scrubPreviewProgress }
-        guard audioEngine.duration > 0 else { return 0 }
-        return min(max(clock.time / audioEngine.duration, 0), 1)
-    }
-
-    /// Progreso actual real (para inicializar scrub sin salto)
-    private var currentProgress: Double {
-        guard audioEngine.duration > 0 else { return 0 }
-        return min(max(clock.time / audioEngine.duration, 0), 1)
-    }
 
     // ✅ Color dominante del artwork para indicadores dinámicos
     // Observa ThemeManager: si "Acento desde portada" está activo, usa el color
@@ -73,8 +58,8 @@ struct PlayerBar: View {
                                     .lineLimit(1)
                             }
 
-                            // ✅ Mini visualizador con opacidad animada (no se crea/destruye)
-                            // Evita saltos visuales y mantiene estado de animación
+                            // ✅ Visualizador compacto junto al título (cambia con isPlaying,
+                            // no con cada tick de reloj)
                             if showVisualizerInBar {
                                 AudioVisualizer(audioEngine: audioEngine)
                                     .frame(width: 18, height: 14)
@@ -197,73 +182,14 @@ struct PlayerBar: View {
                     .padding(.top, compactPlayerBar ? 8 : 12)
                     .padding(.bottom, 4)
 
-                    // ✅ Barra de progreso mejorada con preview de scrub y color dinámico
-                    // ✅ FIX: .frame(maxWidth: .infinity) para que el GeometryReader
-                    // se expanda al ancho completo disponible. Sin esto, el ancho
-                    // podía colapsar y la barra quedaba desalineada/estrecha.
-                    GeometryReader { geometry in
-                        ZStack(alignment: .leading) {
-                            // ✅ Track con material de vidrio (estilo NowPlayingView)
-                            Capsule()
-                                .fill(Color.secondary.opacity(0.2))
-                                .frame(height: compactPlayerBar ? 3 : 4)
-
-                            // ✅ Progreso con gradiente del color dominante del artwork
-                            Capsule()
-                                .fill(
-                                    LinearGradient(
-                                        colors: [artworkDominantColor.opacity(0.8), artworkDominantColor],
-                                        startPoint: .leading,
-                                        endPoint: .trailing
-                                    )
-                                )
-                                .frame(width: max(4, geometry.size.width * progress), height: compactPlayerBar ? 3 : 4)
-                                .shadow(color: artworkDominantColor.opacity(0.4), radius: 4, x: 0, y: 0)
-
-                            // ✅ Indicador de posición al hacer scrub
-                            if isScrubbing {
-                                Circle()
-                                    .fill(artworkDominantColor)
-                                    .frame(width: 12, height: 12)
-                                    .offset(x: geometry.size.width * scrubPreviewProgress - 6)
-                                    .shadow(color: .black.opacity(0.25), radius: 6, x: 0, y: 3)
-                            }
-                        }
-                        .frame(height: compactPlayerBar ? 3 : 4)
-                        // ✅ FIX: el área táctil era enorme (maxHeight infinity +
-                        // padding 14) y robaba los toques del artwork/título,
-                        // impidiendo abrir NowPlayingView tras reanudar la app.
-                        // Ahora el gesto se limita a la barra (+6pt de margen)
-                        // y un toque simple (sin arrastre) abre NowPlaying.
-                        .padding(.vertical, 6)
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            openNowPlaying()
-                        }
-                        .gesture(
-                            DragGesture(minimumDistance: 0)
-                                .onChanged { value in
-                                    guard audioEngine.duration > 0, geometry.size.width > 0 else { return }
-                                    // ✅ Inicializar scrub con progreso actual (evita salto a 0)
-                                    if !isScrubbing {
-                                        startScrubbing()
-                                    }
-                                    // ✅ Preview local a 60fps (sin toques al engine durante el arrastre)
-                                    scrubPreviewProgress = max(0, min(1, value.location.x / geometry.size.width))
-                                }
-                                .onEnded { value in
-                                    guard audioEngine.duration > 0, geometry.size.width > 0 else { return }
-                                    // ✅ Seek real UNA sola vez al soltar
-                                    let percentage = max(0, min(1, value.location.x / geometry.size.width))
-                                    scrubPreviewProgress = percentage
-                                    endScrubbing()
-                                }
-                        )
-                    }
-                    .frame(maxWidth: .infinity)
-                    .frame(height: (compactPlayerBar ? 3 : 4) + 12)
-                    .padding(.horizontal, 18)
-                    .padding(.bottom, 8)
+                    // ✅ BARRA AISLADA: única subvista que observa el reloj (0.4s).
+                    // Los botones ya no se re-renderizan en cada tick → responden
+                    // siempre al primer toque.
+                    PlayerScrubBar(
+                        audioEngine: audioEngine,
+                        clock: clock,
+                        onOpenNowPlaying: { openNowPlaying() }
+                    )
                 }
                 .background {
                     // ✅ Esquinas muy redondeadas (34pt) con material premium (estilo NowPlayingView)
@@ -295,22 +221,6 @@ struct PlayerBar: View {
         withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
             playButtonScale = 1.0
         }
-    }
-
-    /// Inicializar scrub con progreso actual para evitar salto a 0
-    private func startScrubbing() {
-        Haptics.selection()
-        scrubStartProgress = currentProgress
-        scrubPreviewProgress = currentProgress
-        isScrubbing = true
-    }
-
-    /// Finalizar scrub con seek real
-    private func endScrubbing() {
-        Haptics.light()
-        let targetTime = scrubPreviewProgress * audioEngine.duration
-        isScrubbing = false
-        audioEngine.seek(to: targetTime)
     }
 
     private func openNowPlaying() {
@@ -369,6 +279,124 @@ struct PlayerBar: View {
                 openNowPlaying()
             }
         }
+    }
+}
+
+// MARK: - Barra de progreso aislada (única vista que observa el reloj)
+// ✅ FIX TÁCTIL: al separar el reloj aquí, los botones de PlayerBar ya no se
+// re-renderizan cada 0.4s y responden siempre al primer toque.
+private struct PlayerScrubBar: View {
+    @ObservedObject var audioEngine: AudioEngine
+    @ObservedObject var clock: PlaybackClock
+    var onOpenNowPlaying: () -> Void
+
+    @ObservedObject private var theme = ThemeManager.shared
+    @AppStorage("com.aurora.compactPlayerBar") private var compactPlayerBar = false
+
+    // ✅ Scrub optimizado: preview local a 60fps, seek real solo al soltar
+    @State private var isScrubbing = false
+    @State private var scrubPreviewProgress: Double = 0
+    // ✅ Inicializar scrub con progreso actual para evitar salto a 0
+    @State private var scrubStartProgress: Double = 0
+
+    private var progress: Double {
+        if isScrubbing { return scrubPreviewProgress }
+        guard audioEngine.duration > 0 else { return 0 }
+        return min(max(clock.time / audioEngine.duration, 0), 1)
+    }
+
+    /// Progreso actual real (para inicializar scrub sin salto)
+    private var currentProgress: Double {
+        guard audioEngine.duration > 0 else { return 0 }
+        return min(max(clock.time / audioEngine.duration, 0), 1)
+    }
+
+    private var artworkDominantColor: Color {
+        if theme.accentFromArtwork, let artworkColor = theme.artworkAccentColor {
+            return artworkColor
+        }
+        return theme.accent
+    }
+
+    var body: some View {
+        GeometryReader { geometry in
+            ZStack(alignment: .leading) {
+                // ✅ Track con material de vidrio (estilo NowPlayingView)
+                Capsule()
+                    .fill(Color.secondary.opacity(0.2))
+                    .frame(height: compactPlayerBar ? 3 : 4)
+
+                // ✅ Progreso con gradiente del color dominante del artwork
+                Capsule()
+                    .fill(
+                        LinearGradient(
+                            colors: [artworkDominantColor.opacity(0.8), artworkDominantColor],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                    .frame(width: max(4, geometry.size.width * progress), height: compactPlayerBar ? 3 : 4)
+                    .shadow(color: artworkDominantColor.opacity(0.4), radius: 4, x: 0, y: 0)
+
+                // ✅ Indicador de posición al hacer scrub
+                if isScrubbing {
+                    Circle()
+                        .fill(artworkDominantColor)
+                        .frame(width: 12, height: 12)
+                        .offset(x: geometry.size.width * scrubPreviewProgress - 6)
+                        .shadow(color: .black.opacity(0.25), radius: 6, x: 0, y: 3)
+                }
+            }
+            .frame(height: compactPlayerBar ? 3 : 4)
+            // ✅ FIX: el área táctil era enorme (maxHeight infinity +
+            // padding 14) y robaba los toques del artwork/título,
+            // impidiendo abrir NowPlayingView tras reanudar la app.
+            // Ahora el gesto se limita a la barra (+6pt de margen)
+            // y un toque simple (sin arrastre) abre NowPlaying.
+            .padding(.vertical, 6)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                onOpenNowPlaying()
+            }
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        guard audioEngine.duration > 0, geometry.size.width > 0 else { return }
+                        // ✅ Inicializar scrub con progreso actual (evita salto a 0)
+                        if !isScrubbing {
+                            startScrubbing()
+                        }
+                        // ✅ Preview local a 60fps (sin toques al engine durante el arrastre)
+                        scrubPreviewProgress = max(0, min(1, value.location.x / geometry.size.width))
+                    }
+                    .onEnded { value in
+                        guard audioEngine.duration > 0, geometry.size.width > 0 else { return }
+                        // ✅ Seek real UNA sola vez al soltar
+                        let percentage = max(0, min(1, value.location.x / geometry.size.width))
+                        scrubPreviewProgress = percentage
+                        endScrubbing()
+                    }
+            )
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: (compactPlayerBar ? 3 : 4) + 12)
+        .padding(.horizontal, 18)
+        .padding(.bottom, 8)
+    }
+
+    private func startScrubbing() {
+        Haptics.selection()
+        scrubStartProgress = currentProgress
+        scrubPreviewProgress = currentProgress
+        isScrubbing = true
+    }
+
+    /// Finalizar scrub con seek real
+    private func endScrubbing() {
+        Haptics.light()
+        let targetTime = scrubPreviewProgress * audioEngine.duration
+        isScrubbing = false
+        audioEngine.seek(to: targetTime)
     }
 }
 
