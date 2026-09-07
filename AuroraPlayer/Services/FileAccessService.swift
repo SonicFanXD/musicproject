@@ -69,12 +69,11 @@ class FileAccessService: ObservableObject {
     // (causa principal del crash durante la indexación).
     private var queuedBatches: [(urls: [URL], generation: Int)] = []
     private var inFlightBatches = 0
-    // ✅ CONCURRENCIA CONTROLADA: 3 lotes en paralelo × 50 URLs = máx 150
-    // AVAsset.load simultáneos. Antes (5×100=500) saturaba memoria/CPU en
-    // bibliotecas grandes → tirones y lag. 3×50 mantiene velocidad sin saturar.
-    private let maxInFlightBatches = 3
-    // ✅ Lotes medianos: balance entre overhead de scheduling y uso de memoria
-    private let metadataBatchSize = 50
+    // ✅ CONCURRENCIA OPTIMIZADA: 4 lotes en paralelo × 75 URLs = máx 300
+    // AVAsset.load simultáneos. Aumentamos la velocidad sin saturar memoria.
+    private let maxInFlightBatches = 4
+    // ✅ Lotes optimizados: mayor tamaño = menos overhead de scheduling
+    private let metadataBatchSize = 75
 
     // Colecciones derivadas cacheadas: se recalculan solo cuando cambia `songs`,
     // no en cada render de la UI.
@@ -463,9 +462,9 @@ class FileAccessService: ObservableObject {
             }
         }
 
-        // ✅ Ejecutar después de un breve delay para acumular lotes pendientes
-        // Delay de 200ms permite que los últimos lotes terminen sin bloquear el thread
-        DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 0.2, execute: sortWorkItem!)
+        // ✅ OPTIMIZACIÓN: Delay reducido de 200ms a 100ms para mayor velocidad
+        // sin bloquear el thread principal
+        DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 0.1, execute: sortWorkItem!)
     }
 
     private func finishDiscovery(generation: Int) {
@@ -554,9 +553,12 @@ class FileAccessService: ObservableObject {
         }
 
         do {
-            // Cargar duración y metadata común en paralelo (una sola pasada)
+            // ✅ OPTIMIZACIÓN: Cargar TODOS los valores en paralelo
             async let durationTask = asset.load(.duration)
-            let commonMetadata = try await asset.load(.commonMetadata)
+            async let commonMetadataTask = asset.load(.commonMetadata)
+            
+            let commonMetadata = try await commonMetadataTask
+            duration = try await durationTask.duration.seconds
 
             // ✅ Cancelar timeout si carga fue exitosa
             timeoutTask.cancel()

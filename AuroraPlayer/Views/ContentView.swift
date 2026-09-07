@@ -535,8 +535,8 @@ struct ContentView: View {
                                 startPoint: .leading, endPoint: .trailing
                             )
                         )
-                        .frame(width: geo.size.width * indexingProgress)
-                        .animation(.easeInOut(duration: 0.3), value: indexingProgress)
+                        .frame(width: max(0, geo.size.width * indexingProgress))
+                        .animation(.easeInOut(duration: 0.25), value: indexingProgress)
                 }
             }
             .frame(width: 70, height: 5)
@@ -544,12 +544,13 @@ struct ContentView: View {
         .padding(.horizontal, 18)
         .padding(.vertical, 10)
         .background {
-            // ✅ SIN BLUR: se re-renderiza en cada lote → blur constante = calor.
             Capsule()
                 .fill(Color(UIColor.secondarySystemBackground))
                 .shadow(color: .black.opacity(0.08), radius: 6, y: 2)
         }
         .padding(.horizontal, 12)
+        .opacity(fileAccessService.isScanning ? 1 : 0)
+        .animation(.easeInOut(duration: 0.3), value: fileAccessService.isScanning)
     }
 
     private var indexingProgress: Double {
@@ -927,7 +928,6 @@ struct ContentView: View {
 
 struct SplashView: View {
     @State private var appear = false
-    @State private var spin = false
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
@@ -939,9 +939,7 @@ struct SplashView: View {
                 : Color(UIColor.systemBackground))
             .ignoresSafeArea()
 
-            // ✅ Aurora rotatoria: el gradiente es ESTÁTICO y se rota con
-            // rotationEffect (transform puro de GPU). Se rasteriza UNA vez
-            // en lugar de re-rasterizar 600px por frame.
+            // ✅ Aurora estática: sin animación de rotación para evitar bugs visuales
             AngularGradient(
                 colors: [
                     AppTheme.accent.opacity(0.0),
@@ -955,14 +953,12 @@ struct SplashView: View {
                 endAngle: .degrees(200)
             )
             .frame(width: 480, height: 480)
-            .rotationEffect(.degrees(spin ? 360 : 0))
-            .animation(.linear(duration: 12).repeatForever(autoreverses: false), value: spin)
             .opacity(colorScheme == .dark ? 0.6 : 0.4)
 
             VStack(spacing: 32) {
-                // ✅ Logo con pulse sutil (una sola animación)
+                // ✅ Logo con animación simple de aparición
                 ZStack {
-                    // Halo exterior que pulsa
+                    // Halo exterior
                     Circle()
                         .stroke(
                             LinearGradient(
@@ -973,7 +969,6 @@ struct SplashView: View {
                             lineWidth: 1.5
                         )
                         .frame(width: 140, height: 140)
-                        .scaleEffect(appear ? 1.0 : 0.85)
 
                     // Icono principal
                     Image(systemName: "music.note")
@@ -982,14 +977,13 @@ struct SplashView: View {
                         .shadow(color: AppTheme.accent.opacity(0.5), radius: 12)
                 }
                 .opacity(appear ? 1 : 0)
+                .scaleEffect(appear ? 1.0 : 0.9)
                 .animation(.easeOut(duration: 0.5).delay(0.1), value: appear)
 
                 VStack(spacing: 14) {
                     Text("Aurora Player")
                         .font(.system(size: 30, weight: .bold, design: .rounded))
                         .foregroundStyle(
-                            // En modo claro el blanco puro sería invisible
-                            // sobre el fondo claro: usamos el color primario
                             LinearGradient(
                                 colors: [colorScheme == .dark ? .white : Color(UIColor.label), AppTheme.accent],
                                 startPoint: .topLeading,
@@ -997,22 +991,20 @@ struct SplashView: View {
                             )
                         )
 
-                    // ✅ Indicador de progreso minimalista (sin GeometryReader costoso)
+                    // ✅ Indicador de progreso minimalista
                     ProgressView()
                         .progressViewStyle(CircularProgressViewStyle(tint: AppTheme.accent))
                         .scaleEffect(0.8)
                         .opacity(0.7)
                 }
                 .opacity(appear ? 1 : 0)
-                .offset(y: appear ? 0 : 12)
-                .animation(.easeOut(duration: 0.6).delay(0.25), value: appear)
+                .offset(y: appear ? 0 : 10)
+                .animation(.easeOut(duration: 0.5).delay(0.2), value: appear)
             }
         }
-        .allowsHitTesting(false) // No bloquea toques durante la transición
+        .allowsHitTesting(false)
         .onAppear {
             appear = true
-            // ✅ Rotación por transform (GPU): sin re-render del gradiente
-            spin = true
         }
     }
 }

@@ -13,7 +13,6 @@ struct AudioQualityDetailView: View {
     // ✅ OPTIMIZACIÓN: eliminado signalFlow (48 animaciones simultáneas causaban tirones).
     // En su lugar, usamos un TimelineView para actualizar los indicadores de señal
     // sin forzar re-renders del árbol de vistas completo.
-    @State private var headerPulse = false
     @State private var cachedFileSize: Int = 0
     @State private var cachedDuration: TimeInterval = 0
 
@@ -28,11 +27,8 @@ struct AudioQualityDetailView: View {
             }
         }
         .onAppear {
-            withAnimation(.easeOut(duration: 0.5)) { appearAnimation = true }
-            withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) { headerPulse = true }
-            // ✅ OPTIMIZACIÓN: eliminado el delay de signalFlow (causaba animaciones
-            // escalonadas de 48 nodos al aparecer la vista).
-            // Cargar valores de disco UNA VEZ en background.
+            withAnimation(.easeOut(duration: 0.35)) { appearAnimation = true }
+            // ✅ OPTIMIZACIÓN: Cargar valores de disco UNA VEZ en background.
             if let song = song {
                 let path = song.url.path
                 DispatchQueue.global(qos: .userInitiated).async {
@@ -43,14 +39,6 @@ struct AudioQualityDetailView: View {
                     }
                 }
             }
-        }
-        // ✅ Batería: detener el pulso infinito al salir de la vista
-        // (sin transacción animada para que el ring vuelva a escala 1 al instante,
-        // sin disparar de nuevo la animación repeatForever).
-        .onDisappear {
-            var t = Transaction()
-            t.disablesAnimations = true
-            withTransaction(t) { headerPulse = false }
         }
     }
 
@@ -118,58 +106,33 @@ struct AudioQualityDetailView: View {
         }
     }
 
-    // MARK: - Header (resumen de calidad con animación, optimizado con drawingGroup)
+    // MARK: - Header (resumen de calidad optimizado para 60fps)
     private var headerCard: some View {
-        VStack(spacing: 18) {
+        VStack(spacing: 16) {
             ZStack {
-                // ✅ Halo simple con gradiente radial (sin blur → sin lag al scrollear)
+                // ✅ 60fps: Círculo sólido con color (sin gradiente costoso)
                 Circle()
-                    .fill(
-                        LinearGradient(
-                            colors: [AppTheme.accent.opacity(0.25), AppTheme.accent.opacity(0.05)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
+                    .fill(AppTheme.accent.opacity(0.15))
                     .frame(width: 96, height: 96)
-                    .drawingGroup() // ✅ Rasteriza en GPU
 
-                // ✅ Anillo pulsante con drawingGroup (pre-renderizado en GPU)
-                // El repeatForever de scaleEffect se rasteriza una sola vez,
-                // evitando re-renders del árbol de vistas completo a 60fps.
+                // ✅ 60fps: Anillo simple sin animación (eliminado repeatForever)
                 Circle()
-                    .stroke(
-                        LinearGradient(
-                            colors: [AppTheme.accent, AppTheme.accent.opacity(0.3)],
-                            startPoint: .topLeading, endPoint: .bottomTrailing
-                        ),
-                        lineWidth: 2
-                    )
+                    .stroke(AppTheme.accent.opacity(0.4), lineWidth: 2)
                     .frame(width: 84, height: 84)
-                    .scaleEffect(headerPulse ? 1.08 : 0.94)
-                    .animation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true), value: headerPulse)
-                    .drawingGroup()
 
-                // ✅ Círculo interior con material
+                // ✅ 60fps: Círculo interior sólido (sin material costoso)
                 Circle()
-                    .fill(.ultraThinMaterial)
+                    .fill(Color(UIColor.tertiarySystemBackground))
                     .frame(width: 74, height: 74)
                     .overlay(
                         Image(systemName: "waveform.circle.fill")
                             .font(.system(size: 34, weight: .medium))
-                            .foregroundStyle(
-                                LinearGradient(
-                                    colors: [AppTheme.accent, AppTheme.accent.opacity(0.5)],
-                                    startPoint: .top, endPoint: .bottom
-                                )
-                            )
+                            .foregroundStyle(AppTheme.accent)
                     )
-                    .shadow(color: AppTheme.accent.opacity(0.25), radius: 12, x: 0, y: 4)
             }
-            .opacity(appearAnimation ? 1 : 0)
-            .scaleEffect(appearAnimation ? 1 : 0.5)
+            .drawingGroup() // ✅ Rasteriza todo el ZStack en GPU
 
-            // ✅ Badge de calidad mejorado
+            // ✅ Badge de calidad simplificado
             Text(qualityBadge)
                 .font(.system(size: 12, weight: .bold, design: .rounded))
                 .tracking(2)
@@ -177,19 +140,12 @@ struct AudioQualityDetailView: View {
                 .padding(.horizontal, 20)
                 .padding(.vertical, 8)
                 .background {
-                    Capsule().fill(
-                        LinearGradient(
-                            colors: [AppTheme.accent, AppTheme.accent.opacity(0.65)],
-                            startPoint: .leading, endPoint: .trailing
-                        )
-                    )
-                    .shadow(color: AppTheme.accent.opacity(0.35), radius: 10, y: 4)
+                    Capsule().fill(AppTheme.accent)
                 }
-                .opacity(appearAnimation ? 1 : 0)
-                .scaleEffect(appearAnimation ? 1 : 0.8)
+                .drawingGroup()
 
             // ✅ Info de la canción
-            VStack(spacing: 5) {
+            VStack(spacing: 4) {
                 Text(song?.title ?? Localization.localized("quality.noSong"))
                     .font(.system(size: 16, weight: .bold, design: .rounded))
                     .foregroundStyle(.primary)
@@ -198,6 +154,20 @@ struct AudioQualityDetailView: View {
 
                 Text(song?.displaySubtitle ?? "—")
                     .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 24)
+        .background(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(Color(UIColor.secondarySystemBackground))
+        )
+        .opacity(appearAnimation ? 1 : 0)
+        .scaleEffect(appearAnimation ? 1 : 0.95)
+        .animation(.easeOut(duration: 0.3), value: appearAnimation)
+    }
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
@@ -411,26 +381,16 @@ struct AudioQualityDetailView: View {
     private func chainNode(icon: String, title: String, detail: String, color: Color, index: Int) -> some View {
         HStack(spacing: 14) {
             ZStack {
-                // ✅ Fondo con gradiente sutil y borde
+                // ✅ 60fps: Fondo sólido (sin gradiente costoso)
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: [color.opacity(0.12), color.opacity(0.05)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
+                    .fill(color.opacity(0.12))
                     .frame(width: 40, height: 40)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .stroke(color.opacity(0.15), lineWidth: 0.5)
-                    )
 
                 Image(systemName: icon)
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(color)
             }
-            .drawingGroup() // ✅ Rasteriza icono + fondo
+            .drawingGroup()
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
@@ -445,22 +405,16 @@ struct AudioQualityDetailView: View {
 
             Spacer()
 
-            // ✅ 60fps: indicador de estado estático (sin animaciones por nodo)
-            // Eliminada la animación individual de opacity/scale que causaba
-            // tirones al scrollear (5 tarjetas x animaciones simultáneas).
+            // ✅ 60fps: indicador de estado estático
             Circle()
                 .fill(color)
                 .frame(width: 7, height: 7)
-                .opacity(1.0)
         }
         .padding(.horizontal, 16).padding(.vertical, 14)
         .background(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .fill(Color(UIColor.secondarySystemBackground).opacity(0.5))
         )
-        .opacity(appearAnimation ? 1 : 0)
-        .offset(x: appearAnimation ? 0 : -15)
-        .animation(.spring(response: 0.5, dampingFraction: 0.88).delay(Double(index) * 0.06), value: appearAnimation)
     }
 
     @ViewBuilder
@@ -483,7 +437,7 @@ struct AudioQualityDetailView: View {
         )
     }
 
-    // MARK: - Section Builder (mejorado visualmente)
+    // MARK: - Section Builder (optimizado para 60fps)
     @ViewBuilder
     private func settingsSection<Content: View>(title: String, icon: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -494,13 +448,7 @@ struct AudioQualityDetailView: View {
                     .frame(width: 32, height: 32)
                     .background {
                         RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .fill(
-                                LinearGradient(
-                                    colors: [AppTheme.accent, AppTheme.accent.opacity(0.7)],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                            )
+                            .fill(AppTheme.accent)
                     }
                     .drawingGroup()
 
@@ -515,15 +463,9 @@ struct AudioQualityDetailView: View {
             }
             .padding(8)
             .background {
-                // ✅ 60fps: color OPACO (no material blur) — 5 secciones con
-                // blur simultáneo degradan el scroll. Mismo look, cero blur.
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
                     .fill(Color(UIColor.secondarySystemBackground))
-                    .shadow(color: .black.opacity(0.04), radius: 8, x: 0, y: 2)
             }
         }
-        .opacity(appearAnimation ? 1 : 0)
-        .offset(y: appearAnimation ? 0 : 18)
-        .animation(.easeOut(duration: 0.45).delay(0.2), value: appearAnimation)
     }
 }
