@@ -1353,6 +1353,12 @@ class AudioEngine: NSObject, ObservableObject {
             anchorPlaybackPosition(0)
             currentTime = 0
             clock.time = 0
+            // FIX: publicar elapsed=0 AQUI, sin esperar el delay del
+            // reschedule. El Centro de Control / pantalla de bloqueo
+            // interpolan su barra desde el ultimo elapsedTime publicado;
+            // si no llega el reinicio a tiempo, la barra externa sigue
+            // avanzando desde el final y nunca vuelve a cero.
+            updateNowPlayingInfo()
             // ✅ FIX: Establecer isStopping=true para evitar que completion handlers
             // ejecuten handlePlaybackFinished() durante el delay de reschedule
             isStopping = true
@@ -1404,6 +1410,10 @@ class AudioEngine: NSObject, ObservableObject {
                   self.scheduleGeneration == generation,
                   self.isPlaying,              // ✅ FIX: solo reproducir si SIGUE reproduciendo (evita audio fantasma al pausar durante el delay)
                   (force || !self.isStopping) else { return }
+            // FIX: re-anclar el reloj de pared a la posicion de arranque real.
+            // El ancla previa (en handlePlaybackFinished) quedo 0.1s antes del
+            // play real: sin esto la barra de la app va ligeramente adelantada.
+            self.anchorPlaybackPosition(seconds)
             self.scheduleFile(file, from: seconds, autostart: true, generation: generation)
             self.isStopping = false  // ✅ FIX: Ahora podemos permitir completion handlers
             self.updateNowPlayingInfo()
