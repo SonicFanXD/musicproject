@@ -16,13 +16,24 @@ final class ThemeManager: ObservableObject {
     @Published var accentFromArtwork: Bool {
         didSet {
             UserDefaults.standard.set(accentFromArtwork, forKey: Self.artworkAccentKey)
-            if !accentFromArtwork {
+            if accentFromArtwork {
+                // ✅ FIX: al ACTIVAR el toggle, re-extraer al instante el color de
+                // la última canción. Sin esto, artworkAccentColor quedaba nil y
+                // toda la interfaz seguía con el acento manual hasta cambiar de
+                // canción (que era el único punto donde se llamaba la extracción).
+                updateArtworkAccent(from: latestSongForAccent)
+            } else {
                 artworkAccentColor = nil
                 artworkAccentUIColor = nil
             }
             applyGlobalUIKitTint()
         }
     }
+
+    // ✅ Última canción procesada: se guarda SIEMPRE (aunque el modo esté
+    // apagado) para poder extraer el color al instante si el usuario activa
+    // el toggle más adelante, sin depender del cambio de canción.
+    private var latestSongForAccent: Song?
 
     @Published private(set) var artworkAccentColor: Color?
     @Published private(set) var artworkAccentUIColor: UIColor?
@@ -32,7 +43,15 @@ final class ThemeManager: ObservableObject {
     /// Extrae el color dominante de la portada en segundo plano y lo publica.
     /// Llamado por AudioEngine cada vez que cambia la canción actual.
     func updateArtworkAccent(from song: Song?) {
+        // ✅ Guardar la canción SIEMPRE (modo activo o no) para poder resolver
+        // el color al instante si se activa el toggle desde Settings.
+        if let song { latestSongForAccent = song }
         guard accentFromArtwork else { return }
+        resolveArtworkAccent(from: latestSongForAccent)
+    }
+
+    /// Resuelve y publica el color dominante de la portada de una canción.
+    private func resolveArtworkAccent(from song: Song?) {
         guard let song, let artwork = song.artwork else {
             artworkAccentColor = nil
             artworkAccentUIColor = nil

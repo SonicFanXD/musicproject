@@ -75,8 +75,6 @@ class FileAccessService: ObservableObject {
     private let maxInFlightBatches = 3
     // ✅ Lotes medianos: balance entre overhead de scheduling y uso de memoria
     private let metadataBatchSize = 50
-    private var lastUIUpdate: Date = Date()
-    private let uiUpdateInterval: TimeInterval = 0.05 // Actualizar UI cada 50ms máximo
 
     // Colecciones derivadas cacheadas: se recalculan solo cuando cambia `songs`,
     // no en cada render de la UI.
@@ -407,9 +405,6 @@ class FileAccessService: ObservableObject {
                 return results.compactMap { $0 }
             }
 
-            // ✅ Throttling de actualizaciones de UI para evitar congelamiento
-            let shouldUpdateUI = Date().timeIntervalSince(self.lastUIUpdate) >= self.uiUpdateInterval
-
             guard generation == self.scanGeneration else {
                 self.processNextMetadataBatchIfNeeded()
                 return
@@ -424,11 +419,12 @@ class FileAccessService: ObservableObject {
                 AppLog.debug(.library, "Lote cargado: \(uniqueSongs.count); total: \(self.pendingSongs.count)")
             }
 
-            // ✅ Solo actualizar isScanning si pasó el intervalo para evitar spam de UI
-            if shouldUpdateUI {
-                self.lastUIUpdate = Date()
-                self.updateScanningState()
-            }
+            // ✅ SIEMPRE actualizar el estado de escaneo (isScanning + sort final),
+            // sin depender del throttle. ▶️ FIX BUG "NO SE CARGAN TODAS LAS
+            // CANCIONES": si el ÚLTIMO lote caía dentro de la ventana del
+            // throttle, updateScanningState se saltaba y el pendingSongs del
+            // final NUNCA se fusionaba con songs → quedaban canciones sin cargar.
+            self.updateScanningState()
 
             self.processNextMetadataBatchIfNeeded()
         }

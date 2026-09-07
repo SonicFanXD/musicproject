@@ -188,8 +188,15 @@ struct NowPlayingView: View {
                 // y todas las vistas que lo observen se actualicen al instante
                 ThemeManager.shared.updateArtworkAccent(from: audioEngine.currentSong)
             }
-            .onChange(of: ThemeManager.shared.accentFromArtwork) { _ in
-                extractColorFromArtwork()
+            .onChange(of: ThemeManager.shared.accentFromArtwork) { value in
+                // ✅ FIX: propaga el color a ThemeManager (que a su vez publica a
+                // PlayerBar y todas las vistas) — no solo re-extraer localmente.
+                // Así PlayerBar/NowPlaying cambian de acento al activar el toggle
+                // en Settings sin esperar a un cambio de canción.
+                if value, let song = audioEngine.currentSong {
+                    ThemeManager.shared.updateArtworkAccent(from: song)
+                    extractColorFromArtwork()
+                }
             }
             // ✅ NUEVO: destinos del menú de 3 puntos
             .sheet(isPresented: $showArtistDetail) {

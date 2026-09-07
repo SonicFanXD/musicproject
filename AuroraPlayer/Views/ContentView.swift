@@ -709,12 +709,14 @@ struct ContentView: View {
                         }
                     }
                 } label: {
-                    // ✅ Icono "plus" estándar (existente en todas las versiones de
-                    // SF Symbols, a diferencia de "plus.circle.fill" que en ciertos
-                    // SDKs + drawingGroup + opacidad falla al rasterizar y pinta un
-                    // placeholder). Secundario a 0.7; accent cuando suena la canción.
-                    Image(systemName: "plus")
-                        .font(.system(size: 17, weight: .semibold))
+                    // ✅ Text("+") literal (Unicode universal): no depende de SF
+                    // Symbols ni de la versión del SDK/iOS del dispositivo. Evita
+                    // el placeholder de "símbolo no encontrado" que iOS pinta como
+                    // un cuadro con 🚫 cuando el systemImage no existe en el OS del
+                    // usuario (el build de CI compila con SDK 26, pero el teléfono
+                    // puede correr iOS anterior).
+                    Text("+")
+                        .font(.system(size: 20, weight: .bold))
                         .foregroundStyle(isCurrent ? AppTheme.accent : Color.secondary.opacity(0.85))
                         .frame(width: 36, height: 36)
                         .contentShape(Rectangle())
@@ -723,8 +725,7 @@ struct ContentView: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
-        .drawingGroup() // ✅ Rasterizar la fila para scroll suave a 60fps
-            .background {
+        .background {
                 if isCurrent {
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
                         .fill(AppTheme.accent.opacity(0.08))
