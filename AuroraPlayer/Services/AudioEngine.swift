@@ -1427,7 +1427,19 @@ class AudioEngine: NSObject, ObservableObject {
     private func checkPlaybackEndWatchdog() {
         guard isPlaying, !isStopping, duration > 0 else { return }
         let elapsed = wallClockTimeUnclamped
-        if elapsed >= duration + 0.5, repeatMode != .one {
+        // ✅ FIX carrera watchdog vs. callback real (.dataPlayedBack): el
+        // callback real ahora espera a que el audio SALGA de verdad por el
+        // hardware, lo que en Bluetooth/AirPlay puede tardar varios cientos
+        // de ms más de lo que AVAudioSession.outputLatency reporta. Con un
+        // margen fijo de 0.5s el watchdog podía ganarle la carrera y forzar
+        // la transición (título/portada/reloj a 0 de la siguiente canción)
+        // MIENTRAS la canción anterior seguía sonando de verdad — el bug de
+        // "portada nueva pero sigue sonando la anterior desde un punto raro".
+        // El watchdog es solo una red de seguridad para cuando el callback
+        // real nunca llega; un margen generoso no afecta el uso normal.
+        let session = AVAudioSession.sharedInstance()
+        let watchdogMargin = max(2.5, session.outputLatency + session.ioBufferDuration + 2.0)
+        if elapsed >= duration + watchdogMargin, repeatMode != .one {
             AppLog.warning(.playback, String(format: "Watchdog: '%@' en %.1f/%.1fs sin transición, forzando", currentSong?.displayName ?? "—", elapsed, duration))
             handlePlaybackFinished()
         }
