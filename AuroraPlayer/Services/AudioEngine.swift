@@ -287,9 +287,6 @@ class AudioEngine: NSObject, ObservableObject {
     private var preloadedNextIndex: Int?
     private var preloadedNextURL: URL?
     private var preloadedNextFile: AVAudioFile?
-    private var preloadedNextIndex: Int?
-    private var preloadedNextURL: URL?
-    private var preloadedNextFile: AVAudioFile?
     // ✅ PRE-ENCADENADO (gapless real): mientras suena la canción A, el
     // segmento de la canción B ya queda programado en el MISMO playerNode
     // con at: nil. Cuando A termina de sonar de verdad (.dataPlayedBack),
