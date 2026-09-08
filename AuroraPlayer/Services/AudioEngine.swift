@@ -1,4 +1,4 @@
-import Foundation
+﻿import Foundation
 import AVFoundation
 import MediaPlayer
 import UIKit
@@ -211,12 +211,20 @@ class AudioEngine: NSObject, ObservableObject {
             return true
         }
 
+        // ✅ FIX corte prematuro: completionCallbackType .dataPlayedBack asegura
+        // que el handler se dispare solo cuando el audio YA SONÓ por el hardware,
+        // no cuando el render thread simplemente consumió el buffer (.dataConsumed,
+        // el default). Con .dataConsumed, handlePlaybackFinished() se disparaba
+        // antes de que terminara de sonar la canción actual, adelantando el
+        // cambio de UI/metadata y, en la última canción de la lista, cortando el
+        // audio de golpe porque stop() se ejecutaba con la cola aún sonando.
         playerNode.scheduleSegment(
             file,
             startingFrame: 0,
             frameCount: framesToPlay,
-            at: nil
-        ) { [weak self] in
+            at: nil,
+            completionCallbackType: .dataPlayedBack
+        ) { [weak self] _ in
             DispatchQueue.main.async {
                 guard let self = self,
                       self.scheduleGeneration == generation,
@@ -928,12 +936,16 @@ class AudioEngine: NSObject, ObservableObject {
         // ✅ Crossfade eliminado: nunca se programa (era la fuente de los
         // saltos "al azar" al terminar canciones y el drift de sincronización)
 
+        // ✅ FIX corte prematuro: ver nota en chainGaplessPlayNext(). Sin
+        // .dataPlayedBack, el handler llegaba antes de que el audio saliera
+        // realmente por el parlante/auriculares.
         playerNode.scheduleSegment(
             file,
             startingFrame: safeStartFrame,
             frameCount: framesToPlay,
-            at: nil
-        ) { [weak self] in
+            at: nil,
+            completionCallbackType: .dataPlayedBack
+        ) { [weak self] _ in
             DispatchQueue.main.async {
                 guard let self = self,
                       self.scheduleGeneration == generation,
@@ -1367,12 +1379,14 @@ class AudioEngine: NSObject, ObservableObject {
                 clock.time = 0
                 updateNowPlayingInfo()
                 hasScheduledFile = true
+                // ✅ FIX corte prematuro: ver nota en chainGaplessPlayNext().
                 playerNode.scheduleSegment(
                     file,
                     startingFrame: 0,
                     frameCount: repeatFrames,
-                    at: nil
-                ) { [weak self] in
+                    at: nil,
+                    completionCallbackType: .dataPlayedBack
+                ) { [weak self] _ in
                     DispatchQueue.main.async {
                         guard let self = self,
                               self.scheduleGeneration == repeatGeneration,
