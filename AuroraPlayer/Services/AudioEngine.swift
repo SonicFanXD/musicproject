@@ -242,6 +242,11 @@ class AudioEngine: NSObject, ObservableObject {
         updateNextUpQueue()
         saveState()
         preloadNextSong()
+        // ✅ PRE-ENCADENADO: dejar ya programada la canción siguiente detrás
+        // de esta (el camino histórico de este método; el camino principal es
+        // playCurrentSong → preChainNextSegment).
+        clearPreChain()
+        preChainNextSegment()
 
         AppLog.info(.playback, "Gapless: encadenado '\(nextSong.displayName)'")
         return true
@@ -282,6 +287,18 @@ class AudioEngine: NSObject, ObservableObject {
     private var preloadedNextIndex: Int?
     private var preloadedNextURL: URL?
     private var preloadedNextFile: AVAudioFile?
+    private var preloadedNextIndex: Int?
+    private var preloadedNextURL: URL?
+    private var preloadedNextFile: AVAudioFile?
+    // ✅ PRE-ENCADENADO (gapless real): mientras suena la canción A, el
+    // segmento de la canción B ya queda programado en el MISMO playerNode
+    // con at: nil. Cuando A termina de sonar de verdad (.dataPlayedBack),
+    // B ya está sonando sin hueco — el completion handler de A solo hace
+    // commit de UI/estado y pre-encadena C. Se limpia en cualquier
+    // stop/seek/skip/reprogramación (donde playerNode.stop() descarta la cola).
+    private var preChainedIndex: Int?
+    private var preChainedURL: URL?
+    private var preChainedFile: AVAudioFile?
     // ✅ CROSSFADE: eliminado por completo (era la fuente principal de bugs
     // ✅ CROSSFADE: eliminado por completo (era la fuente principal de bugs
     // de sincronización y el gapless de chainNextSong lo hace innecesario).
@@ -438,6 +455,7 @@ class AudioEngine: NSObject, ObservableObject {
                 try startEngineSafely()
                 let position = min(max(currentTime, 0), duration)
                 scheduleGeneration += 1
+                clearPreChain()
                 anchorPlaybackPosition(position)
                 scheduleFile(file, from: position)
             } catch {
@@ -467,6 +485,7 @@ class AudioEngine: NSObject, ObservableObject {
                 try startEngineSafely()
                 let position = min(max(currentTime, 0), duration)
                 scheduleGeneration += 1
+                clearPreChain()
                 anchorPlaybackPosition(position)
                 scheduleFile(file, from: position)
             } catch {
@@ -539,6 +558,7 @@ class AudioEngine: NSObject, ObservableObject {
                     if self.isPlaying, let file = self.audioFile {
                         let position = self.currentTime
                         self.scheduleGeneration += 1
+                        self.clearPreChain()
                         self.anchorPlaybackPosition(position)
                         self.scheduleFile(file, from: position)
                     }
@@ -680,6 +700,7 @@ class AudioEngine: NSObject, ObservableObject {
             scheduleGeneration += 1
             let currentPosition = currentTime
             playerNode.stop()
+            clearPreChain()
             // ✅ Mantener consistencia del reloj de display tras re-programar desde currentPosition
             anchorPlaybackPosition(currentPosition)
 
@@ -752,6 +773,7 @@ class AudioEngine: NSObject, ObservableObject {
             let position = isPlaying ? wallClockTime : min(max(currentTime, 0), duration)
             playerNode.stop()          // descarta el resto del segmento viejo
             hasScheduledFile = false
+            clearPreChain()
             anchorPlaybackPosition(position)
             // Reprogramar en el siguiente runloop (el engine ya está corriendo
             // si había audio; el formato mono/estéreo ya tomó efecto).
@@ -831,6 +853,8 @@ class AudioEngine: NSObject, ObservableObject {
         engine.stop()
         isPlaying = false
         audioFile = nil
+        // ✅ PRE-ENCADENADO: stop() descartó cualquier segmento en cola.
+        clearPreChain()
         // ✅ FIX: Mantener isStopping=true hasta que la nueva canción esté programada
         // para evitar que completion handlers ejecuten handlePlaybackFinished
 
@@ -893,6 +917,9 @@ class AudioEngine: NSObject, ObservableObject {
                 // reloj de pared iria 0.15s adelantado durante toda la cancion.
                 self.anchorPlaybackPosition(0)
                 self.playerNode.play()
+                // ✅ PRE-ENCADENADO: con el nodo ya reproduciendo, dejar
+                // programada la siguiente canción detrás de esta (gapless real).
+                self.preChainNextSegment()
             }
             isStopping = false  // FIX: Ahora podemos permitir completion handlers
 
@@ -1015,6 +1042,7 @@ class AudioEngine: NSObject, ObservableObject {
                     if let file = audioFile {
                         let position = min(max(currentTime, 0), duration)
                         scheduleGeneration += 1
+                        clearPreChain()
                         anchorPlaybackPosition(position)
                         scheduleFile(file, from: position)
                     }
@@ -1051,6 +1079,8 @@ class AudioEngine: NSObject, ObservableObject {
         // Limpiar el archivo precargado (evita dejar handlers de archivo
         // abiertos al parar la reproduccion).
         clearPreloadedNext()
+        // ✅ PRE-ENCADENADO: la cola del nodo fue descartada por stop().
+        clearPreChain()
         stopDisplayTimer()
         isStopping = false
         saveState()
@@ -1121,11 +1151,119 @@ class AudioEngine: NSObject, ObservableObject {
 
     /// ✅ Limpia el archivo precargado (cambio de playlist, parada, o precarga
     /// que ya no aplica). Evita dejar handlers de archivo abiertos en el sistema.
-
     private func clearPreloadedNext() {
         preloadedNextFile = nil
         preloadedNextIndex = nil
         preloadedNextURL = nil
+    }
+
+    /// ✅ Limpia el estado del pre-encadenado. Se llama en TODO punto donde
+    /// se hace playerNode.stop() o se reprograma el nodo: stop() DESCARTA la
+    /// cola de segmentos, así que un pre-encadenado pendiente dejaría de
+    /// existir en audio aunque el estado dijera lo contrario.
+    private func clearPreChain() {
+        preChainedIndex = nil
+        preChainedURL = nil
+        preChainedFile = nil
+    }
+
+    /// ✅ PRE-ENCADENADO gapless: programa YA el segmento de la siguiente
+    /// canción en el mismo playerNode (at: nil), ENCOLADO detrás del segmento
+    /// actual. Así, cuando la canción actual termina de sonar, la siguiente
+    /// arranca al instante — sin esperar al completion handler (que antes
+    /// programaba la siguiente DESPUÉS del silencio). Solo aplica si el
+    /// formato coincide con el ya conectado al grafo (no hace falta
+    /// reconectar) y repeat no es .one (ese modo se re-programa a sí mismo).
+    private func preChainNextSegment() {
+        guard isPlaying, !isStopping, repeatMode != .one,
+              engine.isRunning, playerNode.isPlaying,
+              connectedFormatKey != nil,
+              let index = computeNextIndex() else { return }
+        let song = playlist[index]
+        let url = song.url
+
+        // Reutilizar el archivo precargado si está listo; si no, abrirlo aquí
+        // (esto corre al INICIO de la canción actual, no en la transición,
+        // así que una lectura de disco puntual no genera hueco audible).
+        let file: AVAudioFile
+        if preloadedNextIndex == index, preloadedNextURL == url, let cached = preloadedNextFile {
+            file = cached
+        } else if let opened = try? AVAudioFile(forReading: url) {
+            file = opened
+        } else {
+            return
+        }
+
+        let fileFormat = file.processingFormat
+        guard formatKey(fileFormat) == connectedFormatKey else { return }
+        let framesToPlay = AVAudioFrameCount(file.length)
+        guard framesToPlay > 0 else { return }
+
+        let generation = scheduleGeneration
+        playerNode.scheduleSegment(
+            file,
+            startingFrame: 0,
+            frameCount: framesToPlay,
+            at: nil,
+            completionCallbackType: .dataPlayedBack
+        ) { [weak self] _ in
+            DispatchQueue.main.async {
+                guard let self = self,
+                      self.scheduleGeneration == generation,
+                      self.isPlaying,
+                      !self.isStopping else { return }
+                self.handlePlaybackFinished()
+            }
+        }
+
+        preChainedIndex = index
+        preChainedURL = url
+        preChainedFile = file
+        AppLog.info(.playback, "Gapless: pre-encadenado '\(song.displayName)' (arranca al terminar la actual)")
+    }
+
+    /// ✅ COMMIT de la transición pre-encadenada: la canción B ya fue
+    /// programada (y ya está sonando) detrás de A. Aquí NO se programa nada
+    /// de audio — solo se actualiza el estado/UI para reflejar B, y se
+    /// pre-encadena la siguiente (C) para repetir el ciclo.
+    private func commitChainedTransition() {
+        guard let index = preChainedIndex,
+              let file = preChainedFile,
+              index >= 0, index < playlist.count,
+              playlist[index].url == preChainedURL else {
+            clearPreChain()
+            return
+        }
+        let nextSong = playlist[index]
+        let fileFormat = file.processingFormat
+        preChainedIndex = nil
+        preChainedURL = nil
+        preChainedFile = nil
+        // El archivo pre-encadenado pasa a ser el archivo actual; liberar la
+        // caché de precarga si apuntaba a la misma canción.
+        if preloadedNextURL == nextSong.url {
+            clearPreloadedNext()
+        }
+
+        currentSong = nextSong
+        currentIndex = index
+        currentFileURL = nextSong.url
+        audioFile = file
+        duration = Double(file.length) / fileFormat.sampleRate
+        currentTime = 0
+        clock.time = 0
+        anchorPlaybackPosition(0)
+        sampleRate = fileFormat.sampleRate
+        hasScheduledFile = true
+        updateNowPlayingInfo()
+        updateAudioQuality()
+        addToHistory(nextSong)
+        updateNextUpQueue()
+        saveState()
+        preloadNextSong()
+        // Dejar programada la siguiente por adelantado (ciclo gapless).
+        preChainNextSegment()
+        AppLog.info(.playback, "Gapless: transición a '\(nextSong.displayName)' sin hueco (pre-encadenada)")
     }
 
     func playNext() {
@@ -1138,18 +1276,16 @@ class AudioEngine: NSObject, ObservableObject {
     }
 
     // MARK: - Transición de canción (diseño simplificado y determinista)
-    // ✅ DECISIÓN DE DISEÑO: se ELIMINÓ el encadenamiento por
-    // scheduleSegment(at: nil) + pre-carga. Ese sistema era la fuente raíz de:
-    // - canciones cortadas antes de terminar (el completion handler se dispara
-    //   cuando la tubería CONSUME el segmento, antes de que el sonido salga),
-    // - salto a puntos aleatorios (cola del node + handlers duplicados +
-    //   reloj de pared desincronizado tras reconnects),
-    // - barra congelada (handler perdido / needsReconnect con otro sample rate).
-    // Ahora TODA transición pasa por playCurrentSong(): reinicio atómico probado
-    // (engine stop → reconectar con el formato correcto → programar en 0 → play),
-    // que garantiza arrancar SIEMPRE desde el inicio, con cualquier formato.
-    // El costo es un gap de ~100ms entre canciones de distinto sample rate;
-    // a cambio la reproducción es 100% determinista y predecible.
+    // ⚠️ NOTA HISTÓRICA (corregida): este comentario decía que el encadenamiento
+    // por scheduleSegment(at: nil) había sido "eliminado" a favor de un reinicio
+    // atómico vía playCurrentSong() para toda transición. Eso NUNCA se aplicó:
+    // handlePlaybackFinished() sigue llamando a chainGaplessPlayNext(), que es
+    // el camino correcto para que las canciones que se conectan entre sí suenen
+    // sin silencio. advanceToNextSong()/playCurrentSong() solo se usan como
+    // fallback cuando el formato cambia (needsReconnect) o el archivo precargado
+    // falla al abrirse. La causa real de los cortes/saltos no era el
+    // encadenamiento en sí, sino el completionCallbackType por defecto
+    // (.dataConsumed) de scheduleSegment — ver el fix aplicado más abajo.
 
     /// Avanza a la siguiente canción de la lista (o detiene al final).
     private func advanceToNextSong() {
@@ -1193,6 +1329,8 @@ class AudioEngine: NSObject, ObservableObject {
         
         AppLog.info(.playback, String(format: "Seek a %.1fs en '%@' (isPlaying: %@)", time, currentSong?.displayName ?? "—", isPlaying ? "sí" : "no"))
         playerNode.stop()
+        // ✅ PRE-ENCADENADO: stop() descartó el segmento en cola de la siguiente.
+        clearPreChain()
 
         let clampedTime = max(0, min(time, duration))
         currentTime = clampedTime
@@ -1200,6 +1338,11 @@ class AudioEngine: NSObject, ObservableObject {
         anchorPlaybackPosition(clampedTime)
         // ✅ FIX sincronización: en pausa el seek NO debe iniciar la reproducción.
         scheduleFile(file, from: clampedTime, autostart: isPlaying, generation: generation)
+        // ✅ PRE-ENCADENADO: re-encadenar la siguiente detrás del segmento
+        // restante (solo si está sonando; en pausa se hará al reanudar).
+        if isPlaying {
+            preChainNextSegment()
+        }
         // ✅ FIX Centro de Control: publicar elapsed exacto inmediatamente
         // tras el seek para que la barra del sistema salte al mismo punto.
         updateNowPlayingInfo()
@@ -1347,7 +1490,34 @@ class AudioEngine: NSObject, ObservableObject {
         // ✅ Transición al terminar una canción — rediseñada y determinista.
     private func handlePlaybackFinished() {
         guard isPlaying, !isStopping else { return }
-        
+
+        // ✅ PRE-ENCADENADO: si la siguiente canción ya fue programada (y ya
+        // está sonando detrás de la actual), NO se reprograma nada aquí —
+        // solo se actualiza UI/estado (commit) y se pre-encadena la siguiente.
+        // IMPORTANTE: NO se incrementa scheduleGeneration en este camino,
+        // porque invalidaría el completion handler del segmento ya en cola.
+        if preChainedIndex != nil, preChainedFile != nil {
+            if repeatMode == .one {
+                // El usuario activó repeat-one DESPUÉS del pre-encadenado:
+                // el segmento en cola ya no aplica. stop() lo descarta y
+                // re-programamos la misma canción por el camino atómico.
+                AppLog.info(.playback, "repeat-one activo con pre-encadenado pendiente: descartando cola")
+                scheduleGeneration += 1
+                clearPreChain()
+                if let file = audioFile {
+                    anchorPlaybackPosition(0)
+                    currentTime = 0
+                    clock.time = 0
+                    updateNowPlayingInfo()
+                    rescheduleFileAfterStop(file, from: 0)
+                }
+                return
+            }
+            AppLog.info(.playback, "Canción terminada (pre-encadenada): '\(currentSong?.displayName ?? "—")'")
+            commitChainedTransition()
+            return
+        }
+
         // ✅ FIX: Incrementar generación ANTES de cualquier acción
         // para invalidar completion handlers pendientes
         scheduleGeneration += 1
@@ -1439,7 +1609,16 @@ class AudioEngine: NSObject, ObservableObject {
         // real nunca llega; un margen generoso no afecta el uso normal.
         let session = AVAudioSession.sharedInstance()
         let watchdogMargin = max(2.5, session.outputLatency + session.ioBufferDuration + 2.0)
-        if elapsed >= duration + watchdogMargin, repeatMode != .one {
+        // ✅ FIX bug persistente en repeat-one: antes se excluía repeat-one del
+        // watchdog (`repeatMode != .one`). Repeat-one depende ÚNICAMENTE del
+        // completion handler de su propio scheduleSegment(at: nil) para volver
+        // a programarse — si ese callback .dataPlayedBack no llega (hay reportes
+        // conocidos de que a veces no se dispara en ciertos dispositivos/rutas
+        // de audio), la canción se queda en silencio para siempre al terminar,
+        // porque no había ninguna red de seguridad para este modo. El watchdog
+        // ahora cubre también repeat-one; el margen amplio evita que compita
+        // con el callback real en el caso normal.
+        if elapsed >= duration + watchdogMargin {
             AppLog.warning(.playback, String(format: "Watchdog: '%@' en %.1f/%.1fs sin transición, forzando", currentSong?.displayName ?? "—", elapsed, duration))
             handlePlaybackFinished()
         }
@@ -1456,6 +1635,8 @@ class AudioEngine: NSObject, ObservableObject {
         
         playerNode.stop()
         hasScheduledFile = false
+        // ✅ PRE-ENCADENADO: stop() descartó la cola del nodo.
+        clearPreChain()
         
         // ✅ FIX: Delay aumentado de 0.05 a 0.1 segundos para asegurar
         // que el nodo se resetee completamente antes de reprogramar
@@ -1490,6 +1671,7 @@ class AudioEngine: NSObject, ObservableObject {
 
     private func startFallbackPlayback(song: Song) {
         scheduleGeneration += 1
+        clearPreChain()
         stopFallbackPlayback()
         if playerNode.isPlaying {
             playerNode.stop()
