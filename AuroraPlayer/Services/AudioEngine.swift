@@ -609,13 +609,23 @@ class AudioEngine: NSObject, ObservableObject {
             self.clearChainedAhead()
             if !self.engine.isRunning {
                 do {
+                    // ⚠️ FIX crítico: un stop implícito del engine (por el cambio
+                    // de configuración) NO garantiza que la cola interna del
+                    // playerNode (segmentos ya programados: el actual + el
+                    // pre-encadenado) haya quedado vacía. Si no la vaciamos
+                    // explícitamente antes de reprogramar, scheduleFile()
+                    // (que usa at: nil) puede ENCOLAR el nuevo segmento DETRÁS
+                    // de restos de audio viejo en vez de reemplazarlo — el
+                    // síntoma: unos segundos de una canción anterior se cuelan
+                    // en medio de la reproducción tras un hipo del engine.
+                    self.scheduleGeneration += 1
+                    self.playerNode.stop()
                     try self.startEngineSafely()
                     // Si había reproducción activa, retomarla desde la posición actual
                     if self.isPlaying, let file = self.audioFile {
                         let position = self.currentTime
-                        self.scheduleGeneration += 1
                         self.anchorPlaybackPosition(position)
-                        self.scheduleFile(file, from: position)
+                        self.scheduleFile(file, from: position, generation: self.scheduleGeneration)
                         self.scheduleAheadIfPossible()
                     }
                 } catch {
@@ -1112,15 +1122,19 @@ class AudioEngine: NSObject, ObservableObject {
             // crasheaba). Reactivar sesión + engine antes de hacer play.
             if !engine.isRunning {
                 do {
+                    scheduleGeneration += 1
+                    // ⚠️ Ver nota en observeEngineConfigurationChanges(): sin
+                    // vaciar la cola explícitamente, scheduleFile (at: nil)
+                    // podía encolar detrás de restos de audio viejo.
+                    playerNode.stop()
+                    // El engine se detuvo por completo: cualquier canción
+                    // pre-encadenada por adelantado se perdió con él.
+                    clearChainedAhead()
                     try startEngineSafely()
                     if let file = audioFile {
                         let position = min(max(currentTime, 0), duration)
-                        scheduleGeneration += 1
-                        // El engine se detuvo por completo: cualquier canción
-                        // pre-encadenada por adelantado se perdió con él.
-                        clearChainedAhead()
                         anchorPlaybackPosition(position)
-                        scheduleFile(file, from: position)
+                        scheduleFile(file, from: position, generation: scheduleGeneration)
                     }
                 } catch {
                     AppLog.error(.playback, error, context: "resume: reactivar engine")
