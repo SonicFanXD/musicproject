@@ -99,7 +99,15 @@ final class LibrarySearchIndex {
         artistEntries = newArtists
     }
 
-    // MARK: - Matching por palabras (parte 2)
+    // MARK: - Matching por palabras
+
+    /// Palabras normalizadas de la consulta (ignora vacías).
+    static func queryWords(_ query: String) -> [String] {
+        fold(query)
+            .split { $0.isWhitespace }
+            .map(String.init)
+            .filter { !$0.isEmpty }
+    }
 
     /// Puntaje de UNA palabra contra los campos (en orden de prioridad:
     /// el índice 0 es el campo principal, p. ej. el título).
