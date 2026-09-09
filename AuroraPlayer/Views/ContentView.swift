@@ -162,6 +162,8 @@ struct ContentView: View {
                     restoreLibraryIfNeeded()
                     audioEngine.isKeepScreenOnEnabled = keepScreenOnUserDefaults
                     fileAccessService.ensureLikedPlaylistExists()
+                    // ✅ INDEXACIÓN: decidir tarjeta grande vs indicador compacto.
+                    syncFirstTimeIndexing()
                     if autoPlayOnStart,
                        audioEngine.currentSong != nil,
                        !audioEngine.isPlaying {
@@ -194,7 +196,10 @@ struct ContentView: View {
                     }
                 }
                 .overlay {
-                    if fileAccessService.isScanning && !fileAccessService.songs.isEmpty {
+                    // ✅ Indicador compacto flotante: SOLO en re-escaneos con
+                    // biblioteca ya cargada (no en la primera indexación, donde
+                    // ya está la tarjeta grande en la lista).
+                    if fileAccessService.isScanning && !fileAccessService.songs.isEmpty && !firstTimeIndexing {
                         VStack {
                             Spacer()
                             HStack(spacing: 10) {
@@ -235,6 +240,8 @@ struct ContentView: View {
             withAnimation(.easeInOut(duration: 0.3)) {
                 compactIndexingVisible = scanning
             }
+            // ✅ INDEXACIÓN: sincronizar tarjeta grande / indicador compacto.
+            syncFirstTimeIndexing()
         }
     }
 
@@ -245,6 +252,28 @@ struct ContentView: View {
     // oculta) para que aparezca/desaparezca con un fade suave en vez de
     // insertarse/eliminarse como fila (lo que desplazaba la lista bruscamente).
     @State private var compactIndexingVisible = false
+
+    // ✅ TARJETA GRANDE solo en la PRIMERA indexación (biblioteca aún vacía):
+    // - Primera vez: tarjeta grande en TODAS las categorías mientras escanea,
+    //   con el contenido apareciendo debajo a medida que se indexa; al
+    //   terminar, la tarjeta se desvanece (opacidad, sin blur = barato).
+    // - Aperturas siguientes: el escaneo corre en segundo plano buscando
+    //   canciones nuevas y SOLO se muestra el indicador compacto mientras
+    //   dura; desaparece al terminar.
+    @State private var firstTimeIndexing = false
+
+    private func syncFirstTimeIndexing() {
+        let scanning = fileAccessService.isScanning
+        let libraryEmpty = fileAccessService.songs.isEmpty && fileAccessService.pendingSongsCount == 0
+        if scanning && libraryEmpty {
+            if !firstTimeIndexing {
+                withAnimation(.easeOut(duration: 0.3)) { firstTimeIndexing = true }
+            }
+        } else if !scanning && firstTimeIndexing {
+            // ✅ Fade-out optimizado: solo opacidad (GPU), sin blur ni layout costoso.
+            withAnimation(.easeOut(duration: 0.45)) { firstTimeIndexing = false }
+        }
+    }
 
     @ViewBuilder
     private func emptyLibraryView(icon: String, title: String, message: String) -> some View {
@@ -364,7 +393,25 @@ struct ContentView: View {
     private var songsSection: some View {
         let currentFilteredSongs = filteredSongs
 
-        if currentFilteredSongs.isEmpty {
+        // ✅ PRIMERA INDEXACIÓN: tarjeta grande arriba y el contenido
+        // apareciendo debajo a medida que se indexa.
+        if firstTimeIndexing {
+            indexingProgressCard
+                .transition(.opacity)
+                .listRowSeparator(.hidden)
+                .listRowBackground(Color.clear)
+            if !currentFilteredSongs.isEmpty {
+                sortButtonRow
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+                ForEach(currentFilteredSongs) { song in
+                    songRow(song)
+                }
+                .listRowSeparator(.hidden)
+                .listRowBackground(Color.clear)
+                .listRowInsets(EdgeInsets(top: 6, leading: 12, bottom: 6, trailing: 12))
+            }
+        } else if currentFilteredSongs.isEmpty {
             if fileAccessService.isScanning && fileAccessService.scanTotal > 0 {
                 indexingProgressCard
                     .listRowSeparator(.hidden)
@@ -572,15 +619,24 @@ struct ContentView: View {
     @ViewBuilder
     private var albumsSection: some View {
         let albums = filteredAlbums
+        // ✅ PRIMERA INDEXACIÓN: tarjeta grande también en álbumes.
+        if firstTimeIndexing {
+            indexingProgressCard
+                .transition(.opacity)
+                .listRowSeparator(.hidden)
+                .listRowBackground(Color.clear)
+        }
         if albums.isEmpty {
-            ContentUnavailableLibraryView(
-                icon: "square.stack",
-                title: Localization.localized("library.noAlbums.title"),
-                message: debouncedSearchText.isEmpty
-                    ? Localization.localized("library.noAlbums.empty")
-                    : Localization.localized("library.noAlbums.search")
-            )
-            .listRowSeparator(.hidden).listRowBackground(Color.clear)
+            if !firstTimeIndexing {
+                ContentUnavailableLibraryView(
+                    icon: "square.stack",
+                    title: Localization.localized("library.noAlbums.title"),
+                    message: debouncedSearchText.isEmpty
+                        ? Localization.localized("library.noAlbums.empty")
+                        : Localization.localized("library.noAlbums.search")
+                )
+                .listRowSeparator(.hidden).listRowBackground(Color.clear)
+            }
         } else {
             albumSortButtonRow
                 .listRowSeparator(.hidden)
@@ -600,15 +656,24 @@ struct ContentView: View {
     @ViewBuilder
     private var artistsSection: some View {
         let artists = filteredArtists
+        // ✅ PRIMERA INDEXACIÓN: tarjeta grande también en artistas.
+        if firstTimeIndexing {
+            indexingProgressCard
+                .transition(.opacity)
+                .listRowSeparator(.hidden)
+                .listRowBackground(Color.clear)
+        }
         if artists.isEmpty {
-            ContentUnavailableLibraryView(
-                icon: "person.2",
-                title: Localization.localized("library.noArtists.title"),
-                message: debouncedSearchText.isEmpty
-                    ? Localization.localized("library.noArtists.empty")
-                    : Localization.localized("library.noArtists.search")
-            )
-            .listRowSeparator(.hidden).listRowBackground(Color.clear)
+            if !firstTimeIndexing {
+                ContentUnavailableLibraryView(
+                    icon: "person.2",
+                    title: Localization.localized("library.noArtists.title"),
+                    message: debouncedSearchText.isEmpty
+                        ? Localization.localized("library.noArtists.empty")
+                        : Localization.localized("library.noArtists.search")
+                )
+                .listRowSeparator(.hidden).listRowBackground(Color.clear)
+            }
         } else {
             artistSortButtonRow
                 .listRowSeparator(.hidden)
