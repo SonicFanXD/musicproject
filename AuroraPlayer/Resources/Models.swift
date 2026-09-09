@@ -166,6 +166,16 @@ struct Song: Identifiable, Equatable, Codable {
         let artist = rawArtist.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         return artist + "|" + album
     }
+
+    /// Clave de agrupación de ARTISTAS: la MISMA normalización del artista que
+    /// usa albumGroupKey (trim + minúsculas). ✅ FIX: antes los buckets de
+    /// artista se creaban con el string crudo de albumArtist, así que
+    /// variantes de escritura ("X" vs "x", espacios extra) partían las
+    /// canciones en dos artistas distintos: el álbum mostraba todas sus
+    /// canciones (p. ej. 13) pero la página del artista solo una parte (9).
+    static func artistGroupKey(_ rawArtist: String) -> String {
+        rawArtist.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
 }
 
 extension Song {

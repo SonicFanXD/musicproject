@@ -156,6 +156,8 @@ final class Localization: ObservableObject {
             "library.noPlaylists.message": [.spanish: "Crea tu primera lista de reproducción para organizar tu música.", .english: "Create your first playlist to organize your music."],
             "library.songCount": [.spanish: "canciones", .english: "songs"],
             "library.songCountSingular": [.spanish: "canción", .english: "song"],
+            "library.albumCount": [.spanish: "álbumes", .english: "albums"],
+            "library.albumCountSingular": [.spanish: "álbum", .english: "album"],
 
             // Menú contextual
             "context.addToPlaylist": [.spanish: "Agregar a playlist", .english: "Add to Playlist"],

@@ -33,6 +33,12 @@ struct ContentView: View {
         AlbumSortOption(rawValue: albumSortRaw) ?? .title
     }
     @AppStorage("com.aurora.albumSortAscending") private var albumSortAscending = true
+    // ✅ Orden propio de la categoría Artistas (independiente de canciones/álbumes).
+    @AppStorage("com.aurora.artistSort") private var artistSortRaw = ArtistSortOption.name.rawValue
+    private var artistSort: ArtistSortOption {
+        ArtistSortOption(rawValue: artistSortRaw) ?? .name
+    }
+    @AppStorage("com.aurora.artistSortAscending") private var artistSortAscending = true
     @State private var showSortMenu = false
 
     var body: some View {
@@ -265,6 +271,17 @@ struct ContentView: View {
         .id(id)
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
+        // ✅ FIX scroll: reservar espacio al pie para la PlayerBar flotante.
+        // Sin esto, la última fila (canción/álbum/artista) quedaba oculta
+        // detrás de la barra al llegar al final de la lista. safeAreaInset
+        // reduce el área scrolleable — funciona igual en todas las categorías.
+        // Condicional: la PlayerBar se oculta (altura 0) sin canción activa,
+        // así que el inset solo existe cuando la barra es visible.
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            Color.clear
+                .frame(height: audioEngine.currentSong != nil ? 96 : 0)
+                .allowsHitTesting(false)
+        }
     }
 
     private var categoryPicker: some View {
@@ -461,6 +478,53 @@ struct ContentView: View {
         .padding(.horizontal, 16)
     }
 
+    private var artistSortButtonRow: some View {
+        Menu {
+            ForEach(ArtistSortOption.allCases, id: \.self) { option in
+                Button {
+                    artistSortRaw = option.rawValue
+                } label: {
+                    HStack {
+                        Label(option.title, systemImage: option.icon)
+                        if artistSort == option {
+                            Image(systemName: "checkmark")
+                        }
+                    }
+                }
+            }
+            Divider()
+            Button {
+                artistSortAscending = true
+            } label: {
+                Label(Localization.localized("library.sortAscending"), systemImage: "arrow.up")
+                    .opacity(artistSortAscending ? 1 : 0.4)
+            }
+            Button {
+                artistSortAscending = false
+            } label: {
+                Label(Localization.localized("library.sortDescending"), systemImage: "arrow.down")
+                    .opacity(artistSortAscending ? 0.4 : 1)
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: artistSort.icon)
+                    .font(.system(size: 11, weight: .semibold))
+                Text("\(Localization.localized("sort.sortBy")): \(artistSort.title)")
+                    .font(.system(size: 12, weight: .medium))
+                    .lineLimit(1)
+            }
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background {
+                Capsule().fill(Color.secondary.opacity(0.1))
+            }
+        }
+        .buttonStyle(.plain)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 16)
+    }
+
     private var indexingProgressCard: some View {
         VStack(spacing: 18) {
             ZStack {
@@ -635,6 +699,9 @@ struct ContentView: View {
             )
             .listRowSeparator(.hidden).listRowBackground(Color.clear)
         } else {
+            artistSortButtonRow
+                .listRowSeparator(.hidden)
+                .listRowBackground(Color.clear)
             ForEach(artists) { artist in
                 NavigationLink {
                     ArtistDetailView(artist: artist, audioEngine: audioEngine)
@@ -932,8 +999,34 @@ struct ContentView: View {
     private var filteredArtists: [Artist] {
         let artists = fileAccessService.artists
         let query = normalizedQuery
-        guard !query.isEmpty else { return artists }
+        guard !query.isEmpty else { return sortArtists(artists) }
         return LibrarySearchIndex.shared.searchArtists(artists, query: query)
+    }
+
+    // ✅ Orden de artistas con opciones propias de la categoría.
+    // albumCount y duración se calculan UNA vez por artista (diccionario) antes
+    // de ordenar: artist.albums agrupa discos y es caro llamarlo en cada
+    // comparación del sort.
+    private func sortArtists(_ artists: [Artist]) -> [Artist] {
+        let ascending = artistSortAscending
+        switch artistSort {
+        case .name:
+            return artists.sorted {
+                let r = $0.name.localizedStandardCompare($1.name)
+                return ascending ? r == .orderedAscending : r == .orderedDescending
+            }
+        case .songCount:
+            return ascending ? artists.sorted { $0.songs.count < $1.songs.count }
+                             : artists.sorted { $0.songs.count > $1.songs.count }
+        case .albumCount:
+            let counts = Dictionary(uniqueKeysWithValues: artists.map { ($0.id, $0.albums.count) })
+            return ascending ? artists.sorted { counts[$0.id, default: 0] < counts[$1.id, default: 0] }
+                             : artists.sorted { counts[$0.id, default: 0] > counts[$1.id, default: 0] }
+        case .duration:
+            let durations = Dictionary(uniqueKeysWithValues: artists.map { ($0.id, $0.songs.reduce(0) { $0 + $1.duration }) })
+            return ascending ? artists.sorted { durations[$0.id, default: 0] < durations[$1.id, default: 0] }
+                             : artists.sorted { durations[$0.id, default: 0] > durations[$1.id, default: 0] }
+        }
     }
 
     private func playSong(_ song: Song) {
@@ -1088,6 +1181,31 @@ enum AlbumSortOption: String, CaseIterable {
         case .artist: return "person.fill"
         case .songCount: return "music.note.list"
         case .year: return "calendar"
+        }
+    }
+}
+
+// ✅ Orden propio de ARTISTAS: opciones únicas de esta categoría (no reutiliza
+// las de canciones ni álbumes). albumCount/duración se computan una vez por
+// artista antes de ordenar (artist.albums es costoso: agrupa todos sus discos).
+enum ArtistSortOption: String, CaseIterable {
+    case name, songCount, albumCount, duration
+
+    var title: String {
+        switch self {
+        case .name: return Localization.localized("sort.option.title")
+        case .songCount: return Localization.localized("library.songCount")
+        case .albumCount: return Localization.localized("library.albumCount")
+        case .duration: return Localization.localized("sort.option.duration")
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .name: return "textformat.abc"
+        case .songCount: return "music.note.list"
+        case .albumCount: return "square.stack"
+        case .duration: return "clock"
         }
     }
 }

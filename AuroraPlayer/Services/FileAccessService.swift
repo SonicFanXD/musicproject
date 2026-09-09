@@ -480,7 +480,9 @@ class FileAccessService: ObservableObject {
             guard let self = self else { return }
 
             // ✅ Sort en background (sin sleep, sin bloqueo)
-            let sortedSongs = (self.songs + self.pendingSongs).sorted {
+            // ✅ Deduplicar: un lote que llega mientras se ordena puede quedar
+            // en ambas listas → duplicados en la librería (conteo 13 vs 9).
+            let sortedSongs = dedupeSongsByUrl(self.songs + self.pendingSongs).sorted {
                 $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
             }
 
@@ -529,7 +531,8 @@ class FileAccessService: ObservableObject {
         if wasScanning && !isScanning && !pendingSongs.isEmpty && !isSortScheduled {
             // ✅ Final sort en background para evitar congelamiento (sin sleep)
             isSortScheduled = true
-            let allSongs = songs + pendingSongs
+            // ✅ Deduplicar al fusionar (mismos duplicados que en el sort de arriba).
+            let allSongs = dedupeSongsByUrl(songs + pendingSongs)
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in
                 guard let self = self else { return }
                 let sortedSongs = allSongs.sorted {
@@ -1408,16 +1411,23 @@ class FileAccessService: ObservableObject {
     }
 
     private func finishInitialLibraryLoad(with cachedSongs: [Song]) {
-        songs = cachedSongs
+        // ✅ FIX conteo de álbumes/artistas (13 vs 9): versiones anteriores
+        // podían dejar DUPLICADOS en el caché (misma URL dos veces). Cada
+        // duplicado inflaba album.songs.count, pero el ForEach de detalle
+        // (id: \.element.id) colapsaba las filas → "dice 13 y son 9".
+        // Se deduplica AL CARGAR el caché y el rescan posterior ya no las
+        // re-agrega (indexedSongURLs se construye desde la lista limpia).
+        let uniqueCached = dedupeSongsByUrl(cachedSongs)
+        songs = uniqueCached
         isInitialLibraryLoaded = true
-        indexedSongURLs = Set(cachedSongs.map(\.url))
-        if cachedSongs.isEmpty && (!folders.isEmpty || !files.isEmpty) {
+        indexedSongURLs = Set(uniqueCached.map(\.url))
+        if uniqueCached.isEmpty && (!folders.isEmpty || !files.isEmpty) {
             rescanAllFolders()
         } else {
             restoreSecurityScopedAccess()
             // Verificar accesibilidad en un hilo de fondo: con 1000+ canciones,
             // hacer fileExists en el hilo principal congela la app al iniciar.
-            let urls = cachedSongs.map(\.url)
+            let urls = uniqueCached.map(\.url)
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in
                 let inaccessibleCount = urls.filter { !FileManager.default.fileExists(atPath: $0.path) }.count
                 DispatchQueue.main.async {
@@ -1479,13 +1489,25 @@ class FileAccessService: ObservableObject {
         return cachedArtists
     }
 
+    /// ✅ Deduplicación por URL (mantiene la primera aparición). Usada al
+    /// cargar caché, al fusionar lotes del escaneo y al agrupar álbumes/artistas.
+    private func dedupeSongsByUrl(_ input: [Song]) -> [Song] {
+        var seen = Set<URL>()
+        seen.reserveCapacity(input.count)
+        return input.filter { seen.insert($0.url).inserted }
+    }
+
     private func rebuildDerivedCollections() {
+        // ✅ FIX conteo (13 vs 9): deduplicar por URL antes de agrupar. Un
+        // duplicado inflaba album.songs.count y artist.songs.count mientras el
+        // ForEach del detalle ocultaba la fila repetida.
+        let allSongs = dedupeSongsByUrl(songs)
         // ✅ FIX multi-disco: agrupar por (artista, álbum) NORMALIZADOS. Los discos
         // del mismo álbum suelen traer nombres distintos por disco
         // ("X (Disc 1)" / "X (Disc 2)") o capitalización distinta; antes cada
         // variante creaba un álbum separado → no se reproducían de corrido y
         // repeat-all no volvía a empezar por el disco 1.
-        let groupedAlbums = Dictionary(grouping: songs) { song -> String in
+        let groupedAlbums = Dictionary(grouping: allSongs) { song -> String in
             let albumName = song.album.isEmpty ? "Álbum desconocido" : song.album
             let artistName = song.albumArtist.isEmpty ? (song.artist.isEmpty ? "Artista desconocido" : song.artist) : song.albumArtist
             return Song.albumGroupKey(album: albumName, artist: artistName)
@@ -1511,14 +1533,22 @@ class FileAccessService: ObservableObject {
             )
         }.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
 
-        let groupedArtists = Dictionary(grouping: songs) { song -> String in
-            // Usar albumArtist para agrupar por el artista del álbum, no de la canción
-            song.albumArtist.isEmpty ? (song.artist.isEmpty ? "Artista desconocido" : song.artist) : song.albumArtist
+        // ✅ FIX artista partido (álbum 13, artista 9): agrupar por la clave
+        // NORMALIZADA (misma normalización que albumGroupKey). Variantes de
+        // escritura del mismo artista ("X" vs "x") ya NO crean buckets
+        // separados. El nombre visible es la variante más frecuente.
+        let groupedArtists = Dictionary(grouping: allSongs) { song -> String in
+            let effective = song.albumArtist.isEmpty ? (song.artist.isEmpty ? "Artista desconocido" : song.artist) : song.albumArtist
+            return Song.artistGroupKey(effective)
         }
 
-        cachedArtists = groupedArtists.map { (artistName, artistSongs) in
-            Artist(
-                name: artistName,
+        cachedArtists = groupedArtists.map { (artistKey, artistSongs) in
+            let nameCounts = Dictionary(grouping: artistSongs) { song -> String in
+                song.albumArtist.isEmpty ? (song.artist.isEmpty ? "Artista desconocido" : song.artist) : song.albumArtist
+            }
+            let displayName = nameCounts.max { $0.value.count < $1.value.count }?.key ?? artistKey
+            return Artist(
+                name: displayName,
                 songs: artistSongs
             )
         }.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }

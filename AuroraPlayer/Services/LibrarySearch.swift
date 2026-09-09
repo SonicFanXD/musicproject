@@ -29,11 +29,12 @@ final class LibrarySearchIndex {
     }
 
     struct ArtistEntry {
+        // ✅ Búsqueda de artistas SOLO por nombre: antes también se buscaba en
+        // los títulos de canciones y álbumes del artista, lo que devolvía
+        // artistas que no tenían nada que ver con lo buscado (falsos positivos)
+        // y hacía fallar el AND de todas las palabras cuando una palabra solo
+        // existía en una canción.
         let name: String
-        // Títulos/álbumes de sus canciones: un artista aparece si una de sus
-        // canciones coincide con la búsqueda.
-        let songTitles: [String]
-        let songAlbums: [String]
     }
 
     private(set) var songEntries: [UUID: SongEntry] = [:]
@@ -91,9 +92,7 @@ final class LibrarySearchIndex {
         newArtists.reserveCapacity(artists.count)
         for artist in artists {
             newArtists[artist.id] = ArtistEntry(
-                name: Self.fold(artist.name),
-                songTitles: artist.songs.map { Self.fold($0.title) },
-                songAlbums: artist.songs.map { Self.fold($0.album) }
+                name: Self.fold(artist.name)
             )
         }
         artistEntries = newArtists
@@ -190,12 +189,9 @@ final class LibrarySearchIndex {
         scored.reserveCapacity(min(artists.count, 32))
         for artist in artists {
             guard let e = artistEntries[artist.id] else { continue }
-            // El nombre del artista es el campo principal; sus canciones y
-            // álbumes también hacen que aparezca.
-            var fields = [e.name, e.name]
-            fields.append(contentsOf: e.songAlbums)
-            fields.append(contentsOf: e.songTitles)
-            if let score = Self.matchScore(words: words, fields: fields) {
+            // ✅ SOLO el nombre del artista decide si aparece. Si buscas por el
+            // título de una canción, usa la pestaña de Canciones.
+            if let score = Self.matchScore(words: words, fields: [e.name]) {
                 scored.append((artist, score))
             }
         }
