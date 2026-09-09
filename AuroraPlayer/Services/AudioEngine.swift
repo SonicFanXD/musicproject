@@ -564,17 +564,27 @@ class AudioEngine: NSObject, ObservableObject {
             }
         }
 
+        // ⚠️ FIX silencio tras desconectar audífonos: antes solo se
+        // reconectaba el playerNode con el formato correcto DENTRO del
+        // catch (si engine.start() lanzaba error). Pero tras un cambio de
+        // ruta (audífonos → altavoz), engine.start() casi siempre funciona
+        // SIN lanzar error, aunque el playerNode siga conectado con el
+        // formato de la ruta VIEJA — resultado: primer intento de reanudar
+        // suena en silencio; recién en un reinicio posterior (por casualidad,
+        // cuando el sistema ya terminó de estabilizar la ruta) se oía. Ahora
+        // se reconecta SIEMPRE con el formato actual antes de arrancar, sin
+        // depender de que el primer intento falle para corregirlo.
+        if let file = audioFile {
+            reconnectPlayerNode(format: file.processingFormat)
+        } else {
+            reconnectPlayerNode(format: AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 2) ?? engine.outputNode.outputFormat(forBus: 0))
+        }
+
         // 2. Arrancar el engine con un reintento tras reconectar el grafo
         do {
             try engine.start()
         } catch {
-            AppLog.error(.playback, error, context: "startEngineSafely: primer intento, reconectando")
-            // Reintentar: reconectar el playerNode al mixer y arrancar de nuevo
-            if let file = audioFile {
-                reconnectPlayerNode(format: file.processingFormat)
-            } else {
-                reconnectPlayerNode(format: AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 2) ?? engine.outputNode.outputFormat(forBus: 0))
-            }
+            AppLog.error(.playback, error, context: "startEngineSafely: primer intento, reintentando")
             try engine.start()
         }
 
@@ -1716,6 +1726,29 @@ class AudioEngine: NSObject, ObservableObject {
                     if wasPlaying && isHeadphoneRoute && !self.isPlaying {
                         self.resume()
                         AppLog.info(.playback, "Ruta cambiada a \(route?.portName ?? "?"): reproducción reanudada")
+                    } else if wasPlaying && self.isPlaying, !self.isUsingFallback, let file = self.audioFile {
+                        // ✅ FIX simétrico: si la reproducción NUNCA se pausó
+                        // (el motor siguió "corriendo" durante el cambio de
+                        // ruta), su conexión puede haber quedado con el
+                        // formato de la ruta VIEJA — el mismo problema que
+                        // causaba silencio al desconectar, pero aquí sin
+                        // pasar por pause()/resume(). Forzar reconexión +
+                        // reprogramación en la posición actual para que el
+                        // nuevo dispositivo (cualquiera: Bluetooth, Lightning
+                        // con DAC, USB-C, AirPlay) reciba el formato correcto.
+                        let position = self.currentTime
+                        self.scheduleGeneration += 1
+                        self.playerNode.stop()
+                        self.clearChainedAhead()
+                        do {
+                            try self.startEngineSafely()
+                            self.anchorPlaybackPosition(position)
+                            self.scheduleFile(file, from: position, generation: self.scheduleGeneration)
+                            self.scheduleAheadIfPossible()
+                            AppLog.info(.playback, "Ruta cambiada a \(route?.portName ?? "?") en reproducción activa: grafo reconectado")
+                        } catch {
+                            AppLog.error(.playback, error, context: "newDeviceAvailable: reconectar en reproducción activa")
+                        }
                     }
                 }
             } else if reason == .oldDeviceUnavailable {

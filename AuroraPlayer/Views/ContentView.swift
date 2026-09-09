@@ -16,6 +16,12 @@ struct ContentView: View {
         LibraryCategory(rawValue: selectedCategoryRaw) ?? .songs
     }
     @State private var searchText = ""
+    // ✅ DEBOUNCE de búsqueda: el campo escribe en `searchText` (fluido),
+    // pero el filtrado usa `debouncedSearchText`, que se actualiza 250ms
+    // después de la última tecla. Antes cada carácter re-filtraba y
+    // re-ordenaba toda la librería → lag al escribir.
+    @State private var debouncedSearchText = ""
+    @State private var searchDebounceTask: Task<Void, Never>?
     
     @AppStorage("com.aurora.songSort") private var sortOptionRaw = SortOption.title.rawValue
     private var sortOption: SortOption {
@@ -62,6 +68,25 @@ struct ContentView: View {
                             text: $searchText,
                             prompt: Localization.localized("search.prompt")
                         )
+                        // ✅ BÚSQUEDA: mantener el índice sincronizado con la
+                        // librería (solo se reconstruye cuando cambian las
+                        // canciones/álbumes/artistas, nunca por tecla).
+                        .onReceive(fileAccessService.$songs) { songs in
+                            LibrarySearchIndex.shared.update(
+                                songs: songs,
+                                albums: fileAccessService.albums,
+                                artists: fileAccessService.artists
+                            )
+                        }
+                        // ✅ DEBOUNCE: filtrar 250ms después de la última tecla.
+                        .onChange(of: searchText) { newValue in
+                            searchDebounceTask?.cancel()
+                            searchDebounceTask = Task {
+                                try? await Task.sleep(nanoseconds: 250_000_000)
+                                guard !Task.isCancelled else { return }
+                                debouncedSearchText = newValue
+                            }
+                        }
                     }
                 }
                 .navigationBarTitleDisplayMode(.inline)
@@ -311,7 +336,7 @@ struct ContentView: View {
                 indexingProgressCard
                     .listRowSeparator(.hidden)
                     .listRowBackground(Color.clear)
-            } else if searchText.isEmpty {
+            } else if debouncedSearchText.isEmpty {
                 emptyLibraryView(
                     icon: "music.note.list",
                     title: Localization.localized("library.empty.title"),
@@ -576,7 +601,7 @@ struct ContentView: View {
             ContentUnavailableLibraryView(
                 icon: "square.stack",
                 title: Localization.localized("library.noAlbums.title"),
-                message: searchText.isEmpty
+                message: debouncedSearchText.isEmpty
                     ? Localization.localized("library.noAlbums.empty")
                     : Localization.localized("library.noAlbums.search")
             )
@@ -604,7 +629,7 @@ struct ContentView: View {
             ContentUnavailableLibraryView(
                 icon: "person.2",
                 title: Localization.localized("library.noArtists.title"),
-                message: searchText.isEmpty
+                message: debouncedSearchText.isEmpty
                     ? Localization.localized("library.noArtists.empty")
                     : Localization.localized("library.noArtists.search")
             )
@@ -830,25 +855,19 @@ struct ContentView: View {
     }
 
     private var normalizedQuery: String {
-        searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        debouncedSearchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
 
+    // ✅ BÚSQUEDA optimizada: el índice ya tiene las cadenas normalizadas
+    // (sin acentos/mayúsculas) y el matching es por palabras con ranking de
+    // relevancia. Con consulta vacía se respeta el orden del usuario.
     private var filteredSongs: [Song] {
         let songs = fileAccessService.songs
         let query = normalizedQuery
-        let filtered: [Song]
-        if query.isEmpty {
-            filtered = songs
-        } else {
-            filtered = songs.filter {
-                $0.title.lowercased().contains(query) ||
-                $0.artist.lowercased().contains(query) ||
-                $0.album.lowercased().contains(query)
-            }
-        }
-        return sortSongs(filtered)
+        guard !query.isEmpty else { return sortSongs(songs) }
+        return LibrarySearchIndex.shared.searchSongs(songs, query: query)
     }
-    
+
     private func sortSongs(_ songs: [Song]) -> [Song] {
         let ascending = songSortAscending
         switch sortOption {
@@ -881,16 +900,8 @@ struct ContentView: View {
     private var filteredAlbums: [Album] {
         let albums = fileAccessService.albums
         let query = normalizedQuery
-        let filtered: [Album]
-        if query.isEmpty {
-            filtered = albums
-        } else {
-            filtered = albums.filter {
-                $0.name.lowercased().contains(query) ||
-                $0.artist.lowercased().contains(query)
-            }
-        }
-        return sortAlbums(filtered)
+        guard !query.isEmpty else { return sortAlbums(albums) }
+        return LibrarySearchIndex.shared.searchAlbums(albums, query: query)
     }
 
     private func sortAlbums(_ albums: [Album]) -> [Album] {
@@ -922,7 +933,7 @@ struct ContentView: View {
         let artists = fileAccessService.artists
         let query = normalizedQuery
         guard !query.isEmpty else { return artists }
-        return artists.filter { $0.name.lowercased().contains(query) }
+        return LibrarySearchIndex.shared.searchArtists(artists, query: query)
     }
 
     private func playSong(_ song: Song) {
