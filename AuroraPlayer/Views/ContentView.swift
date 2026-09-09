@@ -86,12 +86,28 @@ struct ContentView: View {
                         }
                         // ✅ DEBOUNCE: filtrar 250ms después de la última tecla.
                         .onChange(of: searchText) { newValue in
+                            // ✅ Resincronizar el índice al empezar a buscar
+                            // (barato: se salta si nada cambió desde la última vez).
+                            LibrarySearchIndex.shared.update(
+                                songs: fileAccessService.songs,
+                                albums: fileAccessService.albums,
+                                artists: fileAccessService.artists
+                            )
                             searchDebounceTask?.cancel()
                             searchDebounceTask = Task {
                                 try? await Task.sleep(nanoseconds: 250_000_000)
                                 guard !Task.isCancelled else { return }
                                 debouncedSearchText = newValue
                             }
+                        }
+                        // ✅ Sincronizar el índice también al cambiar de categoría
+                        // (álbumes/artistas pueden haberse reconstruido).
+                        .onChange(of: selectedCategoryRaw) { _ in
+                            LibrarySearchIndex.shared.update(
+                                songs: fileAccessService.songs,
+                                albums: fileAccessService.albums,
+                                artists: fileAccessService.artists
+                            )
                         }
                     }
                 }
@@ -385,144 +401,39 @@ struct ContentView: View {
     }
     
     private var sortButtonRow: some View {
-        Menu {
-            ForEach(SortOption.allCases, id: \.self) { option in
-                Button {
-                    sortOptionRaw = option.rawValue
-                } label: {
-                    HStack {
-                        Label(option.title, systemImage: option.icon)
-                        if sortOption == option {
-                            Image(systemName: "checkmark")
-                        }
-                    }
-                }
-            }
-            Divider()
-            Button {
-                songSortAscending = true
-            } label: {
-                Label(Localization.localized("library.sortAscending"), systemImage: "arrow.up")
-                    .opacity(songSortAscending ? 1 : 0.4)
-            }
-            Button {
-                songSortAscending = false
-            } label: {
-                Label(Localization.localized("library.sortDescending"), systemImage: "arrow.down")
-                    .opacity(songSortAscending ? 0.4 : 1)
-            }
-        } label: {
-            HStack(spacing: 6) {
-                Image(systemName: sortOption.icon)
-                    .font(.system(size: 11, weight: .semibold))
-                Text("\(Localization.localized("sort.sortBy")): \(sortOption.title)")
-                    .font(.system(size: 12, weight: .medium))
-                    .lineLimit(1)
-            }
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .background {
-                Capsule().fill(Color.secondary.opacity(0.1))
-            }
-        }
-        .buttonStyle(.plain)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 16)
+        CategorySortMenu(
+            options: SortOption.allCases,
+            current: sortOption,
+            optionTitle: { $0.title },
+            optionIcon: { $0.icon },
+            currentSelection: { sortOptionRaw = $0.rawValue },
+            ascending: songSortAscending,
+            onAscendingChange: { songSortAscending = $0 }
+        )
     }
 
     private var albumSortButtonRow: some View {
-        Menu {
-            ForEach(AlbumSortOption.allCases, id: \.self) { option in
-                Button {
-                    albumSortRaw = option.rawValue
-                } label: {
-                    HStack {
-                        Label(option.title, systemImage: option.icon)
-                        if albumSort == option {
-                            Image(systemName: "checkmark")
-                        }
-                    }
-                }
-            }
-            Divider()
-            Button {
-                albumSortAscending = true
-            } label: {
-                Label(Localization.localized("library.sortAscending"), systemImage: "arrow.up")
-                    .opacity(albumSortAscending ? 1 : 0.4)
-            }
-            Button {
-                albumSortAscending = false
-            } label: {
-                Label(Localization.localized("library.sortDescending"), systemImage: "arrow.down")
-                    .opacity(albumSortAscending ? 0.4 : 1)
-            }
-        } label: {
-            HStack(spacing: 6) {
-                Image(systemName: albumSort.icon)
-                    .font(.system(size: 11, weight: .semibold))
-                Text("\(Localization.localized("sort.sortBy")): \(albumSort.title)")
-                    .font(.system(size: 12, weight: .medium))
-                    .lineLimit(1)
-            }
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .background {
-                Capsule().fill(Color.secondary.opacity(0.1))
-            }
-        }
-        .buttonStyle(.plain)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 16)
+        CategorySortMenu(
+            options: AlbumSortOption.allCases,
+            current: albumSort,
+            optionTitle: { $0.title },
+            optionIcon: { $0.icon },
+            currentSelection: { albumSortRaw = $0.rawValue },
+            ascending: albumSortAscending,
+            onAscendingChange: { albumSortAscending = $0 }
+        )
     }
 
     private var artistSortButtonRow: some View {
-        Menu {
-            ForEach(ArtistSortOption.allCases, id: \.self) { option in
-                Button {
-                    artistSortRaw = option.rawValue
-                } label: {
-                    HStack {
-                        Label(option.title, systemImage: option.icon)
-                        if artistSort == option {
-                            Image(systemName: "checkmark")
-                        }
-                    }
-                }
-            }
-            Divider()
-            Button {
-                artistSortAscending = true
-            } label: {
-                Label(Localization.localized("library.sortAscending"), systemImage: "arrow.up")
-                    .opacity(artistSortAscending ? 1 : 0.4)
-            }
-            Button {
-                artistSortAscending = false
-            } label: {
-                Label(Localization.localized("library.sortDescending"), systemImage: "arrow.down")
-                    .opacity(artistSortAscending ? 0.4 : 1)
-            }
-        } label: {
-            HStack(spacing: 6) {
-                Image(systemName: artistSort.icon)
-                    .font(.system(size: 11, weight: .semibold))
-                Text("\(Localization.localized("sort.sortBy")): \(artistSort.title)")
-                    .font(.system(size: 12, weight: .medium))
-                    .lineLimit(1)
-            }
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .background {
-                Capsule().fill(Color.secondary.opacity(0.1))
-            }
-        }
-        .buttonStyle(.plain)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 16)
+        CategorySortMenu(
+            options: ArtistSortOption.allCases,
+            current: artistSort,
+            optionTitle: { $0.title },
+            optionIcon: { $0.icon },
+            currentSelection: { artistSortRaw = $0.rawValue },
+            ascending: artistSortAscending,
+            onAscendingChange: { artistSortAscending = $0 }
+        )
     }
 
     private var indexingProgressCard: some View {
@@ -1170,7 +1081,7 @@ enum AlbumSortOption: String, CaseIterable {
         switch self {
         case .title: return Localization.localized("sort.option.title")
         case .artist: return Localization.localized("sort.option.artist")
-        case .songCount: return Localization.localized("library.songCount")
+        case .songCount: return Localization.localized("sort.option.songCount")
         case .year: return Localization.localized("sort.option.year")
         }
     }
@@ -1193,9 +1104,9 @@ enum ArtistSortOption: String, CaseIterable {
 
     var title: String {
         switch self {
-        case .name: return Localization.localized("sort.option.title")
-        case .songCount: return Localization.localized("library.songCount")
-        case .albumCount: return Localization.localized("library.albumCount")
+        case .name: return Localization.localized("sort.option.name")
+        case .songCount: return Localization.localized("sort.option.songCount")
+        case .albumCount: return Localization.localized("sort.option.albumCount")
         case .duration: return Localization.localized("sort.option.duration")
         }
     }
@@ -1208,6 +1119,86 @@ enum ArtistSortOption: String, CaseIterable {
         case .duration: return "clock"
         }
     }
+}
+
+// MARK: - Menú de ordenación UNIFICADO para todas las categorías
+// ✅ Antes había tres copias casi idénticas del menú (canciones/álbumes/
+// artistas) con estilos y textos ligeramente distintos. Ahora una sola vista
+// genérica garantiza: mismo diseño, mismo orden de opciones, checkmark,
+// dirección asc/desc y textos sin cortes raros (lineLimit + layoutPriority).
+struct CategorySortMenu<Option: RawRepresentable & Hashable & CaseIterable>: View where Option.RawValue == String {
+    let options: [Option]
+    let current: Option
+    let optionTitle: (Option) -> String
+    let optionIcon: (Option) -> String
+    let currentSelection: (Option) -> Void
+    let ascending: Bool
+    let onAscendingChange: (Bool) -> Void
+
+    var body: some View {
+        Menu {
+            ForEach(options, id: \.self) { option in
+                Button {
+                    currentSelection(option)
+                } label: {
+                    HStack {
+                        Label(optionTitle(option), systemImage: optionIcon(option))
+                        if current == option {
+                            Spacer()
+                            Image(systemName: "checkmark")
+                        }
+                    }
+                }
+            }
+            Divider()
+            Button {
+                onAscendingChange(true)
+            } label: {
+                Label(Localization.localized("library.sortAscending"), systemImage: "arrow.up")
+                    .opacity(ascending ? 1 : 0.4)
+            }
+            Button {
+                onAscendingChange(false)
+            } label: {
+                Label(Localization.localized("library.sortDescending"), systemImage: "arrow.down")
+                    .opacity(ascending ? 0.4 : 1)
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: optionIcon(current))
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(AppTheme.accent)
+                Text("\(Localization.localized("sort.sortBy")): \(optionTitle(current))")
+                    .font(.system(size: 12, weight: .medium))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .layoutPriority(1)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(.tertiary)
+            }
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background {
+                Capsule().fill(Color.secondary.opacity(0.1))
+            }
+        }
+        .buttonStyle(.plain)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 16)
+    }
+}
+
+/// ✅ Texto de cantidad con SINGULAR correcto: antes "1 canciones"/"1 álbumes".
+func localizedSongCount(_ count: Int) -> String {
+    let unit = Localization.localized(count == 1 ? "library.songCountSingular" : "library.songCount")
+    return "\(count) \(unit)"
+}
+
+func localizedAlbumCount(_ count: Int) -> String {
+    let unit = Localization.localized(count == 1 ? "library.albumCountSingular" : "library.albumCount")
+    return "\(count) \(unit)"
 }
 
 private func albumListRow(_ album: Album) -> some View {
@@ -1236,7 +1227,7 @@ private func albumListRow(_ album: Album) -> some View {
                 .foregroundStyle(.primary).lineLimit(1)
             Text(album.artist)
                 .font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
-            Text("\(album.songs.count) \(Localization.localized("library.songCount"))")
+            Text(localizedSongCount(album.songs.count))
                 .font(.system(size: 11)).foregroundStyle(.tertiary)
         }
 
@@ -1275,8 +1266,10 @@ private func artistListRow(_ artist: Artist) -> some View {
             Text(artist.name)
                 .font(.system(size: 15, weight: .semibold, design: .rounded))
                 .foregroundStyle(.primary).lineLimit(1)
-            Text("\(artist.songs.count) \(Localization.localized("library.songCount"))")
-                .font(.system(size: 12)).foregroundStyle(.secondary)
+            // ✅ Solo canciones: artist.albums agrupa discos y es caro de calcular
+            // por fila en cada render (el detalle del artista sí muestra álbumes).
+            Text(localizedSongCount(artist.songs.count))
+                .font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
         }
 
         Spacer()
@@ -1351,7 +1344,7 @@ struct playlistLibraryCard: View {
                 Text(playlist.name)
                     .font(.system(size: 14, weight: .semibold, design: .rounded))
                     .foregroundStyle(.primary).lineLimit(1)
-                Text("\(playlist.songIDs.count) \(Localization.localized("library.songCount"))")
+                Text(localizedSongCount(playlist.songIDs.count))
                     .font(.system(size: 12)).foregroundStyle(.secondary)
             }
         }

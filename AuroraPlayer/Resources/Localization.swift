@@ -139,6 +139,9 @@ final class Localization: ObservableObject {
             "sort.option.duration": [.spanish: "Duración", .english: "Duration"],
             "sort.option.year": [.spanish: "Año", .english: "Year"],
             "sort.option.recentlyAdded": [.spanish: "Agregado recientemente", .english: "Recently added"],
+            "sort.option.name": [.spanish: "Nombre", .english: "Name"],
+            "sort.option.songCount": [.spanish: "Nº de canciones", .english: "Song count"],
+            "sort.option.albumCount": [.spanish: "Nº de álbumes", .english: "Album count"],
             "sort.sortBy": [.spanish: "Ordenar", .english: "Sort by"],
 
             // Estados vacíos de la biblioteca

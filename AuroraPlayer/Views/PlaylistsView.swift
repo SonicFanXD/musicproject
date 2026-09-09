@@ -228,7 +228,7 @@ struct PlaylistsView: View {
                         .lineLimit(1)
                 }
 
-                Text("\(playlist.songIDs.count) \(Localization.localized("library.songCount"))")
+                Text(localizedSongCount(playlist.songIDs.count))
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
             }
@@ -507,7 +507,7 @@ struct PlaylistDetailView: View {
                 }
 
                 HStack(spacing: 10) {
-                    statPill(icon: "music.note", text: "\(songs.count) \(Localization.localized("library.songCount"))")
+                    statPill(icon: "music.note", text: localizedSongCount(songs.count))
 
                     let totalDuration = songs.reduce(0) { $0 + $1.duration }
                     if totalDuration > 60 {

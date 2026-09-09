@@ -26,6 +26,10 @@ final class LibrarySearchIndex {
     struct AlbumEntry {
         let name: String
         let artist: String
+        // ✅ Títulos de las canciones del álbum: buscar por el nombre de una
+        // canción ahora TAMBIÉN encuentra su álbum (antes solo se buscaba en
+        // nombre+artista y muchos álbumes "no se detectaban").
+        let songTitles: [String]
     }
 
     struct ArtistEntry {
@@ -83,7 +87,8 @@ final class LibrarySearchIndex {
         for album in albums {
             newAlbums[album.id] = AlbumEntry(
                 name: Self.fold(album.name),
-                artist: Self.fold(album.artist)
+                artist: Self.fold(album.artist),
+                songTitles: album.songs.map { Self.fold($0.title) }
             )
         }
         albumEntries = newAlbums
@@ -110,8 +115,10 @@ final class LibrarySearchIndex {
 
     /// Puntaje de UNA palabra contra los campos (en orden de prioridad:
     /// el índice 0 es el campo principal, p. ej. el título).
+    /// `compactFields` son los mismos campos sin espacios: permiten encontrar
+    /// "Daft Punk" escribiendo "daftpunk" (coincidencia más débil).
     /// Retorna nil si la palabra no coincide.
-    private static func wordScore(_ word: String, fields: [String]) -> Int? {
+    private static func wordScore(_ word: String, fields: [String], compactFields: [String]) -> Int? {
         var best: Int?
         for (idx, field) in fields.enumerated() where !field.isEmpty {
             // Peso base por campo: el campo principal (título) pondera más.
@@ -132,20 +139,50 @@ final class LibrarySearchIndex {
             score += fieldWeight
             if best == nil || score > best! { best = score }
         }
+        // ✅ Coincidencia compacta: la consulta sin espacios contra campos sin
+        // espacios. Puntaje bajo: es una coincidencia más débil.
+        if best == nil, word.count >= 3 {
+            for (idx, compact) in compactFields.enumerated() {
+                if compact.contains(word) {
+                    let s = 12 + (10 - min(idx, 4))
+                    if best == nil || s > best! { best = s }
+                }
+            }
+        }
         return best
     }
 
-    /// Coincidencia por palabras: TODAS las palabras de la consulta deben
-    /// aparecer en algún campo. El puntaje total es la suma de la mejor
-    /// coincidencia de cada palabra.
+    private static func compactFields(_ fields: [String]) -> [String] {
+        fields.map { $0.replacingOccurrences(of: " ", with: "") }
+    }
+
+    /// Coincidencia estricta: TODAS las palabras de la consulta deben aparecer.
+    /// El puntaje total es la suma de la mejor coincidencia de cada palabra.
     static func matchScore(words: [String], fields: [String]) -> Int? {
+        let compact = compactFields(fields)
         guard !words.isEmpty else { return 0 }
         var total = 0
         for word in words {
-            guard let s = wordScore(word, fields: fields) else { return nil }
+            guard let s = wordScore(word, fields: fields, compactFields: compact) else { return nil }
             total += s
         }
         return total
+    }
+
+    /// ✅ Coincidencia RELAJADA: al menos UNA palabra debe coincidir. Solo se
+    /// usa cuando la estricta no devolvió resultados, para no dejar la búsqueda
+    /// vacía porque una palabra no existe en ningún campo.
+    static func relaxedScore(words: [String], fields: [String]) -> Int? {
+        let compact = compactFields(fields)
+        var total = 0
+        var matched = 0
+        for word in words {
+            if let s = wordScore(word, fields: fields, compactFields: compact) {
+                total += s
+                matched += 1
+            }
+        }
+        return matched > 0 ? total : nil
     }
 
     // MARK: - Búsquedas
@@ -157,10 +194,23 @@ final class LibrarySearchIndex {
         guard !words.isEmpty else { return songs }
         var scored: [(song: Song, score: Int)] = []
         scored.reserveCapacity(min(songs.count, 64))
+        var fields: [String] = []
         for song in songs {
-            guard let e = songEntries[song.id] else { continue }
-            if let score = Self.matchScore(words: words, fields: [e.title, e.artist, e.albumArtist, e.album]) {
+            // ✅ Fallback al vuelo si la entrada no existe en el índice.
+            let e = songEntries[song.id] ?? SongEntry(
+                title: Self.fold(song.title),
+                artist: Self.fold(song.artist),
+                albumArtist: Self.fold(song.albumArtist),
+                album: Self.fold(song.album)
+            )
+            fields = [e.title, e.artist, e.albumArtist, e.album]
+            if let score = Self.matchScore(words: words, fields: fields) {
                 scored.append((song, score))
+            } else if words.count > 1, let relaxed = Self.relaxedScore(words: words, fields: fields) {
+                // ✅ Modo relajado: si la búsqueda estricta no encuentra nada
+                // en TODA la búsqueda, aceptar coincidencias parciales (alguna
+                // palabra) en una segunda pasada, en vez de devolver vacío.
+                scored.append((song, relaxed / 2))
             }
         }
         scored.sort { $0.score > $1.score }
@@ -173,9 +223,20 @@ final class LibrarySearchIndex {
         var scored: [(album: Album, score: Int)] = []
         scored.reserveCapacity(min(albums.count, 32))
         for album in albums {
-            guard let e = albumEntries[album.id] else { continue }
-            if let score = Self.matchScore(words: words, fields: [e.name, e.artist]) {
+            // ✅ Fallback si la entrada del índice no existe (índice desactualizado):
+            // se calcula al vuelo en vez de DESCARTAR el álbum silenciosamente —
+            // esa era otra causa de "álbumes que existen y no aparecen".
+            let e = albumEntries[album.id] ?? AlbumEntry(
+                name: Self.fold(album.name),
+                artist: Self.fold(album.artist),
+                songTitles: album.songs.map { Self.fold($0.title) }
+            )
+            var fields = [e.name, e.artist]
+            fields.append(contentsOf: e.songTitles)
+            if let score = Self.matchScore(words: words, fields: fields) {
                 scored.append((album, score))
+            } else if words.count > 1, let relaxed = Self.relaxedScore(words: words, fields: fields) {
+                scored.append((album, relaxed / 2))
             }
         }
         scored.sort { $0.score > $1.score }
@@ -188,11 +249,15 @@ final class LibrarySearchIndex {
         var scored: [(artist: Artist, score: Int)] = []
         scored.reserveCapacity(min(artists.count, 32))
         for artist in artists {
-            guard let e = artistEntries[artist.id] else { continue }
+            // ✅ Fallback al vuelo si la entrada no existe en el índice.
+            let e = artistEntries[artist.id] ?? ArtistEntry(name: Self.fold(artist.name))
             // ✅ SOLO el nombre del artista decide si aparece. Si buscas por el
             // título de una canción, usa la pestaña de Canciones.
-            if let score = Self.matchScore(words: words, fields: [e.name]) {
+            let fields = [e.name]
+            if let score = Self.matchScore(words: words, fields: fields) {
                 scored.append((artist, score))
+            } else if words.count > 1, let relaxed = Self.relaxedScore(words: words, fields: fields) {
+                scored.append((artist, relaxed / 2))
             }
         }
         scored.sort { $0.score > $1.score }

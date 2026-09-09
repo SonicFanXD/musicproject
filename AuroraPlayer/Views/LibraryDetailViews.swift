@@ -18,6 +18,11 @@ struct AlbumDetailView: View {
     @State private var cachedTotalDuration: TimeInterval = 0
     @State private var cachedHasMultipleDiscs: Bool = false
     @State private var cachedSongsByDisc: [(disc: Int, songs: [Song])] = []
+    // ✅ CALIDAD MAYORITARIA del álbum: bits + kHz calculados por mayoría.
+    // Puede haber canciones con distinto sample rate en el mismo álbum; el
+    // kHz mostrado es el de la MAYORÍA de canciones, y los bits el más común
+    // entre esas canciones (ver computeMajorityQuality()).
+    @State private var cachedQuality: (bits: Int, khz: Double)? = nil
     private var songs: [Song] { cachedSongs }
     private var totalDuration: TimeInterval { cachedTotalDuration }
     private var hasMultipleDiscs: Bool { cachedHasMultipleDiscs }
@@ -68,6 +73,7 @@ struct AlbumDetailView: View {
                 cachedHasMultipleDiscs = Set(cachedSongs.compactMap { $0.discNumber }).count > 1
                 let grouped = Dictionary(grouping: cachedSongs) { $0.discNumber ?? 1 }
                 cachedSongsByDisc = grouped.keys.sorted().map { ($0, grouped[$0]!.sorted { $0.trackNumber < $1.trackNumber }) }
+                cachedQuality = Self.computeMajorityQuality(cachedSongs)
             }
             // ? Animaci�n de entrada suave
             withAnimation(.easeOut(duration: 0.4)) {
@@ -162,12 +168,23 @@ struct AlbumDetailView: View {
 
             // ? Estad�sticas con dise�o mejorado
             HStack(spacing: 14) {
-                statPill(icon: "music.note", text: "\(songs.count) \(Localization.localized("library.songCount"))")
+                statPill(icon: "music.note", text: localizedSongCount(songs.count))
                 if totalDuration > 60 {
                     statPill(icon: "clock", text: formatLongDuration(totalDuration))
                 }
                 if let releaseDate = album.releaseDate {
                     statPill(icon: "calendar", text: formatYear(releaseDate))
+                }
+                // ✅ CALIDAD MAYORITARIA (bits · kHz): si el álbum mezcla
+                // canciones con distinto sample rate, se muestra el de la
+                // mayoría — p. ej. "24-bit · 44.1 kHz" o "44.1 kHz".
+                if let q = cachedQuality {
+                    let khz = q.khz / 1000.0
+                    let khzText = khz.truncatingRemainder(dividingBy: 1) == 0
+                        ? "\(Int(khz)) kHz"
+                        : String(format: "%.1f kHz", khz)
+                    let text = q.bits > 0 ? "\(q.bits)-bit · \(khzText)" : khzText
+                    statPill(icon: "waveform", text: text)
                 }
             }
             .offset(y: appearAnimation ? 0 : 10)
@@ -203,6 +220,20 @@ struct AlbumDetailView: View {
                 .drawingGroup() // ? Optimizaci�n GPU para 60fps
             }
         }
+    }
+
+    // ✅ CALIDAD MAYORITARIA del álbum: el kHz que tienen la MAYORÍA de las
+    // canciones; los bits, el valor más común ENTRE esas canciones. Así un
+    // álbum con 9 temas a 44.1 kHz y 1 a 96 kHz muestra "44.1 kHz", no "96".
+    // Retorna nil si ninguna canción reporta sample rate.
+    private static func computeMajorityQuality(_ songs: [Song]) -> (bits: Int, khz: Double)? {
+        let withRate = songs.filter { $0.sampleRate > 0 }
+        guard !withRate.isEmpty else { return nil }
+        guard let majority = Dictionary(grouping: withRate, by: { $0.sampleRate })
+            .max(by: { $0.value.count < $1.value.count }) else { return nil }
+        let bits = Dictionary(grouping: majority.value.compactMap { $0.bitDepth > 0 ? $0.bitDepth : nil }, by: { $0 })
+            .max { $0.value.count < $1.value.count }?.key ?? 0
+        return (bits, majority.key)
     }
 
     private var actionButtons: some View {
@@ -695,7 +726,7 @@ struct ArtistAlbumCard: View {
                 Text(album.name)
                     .font(.system(size: 14, weight: .semibold, design: .rounded))
                     .foregroundStyle(.primary).lineLimit(1)
-                Text("\(album.songs.count) \(Localization.localized("library.songCount"))")
+                Text(localizedSongCount(album.songs.count))
                     .font(.system(size: 12)).foregroundStyle(.secondary)
             }
         }
