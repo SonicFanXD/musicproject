@@ -43,6 +43,8 @@ final class Localization: ObservableObject {
             "settings.updateLibrary": [.spanish: "Actualizar biblioteca", .english: "Update Library"],
             "settings.scanning": [.spanish: "Escaneando...", .english: "Scanning..."],
             "settings.rescanFolders": [.spanish: "Rescanear carpetas", .english: "Rescan Folders"],
+            "settings.scanOnlyNewSongs": [.spanish: "Escanear solo canciones nuevas", .english: "Scan only new songs"],
+            "settings.scanOnlyNewSongsSubtitle": [.spanish: "Al actualizar, solo agrega canciones nuevas sin borrar las existentes", .english: "When updating, only add new songs without clearing existing ones"],
 
             // Audio
             "settings.equalizer": [.spanish: "Equalizador", .english: "Equalizer"],

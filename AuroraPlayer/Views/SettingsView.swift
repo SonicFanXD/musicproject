@@ -27,6 +27,7 @@ struct SettingsView: View {
     @AppStorage("com.aurora.compactPlayerBar") private var compactPlayerBar = false
     @AppStorage("com.aurora.language") private var selectedLanguage = 0 // 0 = español, 1 = inglés
     @AppStorage("com.aurora.showFPS") private var showFPS = false
+    @AppStorage("com.aurora.scanOnlyNewSongs") private var scanOnlyNewSongs = true
 
     // ✅ LOCALIZADOS: computados para reaccionar al cambio de idioma al
     // instante (antes eran `let` hardcodeados en español → el inglés no
@@ -82,8 +83,20 @@ struct SettingsView: View {
                                 showFolderPicker = true
                             }
                             settingsDivider
+                            settingsToggleRow(
+                                title: Localization.localized("settings.scanOnlyNewSongs"),
+                                subtitle: Localization.localized("settings.scanOnlyNewSongsSubtitle"),
+                                icon: "magnifyingglass",
+                                color: .teal,
+                                isOn: $scanOnlyNewSongs
+                            )
+                            settingsDivider
                             settingsButton(title: Localization.localized("settings.updateLibrary"), subtitle: fileAccessService.isScanning ? Localization.localized("settings.scanning") : Localization.localized("settings.rescanFolders"), icon: "arrow.clockwise", color: .orange) {
-                                fileAccessService.refreshAllFolders()
+                                if scanOnlyNewSongs {
+                                    fileAccessService.scanForNewSongsOnly()
+                                } else {
+                                    fileAccessService.refreshAllFolders()
+                                }
                             }
                             .disabled(fileAccessService.isScanning)
                         }

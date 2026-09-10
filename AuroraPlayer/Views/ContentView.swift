@@ -265,7 +265,11 @@ struct ContentView: View {
     private func syncFirstTimeIndexing() {
         let scanning = fileAccessService.isScanning
         let libraryEmpty = fileAccessService.songs.isEmpty && fileAccessService.pendingSongsCount == 0
-        if scanning && libraryEmpty {
+        // ✅ Solo mostrar tarjeta grande en la PRIMERA carga (nunca se han cargado canciones)
+        // En cargas posteriores, aunque `libraryEmpty` sea true (porque rescanAllFolders
+        // limpia songs), NO se muestra la tarjeta grande.
+        let isVeryFirstLoad = scanning && libraryEmpty && fileAccessService.isFirstLibraryLoad
+        if isVeryFirstLoad {
             if !firstTimeIndexing {
                 withAnimation(.easeOut(duration: 0.3)) { firstTimeIndexing = true }
             }
@@ -432,9 +436,13 @@ struct ContentView: View {
                 .listRowBackground(Color.clear)
             }
         } else {
-            compactIndexingRow
-                .listRowSeparator(.hidden)
-                .listRowBackground(Color.clear)
+            // ✅ ESCANEO CON CANCIONES EXISTENTES: mostrar indicador compacto
+            // SOLO cuando se están agregando canciones nuevas (escaneo incremental)
+            if fileAccessService.isScanning && fileAccessService.scanTotal > 0 {
+                compactIndexingRow
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+            }
             sortButtonRow
                 .listRowSeparator(.hidden)
                 .listRowBackground(Color.clear)
@@ -638,6 +646,12 @@ struct ContentView: View {
                 .listRowSeparator(.hidden).listRowBackground(Color.clear)
             }
         } else {
+            // ✅ ESCANEO CON ÁLBUMES EXISTENTES: mostrar indicador compacto
+            if fileAccessService.isScanning && fileAccessService.scanTotal > 0 {
+                compactIndexingRow
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+            }
             albumSortButtonRow
                 .listRowSeparator(.hidden)
                 .listRowBackground(Color.clear)
@@ -675,6 +689,12 @@ struct ContentView: View {
                 .listRowSeparator(.hidden).listRowBackground(Color.clear)
             }
         } else {
+            // ✅ ESCANEO CON ARTISTAS EXISTENTES: mostrar indicador compacto
+            if fileAccessService.isScanning && fileAccessService.scanTotal > 0 {
+                compactIndexingRow
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+            }
             artistSortButtonRow
                 .listRowSeparator(.hidden)
                 .listRowBackground(Color.clear)
@@ -1014,88 +1034,178 @@ struct ContentView: View {
         guard !hasRestored else { return }
         hasRestored = true
         audioEngine.restoreState(with: fileAccessService.songs)
+        // ✅ Escaneo en segundo plano para detectar canciones nuevas
+        // Solo se ejecuta si ya se cargaron canciones previamente (no es primera vez)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            fileAccessService.backgroundScanForNewSongs()
+        }
     }
 }
 
 struct SplashView: View {
-    @State private var appear = false
+    @State private var logoScale: CGFloat = 0.8
+    @State private var logoOpacity: Double = 0
+    @State private var titleOffset: CGFloat = 20
+    @State private var titleOpacity: Double = 0
+    @State private var pulseScale: CGFloat = 1.0
+    @State private var pulseOpacity: Double = 0
     @Environment(\.colorScheme) private var colorScheme
-
+    
     var body: some View {
         ZStack {
-            // ✅ Fondo que respeta el esquema de color: evita el flash
-            // negro→blanco cuando la app abre en modo claro
-            (colorScheme == .dark
-                ? Color.black
-                : Color(UIColor.systemBackground))
-            .ignoresSafeArea()
-
-            // ✅ Aurora estática: sin animación de rotación para evitar bugs visuales
-            AngularGradient(
+            // ✅ Fondo sólido que respeta el esquema de color
+            (colorScheme == .dark ? Color.black : Color(UIColor.systemBackground))
+                .ignoresSafeArea()
+            
+            // ✅ Efecto de resplandor sutil (sin AngularGradient problemático)
+            RadialGradient(
                 colors: [
-                    AppTheme.accent.opacity(0.0),
-                    AppTheme.accent.opacity(0.25),
-                    Color(red: 0.25, green: 0.55, blue: 1.0).opacity(0.2),
-                    Color(red: 0.95, green: 0.35, blue: 0.65).opacity(0.15),
-                    AppTheme.accent.opacity(0.0)
+                    AppTheme.accent.opacity(colorScheme == .dark ? 0.08 : 0.04),
+                    Color.clear
                 ],
                 center: .center,
-                startAngle: .degrees(0),
-                endAngle: .degrees(200)
+                startRadius: 50,
+                endRadius: 250
             )
-            .frame(width: 480, height: 480)
-            .opacity(colorScheme == .dark ? 0.6 : 0.4)
-
-            VStack(spacing: 32) {
-                // ✅ Logo con animación simple de aparición
+            .ignoresSafeArea()
+            
+            VStack(spacing: 0) {
+                Spacer()
+                
+                // ✅ Logo con animación de escala y opacidad suave
                 ZStack {
-                    // Halo exterior
+                    // Halo pulsante exterior
                     Circle()
-                        .stroke(
-                            LinearGradient(
-                                colors: [AppTheme.accent.opacity(0.3), AppTheme.accent.opacity(0.05)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            ),
-                            lineWidth: 1.5
+                        .fill(
+                            RadialGradient(
+                                colors: [
+                                    AppTheme.accent.opacity(0.15),
+                                    AppTheme.accent.opacity(0.05),
+                                    Color.clear
+                                ],
+                                center: .center,
+                                startRadius: 30,
+                                endRadius: 80
+                            )
                         )
-                        .frame(width: 140, height: 140)
-
-                    // Icono principal
-                    Image(systemName: "music.note")
-                        .font(.system(size: 52, weight: .light))
-                        .foregroundStyle(AppTheme.accent)
-                        .shadow(color: AppTheme.accent.opacity(0.5), radius: 12)
-                }
-                .opacity(appear ? 1 : 0)
-                .scaleEffect(appear ? 1.0 : 0.9)
-                .animation(.easeOut(duration: 0.5).delay(0.1), value: appear)
-
-                VStack(spacing: 14) {
-                    Text("Aurora Player")
-                        .font(.system(size: 30, weight: .bold, design: .rounded))
-                        .foregroundStyle(
+                        .frame(width: 160, height: 160)
+                        .scaleEffect(pulseScale)
+                        .opacity(pulseOpacity)
+                    
+                    // Círculo del logo
+                    Circle()
+                        .fill(
                             LinearGradient(
-                                colors: [colorScheme == .dark ? .white : Color(UIColor.label), AppTheme.accent],
+                                colors: [
+                                    AppTheme.accent.opacity(0.12),
+                                    AppTheme.accent.opacity(0.04)
+                                ],
                                 startPoint: .topLeading,
                                 endPoint: .bottomTrailing
                             )
                         )
-
-                    // ✅ Indicador de progreso minimalista
-                    ProgressView()
-                        .progressViewStyle(CircularProgressViewStyle(tint: AppTheme.accent))
-                        .scaleEffect(0.8)
-                        .opacity(0.7)
+                        .frame(width: 110, height: 110)
+                        .overlay {
+                            Circle()
+                                .stroke(
+                                    LinearGradient(
+                                        colors: [
+                                            AppTheme.accent.opacity(0.4),
+                                            AppTheme.accent.opacity(0.1)
+                                        ],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    ),
+                                    lineWidth: 1.5
+                                )
+                        }
+                    
+                    // Icono principal
+                    Image(systemName: "music.note")
+                        .font(.system(size: 44, weight: .light))
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: [AppTheme.accent, AppTheme.accent.opacity(0.7)],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
+                        .shadow(color: AppTheme.accent.opacity(0.3), radius: 8, y: 4)
                 }
-                .opacity(appear ? 1 : 0)
-                .offset(y: appear ? 0 : 10)
-                .animation(.easeOut(duration: 0.5).delay(0.2), value: appear)
+                .scaleEffect(logoScale)
+                .opacity(logoOpacity)
+                
+                Spacer().frame(height: 32)
+                
+                // ✅ Título con animación de slide hacia arriba
+                VStack(spacing: 12) {
+                    Text("Aurora Player")
+                        .font(.system(size: 28, weight: .bold, design: .rounded))
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: [
+                                    colorScheme == .dark ? .white : Color(UIColor.label),
+                                    AppTheme.accent
+                                ],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                    
+                    // ✅ Indicador de progreso personalizado
+                    LoadingDots()
+                }
+                .opacity(titleOpacity)
+                .offset(y: titleOffset)
+                
+                Spacer()
             }
         }
         .allowsHitTesting(false)
         .onAppear {
-            appear = true
+            // ✅ Animación del logo
+            withAnimation(.easeOut(duration: 0.6)) {
+                logoScale = 1.0
+                logoOpacity = 1.0
+            }
+            
+            // ✅ Animación del título (con delay)
+            withAnimation(.easeOut(duration: 0.5).delay(0.25)) {
+                titleOffset = 0
+                titleOpacity = 1.0
+            }
+            
+            // ✅ Animación de pulso del halo
+            withAnimation(.easeInOut(duration: 1.2).delay(0.4)) {
+                pulseScale = 1.15
+                pulseOpacity = 1.0
+            }
+        }
+    }
+}
+
+// ✅ Indicador de carga personalizado (puntos animados)
+struct LoadingDots: View {
+    @State private var animating = false
+    
+    var body: some View {
+        HStack(spacing: 6) {
+            ForEach(0..<3, id: \.self) { index in
+                Circle()
+                    .fill(AppTheme.accent.opacity(0.7))
+                    .frame(width: 6, height: 6)
+                    .scaleEffect(animating ? 1.0 : 0.5)
+                    .opacity(animating ? 1.0 : 0.4)
+                    .animation(
+                        .easeInOut(duration: 0.6)
+                            .repeatForever()
+                            .delay(Double(index) * 0.15),
+                        value: animating
+                    )
+            }
+        }
+        .onAppear {
+            animating = true
         }
     }
 }

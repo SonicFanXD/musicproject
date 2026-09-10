@@ -49,6 +49,10 @@ class FileAccessService: ObservableObject {
     // ✅ Splash: indica si el caché de biblioteca ya terminó de cargar,
     // para que la UI muestre las canciones desde el primer frame.
     @Published private(set) var isInitialLibraryLoaded = false
+    // ✅ Flag para saber si alguna vez se cargaron canciones (para diferenciar primera vez de re-escaneo)
+    private var hasEverLoadedSongs = false
+    // ✅ Propiedad pública para que la UI sepa si es la primera carga
+    var isFirstLibraryLoad: Bool { !hasEverLoadedSongs }
 
     private let defaultsKey = "com.aurora.musicFolders"
     private let filesDefaultsKey = "com.aurora.musicFiles"
@@ -258,6 +262,41 @@ class FileAccessService: ObservableObject {
         }
     }
 
+    // ✅ Escaneo incremental: solo agrega canciones nuevas sin borrar las existentes
+    func scanForNewSongsOnly() {
+        guard !isScanning else { return }
+        beginIncrementalProgressIfNeeded()
+        scanGeneration += 1
+        // ✅ Guardar las URLs ya indexadas para no duplicar
+        indexedSongURLs = Set(songs.map { $0.url })
+        let folderURLs = folders.map { $0.url }
+        let fileURLs = files.map { $0.url }
+        AppLog.info(.library, "Escaneo incremental iniciado: \(folders.count) carpetas, \(files.count) archivos")
+        guard !folderURLs.isEmpty || !fileURLs.isEmpty else { return }
+        for folder in folders {
+            resolveAndScan(folder)
+        }
+        for file in files {
+            resolveAndScan(file)
+        }
+    }
+    
+    // ✅ Escaneo en segundo plano al inicio (verificar si hay canciones nuevas)
+    func backgroundScanForNewSongs() {
+        guard !isScanning, hasEverLoadedSongs, !folders.isEmpty else { return }
+        // ✅ Guardar las URLs ya indexadas para no duplicar
+        indexedSongURLs = Set(songs.map { $0.url })
+        beginIncrementalProgressIfNeeded()
+        scanGeneration += 1
+        AppLog.info(.library, "Escaneo en segundo plano iniciado: \(folders.count) carpetas")
+        for folder in folders {
+            resolveAndScan(folder)
+        }
+        for file in files {
+            resolveAndScan(file)
+        }
+    }
+
     private func resolveAndScan(_ folder: MusicFolder) {
         if let previousURL = activeURLs[folder.id] {
             previousURL.stopAccessingSecurityScopedResource()
@@ -375,8 +414,12 @@ class FileAccessService: ObservableObject {
     private func registerMetadataBatch(_ urls: [URL], generation: Int) {
         DispatchQueue.main.async { [weak self] in
             guard let self, generation == self.scanGeneration else { return }
-            self.scanTotal += urls.count
-            self.enqueueMetadataBatch(urls, generation: generation)
+            // ✅ ESCANEO INCREMENTAL: filtrar URLs ya indexadas para no contarlas
+            // Esto asegura que scanTotal refleje solo las canciones nuevas
+            let newUrls = urls.filter { !self.indexedSongURLs.contains($0) }
+            guard !newUrls.isEmpty else { return }
+            self.scanTotal += newUrls.count
+            self.enqueueMetadataBatch(newUrls, generation: generation)
         }
     }
 
@@ -1420,6 +1463,7 @@ class FileAccessService: ObservableObject {
         let uniqueCached = dedupeSongsByUrl(cachedSongs)
         songs = uniqueCached
         isInitialLibraryLoaded = true
+        hasEverLoadedSongs = true
         indexedSongURLs = Set(uniqueCached.map(\.url))
         if uniqueCached.isEmpty && (!folders.isEmpty || !files.isEmpty) {
             rescanAllFolders()
