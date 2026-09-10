@@ -264,15 +264,12 @@ class FileAccessService: ObservableObject {
 
     // ✅ Escaneo incremental: solo agrega canciones nuevas sin borrar las existentes
     func scanForNewSongsOnly() {
-        guard !isScanning else { return }
+        guard !isScanning, !folders.isEmpty || !files.isEmpty else { return }
         beginIncrementalProgressIfNeeded()
         scanGeneration += 1
         // ✅ Guardar las URLs ya indexadas para no duplicar
         indexedSongURLs = Set(songs.map { $0.url })
-        let folderURLs = folders.map { $0.url }
-        let fileURLs = files.map { $0.url }
         AppLog.info(.library, "Escaneo incremental iniciado: \(folders.count) carpetas, \(files.count) archivos")
-        guard !folderURLs.isEmpty || !fileURLs.isEmpty else { return }
         for folder in folders {
             resolveAndScan(folder)
         }
@@ -283,7 +280,7 @@ class FileAccessService: ObservableObject {
     
     // ✅ Escaneo en segundo plano al inicio (verificar si hay canciones nuevas)
     func backgroundScanForNewSongs() {
-        guard !isScanning, hasEverLoadedSongs, !folders.isEmpty else { return }
+        guard !isScanning, hasEverLoadedSongs, !folders.isEmpty || !files.isEmpty else { return }
         // ✅ Guardar las URLs ya indexadas para no duplicar
         indexedSongURLs = Set(songs.map { $0.url })
         beginIncrementalProgressIfNeeded()
