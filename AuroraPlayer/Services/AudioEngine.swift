@@ -892,6 +892,15 @@ class AudioEngine: NSObject, ObservableObject {
     }
 
     func play(song: Song, from songPlaylist: [Song]? = nil) {
+        // ✅ FIX shuffle + cola pre-encadenada: play() reemplaza la playlist
+        // por completo, así que cualquier canción pre-programada por
+        // adelantado (scheduleAheadIfPossible: chainedAhead*) y la precarga
+        // en background (preloadedNext*) quedan obsoletas. Sin limpiarlas,
+        // su callback .dataPlayedBack podía disparar una transición fantasma
+        // a mitad de la canción nueva (patrón usado en seek/resume).
+        scheduleGeneration += 1
+        clearChainedAhead()
+        clearPreloadedNext()
         if let songPlaylist = songPlaylist {
             self.playlist = songPlaylist
             if let index = songPlaylist.firstIndex(where: { $0.id == song.id }) {
@@ -900,9 +909,30 @@ class AudioEngine: NSObject, ObservableObject {
                 self.playlist.insert(song, at: 0)
                 currentIndex = 0
             }
+            // ✅ FIX shuffle: el shuffle es un estado GLOBAL del motor, pero
+            // play() reemplazaba la playlist sin aplicarlo. Si el shuffle
+            // estaba activo, la "siguiente" canción salía en orden secuencial
+            // (y la UI no reflejaba aleatorio). Ahora se re-aplica el orden
+            // aleatorio con la canción actual fija en la posición 0, igual
+            // que hace toggleShuffle().
+            if isShuffleEnabled, playlist.count > 1 {
+                originalPlaylist = songPlaylist.contains(where: { $0.id == song.id })
+                    ? songPlaylist
+                    : playlist
+                let current = playlist[currentIndex]
+                playlist.shuffle()
+                if let newIndex = playlist.firstIndex(where: { $0.id == current.id }) {
+                    playlist.remove(at: newIndex)
+                    playlist.insert(current, at: 0)
+                    currentIndex = 0
+                }
+            } else {
+                originalPlaylist = []
+            }
         } else {
             self.playlist = [song]
             currentIndex = 0
+            originalPlaylist = []
         }
 
         updatePlaybackQueue()

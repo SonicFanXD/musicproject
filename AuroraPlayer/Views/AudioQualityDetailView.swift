@@ -170,17 +170,7 @@ struct AudioQualityDetailView: View {
     }
 
     private var isLossless: Bool {
-        guard let song = song else { return false }
-        let ext = song.url.pathExtension.uppercased()
-        // Formats que son lossless por definición (sin contar M4A que puede ser AAC)
-        let losslessFormats: Set<String> = ["FLAC", "WAV", "WAVE", "AIFF", "AIF", "ALAC"]
-        // M4A puede ser AAC (comprimido) o ALAC (lossless) - usar sampleRate como heurística
-        // CD Quality (44.1kHz) y 48kHz NO son Hi-Res, son lossless estándar
-        // Solo > 48kHz (96kHz, 192kHz, etc.) se considera Hi-Res ALAC
-        if ext == "M4A" {
-            return song.sampleRate > 48000 || song.bitDepth >= 24
-        }
-        return losslessFormats.contains(ext)
+        song?.isLossless ?? false
     }
 
     /// Categoría de calidad basada en sampleRate (kHz)

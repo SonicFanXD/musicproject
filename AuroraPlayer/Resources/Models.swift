@@ -217,6 +217,31 @@ extension Song {
         return components.joined(separator: " • ")
     }
 
+    /// ¿Es Hi-Res? (sampleRate estrictamente mayor a 48 kHz).
+    /// CD Quality (44.1 kHz) y 48 kHz NO son Hi-Res.
+    var isHiRes: Bool {
+        sampleRate > 48000
+    }
+
+    /// ¿Es lossless? Centraliza la heurística (formatos sin pérdida +
+    /// caso M4A que puede ser AAC con pérdida o ALAC sin pérdida).
+    /// Nota: FileAccessService guarda formatDescription SOLO como extensión
+    /// (ej. "FLAC", "M4A", "MP3") — no contiene "ALAC" — así que la rama
+    /// principal es la extensión del archivo.
+    var isLossless: Bool {
+        let ext = url.pathExtension.uppercased()
+        let losslessFormats: Set<String> = ["FLAC", "WAV", "WAVE", "AIFF", "AIF", "ALAC"]
+        if losslessFormats.contains(ext) {
+            return true
+        }
+        // M4A puede ser AAC (comprimido, bitDepth suele ser 0) o ALAC
+        // (lossless, normalmente 16/24-bit). 48 kHz por sí solo NO basta.
+        if ext == "M4A" {
+            return bitDepth >= 16 || sampleRate > 48000
+        }
+        return false
+    }
+
     /// Descripción detallada del formato de audio basada en metadatos reales del archivo
     var audioQualityDescription: String {
         var parts: [String] = []

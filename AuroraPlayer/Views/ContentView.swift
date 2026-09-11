@@ -864,10 +864,12 @@ struct ContentView: View {
             }
             
             Button {
-                if let nextIndex = fileAccessService.songs.firstIndex(where: { $0.id == song.id }) {
-                    let playNextSongs = Array(fileAccessService.songs.suffix(from: min(nextIndex + 1, fileAccessService.songs.count)))
+                // ✅ Mismo contexto filtrado que playSong(): el "siguiente"
+                // se resuelve dentro de la lista visible (búsqueda/orden).
+                if let nextIndex = filteredSongs.firstIndex(where: { $0.id == song.id }) {
+                    let playNextSongs = Array(filteredSongs.suffix(from: min(nextIndex + 1, filteredSongs.count)))
                     if let nextSong = playNextSongs.first {
-                        audioEngine.play(song: nextSong, from: fileAccessService.songs)
+                        audioEngine.play(song: nextSong, from: filteredSongs)
                     }
                 }
             } label: {
@@ -992,15 +994,15 @@ struct ContentView: View {
                 ? albums.sorted { a, b in
                     let ya = year(a), yb = year(b)
                     if ya == nil && yb == nil { return false }
-                    if ya == nil { return false }   // nil va al final en ascendente
-                    if yb == nil { return true }    // a tiene año, b no → a va primero
+                    if ya == nil { return true }    // nil va al final en ascendente
+                    if yb == nil { return false }   // a tiene año, b no → a va primero (ya sabemos que yb no es nil)
                     return ya! < yb!
                 }
                 : albums.sorted { a, b in
                     let ya = year(a), yb = year(b)
                     if ya == nil && yb == nil { return false }
-                    if yb == nil { return false }   // nil va al final en descendente
-                    if ya == nil { return true }    // a no tiene año, b sí → b va primero
+                    if ya == nil { return true }    // nil va al final en descendente
+                    if yb == nil { return false }   // a tiene año, b no → a va primero (ya sabemos que yb no es nil)
                     return ya! > yb!
                 }
         }
@@ -1041,7 +1043,11 @@ struct ContentView: View {
 
     private func playSong(_ song: Song) {
         Haptics.light()
-        audioEngine.play(song: song, from: fileAccessService.songs)
+        // ✅ FIX reproducción desde búsqueda: pasar la lista FILTRADA
+        // (con búsqueda activa y orden del usuario) en vez de la lista
+        // completa. Así al terminar la canción continúa con los
+        // resultados y el repeat-all repite ese mismo contexto.
+        audioEngine.play(song: song, from: filteredSongs)
     }
 
     private func restoreLibraryIfNeeded() {
