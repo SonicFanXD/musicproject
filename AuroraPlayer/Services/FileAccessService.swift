@@ -395,6 +395,11 @@ class FileAccessService: ObservableObject {
             let coordinator = NSFileCoordinator()
             var coordinationError: NSError?
 
+            // ✅ TODO el trabajo del enumerador vive DENTRO del closure de
+            // coordinate (Swift 6 no permite mutar vars fuera y leerlas
+            // después). El flush final del lote y el registro de claves
+            // vistas también ocurren aquí dentro.
+            let folderKnownKeys = knownKeys
             coordinator.coordinate(
                 readingItemAt: url,
                 options: [],
@@ -426,7 +431,7 @@ class FileAccessService: ObservableObject {
                     fileCount += 1
                     let key = Self.libraryKey(for: fileURL)
                     seenKeys.insert(key)
-                    guard !knownKeys.contains(key) else { continue }
+                    guard !folderKnownKeys.contains(key) else { continue }
                     batch.append(fileURL)
                     if batch.count == self.metadataBatchSize {
                         self.registerMetadataBatch(batch, generation: generation)
@@ -435,16 +440,16 @@ class FileAccessService: ObservableObject {
                 }
                 if !batch.isEmpty { self.registerMetadataBatch(batch, generation: generation) }
                 AppLog.debug(.library, "Carpeta \(coordinatedURL.lastPathComponent): \(fileCount) archivos encontrados")
-            }
-            // ✅ Registrar TODAS las URLs vistas (indexadas o no) para poder
-            // podar al final las canciones borradas del disco. Un solo envío
-            // al main por carpeta (no uno por archivo): con 722 canciones
-            // eran 722 dispatches que saturaban el main.
-            let folderSeenKeys = seenKeys
-            if !folderSeenKeys.isEmpty {
-                DispatchQueue.main.async { [weak self] in
-                    guard let self, generation == self.scanGeneration else { return }
-                    self.seenOnDiskKeys.formUnion(folderSeenKeys)
+                // ✅ Registrar TODAS las URLs vistas (indexadas o no) para poder
+                // podar al final las canciones borradas del disco. Un solo envío
+                // al main por carpeta (no uno por archivo): con 722 canciones
+                // eran 722 dispatches que saturaban el main.
+                let folderSeenKeys = seenKeys
+                if !folderSeenKeys.isEmpty {
+                    DispatchQueue.main.async { [weak self] in
+                        guard let self, generation == self.scanGeneration else { return }
+                        self.seenOnDiskKeys.formUnion(folderSeenKeys)
+                    }
                 }
             }
 
