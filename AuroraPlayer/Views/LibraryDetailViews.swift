@@ -231,8 +231,13 @@ struct AlbumDetailView: View {
         guard !withRate.isEmpty else { return nil }
         guard let majority = Dictionary(grouping: withRate, by: { $0.sampleRate })
             .max(by: { $0.value.count < $1.value.count }) else { return nil }
-        let bits = Dictionary(grouping: majority.value.compactMap { $0.bitDepth > 0 ? $0.bitDepth : nil }, by: { $0 })
-            .max { $0.value.count < $1.value.count }?.key ?? 0
+        let bitsDict = Dictionary(grouping: majority.value.compactMap { $0.bitDepth > 0 ? $0.bitDepth : nil }, by: { $0 })
+        let bits: Int
+        if bitsDict.isEmpty {
+            bits = 0  // No hay bitDepth disponible para las canciones del grupo mayoritario
+        } else {
+            bits = bitsDict.max { $0.value.count < $1.value.count }?.key ?? 0
+        }
         return (bits, majority.key)
     }
 
@@ -326,6 +331,24 @@ struct AlbumDetailView: View {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy"
         return formatter.string(from: date)
+    }
+
+    private func formatLongDuration(_ seconds: TimeInterval) -> String {
+        let totalSeconds = Int(seconds)
+        let totalMinutes = totalSeconds / 60
+        let remainingSeconds = totalSeconds % 60
+        if totalMinutes >= 60 {
+            let hours = totalMinutes / 60
+            let mins = totalMinutes % 60
+            if remainingSeconds > 0 {
+                return "\(hours) h \(mins) min \(remainingSeconds) s"
+            }
+            return mins > 0 ? "\(hours) h \(mins) min" : "\(hours) h"
+        }
+        if remainingSeconds > 0 {
+            return "\(totalMinutes) min \(remainingSeconds) s"
+        }
+        return "\(totalMinutes) min"
     }
 }
 

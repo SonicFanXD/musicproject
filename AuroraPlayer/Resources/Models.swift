@@ -264,9 +264,19 @@ struct Album: Identifiable, Equatable {
         songs.first(where: { $0.artworkData != nil })?.artwork
     }
 
-    // ✅ Fecha de salida del álbum (la más antigua de las canciones)
+    // ✅ Fecha de salida del álbum (la más común entre las canciones,
+    // ya que el álbum se lanza en una fecha específica y todas las canciones
+    // deberían tener esa misma fecha; si hay variaciones, usamos la modal).
     var releaseDate: Date? {
-        songs.compactMap { $0.releaseDate }.min()
+        let dates = songs.compactMap { $0.releaseDate }
+        guard !dates.isEmpty else { return nil }
+        // Buscar la fecha más común (moda)
+        let grouped = Dictionary(grouping: dates) { $0 }
+        if let mostCommon = grouped.max(by: { $0.value.count < $1.value.count }) {
+            return mostCommon.key
+        }
+        // Fallback: si todas son únicas, usar la más reciente
+        return dates.max()
     }
 
     // ✅ UNIFICADO: delega en la caché/algorithm compartidos de AppTheme —
