@@ -316,16 +316,6 @@ struct AlbumDetailView: View {
         .nativeGlassCapsule()
     }
 
-    private func formatLongDuration(_ seconds: TimeInterval) -> String {
-        let minutes = Int(seconds) / 60
-        if minutes >= 60 {
-            let hours = minutes / 60
-            let rem = minutes % 60
-            return rem > 0 ? "\(hours) h \(rem) min" : "\(hours) h"
-        }
-        return "\(minutes) min"
-    }
-
     // ✅ Formatear año de salida del álbum
     private func formatYear(_ date: Date) -> String {
         let formatter = DateFormatter()
