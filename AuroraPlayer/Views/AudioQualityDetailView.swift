@@ -175,9 +175,10 @@ struct AudioQualityDetailView: View {
         // Formats que son lossless por definición (sin contar M4A que puede ser AAC)
         let losslessFormats: Set<String> = ["FLAC", "WAV", "WAVE", "AIFF", "AIF", "ALAC"]
         // M4A puede ser AAC (comprimido) o ALAC (lossless) - usar sampleRate como heurística
+        // CD Quality (44.1kHz) y 48kHz NO son Hi-Res, son lossless estándar
+        // Solo > 48kHz (96kHz, 192kHz, etc.) se considera Hi-Res ALAC
         if ext == "M4A" {
-            // Si sampleRate >= 48000, probablemente es Hi-Res ALAC; si es 44100 probablemente AAC
-            return song.sampleRate >= 48000 || song.bitDepth >= 24
+            return song.sampleRate > 48000 || song.bitDepth >= 24
         }
         return losslessFormats.contains(ext)
     }
@@ -186,12 +187,11 @@ struct AudioQualityDetailView: View {
     private var qualityCategory: String {
         guard let song = song else { return Localization.localized("quality.unknownQuality") }
         let rate = song.sampleRate
-        let bits = song.bitDepth
         
         if rate == 0 { return Localization.localized("quality.unknownQuality") }
         
         // Hi-Res: sampleRate > 48000 kHz (96 kHz, 192 kHz, etc.)
-        // CD Quality (44.1kHz) NO es Hi-Res, es lossless estándar
+        // CD Quality (44.1kHz) y 48kHz NO son Hi-Res, son lossless estándar
         if rate > 48000 {
             return Localization.localized("quality.hiResAudio")
         }
@@ -257,7 +257,11 @@ struct AudioQualityDetailView: View {
         let format = song.formatDescription.isEmpty ? song.url.pathExtension.uppercased() : song.formatDescription
         parts.append(format)
         if song.bitDepth > 0 { parts.append("\(song.bitDepth)-bit") }
-        if song.sampleRate > 0 { parts.append(song.sampleRate >= 48000 ? "\(Int(song.sampleRate / 1000)) kHz" : "\(Int(song.sampleRate)) Hz") }
+        if song.sampleRate > 0 {
+            let kHz = Int(song.sampleRate / 1000)
+            let label = song.sampleRate > 48000 ? "\(kHz) kHz (Hi-Res)" : "\(kHz) kHz"
+            parts.append(label)
+        }
         return parts.joined(separator: " · ")
     }
 
@@ -329,7 +333,9 @@ struct AudioQualityDetailView: View {
 
     private var sampleRateLabel: String {
         guard let song = song, song.sampleRate > 0 else { return "—" }
-        return song.sampleRate >= 48000 ? "\(Int(song.sampleRate / 1000)) kHz (Hi-Res)" : "\(Int(song.sampleRate)) Hz"
+        let kHz = Int(song.sampleRate / 1000)
+        let label = song.sampleRate > 48000 ? "\(kHz) kHz (Hi-Res)" : "\(kHz) kHz"
+        return label
     }
 
     private var channelsLabel: String {

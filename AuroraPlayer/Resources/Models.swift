@@ -246,7 +246,7 @@ extension Song {
             parts.append("\(channelCount).1")
         }
 
-        if sampleRate >= 48000 {
+        if sampleRate > 48000 {
             parts.append(Localization.localized("audio.quality.hiRes"))
         }
 

@@ -875,7 +875,7 @@ struct ContentView: View {
             }
             
             Button {
-                audioEngine.play(song: song, from: currentFilteredSongs)
+                audioEngine.play(song: song, from: filteredSongs)
             } label: {
                 Label(Localization.localized("context.playNow"), systemImage: "play.circle.fill")
             }

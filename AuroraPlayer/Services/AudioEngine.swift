@@ -1686,7 +1686,7 @@ class AudioEngine: NSObject, ObservableObject {
             self.outputChannelCount = newChannels
             // ✅ Localizado: antes "Estándar"/"Estéreo" quedaban fijos en español
             // aunque la app estuviera en inglés.
-            let rateInfo = newRate >= 48000 ? "Hi-Res" : Localization.localized("quality.standard")
+            let rateInfo = newRate > 48000 ? "Hi-Res" : Localization.localized("quality.standard")
             let channelInfo = newChannels >= 2 ? Localization.localized("audio.quality.stereo") : Localization.localized("audio.quality.mono")
             self.audioQualityInfo = "\(rateInfo) • \(Int(newRate))Hz • \(channelInfo)"
         }
