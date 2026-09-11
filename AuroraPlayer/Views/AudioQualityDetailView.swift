@@ -190,8 +190,9 @@ struct AudioQualityDetailView: View {
         
         if rate == 0 { return Localization.localized("quality.unknownQuality") }
         
-        // Hi-Res: sampleRate >= 48000 kHz (48 kHz, 96 kHz, 192 kHz)
-        if rate >= 48000 {
+        // Hi-Res: sampleRate > 48000 kHz (96 kHz, 192 kHz, etc.)
+        // CD Quality (44.1kHz) NO es Hi-Res, es lossless estándar
+        if rate > 48000 {
             return Localization.localized("quality.hiResAudio")
         }
         

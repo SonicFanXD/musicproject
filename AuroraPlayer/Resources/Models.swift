@@ -246,7 +246,7 @@ extension Song {
             parts.append("\(channelCount).1")
         }
 
-        if sampleRate > 48000 || bitDepth > 16 {
+        if sampleRate >= 48000 {
             parts.append(Localization.localized("audio.quality.hiRes"))
         }
 
@@ -265,10 +265,12 @@ struct Album: Identifiable, Equatable {
     }
 
     // ✅ Fecha de salida del álbum usada para orden y detail.
-    // Usamos la fecha más reciente entre las canciones del álbum.
+    // Usamos la fecha más antigua entre las canciones del álbum.
+    // Esto suele ser la fecha de lanzamiento original del álbum (single de lanzamiento
+    // o primera pista), que es más útil para ordenar y mostrar al usuario.
     // Si ninguna canción tiene fecha, retornar nil (álbum sin año).
     var releaseDate: Date? {
-        songs.compactMap { $0.releaseDate }.max()
+        songs.compactMap { $0.releaseDate }.min()
     }
 
     // ✅ UNIFICADO: delega en la caché/algorithm compartidos de AppTheme —

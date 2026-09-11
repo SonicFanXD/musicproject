@@ -875,7 +875,7 @@ struct ContentView: View {
             }
             
             Button {
-                audioEngine.play(song: song, from: fileAccessService.songs)
+                audioEngine.play(song: song, from: currentFilteredSongs)
             } label: {
                 Label(Localization.localized("context.playNow"), systemImage: "play.circle.fill")
             }
@@ -999,8 +999,8 @@ struct ContentView: View {
                 : albums.sorted { a, b in
                     let ya = year(a), yb = year(b)
                     if ya == nil && yb == nil { return false }
-                    if ya == nil { return false }   // nil va al final en descendente (CORREGIDO)
-                    if yb == nil { return true }    // a tiene año, b no → a va primero
+                    if yb == nil { return false }   // nil va al final en descendente
+                    if ya == nil { return true }    // a no tiene año, b sí → b va primero
                     return ya! > yb!
                 }
         }
