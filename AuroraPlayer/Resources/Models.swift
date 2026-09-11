@@ -264,19 +264,29 @@ struct Album: Identifiable, Equatable {
         songs.first(where: { $0.artworkData != nil })?.artwork
     }
 
-    // ✅ Fecha de salida del álbum (la más común entre las canciones,
-    // ya que el álbum se lanza en una fecha específica y todas las canciones
-    // deberían tener esa misma fecha; si hay variaciones, usamos la modal).
+    // ✅ Fecha de salida del álbum usada para orden y detail.
+    // Estrategia:
+    // - Si una mayoría de canciones comparten el mismo año, usar la fecha de
+    //   esa canción (moda por año), por si las fechas reales tienen distinto mes/día
+    //   pero el año es el mismo.
+    // - Si no hay una moda clara (todos los años únicos o empate), usar la fecha
+    //   más reciente entre las canciones.
+    // - Si ninguna canción tiene fecha, retornar nil ( álbum sin año ).
     var releaseDate: Date? {
         let dates = songs.compactMap { $0.releaseDate }
         guard !dates.isEmpty else { return nil }
-        // Buscar la fecha más común (moda)
-        let grouped = Dictionary(grouping: dates) { $0 }
-        if let mostCommon = grouped.max(by: { $0.value.count < $1.value.count }) {
-            return mostCommon.key
+
+        // Moda por año
+        let groupedByYear = Dictionary(grouping: dates) { Calendar.current.component(.year, from: $0) }
+        let yearCounts = groupedByYear.mapValues { $0.count }
+        guard let maxCount = yearCounts.values.max(),
+              maxCount > 1,
+              let mostCommonYear = yearCounts.first(where: { $0.value == maxCount })?.key,
+              let representative = groupedByYear[mostCommonYear]?.first else {
+            // Sin moda clara: usar la fecha más reciente
+            return dates.max()
         }
-        // Fallback: si todas son únicas, usar la más reciente
-        return dates.max()
+        return representative
     }
 
     // ✅ UNIFICADO: delega en la caché/algorithm compartidos de AppTheme —

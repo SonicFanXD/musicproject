@@ -984,11 +984,26 @@ struct ContentView: View {
             return ascending ? albums.sorted { $0.songs.count < $1.songs.count }
                              : albums.sorted { $0.songs.count > $1.songs.count }
         case .year:
-            let year = { (album: Album) -> Date in
-                album.songs.compactMap(\.releaseDate).min() ?? Date.distantPast
+            let year = { (album: Album) -> Int? in
+                album.releaseDate.map { Calendar.current.component(.year, from: $0) }
             }
-            return ascending ? albums.sorted { year($0) < year($1) }
-                             : albums.sorted { year($0) > year($1) }
+            // Los álbumes sin fecha se ordenan al final (año nil = "infinito" en ascendente,
+            // "-infinito" en descendente → ambos van al final)
+            return ascending
+                ? albums.sorted { a, b in
+                    let ya = year(a), yb = year(b)
+                    if ya == nil && yb == nil { return false }
+                    if ya == nil { return false }   // nil va al final en ascendente
+                    if yb == nil { return true }
+                    return ya! < yb!
+                }
+                : albums.sorted { a, b in
+                    let ya = year(a), yb = year(b)
+                    if ya == nil && yb == nil { return false }
+                    if ya == nil { return true }    // nil va al final en descendente
+                    if yb == nil { return false }
+                    return ya! > yb!
+                }
         }
     }
 
