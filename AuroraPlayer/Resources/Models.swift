@@ -269,9 +269,10 @@ struct Album: Identifiable, Equatable {
     // - Si una mayoría de canciones comparten el mismo año, usar la fecha de
     //   esa canción (moda por año), por si las fechas reales tienen distinto mes/día
     //   pero el año es el mismo.
-    // - Si no hay una moda clara (todos los años únicos o empate), usar la fecha
+    // - Si hay empate en la moda, usar el año más reciente (más lógico para música).
+    // - Si no hay moda (todos los años únicos o canciones dispersas), usar la fecha
     //   más reciente entre las canciones.
-    // - Si ninguna canción tiene fecha, retornar nil ( álbum sin año ).
+    // - Si ninguna canción tiene fecha, retornar nil (álbum sin año).
     var releaseDate: Date? {
         let dates = songs.compactMap { $0.releaseDate }
         guard !dates.isEmpty else { return nil }
@@ -279,11 +280,18 @@ struct Album: Identifiable, Equatable {
         // Moda por año
         let groupedByYear = Dictionary(grouping: dates) { Calendar.current.component(.year, from: $0) }
         let yearCounts = groupedByYear.mapValues { $0.count }
-        guard let maxCount = yearCounts.values.max(),
-              maxCount > 1,
-              let mostCommonYear = yearCounts.first(where: { $0.value == maxCount })?.key,
-              let representative = groupedByYear[mostCommonYear]?.first else {
+        guard let maxCount = yearCounts.values.max(), maxCount > 1 else {
             // Sin moda clara: usar la fecha más reciente
+            return dates.max()
+        }
+
+        // Buscar los años que alcanzan el máximo (puede haber empate)
+        let yearsWithMaxCount = yearCounts.filter { $0.value == maxCount }.map { $0.key }
+        // En caso de empate, usar el año más reciente
+        guard let mostCommonYear = yearsWithMaxCount.max() else {
+            return dates.max()
+        }
+        guard let representative = groupedByYear[mostCommonYear]?.first else {
             return dates.max()
         }
         return representative
