@@ -132,8 +132,8 @@ struct AudioQualityDetailView: View {
             }
             .drawingGroup() // ✅ Rasteriza todo el ZStack en GPU
 
-            // ✅ Badge de calidad simplificado
-            Text(qualityBadge)
+            // ✅ Badge de calidad basado en sampleRate (kHz)
+            Text(qualityCategory)
                 .font(.system(size: 12, weight: .bold, design: .rounded))
                 .tracking(2)
                 .foregroundStyle(.white)
@@ -172,26 +172,40 @@ struct AudioQualityDetailView: View {
     private var isLossless: Bool {
         guard let song = song else { return false }
         let ext = song.url.pathExtension.uppercased()
-        return ["FLAC", "WAV", "WAVE", "AIFF", "AIF", "ALAC", "M4A"].contains(ext)
+        // Formats que son lossless por definición (sin contar M4A que puede ser AAC)
+        let losslessFormats: Set<String> = ["FLAC", "WAV", "WAVE", "AIFF", "AIF", "ALAC"]
+        // M4A puede ser AAC (comprimido) o ALAC (lossless) - usar sampleRate como heurística
+        if ext == "M4A" {
+            // Si sampleRate >= 48000, probablemente es Hi-Res ALAC; si es 44100 probablemente AAC
+            return song.sampleRate >= 48000 || song.bitDepth >= 24
+        }
+        return losslessFormats.contains(ext)
     }
 
-    private var qualityBadge: String {
-        guard let song = song else { return "—" }
+    /// Categoría de calidad basada en sampleRate (kHz)
+    private var qualityCategory: String {
+        guard let song = song else { return Localization.localized("quality.unknownQuality") }
         let rate = song.sampleRate
         let bits = song.bitDepth
-        let bitrate = estimatedBitrateKBPS(song)
-        if bits >= 24 && rate >= 96000 { return Localization.localized("quality.hiResAudio") }
-        if bitrate >= 700 { return Localization.localized("quality.losslessQuality") }
-        if bitrate > 0 { return Localization.localized("quality.compressedQuality") }
-        if rate > 0 { return Localization.localized("quality.standardQuality") }
-        return Localization.localized("quality.unknownQuality")
-    }
-
-    private func estimatedBitrateKBPS(_ song: Song) -> Int {
-        guard song.sampleRate > 0 && song.bitDepth > 0 && song.channelCount > 0 else {
-            return 0
+        
+        if rate == 0 { return Localization.localized("quality.unknownQuality") }
+        
+        // Hi-Res: sampleRate >= 48000 kHz (48 kHz, 96 kHz, 192 kHz)
+        if rate >= 48000 {
+            return Localization.localized("quality.hiResAudio")
         }
-        return Int(song.sampleRate * Double(song.bitDepth) * Double(song.channelCount) / 1000)
+        
+        // Lossless pero no Hi-Res (ej: CD quality 44.1kHz FLAC/WAV)
+        if isLossless {
+            return Localization.localized("quality.losslessQuality")
+        }
+        
+        // Formato comprimido (MP3, AAC, etc.)
+        if rate > 0 {
+            return Localization.localized("quality.compressedQuality")
+        }
+        
+        return Localization.localized("quality.standardQuality")
     }
 
     // MARK: - Cadena de procesamiento con flujo animado
