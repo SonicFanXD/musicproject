@@ -955,8 +955,18 @@ struct ContentView: View {
             return ascending ? songs.sorted { $0.duration < $1.duration }
                              : songs.sorted { $0.duration > $1.duration }
         case .year:
-            return ascending ? songs.sorted { ($0.releaseDate ?? Date.distantPast) < ($1.releaseDate ?? Date.distantPast) }
-                             : songs.sorted { ($0.releaseDate ?? Date.distantPast) > ($1.releaseDate ?? Date.distantPast) }
+            // Sin fecha → siempre al final, en ambas direcciones
+            // (mismo criterio que sortAlbums).
+            return songs.sorted { a, b in
+                switch (a.releaseDate, b.releaseDate) {
+                case (nil, nil): return false
+                case (nil, _): return false
+                case (_, nil): return true
+                case let (da?, db?):
+                    if da == db { return false }
+                    return ascending ? da < db : da > db
+                }
+            }
         case .recentlyAdded:
             return ascending ? songs : Array(songs.reversed())
         }
@@ -989,22 +999,19 @@ struct ContentView: View {
             let year = { (album: Album) -> Int? in
                 album.releaseDate.map { Calendar.current.component(.year, from: $0) }
             }
-            // Los álbumes sin fecha se ordenan al final (año nil = los últimos)
-            return ascending
-                ? albums.sorted { a, b in
-                    let ya = year(a), yb = year(b)
-                    if ya == nil && yb == nil { return false }
-                    if ya == nil { return true }    // nil va al final en ascendente
-                    if yb == nil { return false }   // a tiene año, b no → a va primero (ya sabemos que yb no es nil)
-                    return ya! < yb!
+            // Sin fecha → siempre al final, en AMBAS direcciones.
+            // (El comparador anterior devolvía `true` con año nil y los
+            // ponía PRIMEROS, tapando al álbum realmente más reciente.)
+            return albums.sorted { a, b in
+                switch (year(a), year(b)) {
+                case (nil, nil): return false
+                case (nil, _): return false   // a sin año va después
+                case (_, nil): return true    // b sin año → a va primero
+                case let (ya?, yb?):
+                    if ya == yb { return false }
+                    return ascending ? ya < yb : ya > yb
                 }
-                : albums.sorted { a, b in
-                    let ya = year(a), yb = year(b)
-                    if ya == nil && yb == nil { return false }
-                    if ya == nil { return true }    // nil va al final en descendente
-                    if yb == nil { return false }   // a tiene año, b no → a va primero (ya sabemos que yb no es nil)
-                    return ya! > yb!
-                }
+            }
         }
     }
 

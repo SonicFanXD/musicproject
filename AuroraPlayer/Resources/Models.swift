@@ -289,13 +289,18 @@ struct Album: Identifiable, Equatable {
         songs.first(where: { $0.artworkData != nil })?.artwork
     }
 
-    // ✅ Fecha de salida del álbum usada para orden y detail.
-    // Usamos la fecha más antigua entre las canciones del álbum.
-    // Esto suele ser la fecha de lanzamiento original del álbum (single de lanzamiento
-    // o primera pista), que es más útil para ordenar y mostrar al usuario.
+    // ✅ Año del álbum por MAYORÍA: el año que tiene la mayoría de las
+    // canciones (se devuelve una fecha representativa de ese grupo).
+    // Un solo tag erróneo o una fecha de creación de archivo suelta ya no
+    // mueve todo el álbum: con min(), un valor atípico definía el año.
     // Si ninguna canción tiene fecha, retornar nil (álbum sin año).
     var releaseDate: Date? {
-        songs.compactMap { $0.releaseDate }.min()
+        let dates = songs.compactMap { $0.releaseDate }
+        guard !dates.isEmpty else { return nil }
+        let calendar = Calendar.current
+        let byYear = Dictionary(grouping: dates) { calendar.component(.year, from: $0) }
+        guard let majority = byYear.max(by: { $0.value.count < $1.value.count }) else { return nil }
+        return majority.value.min()
     }
 
     // ✅ UNIFICADO: delega en la caché/algorithm compartidos de AppTheme —

@@ -348,72 +348,34 @@ struct NowPlayingView: View {
                 .padding(.horizontal, 20)
 
             if let song = audioEngine.currentSong, !song.audioQualityDescription.isEmpty {
-                VStack(spacing: 6) {
-                    // ✅ Badge explícito LOSSLESS / HI-RES basado en kHz
-                    // (misma regla que AudioQualityDetailView: Hi-Res = > 48 kHz).
-                    // Hi-Res implica lossless, así que tiene prioridad.
-                    if song.isHiRes {
-                        Text(Localization.localized("audio.quality.hiRes"))
-                            .font(.system(size: 11, weight: .bold, design: .rounded))
-                            .tracking(1.5)
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 5)
-                            .background {
-                                Capsule().fill(
-                                    LinearGradient(
-                                        colors: [extractedColor, extractedColor.opacity(0.75)],
-                                        startPoint: .leading, endPoint: .trailing
-                                    )
-                                )
-                            }
-                            .overlay {
-                                Capsule().strokeBorder(Color.white.opacity(0.35), lineWidth: 0.5)
-                            }
-                    } else if song.isLossless {
-                        Text(Localization.localized("quality.lossless"))
-                            .font(.system(size: 11, weight: .bold, design: .rounded))
-                            .tracking(1.5)
-                            .foregroundStyle(playIconColor)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 5)
-                            .background {
-                                Capsule().fill(extractedColor.opacity(0.25))
-                            }
-                            .overlay {
-                                Capsule().strokeBorder(playIconColor.opacity(0.3), lineWidth: 0.5)
-                            }
+                Button {
+                    Haptics.light()
+                    showQualityDetail = true
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "waveform.circle.fill")
+                            .font(.system(size: 10, weight: .semibold))
+
+                        Text(song.audioQualityDescription)
+                            .font(.system(size: 10, weight: .medium).monospacedDigit())
+
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 7, weight: .bold))
+                            .foregroundStyle(extractedColor.opacity(0.6))
                     }
-
-                    Button {
-                        Haptics.light()
-                        showQualityDetail = true
-                    } label: {
-                        HStack(spacing: 5) {
-                            Image(systemName: "waveform.circle.fill")
-                                .font(.system(size: 10, weight: .semibold))
-
-                            Text(song.audioQualityDescription)
-                                .font(.system(size: 10, weight: .medium).monospacedDigit())
-
-                            Image(systemName: "chevron.down")
-                                .font(.system(size: 7, weight: .bold))
-                                .foregroundStyle(extractedColor.opacity(0.6))
-                        }
-                        .foregroundStyle(playIconColor)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background {
-                            Capsule().fill(extractedColor.opacity(0.2))
-                        }
-                        .overlay {
-                            Capsule().strokeBorder(playIconColor.opacity(0.15), lineWidth: 0.5)
-                        }
-                        .contentShape(Rectangle())
+                    .foregroundStyle(playIconColor)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background {
+                        Capsule().fill(extractedColor.opacity(0.2))
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(Localization.localized("quality.viewDetails"))
+                    .overlay {
+                        Capsule().strokeBorder(playIconColor.opacity(0.15), lineWidth: 0.5)
+                    }
+                    .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
+                .accessibilityLabel(Localization.localized("quality.viewDetails"))
             }
 
             // ✅ Me gusta movido aquí: debajo de las ondas, junto a la info de

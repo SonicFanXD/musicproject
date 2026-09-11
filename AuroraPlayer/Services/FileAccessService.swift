@@ -57,13 +57,30 @@ class FileAccessService: ObservableObject {
     private let defaultsKey = "com.aurora.musicFolders"
     private let filesDefaultsKey = "com.aurora.musicFiles"
     private let playlistsDefaultsKey = "com.aurora.playlists"
-    private let libraryCacheFileName = "library-metadata-v7.json"
+    private let libraryCacheFileName = "library-metadata-v8.json"
     private let likedSongsKey = "com.aurora.likedSongs"
     private let likedPlaylistName = "Me Gusta"
     private var activeURLs: [UUID: URL] = [:]
     private var activeFileURLs: [UUID: URL] = [:]
     private var scanGeneration = 0
-    private var indexedSongURLs = Set<URL>()
+    // ✅ Claves de canciones ya indexadas (rutas normalizadas, NO URL exactas).
+    // Comparar `URL` con `==` fallaba cuando la URL enumerada del disco y la
+    // guardada en caché diferían en normalización (`/private/var/...` vs
+    // `/var/...`, u otra codificación) → las 722 canciones "ya tenidas" se
+    // consideraban nuevas y se reindexaban completas en cada escaneo.
+    private var indexedSongKeys = Set<String>()
+    /// Ruta canónica para comparar canciones entre disco y caché.
+    static func libraryKey(for url: URL) -> String {
+        var path = url.standardizedFileURL.path
+        // /private/var/... y /var/... son el mismo archivo (symlink /var).
+        if path.hasPrefix("/private/") { path = String(path.dropFirst("/private".count)) }
+        return path
+    }
+    // ✅ Claves vistas en disco durante el escaneo en curso. Al terminar un
+    // rescan DIFERENCIAL se eliminan las canciones cuyas claves NO se vieron
+    // (borradas fuera de la app). Solo aplica cuando pruneMissingOnFinish.
+    private var seenOnDiskKeys = Set<String>()
+    private var pruneMissingOnFinish = false
     private var activeDiscoveries = 0
     private var cacheSaveWorkItem: DispatchWorkItem?
     private var sortWorkItem: DispatchWorkItem?
@@ -238,12 +255,21 @@ class FileAccessService: ObservableObject {
     }
 
     private func rescanAllFolders() {
+        // ✅ DIFERENCIAL (antes: borrado total): conserva las canciones en
+        // memoria y solo indexa lo que cambió en disco. Antes `songs = []`
+        // obligaba a re-leer las 722 de cero en cada pull-to-refresh o al
+        // volver a la app tras el chequeo de accesibilidad. Ahora:
+        // 1) se parte de las claves ya indexadas (no se re-leen),
+        // 2) solo las URLs NO vistas se meten a la cola de metadatos,
+        // 3) al terminar, se eliminan las que ya no existen en disco
+        //    (canciones borradas fuera de la app).
         scanGeneration += 1
         queuedBatches.removeAll(keepingCapacity: true)
-        songs = []
         pendingSongs = []
         isSortScheduled = false
-        indexedSongURLs.removeAll(keepingCapacity: true)
+        indexedSongKeys = Set(songs.map { Self.libraryKey(for: $0.url) })
+        seenOnDiskKeys = []
+        pruneMissingOnFinish = true
         scanTotal = 0
         scanProcessed = 0
         activeDiscoveries = 0
@@ -267,8 +293,10 @@ class FileAccessService: ObservableObject {
         guard !isScanning, !folders.isEmpty || !files.isEmpty else { return }
         beginIncrementalProgressIfNeeded()
         scanGeneration += 1
-        // ✅ Guardar las URLs ya indexadas para no duplicar
-        indexedSongURLs = Set(songs.map { $0.url })
+        // ✅ Guardar las claves ya indexadas para no duplicar
+        indexedSongKeys = Set(songs.map { Self.libraryKey(for: $0.url) })
+        seenOnDiskKeys = []
+        pruneMissingOnFinish = false
         AppLog.info(.library, "Escaneo incremental iniciado: \(folders.count) carpetas, \(files.count) archivos")
         for folder in folders {
             resolveAndScan(folder)
@@ -281,8 +309,10 @@ class FileAccessService: ObservableObject {
     // ✅ Escaneo en segundo plano al inicio (verificar si hay canciones nuevas)
     func backgroundScanForNewSongs() {
         guard !isScanning, hasEverLoadedSongs, !folders.isEmpty || !files.isEmpty else { return }
-        // ✅ Guardar las URLs ya indexadas para no duplicar
-        indexedSongURLs = Set(songs.map { $0.url })
+        // ✅ Guardar las claves ya indexadas para no duplicar
+        indexedSongKeys = Set(songs.map { Self.libraryKey(for: $0.url) })
+        seenOnDiskKeys = []
+        pruneMissingOnFinish = false
         beginIncrementalProgressIfNeeded()
         scanGeneration += 1
         AppLog.info(.library, "Escaneo en segundo plano iniciado: \(folders.count) carpetas")
@@ -345,9 +375,13 @@ class FileAccessService: ObservableObject {
 
     private func scanFolder(_ url: URL) {
         let generation = scanGeneration
+        // ✅ Snapshot en el MAIN (scanFolder siempre se llama desde el main):
+        // leer indexedSongKeys dentro del bloque background sería una carrera
+        // con las inserciones de los lotes que terminan en el main.
+        let knownKeys = Set(indexedSongKeys)
         activeDiscoveries += 1
         isScanning = true
-        DispatchQueue.global(qos: .utility).async { [weak self] in
+        DispatchQueue.global(qos: .utility).async { [weak self, knownKeys] in
             guard let self = self else { return }
 
             defer {
@@ -378,6 +412,10 @@ class FileAccessService: ObservableObject {
 
                 var batch: [URL] = []
                 var fileCount = 0
+                // URLs ya indexadas NO entran a la cola de metadatos.
+                // (registerMetadataBatch también filtra como segunda barrera.)
+                var seenKeys = Set<String>()
+                seenKeys.reserveCapacity(1024)
                 for case let fileURL as URL in enumerator {
                     // ✅ SEGURIDAD: capturar excepciones de recursos corruptos
                     // para que un archivo problemático no detenga toda la carpeta
@@ -385,8 +423,11 @@ class FileAccessService: ObservableObject {
                     if values?.isDirectory == true { continue }
                     guard self.supportedExtensions.contains(fileURL.pathExtension.lowercased()) else { continue }
 
-                    batch.append(fileURL)
                     fileCount += 1
+                    let key = Self.libraryKey(for: fileURL)
+                    seenKeys.insert(key)
+                    guard !knownKeys.contains(key) else { continue }
+                    batch.append(fileURL)
                     if batch.count == self.metadataBatchSize {
                         self.registerMetadataBatch(batch, generation: generation)
                         batch.removeAll(keepingCapacity: true)
@@ -394,6 +435,17 @@ class FileAccessService: ObservableObject {
                 }
                 if !batch.isEmpty { self.registerMetadataBatch(batch, generation: generation) }
                 AppLog.debug(.library, "Carpeta \(coordinatedURL.lastPathComponent): \(fileCount) archivos encontrados")
+            }
+            // ✅ Registrar TODAS las URLs vistas (indexadas o no) para poder
+            // podar al final las canciones borradas del disco. Un solo envío
+            // al main por carpeta (no uno por archivo): con 722 canciones
+            // eran 722 dispatches que saturaban el main.
+            let folderSeenKeys = seenKeys
+            if !folderSeenKeys.isEmpty {
+                DispatchQueue.main.async { [weak self] in
+                    guard let self, generation == self.scanGeneration else { return }
+                    self.seenOnDiskKeys.formUnion(folderSeenKeys)
+                }
             }
 
             if let coordinationError {
@@ -405,15 +457,24 @@ class FileAccessService: ObservableObject {
     private func scanSingleFile(_ url: URL) {
         let generation = scanGeneration
         isScanning = true
+        // ✅ La URL suelta también cuenta como "vista en disco" para la poda.
+        let key = Self.libraryKey(for: url)
+        DispatchQueue.main.async { [weak self] in
+            guard let self, generation == self.scanGeneration else { return }
+            self.seenOnDiskKeys.insert(key)
+        }
         registerMetadataBatch([url], generation: generation)
     }
 
     private func registerMetadataBatch(_ urls: [URL], generation: Int) {
         DispatchQueue.main.async { [weak self] in
             guard let self, generation == self.scanGeneration else { return }
-            // ✅ ESCANEO INCREMENTAL: filtrar URLs ya indexadas para no contarlas
-            // Esto asegura que scanTotal refleje solo las canciones nuevas
-            let newUrls = urls.filter { !self.indexedSongURLs.contains($0) }
+            // ✅ ESCANEO INCREMENTAL: filtrar claves ya indexadas para no contarlas
+            // Esto asegura que scanTotal refleje solo las canciones nuevas.
+            // Comparar por RUTA NORMALIZADA (libraryKey), no por URL exacta —
+            // la misma canción puede llegar con otra normalización y parecer
+            // "nueva" aunque ya esté en la biblioteca.
+            let newUrls = urls.filter { !self.indexedSongKeys.contains(Self.libraryKey(for: $0)) }
             guard !newUrls.isEmpty else { return }
             self.scanTotal += newUrls.count
             self.enqueueMetadataBatch(newUrls, generation: generation)
@@ -497,7 +558,10 @@ class FileAccessService: ObservableObject {
                     return
                 }
                 self.scanProcessed += batch.urls.count
-                let uniqueSongs = foundSongs.filter { self.indexedSongURLs.insert($0.url).inserted }
+                // ✅ Segunda barrera anti-duplicados (misma clave normalizada que
+                // registerMetadataBatch): dos lotes en vuelo pueden traer la
+                // misma canción antes de que el otro la registre.
+                let uniqueSongs = foundSongs.filter { self.indexedSongKeys.insert(Self.libraryKey(for: $0.url)).inserted }
                 if !uniqueSongs.isEmpty {
                     self.pendingSongs.append(contentsOf: uniqueSongs)
                     self.scheduleSortAndCache()
@@ -567,12 +631,22 @@ class FileAccessService: ObservableObject {
         let hasPendingWork = !queuedBatches.isEmpty || inFlightBatches > 0
         isScanning = activeDiscoveries > 0 || scanProcessed < scanTotal || hasPendingWork
 
-        // ✅ Al finalizar: verificar si hay sort pendiente que ejecutar
-        if wasScanning && !isScanning && !pendingSongs.isEmpty && !isSortScheduled {
+        // ✅ Al finalizar: verificar si hay sort pendiente que ejecutar.
+        // El rescan DIFERENCIAL también debe cerrar aunque NO haya canciones
+        // nuevas (pendingSongs vacío): si no, la poda de borrados nunca corre
+        // y el pruneMissingOnFinish quedaría pendiente para siempre.
+        if wasScanning && !isScanning && (!pendingSongs.isEmpty || pruneMissingOnFinish) && !isSortScheduled {
             // ✅ Final sort en background para evitar congelamiento (sin sleep)
             isSortScheduled = true
+            let shouldPrune = pruneMissingOnFinish
+            let seenKeys = seenOnDiskKeys
             // ✅ Deduplicar al fusionar (mismos duplicados que en el sort de arriba).
-            let allSongs = dedupeSongsByUrl(songs + pendingSongs)
+            var allSongs = dedupeSongsByUrl(songs + pendingSongs)
+            if shouldPrune, !seenKeys.isEmpty {
+                // ✅ Podar borrados: conserva las que se vieron en disco. Con
+                // Set vacío NO se poda (carpeta ilegible ≠ canciones borradas).
+                allSongs = allSongs.filter { seenKeys.contains(Self.libraryKey(for: $0.url)) }
+            }
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in
                 guard let self = self else { return }
                 let sortedSongs = allSongs.sorted {
@@ -581,7 +655,11 @@ class FileAccessService: ObservableObject {
 
                 DispatchQueue.main.async {
                     self.isSortScheduled = false
+                    let addedCount = sortedSongs.count - self.songs.count
                     self.songs = sortedSongs
+                    self.indexedSongKeys = Set(sortedSongs.map { Self.libraryKey(for: $0.url) })
+                    self.pruneMissingOnFinish = false
+                    self.seenOnDiskKeys = []
                     // ✅ Solo descartar las canciones que entraron en el sort. Las
                     // que llegaron mientras se ordenaba (p.ej. del lote final) NO
                     // se borran: permanecen en pendingSongs para una pasada final.
@@ -589,7 +667,11 @@ class FileAccessService: ObservableObject {
                     self.pendingSongs.removeAll { includedIDs.contains($0.id) }
                     self.needsRebuild = true // ✅ Reconstruir álbumes/artistas con nuevas canciones
                     self.scheduleCacheSave()
-                    AppLog.info(.library, "Indexación completada: \(self.songs.count) canciones")
+                    if addedCount > 0 {
+                        AppLog.info(.library, "Indexación completada: \(sortedSongs.count) canciones (+\(addedCount) nuevas)")
+                    } else {
+                        AppLog.info(.library, "Indexación completada: \(sortedSongs.count) canciones (sin cambios)")
+                    }
                     if !self.pendingSongs.isEmpty {
                         self.updateScanningState()
                     }
@@ -638,6 +720,11 @@ class FileAccessService: ObservableObject {
         var discNumber: Int?
         var trackNumber = 0
         var releaseDate: Date?
+        // ⚠️ Fecha de creación del ARCHIVO (cuándo se copió/descargó), NO del
+        // lanzamiento. Solo se usa como último respaldo (ver abajo): si se
+        // asignara a releaseDate al leerla, taparía el año real del tag
+        // (©day/TDRC/DATE) que se lee después → álbum de 2023 mostrando 2026.
+        var creationDateFallback: Date?
         var duration: TimeInterval = 0
 
         // ✅ Timeout para evitar que archivos corruptos congelen la indexación
@@ -678,14 +765,17 @@ class FileAccessService: ObservableObject {
                 case "trackNumber":
                     trackNumber = (try? await item.load(.numberValue))?.intValue ?? 0
                 case "creationDate":
-                    releaseDate = try? await item.load(.dateValue)
+                    creationDateFallback = try? await item.load(.dateValue)
                 default:
                     break
                 }
             }
 
-            // Solo leer formatMetadata si faltan campos esenciales
-            if title == nil || artist.isEmpty || album.isEmpty || albumArtist.isEmpty || lyrics.isEmpty {
+            // Solo leer formatMetadata si faltan campos esenciales O la fecha.
+            // (La fecha va separada: un tema puede traer título/artista pero
+            // sin año en commonMetadata; sin esto el tag real ©day/TDRC/DATE
+            // jamás se leía y el álbum caía al creationDate del archivo.)
+            if title == nil || artist.isEmpty || album.isEmpty || albumArtist.isEmpty || lyrics.isEmpty || releaseDate == nil {
                 let availableFormats = try await asset.load(.availableMetadataFormats)
                 var formatMetadata: [AVMetadataItem] = []
 
@@ -736,7 +826,8 @@ class FileAccessService: ObservableObject {
             // Fallback binario SOLO si faltan campos esenciales (evita doble lectura de archivo)
             // Incluye lyrics: AVFoundation a menudo NO mapea USLT/SYLT/©lyr/LYRICS
             // (ID3, FLAC vorbis) a commonKey, y sin esto las letras jamás se extraían.
-            if title == nil || artist.isEmpty || album.isEmpty || lyrics.isEmpty {
+            // La fecha también va incluida: puede faltar aunque el resto exista.
+            if title == nil || artist.isEmpty || album.isEmpty || lyrics.isEmpty || releaseDate == nil {
                 if let embedded = readID3Metadata(from: url) ?? readFLACMetadata(from: url) ?? readM4AMetadata(from: url) {
                     title = title ?? embedded.title
                     if artist.isEmpty { artist = embedded.artist ?? "" }
@@ -748,6 +839,9 @@ class FileAccessService: ObservableObject {
                     if lyrics.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { lyrics = embedded.lyrics ?? "" }
                 }
             }
+
+            // Fecha de creación del archivo SOLO si ningún tag trajo año real.
+            if releaseDate == nil { releaseDate = creationDateFallback }
 
             let assetDuration = try await durationTask
             duration = assetDuration.isNumeric ? max(0, assetDuration.seconds) : 0
@@ -812,6 +906,8 @@ class FileAccessService: ObservableObject {
         var discNumber: Int?
         var trackNumber = 0
         var releaseDate: Date?
+        // ⚠️ Igual que en readMetadata: fecha de archivo solo como respaldo.
+        var creationDateFallback: Date?
         var durationSeconds: Double = 0
 
         do {
@@ -837,7 +933,7 @@ class FileAccessService: ObservableObject {
                 case "trackNumber":
                     trackNumber = (try? await item.load(.numberValue))?.intValue ?? 0
                 case "creationDate":
-                    releaseDate = try? await item.load(.dateValue)
+                    creationDateFallback = try? await item.load(.dateValue)
                 default:
                     break
                 }
@@ -848,8 +944,9 @@ class FileAccessService: ObservableObject {
             AppLog.error(.library, "readMetadataFallback: \(error.localizedDescription)")
         }
 
-        // Fallback binario (ID3/FLAC/M4A) para lo que AVFoundation no mapea
-        if title == nil || artist.isEmpty || album.isEmpty || lyrics.isEmpty {
+        // Fallback binario (ID3/FLAC/M4A) para lo que AVFoundation no mapea.
+        // La fecha también va incluida: puede faltar aunque el resto exista.
+        if title == nil || artist.isEmpty || album.isEmpty || lyrics.isEmpty || releaseDate == nil {
             if let embedded = readID3Metadata(from: url) ?? readFLACMetadata(from: url) ?? readM4AMetadata(from: url) {
                 // ✅ FIX "símbolos raros": AVFoundation a veces devuelve texto
                 // corrupto (mojibake / U+FFFD) según la codificación del tag.
@@ -866,6 +963,9 @@ class FileAccessService: ObservableObject {
                 if lyrics.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { lyrics = embedded.lyrics ?? "" }
             }
         }
+
+        // Fecha de creación del archivo SOLO si ningún tag trajo año real.
+        if releaseDate == nil { releaseDate = creationDateFallback }
 
         let audioFile = try? AVAudioFile(forReading: url)
         let sampleRate = audioFile?.processingFormat.sampleRate ?? 0
@@ -1456,12 +1556,12 @@ class FileAccessService: ObservableObject {
         // duplicado inflaba album.songs.count, pero el ForEach de detalle
         // (id: \.element.id) colapsaba las filas → "dice 13 y son 9".
         // Se deduplica AL CARGAR el caché y el rescan posterior ya no las
-        // re-agrega (indexedSongURLs se construye desde la lista limpia).
+        // re-agrega (indexedSongKeys se construye desde la lista limpia).
         let uniqueCached = dedupeSongsByUrl(cachedSongs)
         songs = uniqueCached
         isInitialLibraryLoaded = true
         hasEverLoadedSongs = true
-        indexedSongURLs = Set(uniqueCached.map(\.url))
+        indexedSongKeys = Set(uniqueCached.map { Self.libraryKey(for: $0.url) })
         if uniqueCached.isEmpty && (!folders.isEmpty || !files.isEmpty) {
             rescanAllFolders()
         } else {
