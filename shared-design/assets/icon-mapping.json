@@ -1,0 +1,138 @@
+{
+  "version": "1.0.0",
+  "description": "Mapeo de iconos entre iOS SF Symbols y Android Material Icons",
+  
+  "icon_mapping": {
+    "play.fill": {
+      "android": "ic_play_arrow",
+      "size": 24,
+      "description": "Reproducir"
+    },
+    "pause.fill": {
+      "android": "ic_pause",
+      "size": 24,
+      "description": "Pausar"
+    },
+    "forward.fill": {
+      "android": "ic_skip_next",
+      "size": 24,
+      "description": "Siguiente"
+    },
+    "backward.fill": {
+      "android": "ic_skip_previous",
+      "size": 24,
+      "description": "Anterior"
+    },
+    "shuffle": {
+      "android": "ic_shuffle",
+      "size": 20,
+      "description": "Aleatorio"
+    },
+    "repeat": {
+      "android": "ic_repeat",
+      "size": 20,
+      "description": "Repetir"
+    },
+    "repeat.1": {
+      "android": "ic_repeat_one",
+      "size": 20,
+      "description": "Repetir una"
+    },
+    "heart": {
+      "android": "ic_favorite_border",
+      "size": 20,
+      "description": "Me gusta (inactivo)"
+    },
+    "heart.fill": {
+      "android": "ic_favorite",
+      "size": 20,
+      "description": "Me gusta (activo)"
+    },
+    "heart.slash": {
+      "android": "ic_heart_broken",
+      "size": 20,
+      "description": "Quitar me gusta"
+    },
+    "airplay.audio": {
+      "android": "ic_cast",
+      "size": 20,
+      "description": "AirPlay → Cast"
+    },
+    "gearshape": {
+      "android": "ic_settings",
+      "size": 24,
+      "description": "Configuración"
+    },
+    "magnifyingglass": {
+      "android": "ic_search",
+      "size": 20,
+      "description": "Buscar"
+    },
+    "music.note": {
+      "android": "ic_music_note",
+      "size": 16,
+      "description": "Música"
+    },
+    "music.note.list": {
+      "android": "ic_queue_music",
+      "size": 20,
+      "description": "Lista de música"
+    },
+    "text.line.first.and.arrowtriangle.forward": {
+      "android": "ic_playlist_play",
+      "size": 20,
+      "description": "Reproducir siguiente"
+    },
+    "play.circle.fill": {
+      "android": "ic_play_circle",
+      "size": 20,
+      "description": "Reproducir ahora"
+    },
+    "plus": {
+      "android": "ic_add",
+      "size": 20,
+      "description": "Añadir"
+    },
+    "ellipsis": {
+      "android": "ic_more_vert",
+      "size": 20,
+      "description": "Más opciones"
+    },
+    "waveform": {
+      "android": "ic_graphic_eq",
+      "size": 20,
+      "description": "Visualizador"
+    },
+    "slider.horizontal.3": {
+      "android": "ic_tune",
+      "size": 20,
+      "description": "Ecualizador"
+    },
+    "list.bullet": {
+      "android": "ic_list",
+      "size": 20,
+      "description": "Cola"
+    },
+    "folder": {
+      "android": "ic_folder",
+      "size": 20,
+      "description": "Carpeta"
+    },
+    "doc.text": {
+      "android": "ic_article",
+      "size": 20,
+      "description": "Letras"
+    },
+    "info.circle": {
+      "android": "ic_info",
+      "size": 20,
+      "description": "Información"
+    }
+  },
+  
+  "android_icon_sources": {
+    "material_icons": "https://fonts.google.com/icons",
+    "android_drawables": "https://developer.android.com/reference/android/R.drawable",
+    "custom_drawables": "res/drawable/"
+  }
+}

@@ -1,0 +1,100 @@
+{
+  "version": "1.0.0",
+  "description": "Especificaciones de casting: AirPlay (iOS) vs Cast (Android)",
+  
+  "feature_comparison": {
+    "ios_airplay": {
+      "name": "AirPlay",
+      "framework": "AVKit",
+      "ui_component": "AVRoutePickerView",
+      "icon": "airplay.audio",
+      "supported_devices": [
+        "Apple TV",
+        "HomePod",
+        "AirPlay speakers",
+        "Mac"
+      ],
+      "audio_codecs": ["AAC", "ALAC"],
+      "setup": "Automático en la misma red WiFi"
+    },
+    
+    "android_cast": {
+      "name": "Google Cast / MediaRouter",
+      "framework": "androidx.mediarouter / Google Cast SDK",
+      "ui_component": "MediaRouteButton",
+      "icon": "ic_cast_24dp",
+      "supported_devices": [
+        "Chromecast",
+        "Google Home",
+        "Android TV",
+        "Smart TVs con Cast",
+        "DLNA devices"
+      ],
+      "audio_codecs": ["AAC", "MP3", "OGG"],
+      "setup": "Automático en la misma red WiFi"
+    }
+  },
+  
+  "implementation_android": {
+    "dependencies": {
+      "mediarouter": "androidx.mediarouter:mediarouter:1.4.0",
+      "cast_framework": "com.google.android.gms:play-services-cast-framework:21.3.0"
+    },
+    
+    "cast_button": {
+      "class": "MediaRouteButton",
+      "xml_example": "<androidx.mediarouter.app.MediaRouteButton\n    android:id="@+id/media_route_button\"\n    android:layout_width=\"44dp\"\n    android:layout_height=\"44dp\"\n    android:contentDescription=\"Cast\"\n    app:mediaRouteButtonTint=\"@color/accent\" />",
+      "programmatic_setup": "MediaRouteButton castButton = findViewById(R.id.media_route_button);\ncastButton.setRouteSelector(MediaRouteSelector.Builder()\n    .addControlCategory(MediaControlIntent.CATEGORY_LIVE_AUDIO)\n    .addControlCategory(MediaControlIntent.CATEGORY_REMOTE_PLAYBACK)\n    .build());"
+    },
+    
+    "cast_service": {
+      "class_name": "CastService",
+      "responsibilities": [
+        "Detectar dispositivos Cast disponibles",
+        "Manejar conexión/desconexión",
+        "Enviar metadata de canción",
+        "Sincronizar estado de reproducción"
+      ],
+      "methods": [
+        "getAvailableDevices()",
+        "connectToDevice(device)",
+        "disconnect()",
+        "sendMediaInfo(mediaInfo)",
+        "updatePlaybackState(state)"
+      ]
+    },
+    
+    "ui_placement": {
+      "now_playing_screen": {
+        "position": "top_right",
+        "size": "44x44dp",
+        "margin": "16dp",
+        "background": "glass_material"
+      },
+      "mini_player": {
+        "position": "right_of_controls",
+        "size": "32x32dp",
+        "margin": "8dp"
+      }
+    }
+  },
+  
+  "shared_casting_behavior": {
+    "auto_detect": true,
+    "show_when_available": true,
+    "hide_when_connected": false,
+    "metadata_display": {
+      "title": true,
+      "artist": true,
+      "album": true,
+      "artwork": true,
+      "duration": true
+    },
+    "controls_on_cast_device": {
+      "play_pause": true,
+      "next_previous": true,
+      "volume": true,
+      "seek": true
+    }
+  }
+}

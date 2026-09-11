@@ -1,0 +1,135 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">AuroraPlayer</string>
+
+    <!-- Navigation -->
+    <string name="nav_songs">Songs</string>
+    <string name="nav_albums">Albums</string>
+    <string name="nav_artists">Artists</string>
+    <string name="nav_playlists">Playlists</string>
+
+    <!-- Player Controls -->
+    <string name="play">Play</string>
+    <string name="pause">Pause</string>
+    <string name="next">Next</string>
+    <string name="previous">Previous</string>
+    <string name="shuffle">Shuffle</string>
+    <string name="repeat">Repeat</string>
+    <string name="repeat_one">Repeat One</string>
+    <string name="repeat_off">Repeat Off</string>
+
+    <!-- Actions -->
+    <string name="action_like">Like</string>
+    <string name="action_unlike">Unlike</string>
+    <string name="action_add_to_playlist">Add to Playlist</string>
+    <string name="action_play_next">Play Next</string>
+    <string name="action_play_now">Play Now</string>
+    <string name="action_share">Share</string>
+    <string name="action_delete">Delete</string>
+
+    <!-- Cast -->
+    <string name="cast_button_description">Cast audio to device</string>
+    <string name="cast_connecting">Connecting…</string>
+    <string name="cast_connected">Connected to %1$s</string>
+    <string name="cast_disconnected">Disconnected</string>
+    <string name="cast_no_devices">No devices found</string>
+
+    <!-- Settings -->
+    <string name="settings_title">Settings</string>
+    <string name="settings_audio">Audio</string>
+    <string name="settings_equalizer">Equalizer</string>
+    <string name="settings_mono_audio">Mono Audio</string>
+    <string name="settings_appearance">Appearance</string>
+    <string name="settings_theme">Theme</string>
+    <string name="settings_theme_system">System (light/dark)</string>
+    <string name="settings_theme_light">Light Mode</string>
+    <string name="settings_theme_dark">Dark Mode</string>
+    <string name="settings_customization">Customization</string>
+    <string name="settings_stats">Statistics</string>
+    <string name="settings_performance">Performance</string>
+    <string name="library_songs">Songs</string>
+    <string name="library_albums">Albums</string>
+    <string name="library_artists">Artists</string>
+    <string name="settings_audio_output">Audio Output</string>
+    <string name="settings_device">Device</string>
+    <string name="settings_equalizer_disabled">Disabled</string>
+    <string name="settings_accent_from_artwork">Accent from Artwork</string>
+    <string name="settings_accent_from_artwork_desc">Extract accent color from album artwork</string>
+    <string name="settings_show_visualizer">Show Visualizer</string>
+    <string name="settings_show_lyrics">Show Lyrics</string>
+    <string name="settings_keep_screen_on">Keep Screen On</string>
+    <string name="settings_audio_quality">Audio Quality</string>
+    <string name="settings_reduce_transparency">Reduce Transparency</string>
+    <string name="settings_reduce_transparency_desc">Use opaque cards instead of glass blur</string>
+    <string name="settings_artwork_corners">Artwork Corners</string>
+    <string name="settings_language">Language</string>
+    <string name="language_spanish">Español</string>
+    <string name="language_english">English</string>
+    <string name="settings_playback">Playback</string>
+    <string name="settings_advanced">Advanced</string>
+    <string name="settings_logs">Logs</string>
+    <string name="settings_about">About</string>
+    <string name="settings_show_lyrics_default">Show lyrics by default</string>
+    <string name="lyrics_title">Lyrics</string>
+    <string name="logs_clear">Clear</string>
+    <string name="about_version">Version</string>
+
+    <!-- Library -->
+    <string name="library_empty">No music found</string>
+    <string name="library_search">Search songs, albums, artists…</string>
+    <string name="library_loading">Loading library…</string>
+
+    <!-- Queue -->
+    <string name="queue_title">Queue</string>
+    <string name="queue_clear">Clear Queue</string>
+    <string name="queue_empty">Queue is empty</string>
+
+    <!-- Lyrics -->
+    <string name="lyrics_not_found">No lyrics found</string>
+    <string name="lyrics_loading">Loading lyrics…</string>
+
+    <!-- Equalizer -->
+    <string name="equalizer_title">Equalizer</string>
+    <string name="equalizer_preset">Preset</string>
+
+    <!-- Equalizer -->
+    <string name="equalizer_title">Equalizer</string>
+    <string name="equalizer_preset">Preset</string>
+    <string name="equalizer_frequencies">Frequencies</string>
+    <string name="equalizer_active">Active</string>
+    <string name="equalizer_disabled">Disabled</string>
+    <string name="equalizer_bands">10-band equalizer</string>
+    <string name="eq_preset_flat">Flat</string>
+    <string name="eq_preset_bass">Bass</string>
+    <string name="eq_preset_treble">Treble</string>
+    <string name="eq_preset_vocal">Vocal</string>
+    <string name="eq_preset_classical">Classical</string>
+    <string name="eq_preset_electronic">Electronic</string>
+    <string name="eq_preset_pop">Pop</string>
+    <string name="eq_preset_rock">Rock</string>
+    <string name="eq_preset_jazz">Jazz</string>
+
+    <!-- Content Descriptions -->
+    <string name="cd_album_artwork">Album artwork</string>
+    <string name="cd_play_pause">Play or pause</string>
+    <string name="cd_skip_next">Skip to next song</string>
+    <string name="cd_skip_previous">Skip to previous song</string>
+    <string name="cd_shuffle">Toggle shuffle</string>
+    <string name="cd_repeat">Toggle repeat mode</string>
+    <string name="cd_like">Like this song</string>
+    <string name="cd_more_options">More options</string>
+    <string name="cd_back">Go back</string>
+    <string name="cd_settings">Open settings</string>
+    <string name="cd_queue">View queue</string>
+    <string name="cd_lyrics">View lyrics</string>
+    <string name="cd_equalizer">Open equalizer</string>
+    <string name="cd_cast">Cast to device</string>
+
+    <!-- Time -->
+    <string name="time_zero">0:00</string>
+
+    <!-- Errors -->
+    <string name="error_playback">Playback error</string>
+    <string name="error_file_not_found">File not found</string>
+    <string name="error_permission_denied">Permission denied</string>
+</resources>

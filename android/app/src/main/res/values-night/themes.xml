@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- Override nocturno: igual que values/themes.xml pero con la status bar
+         en modo oscuro (iconos de status bar claros). Los @color resuelven
+         automáticamente a la paleta oscura de values-night/colors.xml. -->
+    <style name="Theme.AuroraPlayer" parent="Theme.Material3.DayNight.NoActionBar">
+        <!-- Primary colors -->
+        <item name="colorPrimary">@color/accent_default</item>
+        <item name="colorPrimaryVariant">@color/accent_default</item>
+        <item name="colorOnPrimary">@color/icon_on_accent</item>
+
+        <!-- Secondary colors -->
+        <item name="colorSecondary">@color/accent_default</item>
+        <item name="colorSecondaryVariant">@color/accent_default</item>
+        <item name="colorOnSecondary">@color/icon_on_accent</item>
+
+        <!-- Background colors -->
+        <item name="android:colorBackground">@color/background_primary</item>
+        <item name="colorSurface">@color/background_secondary</item>
+        <item name="colorOnSurface">@color/text_primary</item>
+
+        <!-- Status bar (oscuro: iconos claros) -->
+        <item name="android:statusBarColor">@color/status_bar</item>
+        <item name="android:navigationBarColor">@color/background_primary</item>
+        <item name="android:windowLightStatusBar">false</item>
+
+        <!-- Text colors -->
+        <item name="android:textColorPrimary">@color/text_primary</item>
+        <item name="android:textColorSecondary">@color/text_secondary</item>
+
+        <!-- Window -->
+        <item name="android:windowBackground">@color/background_primary</item>
+
+        <!-- Disable default tint -->
+        <item name="android:tint">@null</item>
+    </style>
+
+</resources>

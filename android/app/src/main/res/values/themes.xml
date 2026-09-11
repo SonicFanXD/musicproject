@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- Base application theme (DayNight: resuelve @color por modo claro/oscuro) -->
+    <style name="Theme.AuroraPlayer" parent="Theme.Material3.DayNight.NoActionBar">
+        <!-- Primary colors -->
+        <item name="colorPrimary">@color/accent_default</item>
+        <item name="colorPrimaryVariant">@color/accent_default</item>
+        <item name="colorOnPrimary">@color/icon_on_accent</item>
+
+        <!-- Secondary colors -->
+        <item name="colorSecondary">@color/accent_default</item>
+        <item name="colorSecondaryVariant">@color/accent_default</item>
+        <item name="colorOnSecondary">@color/icon_on_accent</item>
+
+        <!-- Background colors -->
+        <item name="android:colorBackground">@color/background_primary</item>
+        <item name="colorSurface">@color/background_secondary</item>
+        <item name="colorOnSurface">@color/text_primary</item>
+
+        <!-- Status bar -->
+        <item name="android:statusBarColor">@color/status_bar</item>
+        <item name="android:navigationBarColor">@color/background_primary</item>
+        <item name="android:windowLightStatusBar">true</item>
+
+        <!-- Text colors -->
+        <item name="android:textColorPrimary">@color/text_primary</item>
+        <item name="android:textColorSecondary">@color/text_secondary</item>
+
+        <!-- Window -->
+        <item name="android:windowBackground">@color/background_primary</item>
+
+        <!-- Disable default tint -->
+        <item name="android:tint">@null</item>
+    </style>
+
+    <!-- Glass Card Style -->
+    <style name="GlassCard">
+        <item name="cardBackgroundColor">@color/glass_ultra_thin</item>
+        <item name="cardCornerRadius">16dp</item>
+        <item name="cardElevation">0dp</item>
+        <item name="strokeColor">@color/card_stroke</item>
+        <item name="strokeWidth">0.5dp</item>
+    </style>
+
+    <!-- Glass Button Style -->
+    <style name="GlassButton">
+        <item name="android:background">@drawable/glass_background</item>
+        <item name="android:scaleType">centerInside</item>
+        <item name="android:padding">12dp</item>
+    </style>
+
+    <!-- Control Button Style -->
+    <style name="ControlButton" parent="Widget.Material3.Button.IconButton">
+        <item name="android:backgroundTint">@color/control_background</item>
+        <item name="iconTint">@color/control_icon</item>
+        <item name="iconSize">24dp</item>
+        <item name="android:layout_width">44dp</item>
+        <item name="android:layout_height">44dp</item>
+    </style>
+
+    <!-- Primary Play Button -->
+    <style name="PlayButton" parent="Widget.Material3.Button.IconButton">
+        <item name="android:backgroundTint">@color/accent_default</item>
+        <item name="iconTint">@color/icon_on_accent</item>
+        <item name="iconSize">32dp</item>
+        <item name="android:layout_width">72dp</item>
+        <item name="android:layout_height">72dp</item>
+    </style>
+
+    <!-- Text Styles -->
+    <style name="TextTitle">
+        <item name="android:textSize">17sp</item>
+        <item name="android:textColor">@color/text_primary</item>
+        <item name="android:fontFamily">sans-serif</item>
+    </style>
+
+    <style name="TextSubtitle">
+        <item name="android:textSize">15sp</item>
+        <item name="android:textColor">@color/text_secondary</item>
+        <item name="android:fontFamily">sans-serif</item>
+    </style>
+
+    <style name="TextCaption">
+        <item name="android:textSize">13sp</item>
+        <item name="android:textColor">@color/text_tertiary</item>
+        <item name="android:fontFamily">sans-serif</item>
+    </style>
+
+    <!-- Lyrics Text -->
+    <style name="LyricsText">
+        <item name="android:textSize">24sp</item>
+        <item name="android:textColor">@color/lyrics_inactive</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:lineSpacingMultiplier">1.5</item>
+        <item name="android:gravity">center</item>
+    </style>
+
+    <style name="LyricsText.Active">
+        <item name="android:textColor">@color/lyrics_active</item>
+    </style>
+
+</resources>

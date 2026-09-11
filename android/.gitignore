@@ -1,0 +1,15 @@
+# Android / Kotlin build artifacts
+.gradle/
+build/
+*/build/
+*.iml
+.idea/
+.vscode/
+*.log
+android.lock
+
+# Keystore / signing (never commit secrets)
+*.p12
+*.pem
+*.keystore
+android/app.keystore

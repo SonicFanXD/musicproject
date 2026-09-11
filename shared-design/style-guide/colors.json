@@ -1,0 +1,75 @@
+{
+  "version": "1.0.0",
+  "description": "Colores base compartidos para AuroraPlayer iOS y Android",
+  
+  "accent": {
+    "dynamic_enabled": true,
+    "default_color": "#AF52DE",
+    "description": "Color de acento principal. Se extrae dinámicamente de la carátula si está activado"
+  },
+  
+  "background": {
+    "primary": "#000000",
+    "secondary": "#1C1C1E",
+    "tertiary": "#2C2C2E",
+    "grouped": "#000000",
+    "description": "Fondos oscuros estilo iOS dark mode"
+  },
+  
+  "glass_materials": {
+    "ultra_thin": {
+      "opacity": 0.08,
+      "blur_radius": 20,
+      "description": "Material glass ultra delgado para overlays"
+    },
+    "thin": {
+      "opacity": 0.12,
+      "blur_radius": 16,
+      "description": "Material glass delgado para controles"
+    },
+    "regular": {
+      "opacity": 0.15,
+      "blur_radius": 12,
+      "description": "Material glass regular para cards"
+    }
+  },
+  
+  "text": {
+    "primary": "#FFFFFF",
+    "secondary": "#EBEBF599",
+    "tertiary": "#EBEBF54D",
+    "quaternary": "#EBEBF52E",
+    "description": "Jerarquía de texto con opacidades decrecientes"
+  },
+  
+  "controls": {
+    "play_button": {
+      "background": "dynamic_accent",
+      "icon_color": "contrasting",
+      "size": 72,
+      "corner_radius": 36
+    },
+    "secondary_button": {
+      "background": "glass_material",
+      "icon_color": "primary",
+      "size": 44,
+      "corner_radius": 22
+    }
+  },
+  
+  "album_artwork": {
+    "corner_radius": 22,
+    "shadow_color": "#000000",
+    "shadow_opacity": 0.35,
+    "shadow_radius": 30,
+    "shadow_offset_y": 15
+  },
+  
+  "progress_bar": {
+    "height": 4,
+    "corner_radius": 2,
+    "track_color": "#FFFFFF20",
+    "fill_color": "dynamic_accent",
+    "thumb_size": 12
+  }
+}

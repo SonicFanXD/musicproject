@@ -1,0 +1,132 @@
+{
+  "version": "1.0.0",
+  "description": "Especificaciones de audio específicas por plataforma",
+  
+  "ios": {
+    "audio_engine": {
+      "framework": "AVFoundation",
+      "player_class": "AVPlayer",
+      "output_class": "AVAudioSession",
+      "features": [
+        "AirPlay",
+        "Bluetooth",
+        "Headphones",
+        "Speaker",
+        "CarPlay"
+      ]
+    },
+    "audio_route_detection": {
+      "class": "AVAudioSessionRouteDescription",
+      "notifications": [
+        "AVAudioSessionRouteChangeNotification"
+      ],
+      "route_change_reason_key": "AVAudioSessionRouteChangeReasonKey"
+    },
+    "airplay": {
+      "picker_class": "AVRoutePickerView",
+      "prioritizes_video_devices": false,
+      "tint_color": "dynamic_accent"
+    },
+    "output_types": {
+      "airplay": "AirPlay",
+      "bluetooth": "BluetoothA2DP",
+      "headphones": "Headphones",
+      "speaker": "Speaker",
+      "hdmi": "HDMI",
+      "line_out": "LineOut"
+    }
+  },
+  
+  "android": {
+    "audio_engine": {
+      "framework": "MediaPlayer / ExoPlayer",
+      "player_class": "ExoPlayer (recomendado)",
+      "output_class": "AudioManager",
+      "features": [
+        "Chromecast",
+        "Bluetooth",
+        "Headphones",
+        "Speaker",
+        "USB Audio",
+        "Android Auto"
+      ]
+    },
+    "audio_route_detection": {
+      "class": "AudioManager",
+      "methods": [
+        "registerAudioDeviceCallback",
+        "getDevices(GET_DEVICES_OUTPUTS)"
+      ],
+      "device_types": [
+        "TYPE_BLUETOOTH_A2DP",
+        "TYPE_WIRED_HEADPHONES",
+        "TYPE_WIRED_HEADSET",
+        "TYPE_USB_HEADSET",
+        "TYPE_USB_DEVICE",
+        "TYPE_SPEAKER",
+        "TYPE_HDMI",
+        "TYPE_BUILTIN_SPEAKER"
+      ]
+    },
+    "casting": {
+      "framework": "MediaRouter / Cast SDK",
+      "button_class": "MediaRouteButton",
+      "icon": "ic_cast_24dp",
+      "description": "Reemplazo de AirPlay: Chromecast y dispositivos compatibles",
+      "supported_protocols": [
+        "Google Cast",
+        "DLNA",
+        "Miracast"
+      ]
+    },
+    "output_types": {
+      "chromecast": "Chromecast",
+      "bluetooth": "Bluetooth A2DP",
+      "headphones": "Wired Headphones",
+      "headset": "Wired Headset",
+      "usb_audio": "USB Audio",
+      "speaker": "Built-in Speaker",
+      "hdmi": "HDMI"
+    },
+    "permissions": [
+      "BLUETOOTH",
+      "BLUETOOTH_CONNECT",
+      "MODIFY_AUDIO_SETTINGS"
+    ]
+  },
+  
+  "shared_audio_features": {
+    "playback_controls": [
+      "play",
+      "pause",
+      "next",
+      "previous",
+      "seek",
+      "shuffle",
+      "repeat_off",
+      "repeat_all",
+      "repeat_one"
+    ],
+    "metadata": {
+      "title": "string",
+      "artist": "string",
+      "album": "string",
+      "album_artist": "string",
+      "artwork": "image_data",
+      "duration": "milliseconds",
+      "track_number": "integer",
+      "year": "integer"
+    },
+    "equalizer": {
+      "bands": 5,
+      "frequencies": [60, 230, 910, 3600, 14000],
+      "min_db": -12,
+      "max_db": 12
+    },
+    "audio_quality": {
+      "sample_rates": [44100, 48000, 96000],
+      "bit_depths": [16, 24, 32],
+      "formats": ["MP3", "FLAC", "AAC", "ALAC", "WAV", "OGG"]
+    }
+  }
+}

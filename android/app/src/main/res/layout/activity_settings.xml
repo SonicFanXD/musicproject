@@ -1,0 +1,406 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/background_primary"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <TextView
+            android:id="@+id/settingsHeader"
+            style="@style/TextTitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/settings_title"
+            android:textSize="24sp" />
+
+        <!-- Audio -->
+        <TextView
+            android:id="@+id/sectionAudio"
+            style="@style/TextTitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="26dp"
+            android:text="@string/settings_audio" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:layout_marginTop="10dp"
+            android:background="@drawable/glass_background">
+
+            <TextView
+                android:id="@+id/rowEqualizer"
+                style="@style/TextTitle"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:gravity="center_vertical"
+                android:paddingStart="14dp"
+                android:paddingEnd="14dp"
+                android:text="@string/settings_equalizer" />
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="0.5dp"
+                android:background="@color/card_stroke" />
+
+            <com.google.android.material.switchmaterial.SwitchMaterial
+                android:id="@+id/switchMonoAudio"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingStart="14dp"
+                android:paddingEnd="14dp"
+                android:minHeight="48dp"
+                android:text="@string/settings_mono_audio" />
+        </LinearLayout>
+
+        <!-- Apariencia -->
+        <TextView
+            android:id="@+id/sectionAppearance"
+            style="@style/TextTitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="26dp"
+            android:text="@string/settings_appearance" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:layout_marginTop="10dp"
+            android:background="@drawable/glass_background">
+
+            <com.google.android.material.switchmaterial.SwitchMaterial
+                android:id="@+id/switchArtworkAccent"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingStart="14dp"
+                android:paddingEnd="14dp"
+                android:minHeight="48dp"
+                android:text="@string/settings_accent_from_artwork"
+                app:description="@string/settings_accent_from_artwork_desc" />
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="0.5dp"
+                android:background="@color/card_stroke" />
+
+            <com.google.android.material.switchmaterial.SwitchMaterial
+                android:id="@+id/switchKeepScreenOn"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingStart="14dp"
+                android:paddingEnd="14dp"
+                android:minHeight="48dp"
+                android:text="@string/settings_keep_screen_on" />
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="0.5dp"
+                android:background="@color/card_stroke" />
+
+            <TextView
+                android:id="@+id/labelTheme"
+                style="@style/TextSubtitle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingStart="14dp"
+                android:paddingEnd="14dp"
+                android:paddingTop="10dp"
+                android:text="@string/settings_theme" />
+
+            <LinearLayout
+                android:id="@+id/themePicker"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center"
+                android:padding="8dp" />
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="0.5dp"
+                android:background="@color/card_stroke" />
+
+            <com.google.android.material.switchmaterial.SwitchMaterial
+                android:id="@+id/switchReduceTransparency"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingStart="14dp"
+                android:paddingEnd="14dp"
+                android:minHeight="48dp"
+                android:text="@string/settings_reduce_transparency" />
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="0.5dp"
+                android:background="@color/card_stroke" />
+
+            <TextView
+                android:id="@+id/labelArtworkCorners"
+                style="@style/TextTitle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingStart="14dp"
+                android:paddingEnd="14dp"
+                android:paddingTop="10dp"
+                android:text="@string/settings_artwork_corners" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:paddingStart="14dp"
+                android:paddingEnd="14dp">
+
+                <TextView
+                    android:id="@+id/labelArtworkCornersValue"
+                    style="@style/TextSubtitle"
+                    android:layout_width="56dp"
+                    android:layout_height="wrap_content"
+                    android:gravity="center" />
+
+                <SeekBar
+                    android:id="@+id/sliderArtworkCorners"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:max="22"
+                    android:progressTint="@color/accent_default"
+                    android:thumbTint="@color/accent_default" />
+            </LinearLayout>
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="0.5dp"
+                android:background="@color/card_stroke" />
+
+            <TextView
+                android:id="@+id/labelLanguage"
+                style="@style/TextTitle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingStart="14dp"
+                android:paddingEnd="14dp"
+                android:paddingTop="10dp"
+                android:text="@string/settings_language" />
+
+            <LinearLayout
+                android:id="@+id/languagePicker"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center"
+                android:padding="8dp" />
+        </LinearLayout>
+
+        <!-- Reproducción -->
+        <TextView
+            android:id="@+id/sectionPlayback"
+            style="@style/TextTitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="26dp"
+            android:text="@string/settings_playback" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:layout_marginTop="10dp"
+            android:background="@drawable/glass_background">
+
+            <com.google.android.material.switchmaterial.SwitchMaterial
+                android:id="@+id/switchVisualizer"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingStart="14dp"
+                android:paddingEnd="14dp"
+                android:minHeight="48dp"
+                android:text="@string/settings_show_visualizer" />
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="0.5dp"
+                android:background="@color/card_stroke" />
+
+            <com.google.android.material.switchmaterial.SwitchMaterial
+                android:id="@+id/switchLyricsDefault"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingStart="14dp"
+                android:paddingEnd="14dp"
+                android:minHeight="48dp"
+                android:text="@string/settings_show_lyrics_default" />
+        </LinearLayout>
+
+        <!-- Rendimiento -->
+        <TextView
+            android:id="@+id/sectionPerformance"
+            style="@style/TextTitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="26dp"
+            android:text="@string/settings_performance" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:layout_marginTop="10dp"
+            android:background="@drawable/glass_background">
+
+            <TextView
+                android:id="@+id/rowAudioOutput"
+                style="@style/TextTitle"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:gravity="center_vertical"
+                android:paddingStart="14dp"
+                android:paddingEnd="14dp"
+                android:text="@string/settings_audio_output" />
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="0.5dp"
+                android:background="@color/card_stroke" />
+
+            <TextView
+                android:id="@+id/rowDevice"
+                style="@style/TextTitle"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:gravity="center_vertical"
+                android:paddingStart="14dp"
+                android:paddingEnd="14dp"
+                android:text="@string/settings_device" />
+        </LinearLayout>
+
+        <!-- Personalización: color de acento -->
+        <TextView
+            android:id="@+id/sectionCustomization"
+            style="@style/TextTitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="26dp"
+            android:text="@string/settings_customization" />
+
+        <LinearLayout
+            android:id="@+id/accentPicker"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center"
+            android:layout_marginTop="10dp"
+            android:background="@drawable/glass_background"
+            android:padding="12dp" />
+
+        <!-- Estadísticas -->
+        <TextView
+            android:id="@+id/sectionStats"
+            style="@style/TextTitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="26dp"
+            android:text="@string/settings_stats" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:layout_marginTop="10dp"
+            android:background="@drawable/glass_background">
+
+            <TextView
+                android:id="@+id/rowStatSongs"
+                style="@style/TextTitle"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:gravity="center_vertical"
+                android:paddingStart="14dp"
+                android:paddingEnd="14dp"
+                android:text="@string/library_songs" />
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="0.5dp"
+                android:background="@color/card_stroke" />
+
+            <TextView
+                android:id="@+id/rowStatAlbums"
+                style="@style/TextTitle"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:gravity="center_vertical"
+                android:paddingStart="14dp"
+                android:paddingEnd="14dp"
+                android:text="@string/library_albums" />
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="0.5dp"
+                android:background="@color/card_stroke" />
+
+            <TextView
+                android:id="@+id/rowStatArtists"
+                style="@style/TextTitle"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:gravity="center_vertical"
+                android:paddingStart="14dp"
+                android:paddingEnd="14dp"
+                android:text="@string/library_artists" />
+        </LinearLayout>
+
+        <!-- Avanzado -->
+        <TextView
+            android:id="@+id/sectionAdvanced"
+            style="@style/TextTitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="26dp"
+            android:text="@string/settings_advanced" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:layout_marginTop="10dp"
+            android:layout_marginBottom="20dp"
+            android:background="@drawable/glass_background">
+
+            <TextView
+                android:id="@+id/rowLogs"
+                style="@style/TextTitle"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:gravity="center_vertical"
+                android:paddingStart="14dp"
+                android:paddingEnd="14dp"
+                android:text="@string/settings_logs" />
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="0.5dp"
+                android:background="@color/card_stroke" />
+
+            <TextView
+                android:id="@+id/rowAbout"
+                style="@style/TextTitle"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:gravity="center_vertical"
+                android:paddingStart="14dp"
+                android:paddingEnd="14dp"
+                android:text="@string/settings_about" />
+        </LinearLayout>
+    </LinearLayout>
+</ScrollView>

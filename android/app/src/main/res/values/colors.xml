@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Primary Accent Color (Dynamic - extracted from artwork) -->
+    <color name="accent_default">#AF52DE</color>
+    <color name="accent_dynamic">#AF52DE</color>
+
+    <!-- Background Colors (LIGHT theme default) -->
+    <color name="background_primary">#F2F2F7</color>
+    <color name="background_secondary">#FFFFFF</color>
+    <color name="background_tertiary">#E5E5EA</color>
+    <color name="background_grouped">#F2F2F7</color>
+
+    <!-- Text Colors -->
+    <color name="text_primary">#000000</color>
+    <color name="text_secondary">#00000099</color>
+    <color name="text_tertiary">#0000004D</color>
+    <color name="text_quaternary">#0000002E</color>
+
+    <!-- Glass Material Colors (light) -->
+    <color name="glass_ultra_thin">#14FFFFFF</color>
+    <color name="glass_thin">#1FFFFFFF</color>
+    <color name="glass_regular">#26FFFFFF</color>
+
+    <!-- Control Colors -->
+    <color name="control_background">#14000000</color>
+    <color name="control_icon">#000000</color>
+
+    <!-- Color fijo para iconos/texto SOBRE el acento (siempre blanco) -->
+    <color name="icon_on_accent">#FFFFFF</color>
+
+    <!-- Progress Bar -->
+    <color name="progress_track">#20000000</color>
+    <color name="progress_fill">#AF52DE</color>
+    <color name="progress_thumb">#AF52DE</color>
+
+    <!-- Album Artwork Shadow -->
+    <color name="artwork_shadow">#59000000</color>
+
+    <!-- Card Background -->
+    <color name="card_background">#FFFFFF</color>
+    <color name="card_stroke">#1F000000</color>
+
+    <!-- Navigation -->
+    <color name="nav_background">#FFFFFF</color>
+    <color name="nav_item_selected">#AF52DE</color>
+    <color name="nav_item_unselected">#00000099</color>
+
+    <!-- Status Bar -->
+    <color name="status_bar">#F2F2F7</color>
+
+    <!-- Context Menu -->
+    <color name="context_menu_background">#FFFFFF</color>
+
+    <!-- Visualizer -->
+    <color name="visualizer_bar">#AF52DE</color>
+
+    <!-- Lyrics -->
+    <color name="lyrics_active">#AF52DE</color>
+    <color name="lyrics_inactive">#0000004D</color>
+
+    <!-- Equalizer -->
+    <color name="equalizer_band">#AF52DE</color>
+    <color name="equalizer_background">#FFFFFF</color>
+
+    <!-- Transparent -->
+    <color name="transparent">#00000000</color>
+
+    <!-- White/Black (icon/variable). "white" = color contrastante del tema:
+         claro -> negro (iconos oscuros visibles), oscuro -> blanco (values-night). -->
+    <color name="white">#000000</color>
+    <color name="black">#000000</color>
+</resources>

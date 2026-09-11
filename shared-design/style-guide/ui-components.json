@@ -1,0 +1,136 @@
+{
+  "version": "1.0.0",
+  "components": {
+    "now_playing_screen": {
+      "layout": {
+        "artwork": {
+          "max_width": 340,
+          "max_height_ratio": 0.42,
+          "min_height_ratio": 0.32,
+          "corner_radius": 22,
+          "horizontal_padding": 20,
+          "shadow": {
+            "color": "#000000",
+            "opacity": 0.35,
+            "radius": 30,
+            "offset_y": 15
+          }
+        },
+        "controls": {
+          "primary_button_size": 72,
+          "secondary_button_size": 44,
+          "button_spacing": 24,
+          "control_row_height": 80
+        },
+        "progress_bar": {
+          "height": 4,
+          "vertical_margin": 20,
+          "horizontal_padding": 24
+        }
+      }
+    },
+    
+    "song_row": {
+      "layout": {
+        "height": 68,
+        "artwork_size": 48,
+        "artwork_corner_radius": 8,
+        "padding": {
+          "horizontal": 16,
+          "vertical": 12
+        },
+        "spacing": 12
+      },
+      "typography": {
+        "title": {
+          "size": 17,
+          "weight": "regular",
+          "color": "primary"
+        },
+        "subtitle": {
+          "size": 15,
+          "weight": "regular",
+          "color": "secondary"
+        },
+        "duration": {
+          "size": 15,
+          "weight": "regular",
+          "color": "tertiary"
+        }
+      }
+    },
+    
+    "category_picker": {
+      "items": ["songs", "albums", "artists", "playlists"],
+      "height": 44,
+      "item_width": 88,
+      "corner_radius": 22,
+      "background": "glass_material",
+      "animation": {
+        "type": "spring",
+        "response": 0.32,
+        "damping_fraction": 0.88
+      }
+    },
+    
+    "search_bar": {
+      "height": 36,
+      "corner_radius": 10,
+      "background": "glass_material",
+      "placeholder_color": "tertiary"
+    },
+    
+    "context_menu": {
+      "corner_radius": 16,
+      "background": "glass_material",
+      "item_height": 44,
+      "padding": 8
+    },
+    
+    "airplay_cast_button": {
+      "size": 44,
+      "corner_radius": 22,
+      "background": "glass_material",
+      "icon": {
+        "ios": "airplay.audio",
+        "android": "cast",
+        "size": 20
+      },
+      "description": "Botón de salida de audio: AirPlay en iOS, Cast/Chromecast en Android"
+    },
+    
+    "queue_view": {
+      "row_height": 68,
+      "artwork_size": 48,
+      "drag_handle_width": 32,
+      "remove_button_size": 32
+    },
+    
+    "lyrics_view": {
+      "font_size": 24,
+      "line_height": 1.5,
+      "active_color": "dynamic_accent",
+      "inactive_color": "tertiary",
+      "padding": 24,
+      "animation_duration": 0.3
+    },
+    
+    "equalizer_view": {
+      "band_height": 200,
+      "band_width": 24,
+      "band_spacing": 8,
+      "slider_size": 20,
+      "background": "glass_material",
+      "padding": 20
+    },
+    
+    "audio_visualizer": {
+      "bar_count": 60,
+      "bar_width": 3,
+      "bar_spacing": 1,
+      "max_height": 40,
+      "color": "dynamic_accent",
+      "animation_duration": 0.15
+    }
+  }
+}

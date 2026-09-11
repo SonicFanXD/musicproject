@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Primary Accent Color (Dynamic - extracted from artwork) -->
+    <color name="accent_default">#AF52DE</color>
+    <color name="accent_dynamic">#AF52DE</color>
+
+    <!-- Background Colors (Dark theme) -->
+    <color name="background_primary">#000000</color>
+    <color name="background_secondary">#1C1C1E</color>
+    <color name="background_tertiary">#2C2C2E</color>
+    <color name="background_grouped">#000000</color>
+
+    <!-- Text Colors -->
+    <color name="text_primary">#FFFFFF</color>
+    <color name="text_secondary">#EBEBF599</color>
+    <color name="text_tertiary">#EBEBF54D</color>
+    <color name="text_quaternary">#EBEBF52E</color>
+
+    <!-- Glass Material Colors -->
+    <color name="glass_ultra_thin">#14FFFFFF</color>
+    <color name="glass_thin">#1FFFFFFF</color>
+    <color name="glass_regular">#26FFFFFF</color>
+
+    <!-- Control Colors -->
+    <color name="control_background">#14FFFFFF</color>
+    <color name="control_icon">#FFFFFF</color>
+
+    <!-- Color fijo para iconos/texto SOBRE el acento (siempre blanco) -->
+    <color name="icon_on_accent">#FFFFFF</color>
+
+    <!-- Progress Bar -->
+    <color name="progress_track">#20FFFFFF</color>
+    <color name="progress_fill">#AF52DE</color>
+    <color name="progress_thumb">#AF52DE</color>
+
+    <!-- Album Artwork Shadow -->
+    <color name="artwork_shadow">#59000000</color>
+
+    <!-- Card Background -->
+    <color name="card_background">#1C1C1E</color>
+    <color name="card_stroke">#33FFFFFF</color>
+
+    <!-- Navigation -->
+    <color name="nav_background">#1C1C1E</color>
+    <color name="nav_item_selected">#AF52DE</color>
+    <color name="nav_item_unselected">#EBEBF599</color>
+
+    <!-- Status Bar -->
+    <color name="status_bar">#000000</color>
+
+    <!-- Context Menu -->
+    <color name="context_menu_background">#1C1C1E</color>
+
+    <!-- Visualizer -->
+    <color name="visualizer_bar">#AF52DE</color>
+
+    <!-- Lyrics -->
+    <color name="lyrics_active">#AF52DE</color>
+    <color name="lyrics_inactive">#EBEBF54D</color>
+
+    <!-- Equalizer -->
+    <color name="equalizer_band">#AF52DE</color>
+    <color name="equalizer_background">#1C1C1E</color>
+
+    <!-- Transparent -->
+    <color name="transparent">#00000000</color>
+
+    <!-- White/Black -->
+    <color name="white">#FFFFFF</color>
+    <color name="black">#000000</color>
+</resources>

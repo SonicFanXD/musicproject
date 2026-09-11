@@ -1,0 +1,151 @@
+{
+  "version": "1.0.0",
+  "description": "Estructura de proyecto Android equivalente a iOS",
+  
+  "android_project": {
+    "root": "android/",
+    "structure": {
+      "app": {
+        "path": "android/app/",
+        "description": "Módulo principal de la aplicación",
+        "contents": {
+          "src": {
+            "main": {
+              "path": "src/main/",
+              "contents": {
+                "java": {
+                  "path": "java/com/aurora/player/",
+                  "description": "Código fuente Kotlin/Java",
+                  "packages": {
+                    "views": {
+                      "path": "views/",
+                      "description": "Activities y Fragments (equivalentes a SwiftUI Views)",
+                      "files": [
+                        "MainActivity.kt",
+                        "NowPlayingActivity.kt",
+                        "LibraryFragment.kt",
+                        "SettingsFragment.kt",
+                        "QueueFragment.kt",
+                        "LyricsFragment.kt"
+                      ]
+                    },
+                    "services": {
+                      "path": "services/",
+                      "description": "Lógica de negocio y audio",
+                      "files": [
+                        "AudioEngine.kt",
+                        "FileAccessService.kt",
+                        "LibrarySearch.kt",
+                        "LyricsParser.kt",
+                        "ThemeManager.kt",
+                        "CastService.kt"
+                      ]
+                    },
+                    "models": {
+                      "path": "models/",
+                      "description": "Modelos de datos",
+                      "files": [
+                        "Song.kt",
+                        "Album.kt",
+                        "Artist.kt",
+                        "Playlist.kt",
+                        "LyricsModels.kt"
+                      ]
+                    },
+                    "adapters": {
+                      "path": "adapters/",
+                      "description": "Adapters para RecyclerView",
+                      "files": [
+                        "SongAdapter.kt",
+                        "AlbumAdapter.kt",
+                        "PlaylistAdapter.kt"
+                      ]
+                    },
+                    "viewmodels": {
+                      "path": "viewmodels/",
+                      "description": "ViewModels para MVVM",
+                      "files": [
+                        "PlayerViewModel.kt",
+                        "LibraryViewModel.kt",
+                        "SettingsViewModel.kt"
+                      ]
+                    }
+                  }
+                },
+                "res": {
+                  "path": "res/",
+                  "description": "Recursos de Android",
+                  "contents": {
+                    "layout": {
+                      "path": "layout/",
+                      "description": "XML layouts (equivalentes a SwiftUI)",
+                      "files": [
+                        "activity_main.xml",
+                        "activity_now_playing.xml",
+                        "fragment_library.xml",
+                        "item_song.xml",
+                        "item_album.xml"
+                      ]
+                    },
+                    "values": {
+                      "path": "values/",
+                      "description": "Valores de recursos",
+                      "files": [
+                        "colors.xml",
+                        "strings.xml",
+                        "styles.xml",
+                        "themes.xml",
+                        "dimens.xml"
+                      ]
+                    },
+                    "drawable": {
+                      "path": "drawable/",
+                      "description": "Iconos y gráficos vectoriales",
+                      "files": [
+                        "ic_play.xml",
+                        "ic_pause.xml",
+                        "ic_next.xml",
+                        "ic_previous.xml",
+                        "ic_cast.xml",
+                        "ic_airplay.xml"
+                      ]
+                    },
+                    "mipmap": {
+                      "path": "mipmap-*",
+                      "description": "Iconos de la app en varias densidades"
+                    }
+                  }
+                },
+                "AndroidManifest.xml": "Manifiesto de la aplicación"
+              }
+            }
+          },
+          "build.gradle": "Configuración de Gradle del módulo app"
+        }
+      },
+      "build.gradle": "Configuración de Gradle del proyecto",
+      "settings.gradle": "Configuración de módulos",
+      "gradle.properties": "Propiedades de Gradle"
+    }
+  },
+  
+  "equivalences": {
+    "ios_to_android": {
+      "SwiftUI View": "Activity / Fragment",
+      "UIView": "View",
+      "UIViewController": "Activity",
+      "NavigationStack": "Navigation Component",
+      "List": "RecyclerView",
+      "VStack": "LinearLayout (vertical)",
+      "HStack": "LinearLayout (horizontal)",
+      "ZStack": "FrameLayout",
+      "AppStorage": "SharedPreferences",
+      "ObservableObject": "ViewModel",
+      "Published": "LiveData / StateFlow",
+      "AudioEngine.swift": "AudioEngine.kt",
+      "FileAccessService.swift": "FileAccessService.kt",
+      "ThemeManager.swift": "ThemeManager.kt",
+      "AirPlayRoutePickerView": "MediaRouteButton (Cast)"
+    }
+  }
+}
