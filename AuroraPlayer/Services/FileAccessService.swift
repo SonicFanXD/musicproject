@@ -392,19 +392,25 @@ class FileAccessService: ObservableObject {
                 DispatchQueue.main.async { self.finishDiscovery(generation: generation) }
             }
 
+            // ✅ Box para acumular resultados desde el closure de coordinate
+            // sin problemas de scope/Sendable en Swift 6 (coordinate es
+            // síncrono: al retornar, el box ya está completo).
+            final class FolderScanResult: @unchecked Sendable {
+                var seenKeys = Set<String>()
+                var fileCount = 0
+            }
+            let scanResult = FolderScanResult()
+            let supportedExts = self.supportedExtensions
+            let folderKnownKeys = knownKeys
             let coordinator = NSFileCoordinator()
             var coordinationError: NSError?
 
-            // ✅ TODO el trabajo del enumerador vive DENTRO del closure de
-            // coordinate (Swift 6 no permite mutar vars fuera y leerlas
-            // después). El flush final del lote y el registro de claves
-            // vistas también ocurren aquí dentro.
-            let folderKnownKeys = knownKeys
             coordinator.coordinate(
                 readingItemAt: url,
                 options: [],
                 error: &coordinationError
-            ) { coordinatedURL in
+            ) { [weak self, scanResult, folderKnownKeys, supportedExts, generation] coordinatedURL in
+                guard let self else { return }
                 let keys: [URLResourceKey] = [.isDirectoryKey]
                 guard let enumerator = FileManager.default.enumerator(
                     at: coordinatedURL,
@@ -416,21 +422,18 @@ class FileAccessService: ObservableObject {
                 }
 
                 var batch: [URL] = []
-                var fileCount = 0
                 // URLs ya indexadas NO entran a la cola de metadatos.
                 // (registerMetadataBatch también filtra como segunda barrera.)
-                var seenKeys = Set<String>()
-                seenKeys.reserveCapacity(1024)
                 for case let fileURL as URL in enumerator {
                     // ✅ SEGURIDAD: capturar excepciones de recursos corruptos
                     // para que un archivo problemático no detenga toda la carpeta
                     let values = try? fileURL.resourceValues(forKeys: Set(keys))
                     if values?.isDirectory == true { continue }
-                    guard self.supportedExtensions.contains(fileURL.pathExtension.lowercased()) else { continue }
+                    guard supportedExts.contains(fileURL.pathExtension.lowercased()) else { continue }
 
-                    fileCount += 1
+                    scanResult.fileCount += 1
                     let key = Self.libraryKey(for: fileURL)
-                    seenKeys.insert(key)
+                    scanResult.seenKeys.insert(key)
                     guard !folderKnownKeys.contains(key) else { continue }
                     batch.append(fileURL)
                     if batch.count == self.metadataBatchSize {
@@ -439,17 +442,18 @@ class FileAccessService: ObservableObject {
                     }
                 }
                 if !batch.isEmpty { self.registerMetadataBatch(batch, generation: generation) }
-                AppLog.debug(.library, "Carpeta \(coordinatedURL.lastPathComponent): \(fileCount) archivos encontrados")
-                // ✅ Registrar TODAS las URLs vistas (indexadas o no) para poder
-                // podar al final las canciones borradas del disco. Un solo envío
-                // al main por carpeta (no uno por archivo): con 722 canciones
-                // eran 722 dispatches que saturaban el main.
-                let folderSeenKeys = seenKeys
-                if !folderSeenKeys.isEmpty {
-                    DispatchQueue.main.async { [weak self] in
-                        guard let self, generation == self.scanGeneration else { return }
-                        self.seenOnDiskKeys.formUnion(folderSeenKeys)
-                    }
+                AppLog.debug(.library, "Carpeta \(coordinatedURL.lastPathComponent): \(scanResult.fileCount) archivos encontrados")
+            }
+            // ✅ Registrar TODAS las URLs vistas (indexadas o no) para poder
+            // podar al final las canciones borradas del disco. Un solo envío
+            // al main por carpeta (no uno por archivo). Se lee del box (ya
+            // completo porque coordinate es síncrono), no de una variable
+            // del closure → sin error de scope.
+            let folderSeenKeys = scanResult.seenKeys
+            if !folderSeenKeys.isEmpty {
+                DispatchQueue.main.async { [weak self] in
+                    guard let self, generation == self.scanGeneration else { return }
+                    self.seenOnDiskKeys.formUnion(folderSeenKeys)
                 }
             }
 
