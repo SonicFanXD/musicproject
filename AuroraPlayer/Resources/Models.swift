@@ -289,18 +289,21 @@ struct Album: Identifiable, Equatable {
         songs.first(where: { $0.artworkData != nil })?.artwork
     }
 
-    // ✅ Año del álbum por MAYORÍA: el año que tiene la mayoría de las
-    // canciones (se devuelve una fecha representativa de ese grupo).
-    // Un solo tag erróneo o una fecha de creación de archivo suelta ya no
-    // mueve todo el álbum: con min(), un valor atípico definía el año.
+    // ✅ Año del álbum DETERMINISTA: el año con más canciones; en empate,
+    // gana el año MÁS ANTIGUO (lanzamiento original, no la reedición).
+    // `Dictionary.max` con solo conteo era no-determinista en empates y un
+    // solo tag erróneo movía todo el álbum (antes se usaba `.min()` global).
     // Si ninguna canción tiene fecha, retornar nil (álbum sin año).
     var releaseDate: Date? {
         let dates = songs.compactMap { $0.releaseDate }
         guard !dates.isEmpty else { return nil }
         let calendar = Calendar.current
         let byYear = Dictionary(grouping: dates) { calendar.component(.year, from: $0) }
-        guard let majority = byYear.max(by: { $0.value.count < $1.value.count }) else { return nil }
-        return majority.value.min()
+        let best = byYear.sorted {
+            if $0.value.count != $1.value.count { return $0.value.count > $1.value.count }
+            return $0.key < $1.key
+        }.first
+        return best?.value.min()
     }
 
     // ✅ UNIFICADO: delega en la caché/algorithm compartidos de AppTheme —

@@ -1113,15 +1113,45 @@ class FileAccessService: ObservableObject {
 
     private func metadataDateAsync(_ item: AVMetadataItem) async -> Date? {
         if let date = try? await item.load(.dateValue) { return date }
-        guard let text = (await metadataText(item))?.nilIfEmpty else { return nil }
+        guard let raw = (await metadataText(item))?.nilIfEmpty else { return nil }
+        return Self.parseReleaseDate(raw)
+    }
+
+    /// ✅ Parser TOLERANTE de fechas de tags: los años reales vienen en
+    /// muchos formatos ("2023", "2023-05-17", "2023/05/17", "17-05-2023",
+    /// "2023-05-17T...Z", "© 2023", "2023; 2023-05-01"...). El parser anterior
+    /// solo aceptaba ISO8601 / yyyy-MM-dd / yyyy → cualquier otra variante
+    /// devolvía nil y la canción caía al creationDate del archivo (2026).
+    static func parseReleaseDate(_ raw: String) -> Date? {
+        var text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return nil }
+        // "2023; 2023-05-01" → quedarse con el primer valor.
+        if let semi = text.firstIndex(of: ";") { text = String(text[..<semi]).trimmingCharacters(in: .whitespacesAndNewlines) }
         let iso = ISO8601DateFormatter()
         if let date = iso.date(from: text) { return date }
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "yyyy-MM-dd"
-        if let date = formatter.date(from: text) { return date }
-        formatter.dateFormat = "yyyy"
-        return formatter.date(from: text)
+        formatter.isLenient = true
+        for format in ["yyyy-MM-dd'T'HH:mm:ssXXXXX", "yyyy-MM-dd'T'HH:mm:ss", "yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd", "yyyy/MM/dd", "dd-MM-yyyy", "MM-dd-yyyy", "dd/MM/yyyy", "yyyyMMdd", "yyyyMM", "yyyy"] {
+            formatter.dateFormat = format
+            if let date = formatter.date(from: text) { return date }
+        }
+        // Último recurso: extraer el primer año de 4 dígitos (1900–2100).
+        // "© 2023 Remaster" → 2023 en vez de nil → creationDate.
+        if let regex = try? NSRegularExpression(pattern: "(19|20)\\d{2}") {
+            let range = NSRange(text.startIndex..., in: text)
+            if let match = regex.firstMatch(in: text, range: range),
+               let yearRange = Range(match.range, in: text),
+               let year = Int(text[yearRange]),
+               (1900...2100).contains(year) {
+                var components = DateComponents()
+                components.year = year
+                components.month = 1
+                components.day = 1
+                return Calendar(identifier: .gregorian).date(from: components)
+            }
+        }
+        return nil
     }
 
     private struct ID3Metadata {
@@ -1389,10 +1419,10 @@ class FileAccessService: ObservableObject {
 
     private func date(from value: String?) -> Date? {
         guard let value = value?.nilIfEmpty else { return nil }
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = value.count >= 10 ? "yyyy-MM-dd" : "yyyy"
-        return formatter.date(from: value)
+        // Mismo parser tolerante que AVFoundation (metadataDateAsync): si
+        // aquí se devolviera nil por un formato poco común ("© 2023",
+        // "17.05.2023"), la canción caería al creationDate del archivo.
+        return Self.parseReleaseDate(value)
     }
 
     private func saveFolders() {
