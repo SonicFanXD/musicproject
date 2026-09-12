@@ -69,7 +69,7 @@ class FileAccessService: ObservableObject {
     // `/var/...`, u otra codificación) → las 722 canciones "ya tenidas" se
     // consideraban nuevas y se reindexaban completas en cada escaneo.
     private var indexedSongKeys = Set<String>()
-    /// Ruta canónica para comparar canciones entre disco y caché.
+    /// Ruta canonica para comparar canciones entre disco y cache.
     static func libraryKey(for url: URL) -> String {
         var path = url.standardizedFileURL.path
         // /private/var/... y /var/... son el mismo archivo (symlink /var).
@@ -715,10 +715,10 @@ class FileAccessService: ObservableObject {
         var releaseDate: Date?
         // ⛔️ FECHA DE ARCHIVO PROHIBIDA: la fecha de creación del archivo
         // (cuándo se copió/descargó) NUNCA se usa como año. Era la causa
-        #1 del "álbum de 2023 con año 2026". Si el archivo no trae tag de
-        // año real (TDRC/TDRL/TDOR/TYER/©day/DATE), releaseDate queda nil:
-        // la canción se ordena al final y el álbum no muestra pill de año.
-        // Mejor SIN año que con un año INVENTADO.
+        // principal del "álbum de 2023 con año 2026". Si el archivo no trae
+        // tag de año real (TDRC/TDRL/TDOR/TYER/©day/DATE), releaseDate queda
+        // nil: la canción se ordena al final y el álbum no muestra pill de
+        // año. Mejor SIN año que con un año INVENTADO.
         var duration: TimeInterval = 0
 
         // ✅ Timeout para evitar que archivos corruptos congelen la indexación
