@@ -57,7 +57,7 @@ class FileAccessService: ObservableObject {
     private let defaultsKey = "com.aurora.musicFolders"
     private let filesDefaultsKey = "com.aurora.musicFiles"
     private let playlistsDefaultsKey = "com.aurora.playlists"
-    private let libraryCacheFileName = "library-metadata-v9.json"
+    private let libraryCacheFileName = "library-metadata-v10.json"
     private let likedSongsKey = "com.aurora.likedSongs"
     private let likedPlaylistName = "Me Gusta"
     private var activeURLs: [UUID: URL] = [:]
@@ -713,11 +713,12 @@ class FileAccessService: ObservableObject {
         var discNumber: Int?
         var trackNumber = 0
         var releaseDate: Date?
-        // ⚠️ Fecha de creación del ARCHIVO (cuándo se copió/descargó), NO del
-        // lanzamiento. Solo se usa como último respaldo (ver abajo): si se
-        // asignara a releaseDate al leerla, taparía el año real del tag
-        // (©day/TDRC/DATE) que se lee después → álbum de 2023 mostrando 2026.
-        var creationDateFallback: Date?
+        // ⛔️ FECHA DE ARCHIVO PROHIBIDA: la fecha de creación del archivo
+        // (cuándo se copió/descargó) NUNCA se usa como año. Era la causa
+        #1 del "álbum de 2023 con año 2026". Si el archivo no trae tag de
+        // año real (TDRC/TDRL/TDOR/TYER/©day/DATE), releaseDate queda nil:
+        // la canción se ordena al final y el álbum no muestra pill de año.
+        // Mejor SIN año que con un año INVENTADO.
         var duration: TimeInterval = 0
 
         // ✅ Timeout para evitar que archivos corruptos congelen la indexación
@@ -757,8 +758,9 @@ class FileAccessService: ObservableObject {
                     discNumber = (try? await item.load(.numberValue))?.intValue
                 case "trackNumber":
                     trackNumber = (try? await item.load(.numberValue))?.intValue ?? 0
-                case "creationDate":
-                    creationDateFallback = try? await item.load(.dateValue)
+                // ⛔️ "creationDate" NO se lee: puede ser la fecha del ARCHIVO
+                // (no del lanzamiento). El año real viene por formatMetadata
+                // (TDRC/TDRL/TDOR/TYER/©day) o por el parser binario.
                 default:
                     break
                 }
@@ -854,9 +856,8 @@ class FileAccessService: ObservableObject {
                 }
             }
 
-            // Fecha de creación del archivo SOLO si ningún tag trajo año real.
-            if releaseDate == nil { releaseDate = creationDateFallback }
-
+            // ⛔️ Sin fallback de fecha de archivo: si ningún tag trajo año,
+            // releaseDate queda nil (mejor sin año que con año inventado).
             let assetDuration = try await durationTask
             duration = assetDuration.isNumeric ? max(0, assetDuration.seconds) : 0
 
@@ -920,8 +921,7 @@ class FileAccessService: ObservableObject {
         var discNumber: Int?
         var trackNumber = 0
         var releaseDate: Date?
-        // ⚠️ Igual que en readMetadata: fecha de archivo solo como respaldo.
-        var creationDateFallback: Date?
+        // ⛔️ Igual que en readMetadata: fecha de archivo PROHIBIDA.
         var durationSeconds: Double = 0
 
         do {
@@ -946,8 +946,7 @@ class FileAccessService: ObservableObject {
                     discNumber = (try? await item.load(.numberValue))?.intValue
                 case "trackNumber":
                     trackNumber = (try? await item.load(.numberValue))?.intValue ?? 0
-                case "creationDate":
-                    creationDateFallback = try? await item.load(.dateValue)
+                // ⛔️ "creationDate" NO se lee (fecha del archivo ≠ lanzamiento).
                 default:
                     break
                 }
@@ -978,8 +977,7 @@ class FileAccessService: ObservableObject {
             }
         }
 
-        // Fecha de creación del archivo SOLO si ningún tag trajo año real.
-        if releaseDate == nil { releaseDate = creationDateFallback }
+        // (La fecha de creación del archivo NUNCA se usa: año nil si no hay tag.)
 
         let audioFile = try? AVAudioFile(forReading: url)
         let sampleRate = audioFile?.processingFormat.sampleRate ?? 0
