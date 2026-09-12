@@ -261,21 +261,33 @@ struct ContentView: View {
     //   canciones nuevas y SOLO se muestra el indicador compacto mientras
     //   dura; desaparece al terminar.
     @State private var firstTimeIndexing = false
+    // ✅ FLAG PERSISTENTE: la tarjeta grande SOLO se muestra en la PRIMERA
+    // indexación real de la instalación (sin caché previo). Cualquier
+    // re-escaneo posterior (manual o detección en segundo plano) usa la fila
+    // compacta, tal como decidió el usuario.
+    @AppStorage("com.aurora.firstIndexingDone") private var firstIndexingDone = false
 
     private func syncFirstTimeIndexing() {
         let scanning = fileAccessService.isScanning
-        let libraryEmpty = fileAccessService.songs.isEmpty && fileAccessService.pendingSongsCount == 0
-        // ✅ Solo mostrar tarjeta grande en la PRIMERA carga (nunca se han cargado canciones)
-        // En cargas posteriores, aunque `libraryEmpty` sea true (porque rescanAllFolders
-        // limpia songs), NO se muestra la tarjeta grande.
-        let isVeryFirstLoad = scanning && libraryEmpty && fileAccessService.isFirstLibraryLoad
-        if isVeryFirstLoad {
-            if !firstTimeIndexing {
-                withAnimation(.easeOut(duration: 0.3)) { firstTimeIndexing = true }
+        if firstTimeIndexing {
+            // ✅ FIX "tarjeta inservible": el modo tarjeta grande SE MANTIENE
+            // aunque `songs` ya no esté vacío (antes, en cuanto llegaba el
+            // primer lote el criterio `libraryEmpty` pasaba a false y saltaba
+            // a la compacta). Solo se apaga al FINALIZAR el escaneo.
+            if !scanning {
+                firstIndexingDone = true
+                withAnimation(.easeOut(duration: 0.45)) { firstTimeIndexing = false }
             }
-        } else if !scanning && firstTimeIndexing {
-            // ✅ Fade-out optimizado: solo opacidad (GPU), sin blur ni layout costoso.
-            withAnimation(.easeOut(duration: 0.45)) { firstTimeIndexing = false }
+            return
+        }
+        // ✅ Solo se ACTIVA la primera vez de la instalación: escaneando,
+        // sin flag guardado y sin biblioteca (caché vacío → primera indexación).
+        let isFirstScanOfInstall = scanning
+            && !firstIndexingDone
+            && fileAccessService.songs.isEmpty
+            && fileAccessService.pendingSongsCount == 0
+        if isFirstScanOfInstall {
+            withAnimation(.easeOut(duration: 0.3)) { firstTimeIndexing = true }
         }
     }
 
@@ -436,9 +448,10 @@ struct ContentView: View {
                 .listRowBackground(Color.clear)
             }
         } else {
-            // ✅ ESCANEO CON CANCIONES EXISTENTES: mostrar indicador compacto
-            // SOLO cuando se están agregando canciones nuevas (escaneo incremental)
-            if fileAccessService.isScanning && fileAccessService.scanTotal > 0 {
+            // ✅ ESCANEO CON CANCIONES EXISTENTES: indicador compacto SOLO en
+            // re-escaneos (manual o canciones nuevas en segundo plano); la
+            // primera indexación usa la tarjeta grande.
+            if fileAccessService.isScanning && fileAccessService.scanTotal > 0 && !firstTimeIndexing {
                 compactIndexingRow
                     .listRowSeparator(.hidden)
                     .listRowBackground(Color.clear)
@@ -646,8 +659,9 @@ struct ContentView: View {
                 .listRowSeparator(.hidden).listRowBackground(Color.clear)
             }
         } else {
-            // ✅ ESCANEO CON ÁLBUMES EXISTENTES: mostrar indicador compacto
-            if fileAccessService.isScanning && fileAccessService.scanTotal > 0 {
+            // ✅ ESCANEO CON ÁLBUMES EXISTENTES: indicador compacto SOLO en
+            // re-escaneos (la primera indexación usa la tarjeta grande).
+            if fileAccessService.isScanning && fileAccessService.scanTotal > 0 && !firstTimeIndexing {
                 compactIndexingRow
                     .listRowSeparator(.hidden)
                     .listRowBackground(Color.clear)
@@ -689,8 +703,9 @@ struct ContentView: View {
                 .listRowSeparator(.hidden).listRowBackground(Color.clear)
             }
         } else {
-            // ✅ ESCANEO CON ARTISTAS EXISTENTES: mostrar indicador compacto
-            if fileAccessService.isScanning && fileAccessService.scanTotal > 0 {
+            // ✅ ESCANEO CON ARTISTAS EXISTENTES: indicador compacto SOLO en
+            // re-escaneos (la primera indexación usa la tarjeta grande).
+            if fileAccessService.isScanning && fileAccessService.scanTotal > 0 && !firstTimeIndexing {
                 compactIndexingRow
                     .listRowSeparator(.hidden)
                     .listRowBackground(Color.clear)

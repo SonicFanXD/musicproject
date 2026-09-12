@@ -57,7 +57,7 @@ class FileAccessService: ObservableObject {
     private let defaultsKey = "com.aurora.musicFolders"
     private let filesDefaultsKey = "com.aurora.musicFiles"
     private let playlistsDefaultsKey = "com.aurora.playlists"
-    private let libraryCacheFileName = "library-metadata-v8.json"
+    private let libraryCacheFileName = "library-metadata-v9.json"
     private let likedSongsKey = "com.aurora.likedSongs"
     private let likedPlaylistName = "Me Gusta"
     private var activeURLs: [UUID: URL] = [:]
@@ -800,7 +800,13 @@ class FileAccessService: ObservableObject {
                     if trackNumber == 0, identifier.contains("tracknumber") || key.contains("trkn") || key.contains("trck") {
                         trackNumber = (await metadataNumberAsync(item)) ?? 0
                     }
-                    if releaseDate == nil, identifier.contains("date") || identifier.contains("year") || key.contains("day") || key.contains("tdrc") {
+                    if releaseDate == nil,
+                       // ✅ FIX año 2026: el identifier de "creationDate" TAMBIÉN
+                       // contiene "date" ("idy.creationdate") → el filtro de abajo
+                       // matcheaba la fecha de CREACIÓN del archivo y la usaba
+                       // como año de lanzamiento. Excluir cualquier creación.
+                       !identifier.contains("creation"),
+                       identifier.contains("date") || identifier.contains("year") || key.contains("day") || key.contains("tdrc") {
                         releaseDate = await metadataDateAsync(item)
                     }
                     if lyrics.isEmpty {

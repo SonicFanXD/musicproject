@@ -98,6 +98,11 @@ struct NowPlayingView: View {
 
     var body: some View {
         ZStack {
+            // ✅ MORPHING: base sólida SIEMPRE visible (sin gate de opacity).
+            // Así el rect pequeño del morph pinta desde el primer frame — no
+            // se ve un hueco/negro del sistema — y la barra "crece con color".
+            Color(UIColor.systemBackground)
+                .ignoresSafeArea()
             // ✅ El fondo inmersivo se funde (opacity) en vez de animar su blur:
             // la capa con blur ya está compositada, cambiar solo su alpha es
             // Core Animation (barato) y evita re-computar el gaussian por frame.
