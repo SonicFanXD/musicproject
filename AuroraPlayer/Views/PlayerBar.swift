@@ -206,7 +206,11 @@ struct PlayerBar: View {
                             lineWidth: 1
                         )
                 }
-                .sheet(isPresented: $showingNowPlaying) {
+                // ✅ TRANSICIÓN PREMIUM: en vez de un sheet que sube de golpe,
+                // fullScreenCover cubre la pantalla y NowPlayingView anima su
+                // "expand" (fondo fade + contenido zoom + artwork desde la barra)
+                // controlado por su @State `expandFromBar` → 60fps estables.
+                .fullScreenCover(isPresented: $showingNowPlaying) {
                     NowPlayingView(audioEngine: audioEngine, fileAccessService: fileAccessService, clock: audioEngine.clock)
                 }
             }

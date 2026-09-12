@@ -26,6 +26,11 @@ struct NowPlayingView: View {
     @State private var showArtistDetail = false
     @State private var showAlbumDetail = false
     @State private var artworkScale: CGFloat = 1.0
+    // ✅ ANIMACIÓN "EXPAND": al abrir desde la PlayerBar, la pantalla y todas
+    // sus capas parten "compactas" (opacidad 0, fondo 0) y se expanden con un
+    // solo withAnimation. Solo transform/opacity entre dos estados → GPU,
+    // 60fps estables sin re-render de blur por frame.
+    @State private var expandFromBar = false
     @State private var progressBarWidth: CGFloat = 0
     @State private var extractedColor: Color = AppTheme.accent
     // ✅ Guardamos el UIColor dominante crudo para calcular contraste
@@ -86,7 +91,11 @@ struct NowPlayingView: View {
 
     var body: some View {
         ZStack {
+            // ✅ El fondo inmersivo se funde (opacity) en vez de animar su blur:
+            // la capa con blur ya está compositada, cambiar solo su alpha es
+            // Core Animation (barato) y evita re-computar el gaussian por frame.
             backgroundView
+                .opacity(expandFromBar ? 1 : 0)
 
                 // ✅ DISEÑO MEJORADO: distribución equilibrada con Spacers
                 // flexibles (la proporción se adapta a cualquier pantalla,
@@ -95,6 +104,12 @@ struct NowPlayingView: View {
                     Spacer(minLength: isCompactScreen ? 4 : 10)
 
                     artworkView
+                        // ✅ ANIMACIÓN "EXPAND": el artwork parte pequeño y abajo
+                        // (como saliendo de la barra) y crece al centro al abrir.
+                        // Transform de una imagen → GPU, sin re-render.
+                        .scaleEffect(expandFromBar ? 1 : 0.55)
+                        .offset(y: expandFromBar ? 0 : 70)
+                        .opacity(expandFromBar ? 1 : 0)
                         // ✅ MEJORADO: la portada solo anima al CAMBIAR de canción,
                         // no al pausar/resumir. Antes había una animación rara de
                         // escala (1.02 → 1.0) que se veía artificial al tocar play/pause.
@@ -132,6 +147,10 @@ struct NowPlayingView: View {
                 }
                 .padding(.horizontal, 24)
                 .fixedSize(horizontal: false, vertical: true)
+                // ✅ "Expand" suave de TODO el contenido: levá scale leve + fade
+                // para dar profundidad (deja el protagonismo al artwork).
+                .scaleEffect(expandFromBar ? 1 : 0.94)
+                .opacity(expandFromBar ? 1 : 0)
             }
             // ✅ Header personalizado: la navigation bar del sistema pintaba un
             // recuadro gris/negro sobre el fondo inmersivo. safeAreaInset dibuja
@@ -172,6 +191,12 @@ struct NowPlayingView: View {
                 AppLog.info(.interface, "NowPlaying abierto: '\(audioEngine.currentSong?.displayName ?? "—")'")
                 withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
                     artworkScale = 1.0
+                }
+                // ✅ "EXPAND": activar la animación de entrada de toda la pantalla.
+                // Spring suave y contenido, con la parte del artwork ya resuelta
+                // por el modificador de artworkView (más pronunciado).
+                withAnimation(.spring(response: 0.55, dampingFraction: 0.82)) {
+                    expandFromBar = true
                 }
                 audioEngine.isKeepScreenOnEnabled = keepScreenOn
                 // ✅ Abrir letras automáticamente si el ajuste está activado
