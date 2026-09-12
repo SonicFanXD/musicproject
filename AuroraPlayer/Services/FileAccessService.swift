@@ -57,7 +57,7 @@ class FileAccessService: ObservableObject {
     private let defaultsKey = "com.aurora.musicFolders"
     private let filesDefaultsKey = "com.aurora.musicFiles"
     private let playlistsDefaultsKey = "com.aurora.playlists"
-    private let libraryCacheFileName = "library-metadata-v10.json"
+    private let libraryCacheFileName = "library-metadata-v11.json"
     private let likedSongsKey = "com.aurora.likedSongs"
     private let likedPlaylistName = "Me Gusta"
     private var activeURLs: [UUID: URL] = [:]
@@ -1131,27 +1131,73 @@ class FileAccessService: ObservableObject {
     }
 
     private func metadataDateAsync(_ item: AVMetadataItem) async -> Date? {
-        if let date = try? await item.load(.dateValue) { return date }
-        guard let raw = (await metadataText(item))?.nilIfEmpty else { return nil }
-        return Self.parseReleaseDate(raw)
+        // ✅ El año mostrado es el ESCRITO en el tag: parsear el TEXTO antes
+        // que dateValue. dateValue devuelve un instante absoluto y, en zonas
+        // negativas, "2023-01-01T00:00:00Z" cae al 31 dic del año anterior.
+        if let raw = (await metadataText(item))?.nilIfEmpty,
+           let parsed = Self.parseReleaseDate(raw) {
+            return parsed
+        }
+        if let date = try? await item.load(.dateValue) {
+            // Fallback sin texto (o texto no parseable): normalizar el
+            // instante a medianoche LOCAL (día del calendario local).
+            let calendar = Calendar.current
+            return calendar.date(from: calendar.dateComponents([.year, .month, .day], from: date))
+        }
+        return nil
     }
 
     /// ✅ Parser TOLERANTE de fechas de tags: los años reales vienen en
     /// muchos formatos ("2023", "2023-05-17", "2023/05/17", "17-05-2023",
-    /// "2023-05-17T...Z", "© 2023", "2023; 2023-05-01"...). El parser anterior
-    /// solo aceptaba ISO8601 / yyyy-MM-dd / yyyy → cualquier otra variante
-    /// devolvía nil y la canción caía al creationDate del archivo (2026).
+    /// "17.05.2023", "2023-05-17T...Z", "© 2023", "2023; 2023-05-01"...).
+    /// El parser anterior solo aceptaba ISO8601 / yyyy-MM-dd / yyyy → cualquier
+    /// otra variante devolvía nil y la canción caía al creationDate (2026).
+    ///
+    /// ✅ FIX AÑO INCORRECTO: el año que se MUESTRA debe ser el ESCRITO en el
+    /// tag, no el instante convertido a la zona local. Antes, una fecha ISO con
+    /// hora y offset ("2023-01-01T00:00:00Z") se convertía como instante
+    /// absoluto y, en zonas negativas (UTC-6), el 1 de enero caía al 31 de
+    /// diciembre del año ANTERIOR → álbumes lanzados un 1 de enero (muy común
+    /// en recopilaciones/greatest hits) mostraban 2022 en vez de 2023. Todas
+    /// las rutas devuelven una fecha a MEDIANOCHE LOCAL construida con los
+    /// componentes escritos.
     static func parseReleaseDate(_ raw: String) -> Date? {
         var text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return nil }
         // "2023; 2023-05-01" → quedarse con el primer valor.
         if let semi = text.firstIndex(of: ";") { text = String(text[..<semi]).trimmingCharacters(in: .whitespacesAndNewlines) }
-        let iso = ISO8601DateFormatter()
-        if let date = iso.date(from: text) { return date }
+        // ✅ Cortar la parte de HORA de ISO ("2023-01-01T00:00:00Z" →
+        // "2023-01-01"): el año mostrado es el escrito en el tag, y la hora +
+        // offset solo sirven para desviarlo a la zona local (año −1).
+        if let t = text.firstIndex(of: "T"), t > text.startIndex {
+            text = String(text[..<t]).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        // ✅ Fechas ambiguas con año al FINAL ("17-05-2023", "17/05/2023",
+        // "05-17-2023", "17.05.2023"): resolver de forma DETERMINISTA antes
+        // del parser lenient (que podría leer "17" como año → 17/2017). El
+        // valor >12 es el día; si ninguno lo excede se asume día-primero
+        // (convención común en es/LatAm).
+        if text.range(of: "^\\d{1,2}[./-]\\d{1,2}[./-]\\d{4}$", options: .regularExpression) != nil {
+            let parts = text.components(separatedBy: CharacterSet(charactersIn: "-/."))
+            if parts.count == 3,
+               let y = Int(parts[2]), (1900...2100).contains(y),
+               let a = Int(parts[0]), let b = Int(parts[1]) {
+                let (day, month) = a > 12 ? (a, b) : (b, a)
+                if (1...31).contains(day), (1...12).contains(month) {
+                    var c = DateComponents()
+                    c.year = y; c.month = month; c.day = day
+                    return Calendar(identifier: .gregorian).date(from: c)
+                }
+            }
+        }
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone.current
+        formatter.calendar = Calendar(identifier: .gregorian)
         formatter.isLenient = true
-        for format in ["yyyy-MM-dd'T'HH:mm:ssXXXXX", "yyyy-MM-dd'T'HH:mm:ss", "yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd", "yyyy/MM/dd", "dd-MM-yyyy", "MM-dd-yyyy", "dd/MM/yyyy", "yyyyMMdd", "yyyyMM", "yyyy"] {
+        // ✅ Solo formatos año-PRIMERO (desambiguados arriba los que tienen el
+        // año al final). Sin offsets ni horas: la hora ya se cortó antes.
+        for format in ["yyyy-MM-dd", "yyyy/MM/dd", "yyyy.MM.dd", "yyyyMMdd", "yyyy-MM", "yyyyMM", "yyyy"] {
             formatter.dateFormat = format
             if let date = formatter.date(from: text) { return date }
         }

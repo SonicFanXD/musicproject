@@ -1,4 +1,4 @@
-﻿import Foundation
+import Foundation
 import AVFoundation
 import MediaPlayer
 import UIKit
@@ -1006,6 +1006,19 @@ class AudioEngine: NSObject, ObservableObject {
                 isStopping = false
                 handlePlaybackFailure(song: song)
                 return
+            }
+
+            // ✅ Fidelidad máxima: intentar que el hardware corra a la tasa nativa
+            // del archivo (evita remuestreo del mainMixer). Si el DAC/ruta no
+            // soporta la tasa, iOS la ignora sin error audible; el remuestreo
+            // final sigue siendo de alta calidad en el mixer.
+            do {
+                let session = AVAudioSession.sharedInstance()
+                if abs(session.sampleRate - sampleRate) > 1 {
+                    try session.setPreferredSampleRate(sampleRate)
+                }
+            } catch {
+                AppLog.debug(.playback, "setPreferredSampleRate \(Int(sampleRate))Hz no soportado: \(error.localizedDescription)")
             }
 
             // ✅ Reconectar el graph y relanzar el engine desde estado limpio.

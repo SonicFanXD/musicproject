@@ -316,9 +316,13 @@ struct AlbumDetailView: View {
         .nativeGlassCapsule()
     }
 
-    // ✅ Formatear año de salida del álbum
+    // ✅ Formatear año de salida del álbum (locale/calendario/zona FIJOS:
+    // "yyyy" estable y consistente con el parser de fechas)
     private func formatYear(_ date: Date) -> String {
         let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.timeZone = TimeZone.current
         formatter.dateFormat = "yyyy"
         return formatter.string(from: date)
     }

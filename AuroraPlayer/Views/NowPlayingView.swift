@@ -92,6 +92,36 @@ struct NowPlayingView: View {
                 // flexibles (la proporción se adapta a cualquier pantalla,
                 // iPhone 8 Plus incluido) en lugar de espaciados fijos.
                 VStack(spacing: 0) {
+                    // ✅ Header integrado al fondo difuminado — sin cuadro negro.
+                    // Antes usaba safeAreaInset con fondo del sistema que pintaba
+                    // un rectángulo negro/opaco sobre el blur. Ahora es la primera
+                    // fila del VStack, completamente transparente sobre el mismo
+                    // backgroundView difuminado.
+                    HStack(spacing: 0) {
+                        Button {
+                            dismiss()
+                        } label: {
+                            Image(systemName: "chevron.down")
+                                .foregroundStyle(playIconColor)
+                                .font(.system(size: 17, weight: .semibold))
+                                .frame(width: 44, height: 44)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(Localization.localized("nowPlaying.close"))
+
+                        Spacer()
+
+                        Text(Localization.localized("nowPlaying.title"))
+                            .font(.system(size: 16, weight: .semibold, design: .rounded))
+                            .foregroundStyle(playIconColor.opacity(0.9))
+                            .shadow(color: .black.opacity(0.15), radius: 4, y: 1)
+
+                        Spacer()
+                        Color.clear.frame(width: 44, height: 44)
+                    }
+                    .padding(.horizontal, 8)
+
                     Spacer(minLength: isCompactScreen ? 4 : 10)
 
                     artworkView
@@ -132,40 +162,6 @@ struct NowPlayingView: View {
                 }
                 .padding(.horizontal, 24)
                 .fixedSize(horizontal: false, vertical: true)
-            }
-            // ✅ Header personalizado: la navigation bar del sistema pintaba un
-            // recuadro gris/negro sobre el fondo inmersivo. safeAreaInset dibuja
-            // el chevron + título SIN ningún fondo y empuja el contenido.
-            .safeAreaInset(edge: .top, spacing: 0) {
-                HStack(spacing: 0) {
-                    Button {
-                        dismiss()
-                    } label: {
-                        Image(systemName: "chevron.down")
-                            .foregroundStyle(extractedColor)
-                            .font(.system(size: 17, weight: .semibold))
-                            .frame(width: 44, height: 44)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(Localization.localized("nowPlaying.close"))
-
-                    Spacer()
-
-                    Text(Localization.localized("nowPlaying.title"))
-                        .font(.system(size: 20, weight: .bold, design: .rounded))
-                        .foregroundStyle(
-                            LinearGradient(
-                                colors: [extractedColor, extractedColor.opacity(0.75)],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                        )
-
-                    Spacer()
-                    Color.clear.frame(width: 44, height: 44)
-                }
-                .padding(.horizontal, 8)
             }
             .onAppear {
                 extractColorFromArtwork()

@@ -116,7 +116,12 @@ struct SettingsView: View {
                                 color: .cyan,
                                 isOn: Binding(
                                     get: { audioEngine.isMonoAudioEnabled },
-                                    set: { _ in audioEngine.toggleMonoAudio() }
+                                    set: { newValue in
+                                        if newValue != audioEngine.isMonoAudioEnabled {
+                                            Haptics.light()
+                                            audioEngine.toggleMonoAudio()
+                                        }
+                                    }
                                 )
                             )
                         }
@@ -487,9 +492,6 @@ struct SettingsView: View {
         }
         .padding(.horizontal, 16).padding(.vertical, 12)
         .contentShape(Rectangle())
-        .onTapGesture {
-            isOn.wrappedValue.toggle()
-        }
     }
 
     // MARK: - Slider Row
