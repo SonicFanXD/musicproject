@@ -6,14 +6,6 @@ struct NowPlayingView: View {
     @ObservedObject var audioEngine: AudioEngine
     @ObservedObject var fileAccessService: FileAccessService
     @ObservedObject var clock: PlaybackClock
-    // ✅ Rect de la PlayerBar en coordenadas GLOBALES. Se usa como ORIGEN del
-    // morphing: el contenedor parte comprimido aquí abajo y se estira hasta
-    // pantalla completa. `.zero` → origen por defecto (barra inferior).
-    var expandSourceRect: CGRect = .zero
-    // ✅ Cierre del morph: al presentarse como OVERLAY (no fullScreenCover),
-    // `dismiss()` del entorno no hace nada. PlayerBar pasa este closure para
-    // desmontar la vista con la animación de contracción.
-    var onClose: () -> Void = {}
     // ✅ Observar el idioma: al cambiar, esta vista se re-renderiza al instante
     @ObservedObject private var localization = Localization.shared
     @Environment(\.dismiss) private var dismiss
@@ -34,14 +26,6 @@ struct NowPlayingView: View {
     @State private var showArtistDetail = false
     @State private var showAlbumDetail = false
     @State private var artworkScale: CGFloat = 1.0
-    // ✅ ANIMACIÓN "EXPAND": al abrir desde la PlayerBar, la pantalla y todas
-    // sus capas parten "compactas" (opacidad 0, fondo 0) y se expanden con un
-    // solo withAnimation. Solo transform/opacity entre dos estados → GPU,
-    // 60fps estables sin re-render de blur por frame.
-    @State private var expandFromBar = false
-    // ✅ MORPHING: controla la escala/clip del contenedor (parte en el rect de
-    // la barra y crece a pantalla completa).
-    @State private var morphStarted = false
     @State private var progressBarWidth: CGFloat = 0
     @State private var extractedColor: Color = AppTheme.accent
     // ✅ Guardamos el UIColor dominante crudo para calcular contraste
@@ -102,16 +86,7 @@ struct NowPlayingView: View {
 
     var body: some View {
         ZStack {
-            // ✅ MORPHING: base sólida SIEMPRE visible (sin gate de opacity).
-            // Así el rect pequeño del morph pinta desde el primer frame — no
-            // se ve un hueco/negro del sistema — y la barra "crece con color".
-            Color(UIColor.systemBackground)
-                .ignoresSafeArea()
-            // ✅ El fondo inmersivo se funde (opacity) en vez de animar su blur:
-            // la capa con blur ya está compositada, cambiar solo su alpha es
-            // Core Animation (barato) y evita re-computar el gaussian por frame.
             backgroundView
-                .opacity(expandFromBar ? 1 : 0)
 
                 // ✅ DISEÑO MEJORADO: distribución equilibrada con Spacers
                 // flexibles (la proporción se adapta a cualquier pantalla,
@@ -120,12 +95,6 @@ struct NowPlayingView: View {
                     Spacer(minLength: isCompactScreen ? 4 : 10)
 
                     artworkView
-                        // ✅ ANIMACIÓN "EXPAND": el artwork parte pequeño y abajo
-                        // (como saliendo de la barra) y crece al centro al abrir.
-                        // Transform de una imagen → GPU, sin re-render.
-                        .scaleEffect(expandFromBar ? 1 : 0.55)
-                        .offset(y: expandFromBar ? 0 : 70)
-                        .opacity(expandFromBar ? 1 : 0)
                         // ✅ MEJORADO: la portada solo anima al CAMBIAR de canción,
                         // no al pausar/resumir. Antes había una animación rara de
                         // escala (1.02 → 1.0) que se veía artificial al tocar play/pause.
@@ -163,10 +132,6 @@ struct NowPlayingView: View {
                 }
                 .padding(.horizontal, 24)
                 .fixedSize(horizontal: false, vertical: true)
-                // ✅ "Expand" suave de TODO el contenido: levá scale leve + fade
-                // para dar profundidad (deja el protagonismo al artwork).
-                .scaleEffect(expandFromBar ? 1 : 0.94)
-                .opacity(expandFromBar ? 1 : 0)
             }
             // ✅ Header personalizado: la navigation bar del sistema pintaba un
             // recuadro gris/negro sobre el fondo inmersivo. safeAreaInset dibuja
@@ -174,7 +139,7 @@ struct NowPlayingView: View {
             .safeAreaInset(edge: .top, spacing: 0) {
                 HStack(spacing: 0) {
                     Button {
-                        onClose()
+                        dismiss()
                     } label: {
                         Image(systemName: "chevron.down")
                             .foregroundStyle(extractedColor)
@@ -207,16 +172,6 @@ struct NowPlayingView: View {
                 AppLog.info(.interface, "NowPlaying abierto: '\(audioEngine.currentSong?.displayName ?? "—")'")
                 withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
                     artworkScale = 1.0
-                }
-                // ✅ "EXPAND": activar la animación de entrada de toda la pantalla.
-                // Spring suave y contenido, con la parte del artwork ya resuelta
-                // por el modificador de artworkView (más pronunciado).
-                withAnimation(.spring(response: 0.55, dampingFraction: 0.82)) {
-                    expandFromBar = true
-                }
-                // ✅ MORPHING: disparar la expansión del contenedor desde la barra.
-                withAnimation(.spring(response: 0.55, dampingFraction: 0.85)) {
-                    morphStarted = true
                 }
                 audioEngine.isKeepScreenOnEnabled = keepScreenOn
                 // ✅ Abrir letras automáticamente si el ajuste está activado
@@ -259,6 +214,7 @@ struct NowPlayingView: View {
                     }
                 }
             }
+            .presentationDetents([.large])
             // ✅ Mezcla el header con el fondo inmersivo: oculta cualquier banda/corte del sistema
             .toolbarBackground(.hidden, for: .navigationBar)
             .navigationBarBackButtonHidden(true)
@@ -278,29 +234,6 @@ struct NowPlayingView: View {
                 }
             }
             .animation(.spring(response: 0.35, dampingFraction: 0.85), value: showQualityDetail)
-            // ✅ MORPHING REAL (la barra se deshace en pantalla): el contenedor
-            // entero parte en el rect de la PlayerBar (comprimido contra el
-            // borde inferior, esquinas redondeadas) y con un solo withAnimation
-            // se estira a pantalla completa (escala 1, esquinas 0). Es una
-            // transform GPU del nodo + clip de esquinas animado → 60fps.
-            .scaleEffect(x: morphScaleX, y: morphScaleY, anchor: .bottom)
-            .clipShape(RoundedRectangle(cornerRadius: morphCorner, style: .continuous))
-            .animation(.spring(response: 0.55, dampingFraction: 0.85), value: morphStarted)
-    }
-
-    // MARK: - Morfología "expand from bar"
-    private var morphScaleX: CGFloat {
-        let sourceW = expandSourceRect == .zero ? (UIScreen.main.bounds.width - 28) : expandSourceRect.width
-        let targetW = max(1, UIScreen.main.bounds.width)
-        return morphStarted ? 1 : min(1, max(0.6, sourceW / targetW))
-    }
-    private var morphScaleY: CGFloat {
-        let sourceH = expandSourceRect == .zero ? 72 : expandSourceRect.height
-        let targetH = max(1, UIScreen.main.bounds.height)
-        return morphStarted ? 1 : min(1, max(0.04, sourceH / targetH))
-    }
-    private var morphCorner: CGFloat {
-        morphStarted ? 0 : 26
     }
 
     // MARK: - Background (respeta "Reducir transparencia")

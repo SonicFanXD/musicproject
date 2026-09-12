@@ -1,15 +1,5 @@
 import SwiftUI
 
-// ✅ Clave de preferencia: la barra reporta su rect GLOBAL (bottom) para que
-// NowPlayingView lo use como ORIGEN del morfing (la barra se expande a pantalla).
-private struct NowPlayingSourceRectKey: PreferenceKey {
-    static var defaultValue: CGRect = .zero
-    static func reduce(value: inout CGRect, nextValue: () -> CGRect) {
-        let nv = nextValue()
-        if nv != .zero { value = nv }
-    }
-}
-
 struct PlayerBar: View {
     @ObservedObject var audioEngine: AudioEngine
     @ObservedObject var fileAccessService: FileAccessService
@@ -22,9 +12,6 @@ struct PlayerBar: View {
     // ✅ Observar el idioma: al cambiar, esta vista se re-renderiza al instante
     @ObservedObject private var localization = Localization.shared
     @State private var showingNowPlaying = false
-    // ✅ Rect global de la barra (capturado por GeometryReader): origen del
-    // morfing real. Se pasa a NowPlayingView al presentarla.
-    @State private var playerBarSourceRect: CGRect = .zero
 
     // Animaciones optimizadas (una sola @State, triggers discretos = 60fps)
     @State private var playButtonScale: CGFloat = 1.0
@@ -219,38 +206,10 @@ struct PlayerBar: View {
                             lineWidth: 1
                         )
                 }
-                // ✅ MORPHING 100% PROPIO: NowPlayingView se monta como OVERLAY
-                // a pantalla completa DENTRO de esta jerarquía (no fullScreenCover),
-                // así NINGUNA transición nativa del sistema se dibuja encima.
-                // La vista parte en el rect de la barra (scale capturado del
-                // PreferenceKey) y se expande con spring → "la barra se estira
-                // hasta convertirse en la pantalla". Al cerrar, se contrae de vuelta.
-                .overlay(alignment: .bottom) {
-                    if showingNowPlaying {
-                        NowPlayingView(
-                            audioEngine: audioEngine,
-                            fileAccessService: fileAccessService,
-                            clock: audioEngine.clock,
-                            expandSourceRect: playerBarSourceRect,
-                            onClose: {
-                                withAnimation(.spring(response: 0.42, dampingFraction: 0.92)) {
-                                    showingNowPlaying = false
-                                }
-                            }
-                        )
-                        .frame(width: UIScreen.main.bounds.width, height: UIScreen.main.bounds.height)
-                        .transition(.opacity)
-                        .zIndex(10)
-                    }
-                }
-                // ✅ Capturar el rect de la barra para el morfing.
-                .background(
-                    GeometryReader { proxy in
-                        Color.clear.preference(key: NowPlayingSourceRectKey.self, value: proxy.frame(in: .global))
-                    }
-                )
-                .onPreferenceChange(NowPlayingSourceRectKey.self) { rect in
-                    playerBarSourceRect = rect
+                // ✅ Presentación original: sheet que sube desde abajo, con la
+                // transición nativa del sistema y cierre deslizando hacia abajo.
+                .sheet(isPresented: $showingNowPlaying) {
+                    NowPlayingView(audioEngine: audioEngine, fileAccessService: fileAccessService, clock: audioEngine.clock)
                 }
             }
         }
