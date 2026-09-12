@@ -280,7 +280,7 @@ struct NowPlayingView: View {
             // borde inferior, esquinas redondeadas) y con un solo withAnimation
             // se estira a pantalla completa (escala 1, esquinas 0). Es una
             // transform GPU del nodo + clip de esquinas animado → 60fps.
-            .scaleEffect(x: morphScaleX, y: morphScaleY, anchor: .bottomCenter)
+            .scaleEffect(x: morphScaleX, y: morphScaleY, anchor: .bottom)
             .clipShape(RoundedRectangle(cornerRadius: morphCorner, style: .continuous))
             .animation(.spring(response: 0.55, dampingFraction: 0.85), value: morphStarted)
     }
