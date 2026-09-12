@@ -219,12 +219,29 @@ struct PlayerBar: View {
                             lineWidth: 1
                         )
                 }
-                // ✅ TRANSICIÓN PREMIUM: en vez de un sheet que sube de golpe,
-                // fullScreenCover cubre la pantalla y NowPlayingView anima su
-                // "expand" (fondo fade + contenido zoom + artwork desde la barra)
-                // controlado por su @State `expandFromBar` → 60fps estables.
-                .fullScreenCover(isPresented: $showingNowPlaying) {
-                    NowPlayingView(audioEngine: audioEngine, fileAccessService: fileAccessService, clock: audioEngine.clock, expandSourceRect: playerBarSourceRect)
+                // ✅ MORPHING 100% PROPIO: NowPlayingView se monta como OVERLAY
+                // a pantalla completa DENTRO de esta jerarquía (no fullScreenCover),
+                // así NINGUNA transición nativa del sistema se dibuja encima.
+                // La vista parte en el rect de la barra (scale capturado del
+                // PreferenceKey) y se expande con spring → "la barra se estira
+                // hasta convertirse en la pantalla". Al cerrar, se contrae de vuelta.
+                .overlay(alignment: .bottom) {
+                    if showingNowPlaying {
+                        NowPlayingView(
+                            audioEngine: audioEngine,
+                            fileAccessService: fileAccessService,
+                            clock: audioEngine.clock,
+                            expandSourceRect: playerBarSourceRect,
+                            onClose: {
+                                withAnimation(.spring(response: 0.42, dampingFraction: 0.92)) {
+                                    showingNowPlaying = false
+                                }
+                            }
+                        )
+                        .frame(width: UIScreen.main.bounds.width, height: UIScreen.main.bounds.height)
+                        .transition(.opacity)
+                        .zIndex(10)
+                    }
                 }
                 // ✅ Capturar el rect de la barra para el morfing.
                 .background(

@@ -777,6 +777,8 @@ class FileAccessService: ObservableObject {
                     formatMetadata.append(contentsOf: metadata)
                 }
 
+                var strongReleaseDate: Date?
+                var weakReleaseDate: Date?
                 for item in formatMetadata {
                     let identifier = normalizedMetadataIdentifier(item)
                     let key = metadataKey(item)
@@ -800,14 +802,23 @@ class FileAccessService: ObservableObject {
                     if trackNumber == 0, identifier.contains("tracknumber") || key.contains("trkn") || key.contains("trck") {
                         trackNumber = (await metadataNumberAsync(item)) ?? 0
                     }
-                    if releaseDate == nil,
-                       // ✅ FIX año 2026: el identifier de "creationDate" TAMBIÉN
-                       // contiene "date" ("idy.creationdate") → el filtro de abajo
-                       // matcheaba la fecha de CREACIÓN del archivo y la usaba
-                       // como año de lanzamiento. Excluir cualquier creación.
-                       !identifier.contains("creation"),
-                       identifier.contains("date") || identifier.contains("year") || key.contains("day") || key.contains("tdrc") {
-                        releaseDate = await metadataDateAsync(item)
+                    // ✅ FIX DEFINITIVO año 2026 (TDEN): los rippers (foobar2000,
+                    // Mp3tag…) escriben la fecha de RIP/ENCODE en TDEN ("encoding
+                    // date"). TDEN contiene "date" y NO "creation", y como el
+                    // bucle tomaba el PRIMER item de fecha, TDEN (año del rip
+                    // = 2026) ganaba sobre TDRC (año real = 2023). Ahora se
+                    // excluyen las fechas TÉCNICAS y se PRIORIZAN los tags de
+                    // release (TDRC/TDRL/TDOR/TYER/©day) sobre los genéricos.
+                    let isDateTag = identifier.contains("date") || identifier.contains("year") || key.contains("day") || key.contains("tdrc")
+                    let isTechnicalDate = identifier.contains("creation") || identifier.contains("tden") || identifier.contains("tenc") || identifier.contains("encoded")
+                    if isDateTag, !isTechnicalDate {
+                        let parsed = await metadataDateAsync(item)
+                        let isReleaseTag = identifier.contains("tdrc") || identifier.contains("tdrl") || identifier.contains("tdor") || identifier.contains("tyer") || key.contains("day") || key.contains("year")
+                        if isReleaseTag {
+                            if strongReleaseDate == nil { strongReleaseDate = parsed }
+                        } else if weakReleaseDate == nil {
+                            weakReleaseDate = parsed
+                        }
                     }
                     if lyrics.isEmpty {
                         let id = self.normalizedMetadataIdentifier(item)
@@ -820,6 +831,10 @@ class FileAccessService: ObservableObject {
                         }
                     }
                 }
+
+                // ✅ Prioridad de fechas: tag de RELEASE (TDRC/TDRL/TDOR/TYER/©day)
+                // > tag de fecha genérico. Nunca una fecha técnica (TDEN/creación).
+                if releaseDate == nil { releaseDate = strongReleaseDate ?? weakReleaseDate }
             }
 
             // Fallback binario SOLO si faltan campos esenciales (evita doble lectura de archivo)

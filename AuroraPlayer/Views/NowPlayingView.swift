@@ -10,6 +10,10 @@ struct NowPlayingView: View {
     // morphing: el contenedor parte comprimido aquí abajo y se estira hasta
     // pantalla completa. `.zero` → origen por defecto (barra inferior).
     var expandSourceRect: CGRect = .zero
+    // ✅ Cierre del morph: al presentarse como OVERLAY (no fullScreenCover),
+    // `dismiss()` del entorno no hace nada. PlayerBar pasa este closure para
+    // desmontar la vista con la animación de contracción.
+    var onClose: () -> Void = {}
     // ✅ Observar el idioma: al cambiar, esta vista se re-renderiza al instante
     @ObservedObject private var localization = Localization.shared
     @Environment(\.dismiss) private var dismiss
@@ -170,7 +174,7 @@ struct NowPlayingView: View {
             .safeAreaInset(edge: .top, spacing: 0) {
                 HStack(spacing: 0) {
                     Button {
-                        dismiss()
+                        onClose()
                     } label: {
                         Image(systemName: "chevron.down")
                             .foregroundStyle(extractedColor)
@@ -255,7 +259,6 @@ struct NowPlayingView: View {
                     }
                 }
             }
-            .presentationDetents([.large])
             // ✅ Mezcla el header con el fondo inmersivo: oculta cualquier banda/corte del sistema
             .toolbarBackground(.hidden, for: .navigationBar)
             .navigationBarBackButtonHidden(true)
