@@ -57,7 +57,7 @@ class FileAccessService: ObservableObject {
     private let defaultsKey = "com.aurora.musicFolders"
     private let filesDefaultsKey = "com.aurora.musicFiles"
     private let playlistsDefaultsKey = "com.aurora.playlists"
-    private let libraryCacheFileName = "library-metadata-v11.json"
+    private let libraryCacheFileName = "library-metadata-v12.json"
     private let likedSongsKey = "com.aurora.likedSongs"
     private let likedPlaylistName = "Me Gusta"
     private var activeURLs: [UUID: URL] = [:]
@@ -1140,8 +1140,9 @@ class FileAccessService: ObservableObject {
         }
         if let date = try? await item.load(.dateValue) {
             // Fallback sin texto (o texto no parseable): normalizar el
-            // instante a medianoche LOCAL (día del calendario local).
-            let calendar = Calendar.current
+            // instante a medianoche LOCAL (día del calendario local) en
+            // gregoriano para consistencia con el parser.
+            let calendar = Calendar(identifier: .gregorian)
             return calendar.date(from: calendar.dateComponents([.year, .month, .day], from: date))
         }
         return nil
@@ -1167,10 +1168,14 @@ class FileAccessService: ObservableObject {
         // "2023; 2023-05-01" → quedarse con el primer valor.
         if let semi = text.firstIndex(of: ";") { text = String(text[..<semi]).trimmingCharacters(in: .whitespacesAndNewlines) }
         // ✅ Cortar la parte de HORA de ISO ("2023-01-01T00:00:00Z" →
-        // "2023-01-01"): el año mostrado es el escrito en el tag, y la hora +
-        // offset solo sirven para desviarlo a la zona local (año −1).
+        // "2023-01-01" y "2023-05-17 12:00:00" → "2023-05-17"): el año mostrado
+        // es el escrito en el tag, y la hora + offset solo sirven para
+        // desviarlo a la zona local (año −1).
         if let t = text.firstIndex(of: "T"), t > text.startIndex {
             text = String(text[..<t]).trimmingCharacters(in: .whitespacesAndNewlines)
+        } else if let space = text.firstIndex(of: " "), text.contains(":") {
+            // "yyyy-MM-dd HH:mm:ss" → quedarse solo con la fecha
+            text = String(text[..<space]).trimmingCharacters(in: .whitespacesAndNewlines)
         }
         // ✅ Fechas ambiguas con año al FINAL ("17-05-2023", "17/05/2023",
         // "05-17-2023", "17.05.2023"): resolver de forma DETERMINISTA antes

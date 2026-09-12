@@ -297,7 +297,7 @@ struct Album: Identifiable, Equatable {
     var releaseDate: Date? {
         let dates = songs.compactMap { $0.releaseDate }
         guard !dates.isEmpty else { return nil }
-        let calendar = Calendar.current
+        let calendar = Calendar(identifier: .gregorian)
         let byYear = Dictionary(grouping: dates) { calendar.component(.year, from: $0) }
         let best = byYear.sorted {
             if $0.value.count != $1.value.count { return $0.value.count > $1.value.count }

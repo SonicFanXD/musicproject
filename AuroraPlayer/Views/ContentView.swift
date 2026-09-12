@@ -1012,7 +1012,7 @@ struct ContentView: View {
                              : albums.sorted { $0.songs.count > $1.songs.count }
         case .year:
             let year = { (album: Album) -> Int? in
-                album.releaseDate.map { Calendar.current.component(.year, from: $0) }
+                album.releaseDate.map { Calendar(identifier: .gregorian).component(.year, from: $0) }
             }
             // Sin fecha → siempre al final, en AMBAS direcciones.
             // (El comparador anterior devolvía `true` con año nil y los
