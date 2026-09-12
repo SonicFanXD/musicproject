@@ -6,6 +6,10 @@ struct NowPlayingView: View {
     @ObservedObject var audioEngine: AudioEngine
     @ObservedObject var fileAccessService: FileAccessService
     @ObservedObject var clock: PlaybackClock
+    // ✅ Rect de la PlayerBar en coordenadas GLOBALES. Se usa como ORIGEN del
+    // morphing: el contenedor parte comprimido aquí abajo y se estira hasta
+    // pantalla completa. `.zero` → origen por defecto (barra inferior).
+    var expandSourceRect: CGRect = .zero
     // ✅ Observar el idioma: al cambiar, esta vista se re-renderiza al instante
     @ObservedObject private var localization = Localization.shared
     @Environment(\.dismiss) private var dismiss
@@ -31,6 +35,9 @@ struct NowPlayingView: View {
     // solo withAnimation. Solo transform/opacity entre dos estados → GPU,
     // 60fps estables sin re-render de blur por frame.
     @State private var expandFromBar = false
+    // ✅ MORPHING: controla la escala/clip del contenedor (parte en el rect de
+    // la barra y crece a pantalla completa).
+    @State private var morphStarted = false
     @State private var progressBarWidth: CGFloat = 0
     @State private var extractedColor: Color = AppTheme.accent
     // ✅ Guardamos el UIColor dominante crudo para calcular contraste
@@ -198,6 +205,10 @@ struct NowPlayingView: View {
                 withAnimation(.spring(response: 0.55, dampingFraction: 0.82)) {
                     expandFromBar = true
                 }
+                // ✅ MORPHING: disparar la expansión del contenedor desde la barra.
+                withAnimation(.spring(response: 0.55, dampingFraction: 0.85)) {
+                    morphStarted = true
+                }
                 audioEngine.isKeepScreenOnEnabled = keepScreenOn
                 // ✅ Abrir letras automáticamente si el ajuste está activado
                 // y la canción tiene letras sincronizadas/plain
@@ -259,6 +270,29 @@ struct NowPlayingView: View {
                 }
             }
             .animation(.spring(response: 0.35, dampingFraction: 0.85), value: showQualityDetail)
+            // ✅ MORPHING REAL (la barra se deshace en pantalla): el contenedor
+            // entero parte en el rect de la PlayerBar (comprimido contra el
+            // borde inferior, esquinas redondeadas) y con un solo withAnimation
+            // se estira a pantalla completa (escala 1, esquinas 0). Es una
+            // transform GPU del nodo + clip de esquinas animado → 60fps.
+            .scaleEffect(x: morphScaleX, y: morphScaleY, anchor: .bottomCenter)
+            .clipShape(RoundedRectangle(cornerRadius: morphCorner, style: .continuous))
+            .animation(.spring(response: 0.55, dampingFraction: 0.85), value: morphStarted)
+    }
+
+    // MARK: - Morfología "expand from bar"
+    private var morphScaleX: CGFloat {
+        let sourceW = expandSourceRect == .zero ? (UIScreen.main.bounds.width - 28) : expandSourceRect.width
+        let targetW = max(1, UIScreen.main.bounds.width)
+        return morphStarted ? 1 : min(1, max(0.6, sourceW / targetW))
+    }
+    private var morphScaleY: CGFloat {
+        let sourceH = expandSourceRect == .zero ? 72 : expandSourceRect.height
+        let targetH = max(1, UIScreen.main.bounds.height)
+        return morphStarted ? 1 : min(1, max(0.04, sourceH / targetH))
+    }
+    private var morphCorner: CGFloat {
+        morphStarted ? 0 : 26
     }
 
     // MARK: - Background (respeta "Reducir transparencia")
