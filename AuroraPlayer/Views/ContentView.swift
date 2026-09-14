@@ -164,15 +164,7 @@ struct ContentView: View {
                     fileAccessService.ensureLikedPlaylistExists()
                     // ✅ INDEXACIÓN: decidir tarjeta grande vs indicador compacto.
                     syncFirstTimeIndexing()
-                    if autoPlayOnStart,
-                       audioEngine.currentSong != nil,
-                       !audioEngine.isPlaying {
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                            if audioEngine.currentSong != nil, !audioEngine.isPlaying {
-                                audioEngine.resume()
-                            }
-                        }
-                    }
+                    maybeAutoResume()
                     if fileAccessService.isInitialLibraryLoaded {
                         withAnimation(.easeOut(duration: 0.3)) { isInitialLoad = false }
                     }
@@ -190,10 +182,20 @@ struct ContentView: View {
                     if loaded {
                         hasRestored = false
                         restoreLibraryIfNeeded()
+                        // ✅ FIX "Reproducir al iniciar" con escaneo lento: si la
+                        // biblioteca terminó de cargar DESPUÉS del onAppear, el
+                        // restore recién ocurrió aquí — reintentar el auto-resume.
+                        maybeAutoResume()
                         withAnimation(.easeOut(duration: 0.3)) {
                             isInitialLoad = false
                         }
                     }
+                }
+                .onChange(of: audioEngine.currentSong?.id) { _ in
+                    // ✅ FIX "Reproducir al iniciar": el restore puede completarse
+                    // en cualquier momento (escaneo asíncrono) — cuando la canción
+                    // aparezca, re-evaluar el auto-resume una vez.
+                    maybeAutoResume()
                 }
                 .overlay {
                     // ✅ Indicador compacto flotante: SOLO en re-escaneos con
@@ -1080,6 +1082,20 @@ struct ContentView: View {
         // Solo se ejecuta si ya se cargaron canciones previamente (no es primera vez)
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
             fileAccessService.backgroundScanForNewSongs()
+        }
+    }
+
+    // ✅ "Reproducir al iniciar": reanuda la última canción restaurada si el
+    // ajuste está activo y aún no hay reproducción. Seguro de llamar varias
+    // veces (guards internos + solo actúa con canción restaurada y pausada).
+    private func maybeAutoResume() {
+        guard autoPlayOnStart,
+              audioEngine.currentSong != nil,
+              !audioEngine.isPlaying else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [audioEngine] in
+            if audioEngine.currentSong != nil, !audioEngine.isPlaying {
+                audioEngine.resume()
+            }
         }
     }
 }

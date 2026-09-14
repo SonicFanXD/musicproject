@@ -106,27 +106,27 @@ struct AudioQualityDetailView: View {
         }
     }
 
-    // MARK: - Header (resumen de calidad optimizado para 60fps)
+    // MARK: - Header (tarjeta de especificaciones estilo DAC, optimizada 60fps)
     private var headerCard: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 14) {
             ZStack {
                 // ✅ 60fps: Círculo sólido con color (sin gradiente costoso)
                 Circle()
                     .fill(AppTheme.accent.opacity(0.15))
-                    .frame(width: 96, height: 96)
+                    .frame(width: 88, height: 88)
 
                 // ✅ 60fps: Anillo simple sin animación (eliminado repeatForever)
                 Circle()
                     .stroke(AppTheme.accent.opacity(0.4), lineWidth: 2)
-                    .frame(width: 84, height: 84)
+                    .frame(width: 76, height: 76)
 
                 // ✅ 60fps: Círculo interior sólido (sin material costoso)
                 Circle()
                     .fill(Color(UIColor.tertiarySystemBackground))
-                    .frame(width: 74, height: 74)
+                    .frame(width: 66, height: 66)
                     .overlay(
                         Image(systemName: "waveform.circle.fill")
-                            .font(.system(size: 34, weight: .medium))
+                            .font(.system(size: 28, weight: .medium))
                             .foregroundStyle(AppTheme.accent)
                     )
             }
@@ -137,8 +137,8 @@ struct AudioQualityDetailView: View {
                 .font(.system(size: 12, weight: .bold, design: .rounded))
                 .tracking(2)
                 .foregroundStyle(.white)
-                .padding(.horizontal, 20)
-                .padding(.vertical, 8)
+                .padding(.horizontal, 18)
+                .padding(.vertical, 7)
                 .background {
                     Capsule().fill(AppTheme.accent)
                 }
@@ -157,16 +157,82 @@ struct AudioQualityDetailView: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
+
+            // ✅ DISPLAY AUDIÓFILO (estilo lectura de DAC): resolución exacta
+            // del archivo + canales, en un panel tipo "spec sheet".
+            if let song {
+                HStack(spacing: 12) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(Localization.localized("quality.resolution"))
+                            .font(.system(size: 9, weight: .bold, design: .rounded))
+                            .tracking(1.6)
+                            .foregroundStyle(.secondary)
+                        Text(dacReadout(for: song))
+                            .font(.system(size: 19, weight: .bold, design: .rounded).monospacedDigit())
+                            .foregroundStyle(AppTheme.accent)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                    }
+                    Spacer()
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text(Localization.localized("quality.channels"))
+                            .font(.system(size: 9, weight: .bold, design: .rounded))
+                            .tracking(1.6)
+                            .foregroundStyle(.secondary)
+                        Text(channelsLabel)
+                            .font(.system(size: 14, weight: .semibold, design: .rounded))
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+                    }
+                }
+                .padding(.horizontal, 16).padding(.vertical, 12)
+                .background {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(Color(UIColor.secondarySystemBackground).opacity(0.5))
+                }
+                .overlay {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .strokeBorder(AppTheme.accent.opacity(0.14), lineWidth: 1)
+                }
+            }
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 24)
+        .padding(.vertical, 20)
+        .padding(.horizontal, 12)
         .background(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(Color(UIColor.secondarySystemBackground))
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .fill(Color(UIColor.secondarySystemBackground).opacity(0.45))
         )
+        .overlay {
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .strokeBorder(
+                    LinearGradient(
+                        colors: [.white.opacity(0.25), .white.opacity(0.05), .clear],
+                        startPoint: .topLeading, endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 1
+                )
+        }
         .opacity(appearAnimation ? 1 : 0)
         .scaleEffect(appearAnimation ? 1 : 0.95)
         .animation(.easeOut(duration: 0.3), value: appearAnimation)
+    }
+
+    /// ✅ Lectura tipo DAC: bits REALES del archivo (fileFormat) + sample rate.
+    private func dacReadout(for song: Song) -> String {
+        var parts: [String] = []
+        if song.bitDepth > 0 {
+            parts.append("\(song.bitDepth)-bit")
+        }
+        if song.sampleRate > 0 {
+            let kHz = song.sampleRate / 1000.0
+            let rate = kHz.truncatingRemainder(dividingBy: 1) == 0
+                ? "\(Int(kHz)) kHz"
+                : String(format: "%.1f kHz", kHz)
+            parts.append(rate)
+        }
+        if parts.isEmpty { return "—" }
+        return parts.joined(separator: " · ")
     }
 
     private var isLossless: Bool {
@@ -459,8 +525,10 @@ struct AudioQualityDetailView: View {
             }
             .padding(8)
             .background {
+                // ✅ Cristal: 0.5 de opacidad para que el material del panel
+                // (y el artwork borroso detrás) se vea a través de la sección.
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(Color(UIColor.secondarySystemBackground))
+                    .fill(Color(UIColor.secondarySystemBackground).opacity(0.5))
             }
         }
     }

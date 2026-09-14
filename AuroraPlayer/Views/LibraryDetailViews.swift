@@ -39,7 +39,7 @@ struct AlbumDetailView: View {
             VStack(spacing: 0) {
                 heroSection
                 actionButtons
-                    .padding(.horizontal, 20).padding(.top, 20)
+                    .padding(.horizontal, 20).padding(.top, 12)
                 LazyVStack(spacing: 10) {
                     sectionHeader(icon: "music.note.list", title: Localization.localized("details.songs"), tintColor: tintColor)
                     if hasMultipleDiscs {
@@ -54,7 +54,7 @@ struct AlbumDetailView: View {
                         }
                     }
                 }
-                .padding(.horizontal, 20).padding(.top, 28)
+                .padding(.horizontal, 20).padding(.top, 20)
                 // ? FIX: padding inferior amplio para que la �ltima canci�n
                 // no quede oculta detr�s del PlayerBar flotante.
                 .padding(.bottom, 130)
@@ -105,7 +105,7 @@ struct AlbumDetailView: View {
     }
 
     private var heroSection: some View {
-        VStack(spacing: 22) {
+        VStack(spacing: 14) {
             // ? Artwork con animaci�n de entrada y brillo sutil
             // ? 60fps: sombra �NICA consolidada (la doble sombra = 2 pasadas
             // de offscreen rendering por frame en A11; visualmente equivalente).
@@ -113,11 +113,10 @@ struct AlbumDetailView: View {
                 if let artwork = album.artwork {
                     Image(uiImage: artwork)
                         .resizable().interpolation(.high).scaledToFill()
-                        .frame(width: 260, height: 260)
-                        .clipShape(RoundedRectangle(cornerRadius: 32, style: .continuous))
+                        .frame(width: 200, height: 200)
+                        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
                         .overlay {
-                            // ? Brillo premium en el borde (estilo NowPlayingView)
-                            RoundedRectangle(cornerRadius: 32, style: .continuous)
+                            RoundedRectangle(cornerRadius: 24, style: .continuous)
                                 .strokeBorder(
                                     LinearGradient(
                                         colors: [.white.opacity(0.35), .white.opacity(0.08), .clear],
@@ -126,38 +125,38 @@ struct AlbumDetailView: View {
                                     lineWidth: 1.5
                                 )
                         }
-                        .shadow(color: .black.opacity(0.4), radius: 24, x: 0, y: 14)
+                        .shadow(color: .black.opacity(0.4), radius: 16, x: 0, y: 10)
                 } else {
                     ZStack {
-                        RoundedRectangle(cornerRadius: 32, style: .continuous)
+                        RoundedRectangle(cornerRadius: 24, style: .continuous)
                             .fill(
                                 LinearGradient(
                                     colors: [tintColor.opacity(0.35), tintColor.opacity(0.12), Color.secondary.opacity(0.18)],
                                     startPoint: .topLeading, endPoint: .bottomTrailing
                                 )
                             )
-                            .frame(width: 260, height: 260)
+                            .frame(width: 200, height: 200)
                         Image(systemName: "square.stack")
-                            .font(.system(size: 70, weight: .light))
+                            .font(.system(size: 54, weight: .light))
                             .foregroundStyle(.secondary.opacity(0.7))
                     }
-                    .shadow(color: .black.opacity(0.25), radius: 22, x: 0, y: 12)
+                    .shadow(color: .black.opacity(0.25), radius: 14, x: 0, y: 8)
                 }
             }
-            .padding(.top, 16)
+            .padding(.top, 8)
             .scaleEffect(appearAnimation ? 1.0 : 0.9)
             .opacity(appearAnimation ? 1.0 : 0)
             .animation(.spring(response: 0.5, dampingFraction: 0.8), value: appearAnimation)
 
             // ? Info del �lbum con mejor jerarqu�a visual
-            VStack(spacing: 10) {
+            VStack(spacing: 6) {
                 Text(album.name)
-                    .font(.system(size: 28, weight: .bold, design: .rounded))
+                    .font(.system(size: 24, weight: .bold, design: .rounded))
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.primary)
                     .lineLimit(2)
                 Text(album.artist)
-                    .font(.system(size: 18, weight: .medium))
+                    .font(.system(size: 15, weight: .medium))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
@@ -167,7 +166,7 @@ struct AlbumDetailView: View {
             .animation(.easeOut(duration: 0.5).delay(0.1), value: appearAnimation)
 
             // ? Estad�sticas con dise�o mejorado
-            HStack(spacing: 14) {
+            FlowLayout(horizontalSpacing: 10, verticalSpacing: 8) {
                 statPill(icon: "music.note", text: localizedSongCount(songs.count))
                 if totalDuration > 60 {
                     statPill(icon: "clock", text: formatLongDuration(totalDuration))
@@ -187,6 +186,8 @@ struct AlbumDetailView: View {
                     statPill(icon: "waveform", text: text)
                 }
             }
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 20)
             .offset(y: appearAnimation ? 0 : 10)
             .opacity(appearAnimation ? 1.0 : 0)
             .animation(.easeOut(duration: 0.5).delay(0.15), value: appearAnimation)
@@ -250,17 +251,17 @@ struct AlbumDetailView: View {
                 }
             } label: {
                 HStack(spacing: 10) {
-                    Image(systemName: "play.fill").font(.system(size: 16, weight: .bold))
-                    Text(Localization.localized("details.play")).font(.system(size: 16, weight: .bold, design: .rounded))
+                    Image(systemName: "play.fill").font(.system(size: 15, weight: .bold))
+                    Text(Localization.localized("details.play")).font(.system(size: 15, weight: .bold, design: .rounded))
                 }
-                .foregroundStyle(onTintColor).frame(maxWidth: .infinity).frame(height: 54)
+                .foregroundStyle(onTintColor).frame(maxWidth: .infinity).frame(height: 46)
                 .background {
                     Capsule().fill(
                         LinearGradient(colors: [tintColor, tintColor.opacity(0.82)], startPoint: .topLeading, endPoint: .bottomTrailing)
                     )
                 }
                 .contentShape(Capsule())
-                .shadow(color: tintColor.opacity(0.5), radius: 14, x: 0, y: 7)
+                .shadow(color: tintColor.opacity(0.5), radius: 10, x: 0, y: 5)
             }
             .buttonStyle(PressableButtonStyle(scale: 0.97))
 
@@ -272,14 +273,14 @@ struct AlbumDetailView: View {
                 }
             } label: {
                 Image(systemName: "shuffle")
-                    .font(.system(size: 18, weight: .bold)).foregroundStyle(tintColor)
-                    .frame(width: 56, height: 56)
+                    .font(.system(size: 16, weight: .bold)).foregroundStyle(tintColor)
+                    .frame(width: 48, height: 48)
                     .background {
                         Circle().fill(
                             LinearGradient(colors: [tintColor.opacity(0.2), tintColor.opacity(0.1)], startPoint: .topLeading, endPoint: .bottomTrailing)
                         )
                     }
-                    .frame(width: 64, height: 64)
+                    .frame(width: 56, height: 56)
                     .background {
                         Circle().fill(AnyShapeStyle(.ultraThinMaterial))
                     }
@@ -300,8 +301,14 @@ struct AlbumDetailView: View {
             .nativeGlassCapsule()
             .padding(.horizontal, 8)
             ForEach(Array(songs.enumerated()), id: \.element.id) { index, song in
+                // ✅ FIX multi-disco: la cola es el ÁLBUM COMPLETO (cachedSongs
+                // viene ordenado disco 1 → disco 2 → pistas). Antes se pasaba
+                // solo `songs` (el disco actual) → al terminar ese disco la
+                // repetición volvía a empezar el mismo disco en vez de seguir
+                // con el siguiente. Ahora al tocar una canción se reproduce
+                // todo el álbum en corrido desde esa posición.
                 AlbumSongRow(song: song, index: index, isCurrent: audioEngine.currentSong?.id == song.id, tintColor: tintColor) {
-                    audioEngine.play(song: song, from: songs)
+                    audioEngine.play(song: song, from: cachedSongs)
                 }
             }
         }
@@ -310,9 +317,14 @@ struct AlbumDetailView: View {
     private func statPill(icon: String, text: String) -> some View {
         HStack(spacing: 5) {
             Image(systemName: icon).font(.system(size: 11, weight: .semibold))
-            Text(text).font(.system(size: 13, weight: .medium).monospacedDigit())
+            // lineLimit(1) + fixedSize: el texto NUNCA se parte ni corta con
+            // guiones — la píldora mantiene su tamaño intrínseco y el
+            // FlowLayout la acomoda entera en la siguiente fila si no cabe.
+            Text(text).font(.system(size: 12, weight: .medium).monospacedDigit())
+                .lineLimit(1)
         }
         .foregroundStyle(.secondary).padding(.horizontal, 12).padding(.vertical, 6)
+        .fixedSize()
         .nativeGlassCapsule()
     }
 
@@ -372,7 +384,9 @@ struct AlbumSongRow: View {
                     Text(song.title)
                         .font(.system(size: 15, weight: isCurrent ? .bold : .semibold, design: .rounded))
                         .foregroundStyle(isCurrent ? tintColor : .primary).lineLimit(1)
-                    Text(song.album.isEmpty ? song.displaySubtitle : song.album)
+                    // ✅ Debajo del título: el ARTISTA (en la vista de álbum el
+                    // nombre del álbum es redundante — siempre es el mismo).
+                    Text(song.artist.isEmpty ? song.displaySubtitle : song.artist)
                         .font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
                 }
 
@@ -594,7 +608,7 @@ struct ArtistDetailView: View {
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.primary)
                     .lineLimit(2)
-                HStack(spacing: 14) {
+                FlowLayout(horizontalSpacing: 10, verticalSpacing: 8) {
                     statPill(icon: "music.note", text: "\(songs.count) \(Localization.localized("songs"))")
                     if !albums.isEmpty {
                         statPill(icon: "square.stack", text: "\(albums.count) \(Localization.localized("details.albumsStat"))")
@@ -603,6 +617,8 @@ struct ArtistDetailView: View {
                         statPill(icon: "clock", text: formatLongDuration(totalDuration))
                     }
                 }
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, 20)
             }
             .padding(.horizontal, 24)
             .offset(y: appearAnimation ? 0 : 10)
@@ -649,17 +665,17 @@ struct ArtistDetailView: View {
                 }
             } label: {
                 HStack(spacing: 10) {
-                    Image(systemName: "play.fill").font(.system(size: 16, weight: .bold))
-                    Text(Localization.localized("details.play")).font(.system(size: 16, weight: .bold, design: .rounded))
+                    Image(systemName: "play.fill").font(.system(size: 15, weight: .bold))
+                    Text(Localization.localized("details.play")).font(.system(size: 15, weight: .bold, design: .rounded))
                 }
-                .foregroundStyle(onTintColor).frame(maxWidth: .infinity).frame(height: 54)
+                .foregroundStyle(onTintColor).frame(maxWidth: .infinity).frame(height: 46)
                 .background {
                     Capsule().fill(
                         LinearGradient(colors: [tintColor, tintColor.opacity(0.82)], startPoint: .topLeading, endPoint: .bottomTrailing)
                     )
                 }
                 .contentShape(Capsule())
-                .shadow(color: tintColor.opacity(0.5), radius: 14, x: 0, y: 7)
+                .shadow(color: tintColor.opacity(0.5), radius: 10, x: 0, y: 5)
             }
             .buttonStyle(PressableButtonStyle(scale: 0.97))
 
@@ -671,14 +687,14 @@ struct ArtistDetailView: View {
                 }
             } label: {
                 Image(systemName: "shuffle")
-                    .font(.system(size: 18, weight: .bold)).foregroundStyle(tintColor)
-                    .frame(width: 56, height: 56)
+                    .font(.system(size: 16, weight: .bold)).foregroundStyle(tintColor)
+                    .frame(width: 48, height: 48)
                     .background {
                         Circle().fill(
                             LinearGradient(colors: [tintColor.opacity(0.2), tintColor.opacity(0.1)], startPoint: .topLeading, endPoint: .bottomTrailing)
                         )
                     }
-                    .frame(width: 64, height: 64)
+                    .frame(width: 56, height: 56)
                     .background {
                         Circle().fill(AnyShapeStyle(.ultraThinMaterial))
                     }
@@ -692,9 +708,14 @@ struct ArtistDetailView: View {
     private func statPill(icon: String, text: String) -> some View {
         HStack(spacing: 5) {
             Image(systemName: icon).font(.system(size: 11, weight: .semibold))
-            Text(text).font(.system(size: 13, weight: .medium).monospacedDigit())
+            // lineLimit(1) + fixedSize: el texto NUNCA se parte ni corta con
+            // guiones — la píldora mantiene su tamaño intrínseco y el
+            // FlowLayout la acomoda entera en la siguiente fila si no cabe.
+            Text(text).font(.system(size: 12, weight: .medium).monospacedDigit())
+                .lineLimit(1)
         }
         .foregroundStyle(.secondary).padding(.horizontal, 12).padding(.vertical, 6)
+        .fixedSize()
         .nativeGlassCapsule()
     }
 
@@ -823,5 +844,49 @@ extension UIImage {
         guard let output = filter?.outputImage,
               let cg = Self.blurContext.createCGImage(output.clampedToExtent(), from: ciImage.extent.insetBy(dx: -radius, dy: -radius)) else { return self }
         return UIImage(cgImage: cg, scale: scale, orientation: imageOrientation)
+    }
+}
+
+// MARK: - FlowLayout (iOS 16+): acomoda vistas en filas y pasa a la siguiente
+// cuando no caben — las píldoras de info se mantienen ENTERAS (nada de texto
+// partido con guiones), se adaptan a español/inglés y a pantallas estrechas.
+struct FlowLayout: Layout {
+    var horizontalSpacing: CGFloat = 10
+    var verticalSpacing: CGFloat = 8
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let maxWidth = proposal.width ?? .infinity
+        var x: CGFloat = 0, y: CGFloat = 0, rowHeight: CGFloat = 0
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            if x > 0, x + size.width > maxWidth {
+                x = 0
+                y += rowHeight + verticalSpacing
+                rowHeight = 0
+            }
+            x += size.width + horizontalSpacing
+            rowHeight = max(rowHeight, size.height)
+        }
+        return CGSize(width: maxWidth == .infinity ? max(x - horizontalSpacing, 0) : maxWidth, height: y + rowHeight)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var x = bounds.minX
+        var y = bounds.minY
+        var rowHeight: CGFloat = 0
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            if x + size.width > bounds.maxX, x > bounds.minX {
+                x = bounds.minX
+                y += rowHeight + verticalSpacing
+                rowHeight = 0
+            }
+            subview.place(
+                at: CGPoint(x: x, y: y),
+                proposal: ProposedViewSize(size)
+            )
+            x += size.width + horizontalSpacing
+            rowHeight = max(rowHeight, size.height)
+        }
     }
 }

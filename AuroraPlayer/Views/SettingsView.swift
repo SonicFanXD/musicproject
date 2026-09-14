@@ -1,15 +1,21 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct SettingsView: View {
     @ObservedObject var audioEngine: AudioEngine
     @ObservedObject var fileAccessService: FileAccessService
     @Environment(\.dismiss) private var dismiss
 
-    @State private var showFolderPicker = false
+    @State private var showImporter = false
     @State private var showLogs = false
     @State private var showAbout = false
     @State private var showEqualizerSheet = false
     @State private var selectedThemeIndex: Int
+
+    /// ✅ Gestión embebida de biblioteca (sin pantalla aparte):
+    /// .folders = picker de carpetas, .files = picker de canciones.
+    private enum ImportMode { case folders, files }
+    @State private var importMode: ImportMode = .folders
     @ObservedObject private var theme = ThemeManager.shared
     // ✅ Observar el idioma: al cambiar, esta vista se re-renderiza al instante
     @ObservedObject private var localization = Localization.shared
@@ -55,8 +61,8 @@ struct SettingsView: View {
     private let themeDefaultsKey = "com.aurora.uiTheme"
 
     private var appVersion: String {
-        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "2.0.1"
-        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "20"
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "2.1.0"
+        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "21"
         return "\(version) (\(build))"
     }
 
@@ -77,10 +83,16 @@ struct SettingsView: View {
                     VStack(spacing: 22) {
                         headerSection
 
-                        // Biblioteca
+                        // Biblioteca (gestión embebida: sin pantalla aparte)
                         settingsSection(icon: "folder.fill", title: Localization.localized("settings.library"), color: .blue) {
-                            settingsButton(title: Localization.localized("settings.musicFolders"), subtitle: "\(fileAccessService.folders.count) \(Localization.localized("folders"))", icon: "folder.fill", color: .blue) {
-                                showFolderPicker = true
+                            settingsButton(title: Localization.localized("settings.addFolder"), subtitle: Localization.localized("settings.addFolderSubtitle"), icon: "folder.badge.plus", color: .blue) {
+                                importMode = .folders
+                                showImporter = true
+                            }
+                            settingsDivider
+                            settingsButton(title: Localization.localized("settings.addFiles"), subtitle: Localization.localized("settings.addFilesSubtitle"), icon: "music.note.badge.plus", color: .purple) {
+                                importMode = .files
+                                showImporter = true
                             }
                             settingsDivider
                             settingsToggleRow(
@@ -90,6 +102,85 @@ struct SettingsView: View {
                                 color: .teal,
                                 isOn: $scanOnlyNewSongs
                             )
+
+                            // ✅ Carpetas añadidas (lista embebida con eliminar)
+                            if !fileAccessService.folders.isEmpty {
+                                settingsDivider
+                                ForEach(fileAccessService.folders) { folder in
+                                    HStack(spacing: 14) {
+                                        iconView(icon: "folder.fill", color: .blue)
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text(folder.displayName)
+                                                .font(.system(size: 15, weight: .medium))
+                                                .foregroundStyle(.primary)
+                                                .lineLimit(1)
+                                            Text(Localization.localized("settings.folderAdded"))
+                                                .font(.system(size: 12))
+                                                .foregroundStyle(.secondary)
+                                        }
+                                        Spacer()
+                                        Button(role: .destructive) {
+                                            fileAccessService.removeFolder(folder)
+                                        } label: {
+                                            Image(systemName: "trash.fill")
+                                                .font(.system(size: 14, weight: .semibold))
+                                                .foregroundStyle(.red)
+                                                .frame(width: 44, height: 44)
+                                                .contentShape(Rectangle())
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
+                                    .padding(.horizontal, 16).padding(.vertical, 10)
+                                    .contentShape(Rectangle())
+                                }
+                            }
+
+                            // ✅ Archivos individuales añadidos (lista embebida)
+                            if !fileAccessService.files.isEmpty {
+                                settingsDivider
+                                ForEach(fileAccessService.files) { file in
+                                    HStack(spacing: 14) {
+                                        iconView(icon: "music.note", color: .purple)
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text(file.displayName)
+                                                .font(.system(size: 15, weight: .medium))
+                                                .foregroundStyle(.primary)
+                                                .lineLimit(1)
+                                            Text(Localization.localized("settings.fileAdded"))
+                                                .font(.system(size: 12))
+                                                .foregroundStyle(.secondary)
+                                        }
+                                        Spacer()
+                                        Button(role: .destructive) {
+                                            fileAccessService.removeFile(file)
+                                        } label: {
+                                            Image(systemName: "trash.fill")
+                                                .font(.system(size: 14, weight: .semibold))
+                                                .foregroundStyle(.red)
+                                                .frame(width: 44, height: 44)
+                                                .contentShape(Rectangle())
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
+                                    .padding(.horizontal, 16).padding(.vertical, 10)
+                                    .contentShape(Rectangle())
+                                }
+                            }
+
+                            if fileAccessService.folders.isEmpty && fileAccessService.files.isEmpty {
+                                settingsDivider
+                                VStack(spacing: 6) {
+                                    Text(Localization.localized("settings.emptyLibraryTitle"))
+                                        .font(.system(size: 14, weight: .semibold))
+                                        .foregroundStyle(.primary)
+                                    Text(Localization.localized("settings.emptyLibrarySubtitle"))
+                                        .font(.system(size: 12))
+                                        .foregroundStyle(.secondary)
+                                }
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 14)
+                            }
+
                             settingsDivider
                             settingsButton(title: Localization.localized("settings.updateLibrary"), subtitle: fileAccessService.isScanning ? Localization.localized("settings.scanning") : Localization.localized("settings.rescanFolders"), icon: "arrow.clockwise", color: .orange) {
                                 if scanOnlyNewSongs {
@@ -99,7 +190,20 @@ struct SettingsView: View {
                                 }
                             }
                             .disabled(fileAccessService.isScanning)
+
+                            if fileAccessService.isScanning {
+                                HStack(spacing: 10) {
+                                    ProgressView()
+                                        .progressViewStyle(CircularProgressViewStyle(tint: AppTheme.accent))
+                                    Text(Localization.localized("settings.scanning"))
+                                        .font(.system(size: 13))
+                                        .foregroundStyle(.secondary)
+                                    Spacer()
+                                }
+                                .padding(.horizontal, 16).padding(.vertical, 10)
+                            }
                         }
+                        .onChange(of: scanOnlyNewSongs) { v in AppLog.info(.settings, "Escaneo solo nuevas: \(v ? "activado" : "desactivado")") }
 
                         // Audio
                         // ✅ Crossfade eliminado por completo (fuente de bugs
@@ -120,6 +224,7 @@ struct SettingsView: View {
                                         if newValue != audioEngine.isMonoAudioEnabled {
                                             Haptics.light()
                                             audioEngine.toggleMonoAudio()
+                                            AppLog.info(.settings, "Audio mono: \(newValue ? "activado" : "desactivado")")
                                         }
                                     }
                                 )
@@ -131,10 +236,12 @@ struct SettingsView: View {
                             settingsMenuButton(title: Localization.localized("settings.theme"), subtitle: themes[selectedThemeIndex], icon: "circle.lefthalf.filled", color: .gray, options: themes, selection: $selectedThemeIndex) { index in
                                 selectedThemeIndex = index
                                 UserDefaults.standard.set(index, forKey: themeDefaultsKey)
+                                AppLog.info(.settings, "Tema: \(themes[index])")
                             }
                             settingsDivider
                             settingsMenuButton(title: Localization.localized("settings.accentColor"), subtitle: accents[theme.accentIndex], icon: "drop.fill", color: theme.accent, options: accents, selection: $theme.accentIndex) { index in
                                 theme.setAccent(index)
+                                AppLog.info(.settings, "Color de acento: \(accents[index])")
                             }
                             settingsDivider
                             settingsSliderRow(title: Localization.localized("settings.artworkCorners"), value: $artworkCorner, range: 0...44, step: 2, color: .blue, suffix: "pt")
@@ -145,6 +252,7 @@ struct SettingsView: View {
                                 selectedLanguage = index
                                 // ✅ Aplicar el idioma al instante en toda la app
                                 Localization.shared.currentLanguage = Localization.Language(rawValue: index) ?? .spanish
+                                AppLog.info(.settings, "Idioma: \(languages[index])")
                             }
                         }
 
@@ -281,54 +389,23 @@ struct SettingsView: View {
                         .contentShape(Rectangle())
                 }
             }
-            .sheet(isPresented: $showFolderPicker) {
-                FolderPickerView(fileAccessService: fileAccessService)
-            }
             .sheet(isPresented: $showLogs) {
                 LogsView()
             }
             .sheet(isPresented: $showEqualizerSheet) {
                 EqualizerView(audioEngine: audioEngine)
             }
+            .fileImporter(
+                isPresented: $showImporter,
+                allowedContentTypes: importMode == .folders ? [.folder] : supportedAudioTypes,
+                allowsMultipleSelection: importMode == .files
+            ) { result in
+                handleImportResult(result)
+            }
             .alert("Aurora Player v\(appVersion)", isPresented: $showAbout) {
                 Button(Localization.localized("common.ok"), role: .cancel) {}
             } message: {
                 Text(Localization.localized("settings.description"))
-            }
-        }
-    }
-
-    // MARK: - Theme Background
-    private func applyThemeBackground() -> some View {
-        Group {
-            if selectedThemeIndex == 1 {
-                Color(UIColor.white).ignoresSafeArea()
-                    .onAppear {
-                        if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-                           let window = scene.windows.first {
-                            window.overrideUserInterfaceStyle = .light
-                        }
-                    }
-            } else if selectedThemeIndex == 2 {
-                Color(UIColor.black).ignoresSafeArea()
-                    .onAppear {
-                        if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-                           let window = scene.windows.first {
-                            window.overrideUserInterfaceStyle = .dark
-                        }
-                    }
-            } else {
-                LinearGradient(
-                    colors: [Color(UIColor.systemBackground), Color(UIColor.secondarySystemBackground)],
-                    startPoint: .top, endPoint: .bottom
-                )
-                .ignoresSafeArea()
-                .onAppear {
-                    if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-                       let window = scene.windows.first {
-                        window.overrideUserInterfaceStyle = .unspecified
-                    }
-                }
             }
         }
     }
@@ -632,6 +709,41 @@ struct SettingsView: View {
         Divider()
             .opacity(0.1)
             .padding(.leading, 60)
+    }
+
+    // MARK: - Importación embebida (carpetas / canciones individuales)
+
+    /// Tipos de audio soportados para el picker de archivos individuales.
+    private var supportedAudioTypes: [UTType] {
+        var types: [UTType] = [.audio]
+        if let mp3 = UTType(filenameExtension: "mp3") { types.append(mp3) }
+        if let flac = UTType(filenameExtension: "flac") { types.append(flac) }
+        if let m4a = UTType(filenameExtension: "m4a") { types.append(m4a) }
+        if let wav = UTType(filenameExtension: "wav") { types.append(wav) }
+        if let aiff = UTType(filenameExtension: "aiff") { types.append(aiff) }
+        if let ogg = UTType(filenameExtension: "ogg") { types.append(ogg) }
+        if let wma = UTType(filenameExtension: "wma") { types.append(wma) }
+        return types
+    }
+
+    private func handleImportResult(_ result: Result<[URL], Error>) {
+        switch result {
+        case .success(let urls):
+            guard !urls.isEmpty else {
+                AppLog.error(.library, "No se seleccionó nada")
+                return
+            }
+            switch importMode {
+            case .folders:
+                if let url = urls.first {
+                    fileAccessService.addFolder(url: url)
+                }
+            case .files:
+                fileAccessService.addFiles(urls: urls)
+            }
+        case .failure(let error):
+            AppLog.error(.library, "Error al importar: \(error.localizedDescription)")
+        }
     }
 }
 

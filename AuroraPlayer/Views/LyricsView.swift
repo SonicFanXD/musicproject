@@ -52,58 +52,69 @@ struct LyricsView: View {
     @State private var wordsByLine: [[LyricWord]] = []
 
     var body: some View {
-        NavigationStack {
-            ZStack {
-                blurredArtworkBackground
+        ZStack {
+            blurredArtworkBackground
 
-                switch parsedLyrics {
-                case .none:
-                    emptyLyricsView
-                case .plain(let text):
-                    plainLyricsView(text: text)
-                case .synchronized(let syncLyrics):
-                    if syncLyrics.isWordByWord {
-                        wordByWordLyricsView(lyrics: syncLyrics)
-                    } else {
-                        synchronizedLyricsView(lyrics: syncLyrics)
+            VStack(spacing: 0) {
+                // ✅ Header integrado al fondo difuminado — SIN cuadro negro.
+                // Mismo patrón que NowPlayingView: antes este screen usaba un
+                // NavigationStack con .toolbarBackground(.ultraThinMaterial),
+                // que sobre el sheet pintaba un rectángulo negro/opaco encima
+                // del blur. Ahora el título y el botón de salida son la primera
+                // fila del VStack, completamente transparentes sobre el blur.
+                HStack(spacing: 0) {
+                    Button {
+                        dismiss()
+                    } label: {
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundStyle(.primary)
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(Localization.localized("actions.done"))
+
+                    Spacer()
+
+                    Text(Localization.localized("nowPlaying.lyrics"))
+                        .font(.system(size: 16, weight: .semibold, design: .rounded))
+                        .foregroundStyle(.primary.opacity(0.9))
+                        .shadow(color: .black.opacity(0.15), radius: 4, y: 1)
+                        .accessibilityLabel(Localization.localized("nowPlaying.lyrics"))
+
+                    Spacer()
+                    Color.clear.frame(width: 44, height: 44)
+                }
+                .padding(.horizontal, 8)
+
+                Group {
+                    switch parsedLyrics {
+                    case .none:
+                        emptyLyricsView
+                    case .plain(let text):
+                        plainLyricsView(text: text)
+                    case .synchronized(let syncLyrics):
+                        if syncLyrics.isWordByWord {
+                            wordByWordLyricsView(lyrics: syncLyrics)
+                        } else {
+                            synchronizedLyricsView(lyrics: syncLyrics)
+                        }
                     }
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
-            .toolbarBackground(.visible, for: .navigationBar)
-            .toolbar {
-                ToolbarItem(placement: .principal) {
-                    Text(Localization.localized("nowPlaying.lyrics"))
-                        .font(.system(size: 20, weight: .bold, design: .rounded))
-                        .foregroundStyle(
-                            LinearGradient(
-                                colors: [AppTheme.accent, AppTheme.accent.opacity(0.75)],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                        )
-                        .accessibilityLabel(Localization.localized("nowPlaying.lyrics"))
-                }
-
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button(Localization.localized("actions.done")) { dismiss() }
-                        .foregroundStyle(AppTheme.accent)
-                        .frame(width: 44, height: 44)
-                        .contentShape(Rectangle())
-                }
-            }
-            .onAppear {
-                parseLyrics()
-            }
-            .onChange(of: clock.time) { newTime in
-                updateCurrentLine(for: newTime)
-                // ✅ OPTIMIZACIÓN 60fps: solo recalcular wordProgress si estamos
-                // en modo karaoke palabra-por-palabra (evita crear dicts nuevos
-                // en cada tick de reloj para letras sincronizadas normales).
-                if case .synchronized(let syncLyrics) = parsedLyrics, syncLyrics.isWordByWord {
-                    updateWordProgress(for: newTime)
-                }
+        }
+        .onAppear {
+            parseLyrics()
+        }
+        .onChange(of: clock.time) { newTime in
+            updateCurrentLine(for: newTime)
+            // ✅ OPTIMIZACIÓN 60fps: solo recalcular wordProgress si estamos
+            // en modo karaoke palabra-por-palabra (evita crear dicts nuevos
+            // en cada tick de reloj para letras sincronizadas normales).
+            if case .synchronized(let syncLyrics) = parsedLyrics, syncLyrics.isWordByWord {
+                updateWordProgress(for: newTime)
             }
         }
     }

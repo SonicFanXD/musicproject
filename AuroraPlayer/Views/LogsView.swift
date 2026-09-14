@@ -31,6 +31,9 @@ struct LogsView: View {
     let timer = Timer.publish(every: 2.0, on: .main, in: .common).autoconnect()
     @State private var refreshTick = 0
 
+    // ✅ Mensajes expandibles: ids de entradas con mensaje desplegado
+    @State private var expandedIDs = Set<UUID>()
+
     private var filteredEntries: [InAppLogEntry] {
         var entries = AppLog.entries
 
@@ -316,56 +319,102 @@ struct LogsView: View {
     }
 
     private func logEntryRow(entry: InAppLogEntry) -> some View {
-        HStack(alignment: .top, spacing: 12) {
-            // Level indicator con material de vidrio (estilo NowPlayingView)
+        let isExpanded = expandedIDs.contains(entry.id)
+
+        return HStack(alignment: .top, spacing: 12) {
+            // ✅ Columna izquierda: nivel con icono + categoría a color
             VStack(alignment: .leading, spacing: 6) {
-                Text(entry.level)
-                    .font(.system(size: 11, weight: .bold))
+                // Nivel + icono (ERROR/WARN/INFO/DEBUG) con material de vidrio
+                Text("\(levelIcon(for: entry.level)) \(entry.level)")
+                    .font(.system(size: 10, weight: .bold))
                     .foregroundStyle(levelColor(for: entry.level))
-                    .padding(.horizontal, 10)
+                    .padding(.horizontal, 8)
                     .padding(.vertical, 4)
                     .background {
                         Capsule()
                             .fill(levelColor(for: entry.level).opacity(0.15))
                             .overlay {
                                 Capsule()
-                                    .strokeBorder(levelColor(for: entry.level).opacity(0.1), lineWidth: 0.5)
+                                    .strokeBorder(levelColor(for: entry.level).opacity(0.12), lineWidth: 0.5)
                             }
                     }
 
                 Text(entry.category.displayName)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(entry.category.tintColor)
+                    .lineLimit(1)
             }
-            .frame(width: 85, alignment: .leading)
+            .frame(width: 96, alignment: .leading)
 
             VStack(alignment: .leading, spacing: 6) {
+                // ✅ Mensaje expandible: 3 líneas por defecto, tap para desplegar
                 Text(entry.message)
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(.primary)
-                    .lineLimit(4)
+                    .lineLimit(isExpanded ? nil : 3)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        withAnimation(.easeOut(duration: 0.2)) {
+                            if isExpanded {
+                                expandedIDs.remove(entry.id)
+                            } else {
+                                expandedIDs.insert(entry.id)
+                            }
+                        }
+                    }
+                    .accessibilityHint("Toca para expandir o colapsar el mensaje")
 
-                HStack(spacing: 10) {
+                HStack(spacing: 8) {
+                    Image(systemName: "clock")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(.tertiary)
+
                     Text(formatDate(entry.date))
                         .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(.tertiary)
 
                     if let duration = entry.duration {
-                        Text("· \(String(format: "%.1f", duration * 1000))ms")
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(.tertiary)
-                            .monospacedDigit()
+                        Spacer(minLength: 8)
+                        // ✅ Pill de duración (estilo spec sheet, monospaced)
+                        Text(String(format: "%.1f ms", duration * 1000))
+                            .font(.system(size: 10, weight: .semibold).monospacedDigit())
+                            .foregroundStyle(entry.category.tintColor)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background {
+                                Capsule().fill(entry.category.tintColor.opacity(0.12))
+                            }
                     }
                 }
             }
 
-            Spacer()
+            Spacer(minLength: 4)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
         .background {
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .fill(AnyShapeStyle(.ultraThinMaterial))
+        }
+        // ✅ Raya lateral de categoría: jerarquía visual instantánea
+        .overlay(alignment: .leading) {
+            Capsule()
+                .fill(entry.category.tintColor.opacity(0.65))
+                .frame(width: 2.5)
+                .padding(.vertical, 10)
+                .padding(.leading, 2)
+                .allowsHitTesting(false)
+        }
+    }
+
+    /// Icono por nivel (jerarquía visual más rápida que leer el texto).
+    private func levelIcon(for level: String) -> String {
+        switch level {
+        case "ERROR": return "xmark.octagon.fill"
+        case "WARN": return "exclamationmark.triangle.fill"
+        case "INFO": return "info.circle.fill"
+        case "DEBUG": return "ladybug.fill"
+        default: return "circle.fill"
         }
     }
 

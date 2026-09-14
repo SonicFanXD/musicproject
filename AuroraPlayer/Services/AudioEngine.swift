@@ -120,6 +120,8 @@ class AudioEngine: NSObject, ObservableObject {
     private let monoMixerNode = AVAudioMixerNode()
     private var audioFile: AVAudioFile?
     private var displayTimer: Timer?
+    // Contador para persistir la posición en vivo cada ~15s mientras suena.
+    private var persistTickCounter = 0
     private var sampleRate: Double = 44100
     // ✅ RELOJ DE PARED: la posición de reproducción se extrapola con
     // CACurrentMediaTime (monótono) desde un ancla (posición + instante).
@@ -417,7 +419,24 @@ class AudioEngine: NSObject, ObservableObject {
         observeEngineConfigurationChanges()
         setupBackgroundLifecycleObservers()
         setupPersistOnBackgroundObserver()
+        setupMemoryWarningObserver()
         loadPlaybackState()
+    }
+
+    // ✅ RESISTENCIA RAM: ante un aviso de memoria del sistema (bibliotecas
+    // grandes en iPhone 8 / 2GB), liberar las cachés de colores de carátulas
+    // y el artwork del lock screen — se regeneran solos bajo demanda, así
+    // que iOS no termina el proceso ni corta el audio en segundo plano.
+    private func setupMemoryWarningObserver() {
+        NotificationCenter.default.addObserver(
+            forName: UIApplication.didReceiveMemoryWarningNotification,
+            object: nil, queue: .main
+        ) { [weak self] _ in
+            AppLog.warning(.performance, "Aviso de memoria: liberando cachés (colores de carátula + lock screen)")
+            AppTheme.artworkColorCache.removeAllObjects()
+            self?.cachedNowPlayingArtwork = nil
+            self?.cachedArtworkSongID = nil
+        }
     }
 
     // ✅ Persistencia forzada: cuando la app se cierra o va a segundo plano,
@@ -478,6 +497,7 @@ class AudioEngine: NSObject, ObservableObject {
         guard isPlaying else {
             // ✅ Si no se reproduce, liberar el engine para ahorrar batería:
             // detener el engine (no la sesión) reduce consumo de CPU/RAM.
+            stopDisplayTimer()  // 🛡 Red de seguridad: sin timer, cero CPU en background.
             if engine.isRunning {
                 engine.pause()
             }
@@ -616,37 +636,28 @@ class AudioEngine: NSObject, ObservableObject {
             // el síntoma: la UI/portada cambia a la siguiente pero el audio
             // que se sigue escuchando (residual, en el driver) es el de la
             // canción anterior, desde un punto random.
-            self.clearChainedAhead()
-            if !self.engine.isRunning {
+            // ⛔️ FIX salto de canción al reanudar: invalidar TODOS los
+            // completions pendientes ANTES de tocar el nodo (patrón del seek).
+            // Si un completion obsoleto llegara a ejecutarse en pleno cambio
+            // de ruta (audífonos desconectados), segmentDidFinish() pasaría el
+            // guard (misma generación + isPlaying) y avanzaría a la SIGUIENTE
+            // canción mientras el usuario espera reanudar la que estaba en pausa.
+            // Solo se interviene con reproducción ACTIVA: en pausa no se toca la
+            // cola (resume() la retoma intacta o la reprograma si el engine se
+            // detuvo), y el generación bump solo aplica a segmentos en vivo.
+            if self.isPlaying, let file = self.audioFile {
+                self.scheduleGeneration += 1
+                self.clearChainedAhead()
+                self.playerNode.stop()
                 do {
-                    // ⚠️ FIX crítico: un stop implícito del engine (por el cambio
-                    // de configuración) NO garantiza que la cola interna del
-                    // playerNode (segmentos ya programados: el actual + el
-                    // pre-encadenado) haya quedado vacía. Si no la vaciamos
-                    // explícitamente antes de reprogramar, scheduleFile()
-                    // (que usa at: nil) puede ENCOLAR el nuevo segmento DETRÁS
-                    // de restos de audio viejo en vez de reemplazarlo — el
-                    // síntoma: unos segundos de una canción anterior se cuelan
-                    // en medio de la reproducción tras un hipo del engine.
-                    self.scheduleGeneration += 1
-                    self.playerNode.stop()
                     try self.startEngineSafely()
-                    // Si había reproducción activa, retomarla desde la posición actual
-                    if self.isPlaying, let file = self.audioFile {
-                        let position = self.currentTime
-                        self.anchorPlaybackPosition(position)
-                        self.scheduleFile(file, from: position, generation: self.scheduleGeneration)
-                        self.scheduleAheadIfPossible()
-                    }
+                    let position = min(max(self.currentTime, 0), self.duration)
+                    self.anchorPlaybackPosition(position)
+                    self.scheduleFile(file, from: position, generation: self.scheduleGeneration)
+                    self.scheduleAheadIfPossible()
                 } catch {
                     AppLog.error(.playback, error, context: "observeEngineConfigurationChanges")
                 }
-            } else if self.isPlaying {
-                // El engine sigue "corriendo" pero el grafo se reconfiguró
-                // (p. ej. cambio de sample rate de hardware al cambiar de
-                // ruta). Volver a dejar encadenada la siguiente canción con
-                // el formato/estado actual, ya que lo anterior se limpió arriba.
-                self.scheduleAheadIfPossible()
             }
         }
     }
@@ -663,7 +674,13 @@ class AudioEngine: NSObject, ObservableObject {
             try session.setCategory(
                 .playback,
                 mode: .default,
-                options: [.allowBluetoothHFP, .allowBluetoothA2DP, .allowAirPlay]
+                // ✅ MÁXIMA CALIDAD BT: SOLO perfiles de música (A2DP/AirPlay).
+                // Quitado .allowBluetoothHFP: HFP es el perfil de llamadas (SCO,
+                // mono 8/16kHz, mSBC/CVSD) — si lo permitimos y el A2DP falla o
+                // tarda, iOS puede enrutar la música por HFP y suena comprimido.
+                // Los controles del auricular (play/pausa/siguiente) siguen
+                // funcionando por AVRCP sobre A2DP sin necesidad de HFP.
+                options: [.allowBluetoothA2DP, .allowAirPlay]
             )
 
             // ✅ Mejor calidad con latencia mínima: probamos buffers cortos en
@@ -687,9 +704,23 @@ class AudioEngine: NSObject, ObservableObject {
                 }
             }
 
-            // Mantener el sample rate nativo del motor: el remuestreo final lo
-            // hace iOS en la salida física (DAC/BT/altavoz). NO forzamos
-            // preferredSampleRate para preservar bit-perfect hasta el último paso.
+            // ✅ Línea base de sample rate: pedir 44.1 kHz como referencia para
+            // que el DAC arranque en un reloj correcto ANTES de la primera
+            // canción. setPreferredSampleRate NO remuestrea la señal (solo
+            // selecciona el reloj del DAC/hardware más cercano soportado).
+            // El ajuste por canción (playCurrentSong) luego pide el rate NATIVO
+            // del archivo: si el hardware lo soporta, la pista corre bit-clean
+            // hasta la salida sin ningún remuestreo; si no, iOS elige el más
+            // cercano y el mainMixer aplica su remuestreo final de alta calidad.
+            do {
+                try session.setPreferredSampleRate(44100)
+            } catch {
+                AppLog.debug(.playback, "SetPreferredSampleRate base no aplicado: \(error.localizedDescription)")
+            }
+
+            // Mantener el sample rate del archivo cuando el DAC lo soporta: el
+            // remuestreo final lo hace el mainMixer en la salida física
+            // (DAC/BT/altavoz) solo cuando el hardware no acepta el rate nativo.
             try session.setActive(true, options: .notifyOthersOnDeactivation)
             updateRouteName()
             updateAudioQuality()
@@ -771,11 +802,17 @@ class AudioEngine: NSObject, ObservableObject {
     }
 
     func toggleEQ() {
+        let wasProcessing = isEQEnabled && eqPreset != .flat
         isEQEnabled.toggle()
-        equalizerNode?.bypass = !isEQEnabled
+        updateEQBypassState()
+        let willProcess = isEQEnabled && eqPreset != .flat
 
+        // ✅ MÁXIMA CALIDAD: solo se reinicia la reproducción si el estado de
+        // procesamiento REAL cambió (flat → sin procesamiento). Encender o
+        // apagar el interruptor con preset plano no altera la señal → se evita
+        // el mini-corte de ~20ms que antes ocurría siempre.
         // Asegurar que el cambio se aplique al playback activo sin perder posición
-        if isPlaying, playerNode.isPlaying, let file = audioFile {
+        if wasProcessing != willProcess, isPlaying, playerNode.isPlaying, let file = audioFile {
             // Reiniciar reproducción desde la posición actual para que el EQ se aplique de inmediato
             // ⚠️ CRÍTICO: incrementar scheduleGeneration ANTES de stop() para que el completion
             // handler del segmento anterior quede obsoleto y NO dispare playNext()
@@ -807,7 +844,24 @@ class AudioEngine: NSObject, ObservableObject {
             guard index < eq.bands.count else { break }
             eq.bands[index].gain = gain
         }
+        updateEQBypassState()
         AppLog.info(.playback, "EQ preset: \(preset.displayName)")
+    }
+
+    /// ✅ MÁXIMA CALIDAD: el nodo EQ solo procesa cuando hace falta. "Flat"
+    /// (ganancias a 0) → bypass total del AVAudioUnitEQ → la señal pasa por la
+    /// ruta limpia sin pasar por 10 biquads en cascada (cero ruido/redondeo
+    /// acumulado). Cualquier preset con ganancias ≠ 0 o edición manual de una
+    /// banda desactiva el bypass.
+    private func updateEQBypassState() {
+        equalizerNode?.bypass = !(isEQEnabled && eqPreset != .flat)
+    }
+
+    func setEQGain(for band: Int, gain: Float) {
+        guard let eq = equalizerNode, band >= 0 && band < eq.bands.count else { return }
+        eq.bands[band].gain = gain
+        // Edición manual → el EQ ya no es "flat": hay que des-bypassearlo.
+        eq.bypass = !isEQEnabled
     }
 
     // MARK: - Audio Mono
@@ -944,7 +998,7 @@ class AudioEngine: NSObject, ObservableObject {
         saveState()
     }
 
-    private func playCurrentSong() {
+    private func playCurrentSong(resumingAt position: TimeInterval? = nil) {
         guard currentIndex >= 0 && currentIndex < playlist.count else {
             stop()
             return
@@ -1029,15 +1083,25 @@ class AudioEngine: NSObject, ObservableObject {
             isPlaying = true
             playbackErrorCount = 0
             currentFileURL = song.url
-            AppLog.info(.playback, String(format: "▶ Reproduciendo '%@' (%.1fs, %.0f Hz)", song.displayName, duration, sampleRate))
+            let playBits = Int(file.fileFormat.streamDescription.pointee.mBitsPerChannel)
+            let playChannels = Int(file.processingFormat.channelCount)
+            AppLog.info(.playback, String(format: "▶ Reproduciendo '%@' (%@ · %.0f Hz · %d bits · %d canales · %.1fs)", song.displayName, song.formatDescription, sampleRate, playBits > 0 ? playBits : 0, playChannels, duration))
 
             // ✅ Programar el segmento PRIMERO, luego anclar reloj y reproducir.
             // Esto elimina la ventana de carrera donde el timer marcaba 0
             // pero el audio arrancaba tarde o desde otra posición.
-            scheduleFile(file, from: 0, autostart: false, generation: currentGeneration)
-            anchorPlaybackPosition(0)
-            currentTime = 0
-            clock.time = 0
+            // ✅ FIX reanudación: si llega una posición guardada (restaurar la
+            // última canción al abrir la app), se arranca DESDE AHÍ, no de 0.
+            let startTime: TimeInterval
+            if let position {
+                startTime = min(max(position, 0), max(song.duration - 0.05, 0))
+            } else {
+                startTime = 0
+            }
+            scheduleFile(file, from: startTime, autostart: false, generation: currentGeneration)
+            anchorPlaybackPosition(startTime)
+            currentTime = startTime
+            clock.time = startTime
             // FIX punto aleatorio: tras engine.stop(), el reloj interno del nodo
             // (sampleTime) no se resetea hasta el proximo render. Programar + play
             // inmediato arranca desde un punto residual al azar por milisegundos.
@@ -1046,10 +1110,11 @@ class AudioEngine: NSObject, ObservableObject {
                 guard let self = self,
                       self.scheduleGeneration == currentGeneration,
                       !self.isStopping else { return }
-                // Re-anclar el reloj a 0 JUSTO antes de play(): el audio arranca
-                // aqui (tras el delay), no cuando se lanzo el schedule. Sin esto el
-                // reloj de pared iria 0.15s adelantado durante toda la cancion.
-                self.anchorPlaybackPosition(0)
+                // Re-anclar el reloj a la posición JUSTO antes de play(): el
+                // audio arranca aqui (tras el delay), no cuando se lanzo el
+                // schedule. Sin esto el reloj de pared iria 0.15s adelantado
+                // durante toda la cancion (o desincronizado al reanudar).
+                self.anchorPlaybackPosition(startTime)
                 self.playerNode.play()
                 // Ya está sonando de verdad: dejar programada la siguiente por
                 // adelantado para que la transición sea sin hueco.
@@ -1166,6 +1231,46 @@ class AudioEngine: NSObject, ObservableObject {
         saveState()
     }
 
+    /// ⛔️ Suspensión TOTAL al perder la ruta de audio (audífonos/BT desconectados).
+    /// Secuencia crítica contra el salto de canción y el estado "reproduciendo"
+    /// congelado del lock screen / Centro de Control:
+    ///  1) scheduleGeneration += 1 ANTES de tocar el nodo → cualquier completion
+    ///     obsoleto (.dataPlayedBack del segmento actual o del encadenado, que el
+    ///     sistema puede disparar justo al caerse la ruta) se IGNORA porque su
+    ///     expectedGeneration ya no coincide y NO puede llamar a segmentDidFinish()
+    ///     → playNext() → saltar a la canción SIGUIENTE en vez de reanudar la pausada.
+    ///  2) Se descarta la canción pre-encadenada y se detiene el nodo + el engine
+    ///     (reinicio limpio): al reanudar, resume() reprograma la MISMA canción
+    ///     desde la posición anclada — nunca el audioFile de otra canción.
+    ///  3) isPlaying = false + updateNowPlayingInfo() ANTES de terminar: el sistema
+    ///     recibe rate 0 → lock screen/CC pasan a pausa en la posición exacta
+    ///     (se acabó el "reproduciendo" con la barra congelada).
+    private func suspendForRouteLoss() {
+        AppLog.warning(.playback, "⚠️ Ruta de audio perdida: suspendiendo reproducción en \(String(format: "%.1fs", currentTime)) — '\(currentSong?.displayName ?? "—")'")
+        if isUsingFallback {
+            avPlayer?.pause()
+            isPlaying = false
+            updateNowPlayingInfo()
+            saveState()
+            return
+        }
+        scheduleGeneration += 1
+        clearChainedAhead()
+        playerNode.stop()
+        if engine.isRunning { engine.stop() }
+        stopDisplayTimer()
+        // Anclar la posición EXACTA antes de marcar pausa (wallClockTime
+        // extrapola solo mientras isPlaying sea true).
+        let current = wallClockTime
+        currentTime = current
+        posAnchor = current
+        wallAnchor = CACurrentMediaTime()
+        clock.time = current
+        isPlaying = false
+        updateNowPlayingInfo()
+        saveState()
+    }
+
     func resume() {
         if isUsingFallback {
             avPlayer?.play()
@@ -1183,11 +1288,26 @@ class AudioEngine: NSObject, ObservableObject {
                     // El engine se detuvo por completo: cualquier canción
                     // pre-encadenada por adelantado se perdió con él.
                     clearChainedAhead()
-                    try startEngineSafely()
-                    if let file = audioFile {
+                    if let song = currentSong, audioFile == nil {
+                        // ✅ FIX "Reproducir al iniciar" / CC play tras abrir la
+                        // app: tras el restore SOLO hay metadatos, el archivo de
+                        // audio aún NO está cargado (audioFile == nil) — la rama
+                        // antigua nunca programaba nada y quedaba "reproduciendo"
+                        // en silencio. playCurrentSong(resumingAt:) hace la carga
+                        // COMPLETA (sesión, mono, reconexión, fallback) y arranca
+                        // desde la posición guardada.
+                        playCurrentSong(resumingAt: min(max(currentTime, 0), max(song.duration - 0.05, 0)))
+                    } else if let file = audioFile {
+                        try startEngineSafely()
                         let position = min(max(currentTime, 0), duration)
                         anchorPlaybackPosition(position)
                         scheduleFile(file, from: position, generation: scheduleGeneration)
+                    } else {
+                        // Sin canción restaurada (app recién instalada o el
+                        // usuario nunca reprodujo): nada que reanudar — salir
+                        // sin dejar el estado "reproduciendo" fantasma.
+                        AppLog.info(.playback, "resume() sin canción cargada: ignorado")
+                        return
                     }
                 } catch {
                     AppLog.error(.playback, error, context: "resume: reactivar engine")
@@ -1376,6 +1496,9 @@ class AudioEngine: NSObject, ObservableObject {
 
     func toggleShuffle() {
         isShuffleEnabled.toggle()
+        // ✅ Guarda anti-crash: playlist vacía (cola terminada) no debe
+        // indexar sobre []; el estado visual ON/OFF igual se actualiza.
+        guard !playlist.isEmpty else { return }
         if isShuffleEnabled {
             originalPlaylist = playlist
             let current = playlist[currentIndex]
@@ -1406,6 +1529,8 @@ class AudioEngine: NSObject, ObservableObject {
         if let song = chainedAheadSong, let newIndex = playlist.firstIndex(where: { $0.id == song.id }) {
             chainedAheadIndex = newIndex
         }
+
+        AppLog.info(.playback, "Aleatorio: \(isShuffleEnabled ? "activado" : "desactivado") (\(playlist.count) canciones)")
     }
 
     func cycleRepeatMode() {
@@ -1414,6 +1539,13 @@ class AudioEngine: NSObject, ObservableObject {
         case .all: repeatMode = .one
         case .one: repeatMode = .off
         }
+        let name: String
+        switch repeatMode {
+        case .off: name = "sin repetición"
+        case .all: name = "repetir todo"
+        case .one: name = "repetir uno"
+        }
+        AppLog.info(.playback, "Repetición: \(name)")
     }
 
     func restoreState(with songs: [Song]) {
@@ -1423,28 +1555,62 @@ class AudioEngine: NSObject, ObservableObject {
         // Si ya se restauró previamente, lo omitimos.
         guard !hasRestored else { return }
 
-        if let state = UserDefaults.standard.dictionary(forKey: stateDefaultsKey),
+        guard let state = UserDefaults.standard.dictionary(forKey: stateDefaultsKey) else {
+            hasRestored = true
+            return
+        }
+        hasRestored = true
+
+        // ✅ FIX canción errónea al reabrir: la canción se busca por SU ID
+        // (UUID). Antes se restauraba por `currentIndex` aplicado a la lista
+        // global de canciones, pero ese índice pertenecía a la cola que se
+        // estaba reproduciendo (álbum, playlist, búsqueda...) → al reabrir
+        // caía en OTRA canción (frecuentemente la primera de la sección) con
+        // una posición y duración que no correspondían.
+        var restoredIndex: Int?
+        if let idString = state["songID"] as? String, let savedID = UUID(uuidString: idString) {
+            restoredIndex = songs.firstIndex(where: { $0.id == savedID })
+        }
+        // Fallback: estados guardados por versiones anteriores (sin songID).
+        if restoredIndex == nil,
            let savedIndex = state["currentIndex"] as? Int,
            savedIndex >= 0, savedIndex < songs.count {
-            hasRestored = true
-            let song = songs[savedIndex]
-            self.playlist = songs
-            self.currentIndex = savedIndex
-            self.currentSong = song
-            self.duration = song.duration
-            if let savedTime = state["currentTime"] as? TimeInterval {
-                self.currentTime = max(0, savedTime)
-            }
-
-            if state["isPlaying"] as? Bool == true {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
-                    self?.playCurrentSong()
-                }
-            }
-            updatePlaybackQueue()
-            updateNextUpQueue()
-            saveState()
+            restoredIndex = savedIndex
         }
+
+        guard let index = restoredIndex else {
+            // No hay canción restaurable (o ya no existe en la biblioteca).
+            AppLog.info(.playback, "restoreState: sin canción restaurable")
+            return
+        }
+
+        let song = songs[index]
+        self.playlist = songs
+        self.currentIndex = index
+        self.currentSong = song
+        self.duration = song.duration
+        let savedTime = (state["currentTime"] as? TimeInterval) ?? 0
+        // ✅ FIX: NUNCA restaurar pegado al final (duration-0.05) — si no,
+        // al reanudar el final de canción disparaba playNext() inmediato.
+        self.currentTime = min(max(0, savedTime), max(0, song.duration - 0.05))
+        // ✅ FIX UI sincronizada: el reloj de display arranca en la posición
+        // guardada (antes mostraba 0:00 hasta reanudar).
+        self.clock.time = self.currentTime
+
+        updatePlaybackQueue()
+        updateNextUpQueue()
+
+        if state["isPlaying"] as? Bool == true {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+                guard let self = self, self.currentSong?.id == song.id else { return }
+                // ✅ FIX posición: playCurrentSong(resumingAt:) reanuda desde la
+                // posición guardada (playCurrentSong() a secas siempre arranca
+                // de 0 — antes la canción se reiniciaba al abrir la app).
+                self.playCurrentSong(resumingAt: self.currentTime)
+            }
+        }
+        AppLog.info(.playback, String(format: "Estado restaurado: '%@' @ %.1fs · reproduciendo: %@", song.displayName, currentTime, state["isPlaying"] as? Bool == true ? "sí" : "no"))
+        saveState()
     }
 
     func playFromHistory(_ song: Song) {
@@ -1482,12 +1648,28 @@ class AudioEngine: NSObject, ObservableObject {
         var tickCount = 0
         // ✅ OPTIMIZACIÓN DE BATERÍA: en primer plano 0.4s es suficiente para
         // una UI fluida (la barra de progreso responde rápido al seek/pause),
-        // y en segundo plano subimos a 1.5s para reducir drásticamente el
+        // y en segundo plano subimos a 2.0s para reducir drásticamente el
         // consumo de CPU cuando la pantalla está bloqueada o en otra app.
-        let interval: TimeInterval = isBackground ? 1.5 : 0.4
+        // iOS interpola el progreso del lock screen/CC con el rate, así que
+        // un update cada 2s es imperceptible visualmente pero ahorra CPU/RAM.
+        let interval: TimeInterval = isBackground ? 2.0 : 0.4
         let nowPlayingRefreshTicks = isBackground ? 1 : 2
         displayTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
             guard let self = self, self.isPlaying else { return }
+            // 🛡 WATCHDOG DE RUTA/ENGINE: si isPlaying=true pero el engine ya no
+            // corre (ruta perdida sin notificación — p. ej. Bluetooth caído en
+            // segundo plano, desconexión que iOS no reporta), el lock screen /
+            // CC se quedarían "reproduciendo" con la barra congelada y un play
+            // posterior arrancaría raro. Suspender aquí publica rate 0 (pausa
+            // real en el sistema) y deja la posición anclada para reanudar bien.
+            // Seguro: el engine siempre corre mientras isPlaying=true en modo
+            // engine (los cambios de ruta se detectan y re-programan aparte),
+            // y el modo respaldo (AVPlayer) queda excluido por isUsingFallback.
+            if !self.isUsingFallback, !self.engine.isRunning {
+                AppLog.warning(.playback, "Watchdog: engine detenido con isPlaying=true — suspendiendo por pérdida de ruta")
+                self.suspendForRouteLoss()
+                return
+            }
             if self.isUsingFallback {
                 if let current = self.avPlayer?.currentTime().seconds, !current.isNaN {
                     self.currentTime = current
@@ -1513,6 +1695,15 @@ class AudioEngine: NSObject, ObservableObject {
             if tickCount >= nowPlayingRefreshTicks {
                 tickCount = 0
                 self.updateNowPlayingInfo()
+            }
+            // ✅ PERSISTENCIA DE POSICIÓN EN VIVO: guardar cada ~15s mientras
+            // suena (37 ticks × 0.4s fg / 10 × 1.5s bg). Así un cierre forzado
+            // (kill sin willResignActive) restaura la posición más reciente,
+            // no la del último cambio de canción.
+            self.persistTickCounter += 1
+            if self.persistTickCounter >= (isBackground ? 8 : 37) {
+                self.persistTickCounter = 0
+                self.saveState()
             }
         }
     }
@@ -1738,6 +1929,12 @@ class AudioEngine: NSObject, ObservableObject {
     // ✅ Auto-reanudación al conectar audífonos
     private var wasPlayingBeforeRouteChange = false
 
+    /// ¿La salida de audio dada es de tipo "audífonos/BT/dispositivo externo"?
+    private static func isHeadphonePort(_ port: AVAudioSession.Port) -> Bool {
+        [.headphones, .bluetoothA2DP, .bluetoothLE, .bluetoothHFP, .airPlay, .carAudio]
+            .contains(port)
+    }
+
     private func observeRouteChanges() {
         NotificationCenter.default.addObserver(
             forName: AVAudioSession.routeChangeNotification,
@@ -1762,8 +1959,7 @@ class AudioEngine: NSObject, ObservableObject {
                     guard let self = self else { return }
                     let route = AVAudioSession.sharedInstance().currentRoute.outputs.first
                     let isHeadphoneRoute = route.map { output in
-                        [.headphones, .bluetoothA2DP, .bluetoothLE, .bluetoothHFP, .airPlay, .carAudio]
-                            .contains(output.portType)
+                        Self.isHeadphonePort(output.portType)
                     } ?? false
 
                     if wasPlaying && isHeadphoneRoute && !self.isPlaying {
@@ -1810,11 +2006,35 @@ class AudioEngine: NSObject, ObservableObject {
                 // seguía. Apple recomienda pausar explícitamente en este caso.
                 self.wasPlayingBeforeRouteChange = self.isPlaying
                 if self.isPlaying {
-                    self.pause()
-                    AppLog.info(.playback, "Audífonos/Bluetooth desconectados: pausado")
+                    // ⛔️ No pause() a secas: suspendForRouteLoss() invalida la
+                    // generación ANTES de detener el nodo → un completion
+                    // obsoleto que se dispare en plena caída de la ruta no
+                    // puede llamar a playNext() (salto a la canción siguiente)
+                    // y publica rate 0 al lock screen/CC (nada de
+                    // "reproduciendo" con la barra congelada).
+                    self.suspendForRouteLoss()
+                    AppLog.info(.playback, "Audífonos/Bluetooth desconectados: suspendido sin salto de canción")
                 }
             } else {
                 self.wasPlayingBeforeRouteChange = self.isPlaying
+                // ✅ FIX: algunos dispositivos (Bluetooth sobre todo) reportan
+                // la desconexión con razones distintas a .oldDeviceUnavailable
+                // (.categoryChange, .routeConfigurationChange, .unknown…).
+                // Si la salida ANTERIOR era audífonos/BT y la actual ya no
+                // tiene ninguna, tratar como pérdida de ruta: sin esto la app
+                // seguía "reproduciendo" en silencio con isPlaying=true y el
+                // lock screen/CC congelados, hasta que un play manual "resolvía".
+                let previousRoute = notification.userInfo?[AVAudioSessionRouteChangePreviousRouteKey] as? AVAudioSessionRouteDescription
+                let hadHeadphoneOutput = previousRoute?.outputs.contains { output in
+                    Self.isHeadphonePort(output.portType)
+                } ?? false
+                let hasHeadphoneNow = AVAudioSession.sharedInstance().currentRoute.outputs.contains { output in
+                    Self.isHeadphonePort(output.portType)
+                }
+                if self.isPlaying && hadHeadphoneOutput && !hasHeadphoneNow {
+                    self.suspendForRouteLoss()
+                    AppLog.info(.playback, "Ruta de audio perdida (razón \(reason.rawValue)): suspendido sin salto de canción")
+                }
             }
 
             self.updateRouteName()
@@ -1977,11 +2197,18 @@ class AudioEngine: NSObject, ObservableObject {
     }
 
     private func saveState() {
-        let state: [String: Any] = [
+        var state: [String: Any] = [
             "isPlaying": isPlaying,
             "currentTime": currentTime,
             "currentIndex": currentIndex
         ]
+        // ✅ FIX: guardar la IDENTIDAD de la canción (UUID). restoreState()
+        // la usa para rescatar la canción EXACTA aunque la biblioteca cambie
+        // de orden entre sesiones (antes solo currentIndex → canción errónea).
+        if let song = currentSong {
+            state["songID"] = song.id.uuidString
+            state["songDuration"] = song.duration
+        }
         UserDefaults.standard.set(state, forKey: stateDefaultsKey)
     }
 

@@ -2,6 +2,7 @@ import Foundation
 import os
 import UIKit
 import AVFoundation
+import SwiftUI
 
 enum LogCategory: String, CaseIterable {
     case playback, library, metadata, interface, system, network, equalizer, artwork
@@ -44,6 +45,25 @@ enum LogCategory: String, CaseIterable {
         case .settings: return "#64D2FF"   // cian
         case .lifecycle: return "#FF453A"  // rojo
         }
+    }
+
+    /// Color SwiftUI derivado del tintHex (para la UI de logs).
+    var tintColor: Color {
+        Color(hex: tintHex) ?? .accentColor
+    }
+}
+
+/// Conversor hex → Color para la UI de logs (sin dependencias externas).
+private extension Color {
+    init?(hex: String) {
+        var value: UInt64 = 0
+        let cleaned = hex.replacingOccurrences(of: "#", with: "")
+        guard cleaned.count == 6, Scanner(string: cleaned).scanHexInt64(&value) else { return nil }
+        self.init(
+            red: Double((value >> 16) & 0xFF) / 255.0,
+            green: Double((value >> 8) & 0xFF) / 255.0,
+            blue: Double(value & 0xFF) / 255.0
+        )
     }
 }
 

@@ -40,6 +40,16 @@ final class Localization: ObservableObject {
 
             // Biblioteca / Library
             "settings.musicFolders": [.spanish: "Carpetas de música", .english: "Music Folders"],
+            "settings.addFolder": [.spanish: "Agregar carpeta", .english: "Add Folder"],
+            "settings.addFolderSubtitle": [.spanish: "Selecciona una carpeta completa con música", .english: "Select a full folder of music"],
+            "settings.addFiles": [.spanish: "Agregar archivos", .english: "Add Files"],
+            "settings.addFilesSubtitle": [.spanish: "Selecciona canciones individuales", .english: "Select individual songs"],
+            "settings.foldersSection": [.spanish: "Carpetas", .english: "Folders"],
+            "settings.filesSection": [.spanish: "Archivos individuales", .english: "Individual Files"],
+            "settings.folderAdded": [.spanish: "Carpeta añadida", .english: "Added folder"],
+            "settings.fileAdded": [.spanish: "Archivo individual", .english: "Individual file"],
+            "settings.emptyLibraryTitle": [.spanish: "Tu biblioteca está vacía", .english: "Your library is empty"],
+            "settings.emptyLibrarySubtitle": [.spanish: "Añade carpetas o archivos para empezar", .english: "Add folders or files to get started"],
             "settings.updateLibrary": [.spanish: "Actualizar biblioteca", .english: "Update Library"],
             "settings.scanning": [.spanish: "Escaneando...", .english: "Scanning..."],
             "settings.rescanFolders": [.spanish: "Rescanear carpetas", .english: "Rescan Folders"],
@@ -98,6 +108,7 @@ final class Localization: ObservableObject {
             "settings.build": [.spanish: "Build", .english: "Build"],
             "settings.logs": [.spanish: "Registros", .english: "Logs"],
             "settings.logsSubtitle": [.spanish: "Ver registros de la app", .english: "View app logs"],
+            "quality.resolution": [.spanish: "RESOLUCIÓN", .english: "RESOLUTION"],
 
             // Controles comunes / Common controls
             "play": [.spanish: "Reproducir", .english: "Play"],

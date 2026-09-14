@@ -5,7 +5,11 @@ import AVKit
 struct NowPlayingView: View {
     @ObservedObject var audioEngine: AudioEngine
     @ObservedObject var fileAccessService: FileAccessService
-    @ObservedObject var clock: PlaybackClock
+    // ✅ El reloj ya NO se observa aquí: cada tick (0.4s) re-renderizaba TODA
+    // la vista y un re-render en el instante del toque descartaba el primer
+    // tap de shuffle/repeat. Ahora vive aislado en ProgressScrubView (patrón
+    // PlayerBar) y aquí se guarda como valor plano para pasarlo a subvistas.
+    let clock: PlaybackClock
     // ✅ Observar el idioma: al cambiar, esta vista se re-renderiza al instante
     @ObservedObject private var localization = Localization.shared
     @Environment(\.dismiss) private var dismiss
@@ -26,7 +30,6 @@ struct NowPlayingView: View {
     @State private var showArtistDetail = false
     @State private var showAlbumDetail = false
     @State private var artworkScale: CGFloat = 1.0
-    @State private var progressBarWidth: CGFloat = 0
     @State private var extractedColor: Color = AppTheme.accent
     // ✅ Guardamos el UIColor dominante crudo para calcular contraste
     // ✅ FIX: usar accentUIColor en vez de systemPurple hardcodeado
@@ -36,9 +39,8 @@ struct NowPlayingView: View {
     // HSB al reabrir NowPlaying o re-entrar a la misma pista (60fps sin hitch)
 
 
-    // ✅ Scrub optimizado: preview local a 60fps, seek real solo al soltar
-    @State private var isScrubbing = false
-    @State private var scrubPreviewTime: TimeInterval = 0
+    // ✅ Scrub optimizado: preview local a 60fps, seek real solo al soltar.
+    // (isScrubbing/scrubPreviewTime/progressBarWidth viven en ProgressScrubView)
 
     // MARK: - Adaptive sizing for iOS 16 & iPhone 8 Plus
     private var isCompactScreen: Bool {
@@ -52,19 +54,6 @@ struct NowPlayingView: View {
         let maxByWidth = screenWidth - 40
         let maxByHeight = screenHeight * (isCompactScreen ? 0.32 : 0.42)
         return min(340, maxByWidth, maxByHeight)
-    }
-
-    private var progress: Double {
-        if isScrubbing {
-            guard audioEngine.duration > 0 else { return 0 }
-            return min(max(scrubPreviewTime / audioEngine.duration, 0), 1)
-        }
-        guard audioEngine.duration > 0 else { return 0 }
-        return min(max(clock.time / audioEngine.duration, 0), 1)
-    }
-
-    private var scrubPreviewText: String {
-        formatTime(isScrubbing ? scrubPreviewTime : clock.time)
     }
 
     // ✅ Contraste: si el color dominante es claro → texto oscuro; si es oscuro → texto blanco
@@ -148,7 +137,14 @@ struct NowPlayingView: View {
 
                     Spacer(minLength: isCompactScreen ? 8 : 14)
 
-                    progressView
+                    ProgressScrubView(
+                        audioEngine: audioEngine,
+                        clock: clock,
+                        extractedColor: extractedColor,
+                        extractedUIColor: extractedUIColor,
+                        playIconColor: playIconColor,
+                        isCompactScreen: isCompactScreen
+                    )
 
                     Spacer(minLength: isCompactScreen ? 10 : 18)
 
@@ -396,96 +392,9 @@ struct NowPlayingView: View {
     }
 
     // MARK: - Progress View (scrub fluido a 60fps)
-    private var progressView: some View {
-        VStack(spacing: 8) {
-            // ✅ FIX: .frame(maxWidth: .infinity) para que el GeometryReader
-            // se expanda al ancho completo disponible. El gesture usa
-            // progressBarWidth (actualizado por onAppear/onChange del
-            // GeometryReader) para calcular el porcentaje de scrub.
-            GeometryReader { geometry in
-                // ✅ Feedback táctil: la barra engrosa al hacer scrub
-                // (animación de frame → GPU, sin costo de calidad)
-                let barHeight: CGFloat = isScrubbing ? 10 : 6
-                ZStack(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: 5, style: .continuous)
-                        .fill(Color.secondary.opacity(0.2))
-                        .frame(height: barHeight)
-
-                    RoundedRectangle(cornerRadius: 5, style: .continuous)
-                        .fill(
-                            LinearGradient(
-                                colors: [extractedColor.opacity(0.85), extractedColor],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                        )
-                        .frame(width: geometry.size.width * progress, height: barHeight)
-                        // ✅ Glow más notorio mientras se arrastra
-                        .shadow(color: isScrubbing ? extractedColor.opacity(0.6) : extractedColor.opacity(0.3), radius: isScrubbing ? 8 : 4, x: 0, y: 0)
-                    // ✅ IndicADOR CIRCULAR: posicionado con .position en vez de
-                        // .offset (el offset causaba el "punto blanco" fuera de lugar).
-                        // Solo visible cuando hay progreso intermedio.
-                        .overlay(alignment: .leading) {
-                            Circle()
-                                .fill(.white)
-                                .frame(width: isScrubbing ? 14 : 10, height: isScrubbing ? 14 : 10)
-                                .shadow(color: .black.opacity(0.2), radius: 3, x: 0, y: 1)
-                                .position(
-                                    x: geometry.size.width * progress,
-                                    y: barHeight / 2
-                                )
-                                .opacity(progress > 0.01 && progress < 0.99 ? 1 : 0)
-                        }
-                }
-                .onAppear {
-                    progressBarWidth = geometry.size.width
-                }
-                .onChange(of: geometry.size.width) { newWidth in
-                    progressBarWidth = newWidth
-                }
-            }
-            .frame(maxWidth: .infinity)
-            .frame(height: 10)
-            .padding(.vertical, 16)
-            .contentShape(Rectangle())
-            // ✅ FIX animación rara: antes había UNA animación spring sobre
-            // todo el subárbol disparada por isScrubbing, lo que hacía que el
-            // indicador circular "botara" cada vez que el reloj (0.3s) movía
-            // el progreso. Ahora: easing lineal suave para el avance normal
-            // del reloj + spring SOLO para el cambio de tamaño al arrastrar.
-            .animation(.linear(duration: 0.25), value: progress)
-            .animation(.spring(response: 0.3, dampingFraction: 0.8), value: isScrubbing)
-            .gesture(
-                DragGesture(minimumDistance: 0)
-                    .onChanged { value in
-                        isScrubbing = true
-                        let percentage = max(0, min(1, value.location.x / progressBarWidth))
-                        scrubPreviewTime = audioEngine.duration * percentage
-                    }
-                    .onEnded { value in
-                        let percentage = max(0, min(1, value.location.x / progressBarWidth))
-                        let newTime = audioEngine.duration * percentage
-                        isScrubbing = false
-                        audioEngine.seek(to: newTime)
-                    }
-            )
-
-            HStack {
-                Text(scrubPreviewText)
-                    .font(.system(size: isCompactScreen ? 12 : 13, weight: isScrubbing ? .bold : .medium))
-                    .foregroundStyle(isScrubbing ? playIconColor : AppTheme.contrastingText(on: extractedUIColor).opacity(0.75))
-                    .monospacedDigit()
-                    .animation(.easeInOut(duration: 0.15), value: isScrubbing)
-
-                Spacer()
-
-                Text(formatTime(audioEngine.duration))
-                    .font(.system(size: isCompactScreen ? 12 : 13, weight: .medium))
-                    .foregroundStyle(AppTheme.contrastingText(on: extractedUIColor).opacity(0.75))
-                    .monospacedDigit()
-            }
-        }
-    }
+    // ⚠️ ELIMINADO de NowPlayingView: la barra vive en ProgressScrubView
+    // (al final de este archivo) para que el reloj (0.4s) NO re-renderice
+    // esta vista y los botones de shuffle/repeat respondan al primer toque.
 
     // MARK: - Controls
     private var controlsView: some View {
@@ -497,7 +406,7 @@ struct NowPlayingView: View {
             } label: {
                 ZStack {
                     Capsule()
-                        .fill(audioEngine.isShuffleEnabled ? extractedColor.opacity(0.25) : Color.clear)
+                        .fill(audioEngine.isShuffleEnabled ? extractedColor.opacity(0.45) : Color.clear)
                         .frame(width: isCompactScreen ? 42 : 46, height: isCompactScreen ? 30 : 36)
 
                     Image(systemName: "shuffle")
@@ -507,7 +416,11 @@ struct NowPlayingView: View {
                 .frame(width: isCompactScreen ? 56 : 64, height: isCompactScreen ? 56 : 64)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            // ✅ Feedback de PRENSIÓN visible (antes .plain: sin reacción al tocar
+            // y el cambio de estado era casi invisible sobre la portada). El
+            // .animation(value:) colorea el icono AL INSTANTE al conmutar.
+            .buttonStyle(PressableButtonStyle(scale: 0.86))
+            .animation(.easeInOut(duration: 0.2), value: audioEngine.isShuffleEnabled)
 
             // Previous
             Button {
@@ -574,7 +487,7 @@ struct NowPlayingView: View {
             } label: {
                 ZStack {
                     Capsule()
-                        .fill(audioEngine.repeatMode != .off ? extractedColor.opacity(0.25) : Color.clear)
+                        .fill(audioEngine.repeatMode != .off ? extractedColor.opacity(0.45) : Color.clear)
                         .frame(width: isCompactScreen ? 42 : 46, height: isCompactScreen ? 30 : 36)
 
                     Image(systemName: repeatIcon)
@@ -584,7 +497,10 @@ struct NowPlayingView: View {
                 .frame(width: isCompactScreen ? 56 : 64, height: isCompactScreen ? 56 : 64)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            // ✅ Mismo tratamiento que shuffle: feedback de presión visible y
+            // animación inmediata del icono (repeat → repeat.1 → off) al tocar.
+            .buttonStyle(PressableButtonStyle(scale: 0.86))
+            .animation(.easeInOut(duration: 0.2), value: audioEngine.repeatMode)
         }
         .frame(maxWidth: .infinity)
         .fixedSize()
@@ -741,8 +657,11 @@ struct NowPlayingView: View {
     // MARK: - Modal centrado con X (ventana emergente sobre el NowPlaying)
     private var qualityCardModal: some View {
         ZStack {
-            // ✅ Backdrop con blur (más premium que solo opacidad)
-            Color.black.opacity(0.4)
+            // ✅ FIX "fondo aparte que cubre todo": el velo era negro 0.4 +
+            // material → tapaba el NowPlaying. Ahora es un velo sutil que solo
+            // oscurece un poco: la portada/artwork de fondo se sigue viendo
+            // (identidad visual + efecto "audiofilo de cristal").
+            Color.black.opacity(0.15)
                 .ignoresSafeArea()
                 .background(.ultraThinMaterial)
                 .onTapGesture {
@@ -788,11 +707,31 @@ struct NowPlayingView: View {
             }
             .frame(maxWidth: 480, maxHeight: 640)
             .background {
+                // ✅ FIX "fondo aparte": antes era systemBackground OPAQUEO
+                // (bloqueaba por completo el NowPlaying de atrás). Ahora es
+                // CRISTAL ultraThinMaterial: el arte borroso del fondo se ve
+                // a través del panel, con borde luminoso y profundidad.
                 RoundedRectangle(cornerRadius: 32, style: .continuous)
-                    .fill(Color(UIColor.systemBackground))
+                    .fill(reduceTransparency
+                          ? AnyShapeStyle(Color(UIColor.systemBackground))
+                          : AnyShapeStyle(.ultraThinMaterial))
                     // ✅ Sombra doble para mayor profundidad
                     .shadow(color: .black.opacity(0.35), radius: 30, x: 0, y: 15)
                     .shadow(color: AppTheme.accent.opacity(0.08), radius: 20, x: 0, y: 5)
+            }
+            .overlay {
+                // ✅ Borde luminoso "hifi" (solo si hay transparencia real;
+                // con Reduce Transparency el borde no aporta nada sobre opaco)
+                if !reduceTransparency {
+                    RoundedRectangle(cornerRadius: 32, style: .continuous)
+                        .strokeBorder(
+                            LinearGradient(
+                                colors: [.white.opacity(0.45), .white.opacity(0.06), .clear],
+                                startPoint: .topLeading, endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 1
+                        )
+                }
             }
             .clipShape(RoundedRectangle(cornerRadius: 32, style: .continuous))
             .padding(.horizontal, 24)
@@ -823,13 +762,6 @@ struct NowPlayingView: View {
         }
     }
 
-    private func formatTime(_ time: TimeInterval) -> String {
-        guard !time.isNaN && time.isFinite else { return "0:00" }
-        let minutes = Int(time) / 60
-        let seconds = Int(time) % 60
-        return String(format: "%d:%02d", minutes, seconds)
-    }
-
 private func extractColorFromArtwork() {
         // UNIFICADO: un solo ajuste maestro (ThemeManager.accentFromArtwork)
         // controla el acento de portada en TODOS los entornos.
@@ -850,6 +782,134 @@ private func extractColorFromArtwork() {
             return
         }
         extractedColor = AppTheme.accent
+    }
+}
+
+// MARK: - Barra de progreso AISLADA del reloj (patrón PlayerBar)
+// La única subvista que observa PlaybackClock: NowPlayingView ya no
+// re-renderiza cada 0.4s → los botones (shuffle/repeat) responden siempre
+// al primer toque, sin que un re-render descarte el gesto.
+private struct ProgressScrubView: View {
+    @ObservedObject var audioEngine: AudioEngine
+    @ObservedObject var clock: PlaybackClock
+    let extractedColor: Color
+    let extractedUIColor: UIColor
+    let playIconColor: Color
+    let isCompactScreen: Bool
+
+    @State private var isScrubbing = false
+    @State private var scrubPreviewTime: TimeInterval = 0
+    @State private var progressBarWidth: CGFloat = 0
+
+    private var progress: Double {
+        if isScrubbing {
+            guard audioEngine.duration > 0 else { return 0 }
+            return min(max(scrubPreviewTime / audioEngine.duration, 0), 1)
+        }
+        guard audioEngine.duration > 0 else { return 0 }
+        return min(max(clock.time / audioEngine.duration, 0), 1)
+    }
+
+    private var scrubPreviewText: String {
+        formatTime(isScrubbing ? scrubPreviewTime : clock.time)
+    }
+
+    var body: some View {
+        VStack(spacing: 8) {
+            // ✅ FIX: .frame(maxWidth: .infinity) para que el GeometryReader
+            // se expanda al ancho completo disponible. El gesture usa
+            // progressBarWidth (actualizado por onAppear/onChange del
+            // GeometryReader) para calcular el porcentaje de scrub.
+            GeometryReader { geometry in
+                // ✅ Feedback táctil: la barra engrosa al hacer scrub
+                // (animación de frame → GPU, sin costo de calidad)
+                let barHeight: CGFloat = isScrubbing ? 10 : 6
+                ZStack(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                        .fill(Color.secondary.opacity(0.2))
+                        .frame(height: barHeight)
+
+                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: [extractedColor.opacity(0.85), extractedColor],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .frame(width: geometry.size.width * progress, height: barHeight)
+                        // ✅ Glow más notorio mientras se arrastra
+                        .shadow(color: isScrubbing ? extractedColor.opacity(0.6) : extractedColor.opacity(0.3), radius: isScrubbing ? 8 : 4, x: 0, y: 0)
+                    // ✅ IndicADOR CIRCULAR: posicionado con .position en vez de
+                        // .offset (el offset causaba el "punto blanco" fuera de lugar).
+                        // Solo visible cuando hay progreso intermedio.
+                        .overlay(alignment: .leading) {
+                            Circle()
+                                .fill(.white)
+                                .frame(width: isScrubbing ? 14 : 10, height: isScrubbing ? 14 : 10)
+                                .shadow(color: .black.opacity(0.2), radius: 3, x: 0, y: 1)
+                                .position(
+                                    x: geometry.size.width * progress,
+                                    y: barHeight / 2
+                                )
+                                .opacity(progress > 0.01 && progress < 0.99 ? 1 : 0)
+                        }
+                }
+                .onAppear {
+                    progressBarWidth = geometry.size.width
+                }
+                .onChange(of: geometry.size.width) { newWidth in
+                    progressBarWidth = newWidth
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 10)
+            .padding(.vertical, 16)
+            .contentShape(Rectangle())
+            // ✅ FIX animación rara: antes había UNA animación spring sobre
+            // todo el subárbol disparada por isScrubbing, lo que hacía que el
+            // indicador circular "botara" cada vez que el reloj (0.3s) movía
+            // el progreso. Ahora: easing lineal suave para el avance normal
+            // del reloj + spring SOLO para el cambio de tamaño al arrastrar.
+            .animation(.linear(duration: 0.25), value: progress)
+            .animation(.spring(response: 0.3, dampingFraction: 0.8), value: isScrubbing)
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        isScrubbing = true
+                        let percentage = max(0, min(1, value.location.x / progressBarWidth))
+                        scrubPreviewTime = audioEngine.duration * percentage
+                    }
+                    .onEnded { value in
+                        let percentage = max(0, min(1, value.location.x / progressBarWidth))
+                        let newTime = audioEngine.duration * percentage
+                        isScrubbing = false
+                        audioEngine.seek(to: newTime)
+                    }
+            )
+
+            HStack {
+                Text(scrubPreviewText)
+                    .font(.system(size: isCompactScreen ? 12 : 13, weight: isScrubbing ? .bold : .medium))
+                    .foregroundStyle(isScrubbing ? playIconColor : AppTheme.contrastingText(on: extractedUIColor).opacity(0.75))
+                    .monospacedDigit()
+                    .animation(.easeInOut(duration: 0.15), value: isScrubbing)
+
+                Spacer()
+
+                Text(formatTime(audioEngine.duration))
+                    .font(.system(size: isCompactScreen ? 12 : 13, weight: .medium))
+                    .foregroundStyle(AppTheme.contrastingText(on: extractedUIColor).opacity(0.75))
+                    .monospacedDigit()
+            }
+        }
+    }
+
+    private func formatTime(_ time: TimeInterval) -> String {
+        guard !time.isNaN && time.isFinite else { return "0:00" }
+        let minutes = Int(time) / 60
+        let seconds = Int(time) % 60
+        return String(format: "%d:%02d", minutes, seconds)
     }
 }
 

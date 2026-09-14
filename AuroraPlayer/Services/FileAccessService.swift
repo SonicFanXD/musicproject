@@ -57,7 +57,7 @@ class FileAccessService: ObservableObject {
     private let defaultsKey = "com.aurora.musicFolders"
     private let filesDefaultsKey = "com.aurora.musicFiles"
     private let playlistsDefaultsKey = "com.aurora.playlists"
-    private let libraryCacheFileName = "library-metadata-v12.json"
+    private let libraryCacheFileName = "library-metadata-v13.json"
     private let likedSongsKey = "com.aurora.likedSongs"
     private let likedPlaylistName = "Me Gusta"
     private var activeURLs: [UUID: URL] = [:]
@@ -286,6 +286,20 @@ class FileAccessService: ObservableObject {
         for file in files {
             resolveAndScan(file)
         }
+    }
+
+    /// RAM residente actual en MB (diagnóstico de rendimiento en los logs
+    /// de indexación — lectura barata de un syscall, sin costo perceptible).
+    var residentMemoryMB: Int {
+        var info = mach_task_basic_info()
+        var count = mach_msg_type_number_t(MemoryLayout<mach_task_basic_info>.size / MemoryLayout<natural_t>.size)
+        let result = withUnsafeMutablePointer(to: &info) { ptr in
+            ptr.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { intPtr in
+                task_info(mach_task_self_, task_flavor_t(MACH_TASK_BASIC_INFO), intPtr, &count)
+            }
+        }
+        guard result == KERN_SUCCESS else { return 0 }
+        return Int(info.resident_size / (1024 * 1024))
     }
 
     // ✅ Escaneo incremental: solo agrega canciones nuevas sin borrar las existentes
@@ -661,9 +675,9 @@ class FileAccessService: ObservableObject {
                     self.needsRebuild = true // ✅ Reconstruir álbumes/artistas con nuevas canciones
                     self.scheduleCacheSave()
                     if addedCount > 0 {
-                        AppLog.info(.library, "Indexación completada: \(sortedSongs.count) canciones (+\(addedCount) nuevas)")
+                        AppLog.info(.library, "Indexación completada: \(sortedSongs.count) canciones (+\(addedCount) nuevas) · RAM \(self.residentMemoryMB) MB")
                     } else {
-                        AppLog.info(.library, "Indexación completada: \(sortedSongs.count) canciones (sin cambios)")
+                        AppLog.info(.library, "Indexación completada: \(sortedSongs.count) canciones (sin cambios) · RAM \(self.residentMemoryMB) MB")
                     }
                     if !self.pendingSongs.isEmpty {
                         self.updateScanningState()
@@ -812,7 +826,17 @@ class FileAccessService: ObservableObject {
                     // excluyen las fechas TÉCNICAS y se PRIORIZAN los tags de
                     // release (TDRC/TDRL/TDOR/TYER/©day) sobre los genéricos.
                     let isDateTag = identifier.contains("date") || identifier.contains("year") || key.contains("day") || key.contains("tdrc")
-                    let isTechnicalDate = identifier.contains("creation") || identifier.contains("tden") || identifier.contains("tenc") || identifier.contains("encoded")
+                    // ⛔️ FECHAS TÉCNICAS PROHIBIDAS (además de creación/TDEN/TENC/
+                    // encoded): las fechas de SÍNCRONIZACIÓN que iTunes añade con el
+                    // año del momento — dateAdded / purchaseDate / playDate /
+                    // lastPlayedDate / encodingDate / modificationDate / uploadDate…
+                    // valen 2026 en un álbum de 2023. Recuerda que el identificador
+                    // llega normalizado: "com.apple.iTunes:dateAdded" →
+                    // "comappleitunesdateadded".
+                    let isTechnicalDate = identifier.contains("creation") || identifier.contains("tden") || identifier.contains("tenc")
+                        || identifier.contains("encod") || identifier.contains("added") || identifier.contains("purchas")
+                        || identifier.contains("playdate") || identifier.contains("lastplayed") || identifier.contains("modif")
+                        || identifier.contains("updat") || identifier.contains("upload") || identifier.contains("download")
                     if isDateTag, !isTechnicalDate {
                         let parsed = await metadataDateAsync(item)
                         let isReleaseTag = identifier.contains("tdrc") || identifier.contains("tdrl") || identifier.contains("tdor") || identifier.contains("tyer") || key.contains("day") || key.contains("year")
@@ -835,15 +859,21 @@ class FileAccessService: ObservableObject {
                 }
 
                 // ✅ Prioridad de fechas: tag de RELEASE (TDRC/TDRL/TDOR/TYER/©day)
-                // > tag de fecha genérico. Nunca una fecha técnica (TDEN/creación).
-                if releaseDate == nil { releaseDate = strongReleaseDate ?? weakReleaseDate }
+                // > tag de fecha genérico. Nunca una fecha técnica (TDEN/creación/
+                // dateAdded/purchaseDate/playDate…).
+                // dateIsStrong marca si el año salió de un tag de release REAL;
+                // si solo hubo fecha débil, el parser binario podrá confirmarla.
+                let dateIsStrong = strongReleaseDate != nil
+                releaseDate = strongReleaseDate ?? weakReleaseDate
             }
 
             // Fallback binario SOLO si faltan campos esenciales (evita doble lectura de archivo)
             // Incluye lyrics: AVFoundation a menudo NO mapea USLT/SYLT/©lyr/LYRICS
             // (ID3, FLAC vorbis) a commonKey, y sin esto las letras jamás se extraían.
-            // La fecha también va incluida: puede faltar aunque el resto exista.
-            if title == nil || artist.isEmpty || album.isEmpty || lyrics.isEmpty || releaseDate == nil {
+            // La fecha también va incluida: puede faltar aunque el resto exista. También
+            // corre cuando la fecha vino SOLO de una fuente débil (dateIsStrong == false):
+            // el parser binario lee frames de release reales y debe poder confirmarla.
+            if title == nil || artist.isEmpty || album.isEmpty || lyrics.isEmpty || releaseDate == nil || !dateIsStrong {
                 if let embedded = readID3Metadata(from: url) ?? readFLACMetadata(from: url) ?? readM4AMetadata(from: url) {
                     title = title ?? embedded.title
                     if artist.isEmpty { artist = embedded.artist ?? "" }
@@ -851,7 +881,11 @@ class FileAccessService: ObservableObject {
                     if album.isEmpty { album = embedded.album ?? "" }
                     if trackNumber == 0 { trackNumber = embedded.trackNumber ?? 0 }
                     if discNumber == nil { discNumber = embedded.discNumber }
-                    if releaseDate == nil { releaseDate = embedded.releaseDate }
+                    // ✅ La fecha del parser binario (SOLO frames reales de release:
+                    // TDRC/TYER/©day/DATE/YEAR) GANA sobre la fecha débil de
+                    // AVFoundation. Antes, una fecha débil (p.ej. dateAdded=2026)
+                    // dejaba releaseDate != nil y el TDRC real (2023) jamás se leía.
+                    if releaseDate == nil || !dateIsStrong { releaseDate = embedded.releaseDate ?? releaseDate }
                     if lyrics.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { lyrics = embedded.lyrics ?? "" }
                 }
             }
@@ -887,7 +921,15 @@ class FileAccessService: ObservableObject {
         var channelCount: Int = 0
         if let audioFile = try? AVAudioFile(forReading: url) {
             sampleRate = audioFile.processingFormat.sampleRate
-            bitDepth = Int(audioFile.processingFormat.streamDescription.pointee.mBitsPerChannel)
+            // ✅ FIX "todo en 32-bit": processingFormat SIEMPRE es Float32
+            // (el decodificador convierte el archivo a float para el motor),
+            // por eso TODO reportaba 32 bits. La profundidad REAL está en
+            // fileFormat (formato en disco): WAV/AIFF reportan 16/24/32
+            // reales, FLAC/ALAC su profundidad nativa, y AAC/MP3 devuelven
+            // 0 (no hay bits de muestra en un codec con pérdida) → la UI
+            // lo oculta en vez de mostrar un 32 falso.
+            let fileBits = Int(audioFile.fileFormat.streamDescription.pointee.mBitsPerChannel)
+            bitDepth = fileBits > 0 ? fileBits : 0
             channelCount = Int(audioFile.processingFormat.channelCount)
         }
 
@@ -981,7 +1023,10 @@ class FileAccessService: ObservableObject {
 
         let audioFile = try? AVAudioFile(forReading: url)
         let sampleRate = audioFile?.processingFormat.sampleRate ?? 0
-        let bits = audioFile?.processingFormat.streamDescription.pointee.mBitsPerChannel ?? 0
+        // ✅ FIX "todo en 32-bit": bitDepth REAL desde fileFormat (formato en
+        // disco), igual que en readMetadata. processingFormat es SIEMPRE Float32.
+        let fileBits = audioFile?.fileFormat.streamDescription.pointee.mBitsPerChannel ?? 0
+        let bits = fileBits > 0 ? Int(fileBits) : 0
         let channels = audioFile?.processingFormat.channelCount ?? 0
         let formatDescription = [url.pathExtension.uppercased(), bits > 0 ? "\(bits) bits" : nil, sampleRate > 0 ? "\(Int(sampleRate / 1000)) kHz" : nil]
             .compactMap { $0 }
@@ -1204,7 +1249,11 @@ class FileAccessService: ObservableObject {
         // año al final). Sin offsets ni horas: la hora ya se cortó antes.
         for format in ["yyyy-MM-dd", "yyyy/MM/dd", "yyyy.MM.dd", "yyyyMMdd", "yyyy-MM", "yyyyMM", "yyyy"] {
             formatter.dateFormat = format
-            if let date = formatter.date(from: text) { return date }
+            guard let date = formatter.date(from: text) else { continue }
+            // ✅ Acotación de cordura: descartar años imposibles (9999, 1…)
+            // que el parser lenient podría fabricar con textos raros.
+            let year = Calendar(identifier: .gregorian).component(.year, from: date)
+            if (1900...2100).contains(year) { return date }
         }
         // Último recurso: extraer el primer año de 4 dígitos (1900–2100).
         // "© 2023 Remaster" → 2023 en vez de nil → creationDate.
