@@ -273,7 +273,7 @@ struct AudioQualityDetailView: View {
                 chainArrow
                 chainNode(icon: "waveform", title: Localization.localized("quality.decoder"), detail: "AVAudioFile · \(isLossless ? Localization.localized("quality.lossless") : Localization.localized("quality.compressed"))", color: .indigo, index: 1)
                 chainArrow
-                chainNode(icon: "engine.combustion", title: Localization.localized("quality.audioEngine"), detail: "AVAudioEngine · \(Int(audioEngine.sampleRateDisplay / 1000)) kHz", color: .accentColor, index: 2)
+                chainNode(icon: "engine.combustion", title: Localization.localized("quality.audioEngine"), detail: "AVAudioEngine · \(audioEngine.sampleRateDisplay > 0 ? Int(audioEngine.sampleRateDisplay / 1000) : Int((song?.sampleRate ?? 0) / 1000)) kHz", color: .accentColor, index: 2)
                 chainArrow
                 chainNode(icon: "slider.horizontal.3", title: Localization.localized("quality.equalizer"), detail: audioEngine.isEQEnabled ? "\(Localization.localized("quality.active")) · \(audioEngine.eqPreset.displayName) · 10 \(Localization.localized("format.bands"))" : "\(Localization.localized("quality.bypass")) · 10 \(Localization.localized("format.bands"))", color: audioEngine.isEQEnabled ? .accentColor : .gray, index: 3)
                 chainArrow
@@ -346,7 +346,7 @@ struct AudioQualityDetailView: View {
         settingsSection(title: Localization.localized("quality.file"), icon: "info.circle") {
             detailRow(Localization.localized("quality.format"), formatLabel)
             detailRow(Localization.localized("quality.sampleRate"), sampleRateLabel)
-            detailRow(Localization.localized("quality.bitDepth"), song?.bitDepth.description ?? "—")
+            detailRow(Localization.localized("quality.bitDepth"), bitDepthLabel)
             detailRow(Localization.localized("quality.channels"), channelsLabel)
             detailRow(Localization.localized("quality.duration"), durationLabel)
             detailRow(Localization.localized("quality.fileSize"), fileSizeLabel)
@@ -420,6 +420,13 @@ struct AudioQualityDetailView: View {
         guard song != nil, cachedDuration > 0, cachedFileSize > 0 else { return "—" }
         let kbps = Int((Double(cachedFileSize) * 8) / cachedDuration / 1000)
         return "\(kbps) kbps"
+    }
+
+    // ✅ Profundidad REAL: lossless muestra sus bits (16/24/32); los codecs
+    // con pérdida (MP3/AAC) no tienen profundidad lineal → "—" (nunca "0").
+    private var bitDepthLabel: String {
+        guard let song, song.bitDepth > 0 else { return "—" }
+        return "\(song.bitDepth) bits"
     }
 
     // ✅ Detección por portType, independiente del idioma del sistema

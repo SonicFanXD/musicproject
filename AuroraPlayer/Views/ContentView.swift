@@ -912,7 +912,11 @@ struct ContentView: View {
     @ViewBuilder
     private func artworkView(for song: Song) -> some View {
         if let artwork = song.artwork {
-            Image(uiImage: artwork)
+            // ✅ ANTI-JETSAM (iPhone 8 / 2GB): la celda muestra la carátula a
+            // 48pt pero decodificaba los 768px completos (2.4MB) por fila en el
+            // scroll → picos de RAM + tirones. Reescalar a 96px (48pt @2x):
+            // ~15KB retenidos por fila en vez de 2.4MB (160× menos).
+            Image(uiImage: artwork.preparingThumbnail(of: CGSize(width: 96, height: 96)) ?? artwork)
                 .resizable()
                 .interpolation(.high)
                 .scaledToFill()

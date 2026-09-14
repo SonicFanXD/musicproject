@@ -116,8 +116,23 @@ class FileAccessService: ObservableObject {
     private var isSortScheduled = false
 
     private let supportedExtensions: Set<String> = [
-        "mp3", "m4a", "aac", "wav", "wave", "aiff", "aif", "flac"
+        "mp3", "m4a", "aac", "wav", "wave", "aiff", "aif", "flac",
+        // ✅ Dolby Digital (AC-3) y Dolby Digital Plus (E-AC-3): se indexan y se
+        // reproducen vía el reproductor de respaldo (AVPlayer), porque
+        // AVAudioFile no decodifica estos codecs (audio envolvente).
+        "ac3", "ec3", "eac3", "ddp"
     ]
+
+    /// Etiqueta legible del formato según la extensión (DD+/Dolby Digital).
+    private static func formatLabel(for ext: String) -> String {
+        switch ext.lowercased() {
+        case "ec3", "eac3", "ddp": return "Dolby Digital Plus"
+        case "ac3": return "Dolby Digital"
+        case "wav", "wave": return "WAV"
+        case "aiff", "aif": return "AIFF"
+        default: return ext.uppercased()
+        }
+    }
 
     init() {
         loadFolders()
@@ -916,13 +931,11 @@ class FileAccessService: ObservableObject {
             }
         }
 
-        // Formato: usar solo la extensión (evita abrir AVAudioFile innecesariamente)
-        let formatDescription = url.pathExtension.uppercased()
-
         // Obtener sample rate, bit depth y canales del archivo de audio
         var sampleRate: Double = 0
         var bitDepth: Int = 0
         var channelCount: Int = 0
+        var bitrateKbps: Int?
         if let audioFile = try? AVAudioFile(forReading: url) {
             sampleRate = audioFile.processingFormat.sampleRate
             // ✅ FIX "todo en 32-bit": processingFormat SIEMPRE es Float32
@@ -936,6 +949,21 @@ class FileAccessService: ObservableObject {
             bitDepth = fileBits > 0 ? fileBits : 0
             channelCount = Int(audioFile.processingFormat.channelCount)
         }
+        // ✅ LOSSLESS → profundidad real; LOSSY (MP3/AAC, bitDepth 0) →
+        // bitrate medio en kbps (la "calidad" equivalente del codec).
+        if bitDepth == 0, let track = try? await asset.loadTracks(withMediaType: .audio).first {
+            let rate = track.estimatedDataRate
+            if rate.isFinite, rate > 0 { bitrateKbps = Int(rate / 1000) }
+        }
+        // Formato: usar solo la extensión (evita abrir AVAudioFile innecesariamente)
+        let formatDescription = [
+            Self.formatLabel(for: url.pathExtension),
+            bitDepth > 0 ? "\(bitDepth) bits" : nil,
+            bitrateKbps.map { "~\($0) kbps" } ?? nil,
+            sampleRate > 0 ? "\(Int(sampleRate / 1000)) kHz" : nil
+        ]
+        .compactMap { $0 }
+        .joined(separator: " · ")
 
         return SongMetadata(
             title: title,
@@ -1032,7 +1060,13 @@ class FileAccessService: ObservableObject {
         let fileBits = audioFile?.fileFormat.streamDescription.pointee.mBitsPerChannel ?? 0
         let bits = fileBits > 0 ? Int(fileBits) : 0
         let channels = audioFile?.processingFormat.channelCount ?? 0
-        let formatDescription = [url.pathExtension.uppercased(), bits > 0 ? "\(bits) bits" : nil, sampleRate > 0 ? "\(Int(sampleRate / 1000)) kHz" : nil]
+        // ✅ LOSSLESS → bits reales; LOSSY (bitDepth 0) → bitrate medio kbps.
+        var lastFormatBitrate: Int?
+        if bits == 0, let track = try? await asset.loadTracks(withMediaType: .audio).first {
+            let rate = track.estimatedDataRate
+            if rate.isFinite, rate > 0 { lastFormatBitrate = Int(rate / 1000) }
+        }
+        let formatDescription = [Self.formatLabel(for: url.pathExtension), bits > 0 ? "\(bits) bits" : nil, lastFormatBitrate.map { "~\($0) kbps" } ?? nil, sampleRate > 0 ? "\(Int(sampleRate / 1000)) kHz" : nil]
             .compactMap { $0 }
             .joined(separator: " · ")
 
@@ -1055,13 +1089,17 @@ class FileAccessService: ObservableObject {
     }
 
     private func thumbnailArtwork(_ data: Data) -> Data {
-        // ✅ PUNTO DULCE NITIDEZ/MEMORIA: 768px @ 0.8.
+        // ✅ PUNTO DULCE NITIDEZ/MEMORIA: 768px @ 0.72.
         // - 640px (original) se veía borroso en NowPlaying (350pt @2x = 700px).
         // - 1280px (intento anterior) CRASHEABA a ~900 canciones: ~300KB de Data
         //   por portada × 900 = ~270MB en el JSON de caché, y 6.5MB decodificados
         //   por imagen en el artworkCache → jetsam kill.
         // - 768px: cubre el tamaño máximo de display (350pt@2x) con nitidez,
         //   ~120KB por Data y 2.4MB decodificados → 3× menos memoria.
+        // - q 0.72 (antes 0.8): ~15% menos bytes por portada en disco/RAM con
+        //   calidad visual idéntica a 768px (los artefactos del JPEG son
+        //   inapreciables a este tamaño); bibliotecas de 1300+ temas bajan
+        //   ~25-30MB de RAM (aviso de memoria repetido en iPhone 8 / 2GB).
         guard data.count > 100_000,
               let source = CGImageSourceCreateWithData(data as CFData, nil) else { return data }
         let options: [CFString: Any] = [
@@ -1071,7 +1109,7 @@ class FileAccessService: ObservableObject {
             kCGImageSourceShouldCacheImmediately: true
         ]
         guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary),
-              let compressed = UIImage(cgImage: image).jpegData(compressionQuality: 0.8) else { return data }
+              let compressed = UIImage(cgImage: image).jpegData(compressionQuality: 0.72) else { return data }
         return compressed
     }
 

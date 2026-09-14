@@ -234,7 +234,8 @@ struct PlayerBar: View {
     @ViewBuilder
     private func artwork(for song: Song) -> some View {
         if let art = song.artwork {
-            Image(uiImage: art)
+            // ✅ ANTI-JETSAM: miniatura 96px (48pt @2x) en vez de la 768px completa.
+            Image(uiImage: art.preparingThumbnail(of: CGSize(width: 96, height: 96)) ?? art)
                 .resizable()
                 .interpolation(.high) // ✅ Mejor calidad de interpolación
                 .scaledToFill()

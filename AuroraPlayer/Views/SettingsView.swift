@@ -723,6 +723,11 @@ struct SettingsView: View {
         if let aiff = UTType(filenameExtension: "aiff") { types.append(aiff) }
         if let ogg = UTType(filenameExtension: "ogg") { types.append(ogg) }
         if let wma = UTType(filenameExtension: "wma") { types.append(wma) }
+        // ✅ Dolby Digital (AC-3) y Dolby Digital Plus (E-AC-3)
+        if let ac3 = UTType(filenameExtension: "ac3") { types.append(ac3) }
+        if let ec3 = UTType(filenameExtension: "ec3") { types.append(ec3) }
+        if let eac3 = UTType(filenameExtension: "eac3") { types.append(eac3) }
+        if let ddp = UTType(filenameExtension: "ddp") { types.append(ddp) }
         return types
     }
 

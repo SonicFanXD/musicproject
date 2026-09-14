@@ -225,7 +225,7 @@ struct NowPlayingView: View {
                         .transition(.opacity.combined(with: .scale(scale: 0.92)))
                 }
             }
-            .animation(.spring(response: 0.35, dampingFraction: 0.85), value: showQualityDetail)
+            .animation(.easeOut(duration: 0.22), value: showQualityDetail)
     }
 
     // MARK: - Background (respeta "Reducir transparencia")
@@ -449,16 +449,15 @@ struct NowPlayingView: View {
             } label: {
                 ZStack {
                     Circle().fill(extractedColor).frame(width: isCompactScreen ? 62 : 72, height: isCompactScreen ? 62 : 72)
-                    // ✅ El icono cambia con crossfade de opacidad al pausar/resumir
-                    // (sin animación de scale rara; compatible iOS 16)
+                    // ✅ El icono cambia instantáneamente (sin .id() ni transición
+                    // de reemplazo — recreaba la vista entera y se sentía lento en
+                    // A11); solo un breve fade de 0.1s suaviza el cambio visual.
                     Image(systemName: audioEngine.isPlaying ? "pause.fill" : "play.fill")
                         .font(.system(size: isCompactScreen ? 22 : 26, weight: .bold))
                         .foregroundStyle(playIconColor)
-                        .transition(.opacity)
-                        .id(audioEngine.isPlaying ? "playing" : "paused")
                 }
                 .shadow(color: extractedColor.opacity(0.35), radius: 10, x: 0, y: 4)
-                .animation(.easeInOut(duration: 0.2), value: audioEngine.isPlaying)
+                .animation(.easeOut(duration: 0.1), value: audioEngine.isPlaying)
                 .frame(width: isCompactScreen ? 76 : 88, height: isCompactScreen ? 76 : 88)
                 .contentShape(Rectangle())
             }
@@ -657,15 +656,12 @@ struct NowPlayingView: View {
     // MARK: - Modal centrado con X (ventana emergente sobre el NowPlaying)
     private var qualityCardModal: some View {
         ZStack {
-            // ✅ FIX "fondo aparte que cubre todo": el velo era negro 0.4 +
-            // material → tapaba el NowPlaying. Ahora es un velo sutil que solo
-            // oscurece un poco: la portada/artwork de fondo se sigue viendo
-            // (identidad visual + efecto "audiofilo de cristal").
-            Color.black.opacity(0.15)
+            // ✅ Velo translúcido SIN material: el arte y el entorno de
+            // NowPlaying se siguen viendo claramente detrás (solo oscurecido).
+            Color.black.opacity(0.22)
                 .ignoresSafeArea()
-                .background(.ultraThinMaterial)
                 .onTapGesture {
-                    withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                    withAnimation(.easeOut(duration: 0.22)) {
                         showQualityDetail = false
                     }
                 }
@@ -685,7 +681,7 @@ struct NowPlayingView: View {
 
                     Button {
                         Haptics.light()
-                        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                        withAnimation(.easeOut(duration: 0.22)) {
                             showQualityDetail = false
                         }
                     } label: {
@@ -705,19 +701,18 @@ struct NowPlayingView: View {
 
                 AudioQualityDetailView(audioEngine: audioEngine, embeddedInCard: true)
             }
-            .frame(maxWidth: 480, maxHeight: 640)
+            // ✅ Panel COMPACTO: deja ver el entorno de NowPlaying alrededor
+            // (antes ocupaba casi toda la pantalla en pantallas pequeñas).
+            .frame(maxWidth: 480, maxHeight: 440)
             .background {
-                // ✅ FIX "fondo aparte": antes era systemBackground OPAQUEO
-                // (bloqueaba por completo el NowPlaying de atrás). Ahora es
-                // CRISTAL ultraThinMaterial: el arte borroso del fondo se ve
+                // Cristal ultraThinMaterial: el arte borroso del fondo se ve
                 // a través del panel, con borde luminoso y profundidad.
                 RoundedRectangle(cornerRadius: 32, style: .continuous)
                     .fill(reduceTransparency
                           ? AnyShapeStyle(Color(UIColor.systemBackground))
                           : AnyShapeStyle(.ultraThinMaterial))
-                    // ✅ Sombra doble para mayor profundidad
-                    .shadow(color: .black.opacity(0.35), radius: 30, x: 0, y: 15)
-                    .shadow(color: AppTheme.accent.opacity(0.08), radius: 20, x: 0, y: 5)
+                    // ✅ Una sola sombra (la doble costaba render en A11)
+                    .shadow(color: .black.opacity(0.35), radius: 24, x: 0, y: 12)
             }
             .overlay {
                 // ✅ Borde luminoso "hifi" (solo si hay transparencia real;
@@ -735,12 +730,12 @@ struct NowPlayingView: View {
             }
             .clipShape(RoundedRectangle(cornerRadius: 32, style: .continuous))
             .padding(.horizontal, 24)
-            // ✅ ANIMACIÓN DE ENTRADA/SALIDA: scale + opacity + blur
-            .scaleEffect(showQualityDetail ? 1.0 : 0.88)
+            // ✅ Animación de entrada ligera: fade + scale SUTIL (sin blur —
+            // el blur animado provocaba tirones en dispositivos antiguos).
+            .scaleEffect(showQualityDetail ? 1.0 : 0.94)
             .opacity(showQualityDetail ? 1.0 : 0)
-            .blur(radius: showQualityDetail ? 0 : 8)
         }
-        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: showQualityDetail)
+        .animation(.easeOut(duration: 0.22), value: showQualityDetail)
     }
 
     // MARK: - Helpers

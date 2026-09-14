@@ -669,8 +669,19 @@ class AudioEngine: NSObject, ObservableObject {
     }
 
     private func setupSession() {
+        configureSession(allowAirPlay: true, didRetryDegraded: false)
+    }
+
+    /// Configura la sesión de audio. Si el arranque ocurre antes de que el
+    /// audio server esté listo (cold start en A11), setCategory/setActive
+    /// puede devolver -50 (paramErr) — error TRANSITORIO que el catch anterior
+    /// tragaba sin más, dejando la sesión sin configurar hasta la siguiente
+    /// canción. Ahora se reintenta UNA vez degradado (sin AirPlay).
+    private func configureSession(allowAirPlay: Bool, didRetryDegraded: Bool) {
         let session = AVAudioSession.sharedInstance()
         do {
+            var options: AVAudioSession.CategoryOptions = [.allowBluetoothA2DP]
+            if allowAirPlay { options.insert(.allowAirPlay) }
             try session.setCategory(
                 .playback,
                 mode: .default,
@@ -680,7 +691,7 @@ class AudioEngine: NSObject, ObservableObject {
                 // tarda, iOS puede enrutar la música por HFP y suena comprimido.
                 // Los controles del auricular (play/pausa/siguiente) siguen
                 // funcionando por AVRCP sobre A2DP sin necesidad de HFP.
-                options: [.allowBluetoothA2DP, .allowAirPlay]
+                options: options
             )
 
             // ✅ Mejor calidad con latencia mínima: probamos buffers cortos en
@@ -726,6 +737,12 @@ class AudioEngine: NSObject, ObservableObject {
             updateAudioQuality()
         } catch {
             AppLog.error(.playback, error, context: "setupSession")
+            // ✅ FIX -50 al arranque: reintento degradado UNA vez (sin AirPlay),
+            // también cubre combinaciones de opciones rechazadas por el HW.
+            if !didRetryDegraded {
+                AppLog.warning(.playback, "setupSession falló; reintentando degradado (sin AirPlay)")
+                configureSession(allowAirPlay: false, didRetryDegraded: true)
+            }
         }
     }
 
@@ -1000,6 +1017,9 @@ class AudioEngine: NSObject, ObservableObject {
         }
 
         let song = playlist[currentIndex]
+        // ✅ FIX anti-pop: el fade de PAUSA deja el mixer en volumen 0; si el
+        // usuario elige otra canción estando en pausa, el mixer seguiría mudo.
+        monoMixerNode?.volume = 1
         AppLog.info(.playback, "Reproduciendo: \(song.displayName)")
 
         // ✅ FIX: Incrementar scheduleGeneration UNA SOLA VEZ al inicio
@@ -1196,6 +1216,40 @@ class AudioEngine: NSObject, ObservableObject {
     }
 
     // MARK: - Controles básicos y otros métodos requeridos
+    // MARK: - Fade anti-pop (pausa/reanudación sin "clic")
+    // ⛔️ Cortar playerNode/engine a mitad de buffer produce una discontinuidad
+    // digital audible ("pop"/"clic"). Antes de pausar bajamos el volumen del
+    // mixer a 0 en ~40 ms y al reanudar lo subimos de vuelta. Solo 4 pasos de
+    // volume (no por-frame) → sin coste en CPU ni en la UI.
+    private var volumeFadeGeneration = 0
+    // ✅ ANTI-DOBLE-RESUME: al cambiar la ruta (BT/audífonos) el sistema puede
+    // entregar 2 notificaciones seguidas (categoría + dispositivo) y cada una
+    // disparar resume() → doble reprogramación y doble log (visto en logs).
+    // Este guard ignora un segundo resume dentro de 150 ms si ya está sonando.
+    private var lastResumeCallTime: TimeInterval = 0
+
+    /// Rampa lineal del volumen del mezclador intermedio. Una rampa nueva
+    /// cancela la anterior (generación), así pausa/resume rápidos no chocan.
+    private func rampMixerVolume(to target: Float, duration: TimeInterval = 0.04) {
+        volumeFadeGeneration += 1
+        let generation = volumeFadeGeneration
+        let steps = 4
+        let stepDuration = duration / Double(steps)
+        guard let mixer = monoMixerNode else { return }
+        let from = mixer.volume
+        func scheduleStep(_ step: Int) {
+            guard self.volumeFadeGeneration == generation else { return }
+            let progress = Float(step) / Float(steps)
+            mixer.volume = from + (target - from) * progress
+            if step < steps {
+                DispatchQueue.main.asyncAfter(deadline: .now() + stepDuration) {
+                    scheduleStep(step + 1)
+                }
+            }
+        }
+        scheduleStep(0)
+    }
+
     func pause() {
         // ✅ FIX: detener el display timer PRIMERO para evitar que siga
         // actualizando currentTime mientras capturamos la posición exacta.
@@ -1213,12 +1267,19 @@ class AudioEngine: NSObject, ObservableObject {
             wallAnchor = CACurrentMediaTime()
         }
         clock.time = currentTime
-        if playerNode.isPlaying {
-            playerNode.pause()
-        }
-        avPlayer?.pause()
-        if !isUsingFallback, engine.isRunning {
-            engine.pause()
+        // ✅ FADE anti-pop: bajar el volume a 0 y SOLO entonces cortar el nodo.
+        // El corte real se difiere 45 ms; si en ese lapso llega resume() (que
+        // sube el volumen), el nodo ni se toca → transición limpia en ambos sentidos.
+        rampMixerVolume(to: 0, duration: 0.04)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+            guard let self, !self.isPlaying else { return }
+            if self.playerNode.isPlaying {
+                self.playerNode.pause()
+            }
+            self.avPlayer?.pause()
+            if !self.isUsingFallback, self.engine.isRunning {
+                self.engine.pause()
+            }
         }
         isPlaying = false
         AppLog.info(.playback, String(format: "Pausa en %.1fs — '%@'", currentTime, currentSong?.displayName ?? "—"))
@@ -1267,6 +1328,13 @@ class AudioEngine: NSObject, ObservableObject {
     }
 
     func resume() {
+        // ✅ ANTI-DOBLE-RESUME: ya reproduciendo + llamada duplicada en 150ms
+        // (ruta que llega con 2 notificaciones) → ignorar.
+        let now = CACurrentMediaTime()
+        if isPlaying, now - lastResumeCallTime < 0.15 {
+            return
+        }
+        lastResumeCallTime = now
         if isUsingFallback {
             avPlayer?.play()
         } else {
@@ -1320,6 +1388,9 @@ class AudioEngine: NSObject, ObservableObject {
         }
         AppLog.info(.playback, String(format: "Resume desde %.1fs — '%@' (engine running: %@, fallback: %@)", currentTime, currentSong?.displayName ?? "—", engine.isRunning ? "sí" : "no", isUsingFallback ? "sí" : "no"))
         isPlaying = true
+        // ✅ FADE anti-pop: subir el volumen suavemente tras el play (el mixer
+        // quedó en 0 por el fade de pausa). 4 pasos × 10 ms, sin clic.
+        rampMixerVolume(to: 1, duration: 0.04)
         // ✅ FIX Centro de Control: publicar rate 1.0 + elapsed al reanudar
         updateNowPlayingInfo()
         startDisplayTimer()

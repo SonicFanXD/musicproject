@@ -37,7 +37,7 @@ enum RepeatMode: String, CaseIterable, Codable {
 }
 
 enum EQPreset: String, CaseIterable, Codable {
-    case flat, bass, treble, vocal, classical, electronic, pop, rock, jazz
+    case flat, bass, treble, vocal, classical, electronic, pop, rock, jazz, concert
 
     var displayName: String {
         switch self {
@@ -50,6 +50,7 @@ enum EQPreset: String, CaseIterable, Codable {
         case .pop: return Localization.localized("eq.pop")
         case .rock: return Localization.localized("eq.rock")
         case .jazz: return Localization.localized("eq.jazz")
+        case .concert: return Localization.localized("eq.concert")
         }
     }
 
@@ -64,6 +65,10 @@ enum EQPreset: String, CaseIterable, Codable {
         case .pop: return [3, 4, 3, 1, 0, 0, 1, 3, 4, 3]
         case .rock: return [6, 5, 4, 2, 0, 0, 2, 4, 5, 6]
         case .jazz: return [4, 3, 2, 2, 0, 0, 2, 3, 4, 4]
+        // ✅ CONCIERTO: realce de presencia (2-4 kHz) y aire (8-16 kHz) con un
+        // leve cuerpo bajo (100-125 Hz) que simula la reverb de una sala grande.
+        // Universal: la misma curva aplica a cualquier canción y género.
+        case .concert: return [2.5, 3.0, 3.5, 2.0, 1.0, 0.5, 1.5, 3.0, 2.0, 1.5]
         }
     }
 }

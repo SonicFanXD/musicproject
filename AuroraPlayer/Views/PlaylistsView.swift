@@ -166,7 +166,8 @@ struct PlaylistsView: View {
             // Playlist artwork
             ZStack {
                 if let artwork = playlist.artwork {
-                    Image(uiImage: artwork)
+                    // ✅ ANTI-JETSAM: card de 150pt → basta thumbnail de 300px.
+                    Image(uiImage: artwork.preparingThumbnail(of: CGSize(width: 300, height: 300)) ?? artwork)
                         .resizable()
                         .scaledToFill()
                         .frame(width: 150, height: 150)

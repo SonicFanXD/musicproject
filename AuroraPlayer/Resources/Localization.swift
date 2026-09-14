@@ -366,6 +366,7 @@ final class Localization: ObservableObject {
             "eq.pop": [.spanish: "Pop", .english: "Pop"],
             "eq.rock": [.spanish: "Rock", .english: "Rock"],
             "eq.jazz": [.spanish: "Jazz", .english: "Jazz"],
+            "eq.concert": [.spanish: "Concierto", .english: "Concert"],
 
             // Formats
             "format.flac": [.spanish: "FLAC (Free Lossless Audio Codec)", .english: "FLAC (Free Lossless Audio Codec)"],

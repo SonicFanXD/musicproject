@@ -319,7 +319,9 @@ struct QueueView: View {
     @ViewBuilder
     private func artworkMiniature(_ artwork: UIImage?, size: CGFloat, corner: CGFloat) -> some View {
         if let artwork = artwork {
-            Image(uiImage: artwork)
+            // ✅ ANTI-JETSAM: reescalar al tamaño real ×2 (la fuente completa
+            // de 768px no debe retenerse en filas de 48pt → 160× menos RAM).
+            Image(uiImage: artwork.preparingThumbnail(of: CGSize(width: size * 2, height: size * 2)) ?? artwork)
                 .resizable()
                 .interpolation(.high)
                 .scaledToFill()
