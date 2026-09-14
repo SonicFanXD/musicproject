@@ -930,11 +930,6 @@ class AudioEngine: NSObject, ObservableObject {
         AppLog.info(.playback, "Audio mono (downmix de salida): \(isMonoAudioEnabled ? "activado" : "desactivado")")
     }
 
-    func setEQGain(for band: Int, gain: Float) {
-        guard let eq = equalizerNode, band >= 0 && band < eq.bands.count else { return }
-        eq.bands[band].gain = gain
-    }
-
     /// Sample rate del motor de audio para UI (publicado para que las vistas se actualicen)
     var sampleRateDisplay: Double {
         sampleRate
@@ -2033,7 +2028,7 @@ class AudioEngine: NSObject, ObservableObject {
                 }
                 if self.isPlaying && hadHeadphoneOutput && !hasHeadphoneNow {
                     self.suspendForRouteLoss()
-                    AppLog.info(.playback, "Ruta de audio perdida (razón \(reason.rawValue)): suspendido sin salto de canción")
+                    AppLog.info(.playback, "Ruta de audio perdida (razón \(reason?.rawValue ?? reasonRaw)): suspendido sin salto de canción")
                 }
             }
 

@@ -727,6 +727,10 @@ class FileAccessService: ObservableObject {
         var discNumber: Int?
         var trackNumber = 0
         var releaseDate: Date?
+        // ✅ dateIsStrong vive en el scope COMPLETO del método: el parser
+        // binario de abajo lo consulta para saber si debe confirmar una fecha
+        // que vino solo de fuente débil (ver "Prioridad de fechas").
+        var dateIsStrong = false
         // ⛔️ FECHA DE ARCHIVO PROHIBIDA: la fecha de creación del archivo
         // (cuándo se copió/descargó) NUNCA se usa como año. Era la causa
         // principal del "álbum de 2023 con año 2026". Si el archivo no trae
@@ -863,7 +867,7 @@ class FileAccessService: ObservableObject {
                 // dateAdded/purchaseDate/playDate…).
                 // dateIsStrong marca si el año salió de un tag de release REAL;
                 // si solo hubo fecha débil, el parser binario podrá confirmarla.
-                let dateIsStrong = strongReleaseDate != nil
+                dateIsStrong = strongReleaseDate != nil
                 releaseDate = strongReleaseDate ?? weakReleaseDate
             }
 
