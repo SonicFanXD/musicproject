@@ -1019,7 +1019,7 @@ class AudioEngine: NSObject, ObservableObject {
         let song = playlist[currentIndex]
         // ✅ FIX anti-pop: el fade de PAUSA deja el mixer en volumen 0; si el
         // usuario elige otra canción estando en pausa, el mixer seguiría mudo.
-        monoMixerNode?.volume = 1
+        monoMixerNode.volume = 1
         AppLog.info(.playback, "Reproduciendo: \(song.displayName)")
 
         // ✅ FIX: Incrementar scheduleGeneration UNA SOLA VEZ al inicio
@@ -1235,7 +1235,7 @@ class AudioEngine: NSObject, ObservableObject {
         let generation = volumeFadeGeneration
         let steps = 4
         let stepDuration = duration / Double(steps)
-        guard let mixer = monoMixerNode else { return }
+        let mixer = monoMixerNode
         let from = mixer.volume
         func scheduleStep(_ step: Int) {
             guard self.volumeFadeGeneration == generation else { return }
