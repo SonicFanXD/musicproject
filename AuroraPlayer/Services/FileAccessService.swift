@@ -931,27 +931,28 @@ class FileAccessService: ObservableObject {
             }
         }
 
-        // Obtener sample rate, bit depth y canales del archivo de audio
+        // Obtener sample rate, bit depth y canales del archivo de audio.
+        // ✅ FIX bit depth ausente en la UI: AVAudioFile.fileFormat reporta
+        // mBitsPerChannel = 0 para FLAC/ALAC, así que se lee el ASBD real del
+        // audioTrack del asset. Además se evita re-abrir el archivo (tirones
+        // de indexación con cientos de cargas concurrentes).
         var sampleRate: Double = 0
         var bitDepth: Int = 0
         var channelCount: Int = 0
         var bitrateKbps: Int?
-        if let audioFile = try? AVAudioFile(forReading: url) {
-            sampleRate = audioFile.processingFormat.sampleRate
-            // ✅ FIX "todo en 32-bit": processingFormat SIEMPRE es Float32
-            // (el decodificador convierte el archivo a float para el motor),
-            // por eso TODO reportaba 32 bits. La profundidad REAL está en
-            // fileFormat (formato en disco): WAV/AIFF reportan 16/24/32
-            // reales, FLAC/ALAC su profundidad nativa, y AAC/MP3 devuelven
-            // 0 (no hay bits de muestra en un codec con pérdida) → la UI
-            // lo oculta en vez de mostrar un 32 falso.
-            let fileBits = Int(audioFile.fileFormat.streamDescription.pointee.mBitsPerChannel)
-            bitDepth = fileBits > 0 ? fileBits : 0
-            channelCount = Int(audioFile.processingFormat.channelCount)
+        let audioTrack: AVAssetTrack? = (try? await asset.loadTracks(withMediaType: .audio))?.first
+        if let track = audioTrack,
+           let firstDesc = track.formatDescriptions.first,
+           let desc = firstDesc as! CMAudioFormatDescription?,
+           let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(desc) {
+            sampleRate = Double(asbd.pointee.mSampleRate)
+            channelCount = Int(asbd.pointee.mChannelsPerFrame)
+            let fileBits = Int(asbd.pointee.mBitsPerChannel)
+            bitDepth = (fileBits > 0 && fileBits <= 32) ? fileBits : 0
         }
         // ✅ LOSSLESS → profundidad real; LOSSY (MP3/AAC, bitDepth 0) →
         // bitrate medio en kbps (la "calidad" equivalente del codec).
-        if bitDepth == 0, let track = try? await asset.loadTracks(withMediaType: .audio).first {
+        if bitDepth == 0, let track = audioTrack {
             let rate = track.estimatedDataRate
             if rate.isFinite, rate > 0 { bitrateKbps = Int(rate / 1000) }
         }
@@ -1053,16 +1054,29 @@ class FileAccessService: ObservableObject {
 
         // (La fecha de creación del archivo NUNCA se usa: año nil si no hay tag.)
 
-        let audioFile = try? AVAudioFile(forReading: url)
-        let sampleRate = audioFile?.processingFormat.sampleRate ?? 0
-        // ✅ FIX "todo en 32-bit": bitDepth REAL desde fileFormat (formato en
-        // disco), igual que en readMetadata. processingFormat es SIEMPRE Float32.
-        let fileBits = audioFile?.fileFormat.streamDescription.pointee.mBitsPerChannel ?? 0
-        let bits = fileBits > 0 ? Int(fileBits) : 0
-        let channels = audioFile?.processingFormat.channelCount ?? 0
+        // ✅ FIX bit depth ausente en la UI: igual que en readMetadata, el ASBD
+        // real se lee del audioTrack del asset (AVAudioFile reporta 0 bits
+        // para FLAC/ALAC y re-abre el archivo).
+        let audioTrack = (try? await asset.loadTracks(withMediaType: .audio))?.first
+        let sampleRate: Double
+        let fileBits: Int
+        let channels: Int
+        if let track = audioTrack,
+           let firstDesc = track.formatDescriptions.first,
+           let desc = firstDesc as! CMAudioFormatDescription?,
+           let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(desc) {
+            sampleRate = Double(asbd.pointee.mSampleRate)
+            fileBits = Int(asbd.pointee.mBitsPerChannel)
+            channels = Int(asbd.pointee.mChannelsPerFrame)
+        } else {
+            sampleRate = 0
+            fileBits = 0
+            channels = 0
+        }
+        let bits = (fileBits > 0 && fileBits <= 32) ? Int(fileBits) : 0
         // ✅ LOSSLESS → bits reales; LOSSY (bitDepth 0) → bitrate medio kbps.
         var lastFormatBitrate: Int?
-        if bits == 0, let track = try? await asset.loadTracks(withMediaType: .audio).first {
+        if bits == 0, let track = audioTrack {
             let rate = track.estimatedDataRate
             if rate.isFinite, rate > 0 { lastFormatBitrate = Int(rate / 1000) }
         }

@@ -247,10 +247,23 @@ extension Song {
         return false
     }
 
+    /// Nombre PURO del formato: primera parte de `formatDescription` (que
+    /// FileAccessService guarda COMPUESTA, p.ej. "FLAC · 24 bits · 44 kHz").
+    /// ✅ FIX kHz duplicado en la cápsula de NowPlaying: antes `audioQualityDescription`
+    /// trataba la cadena compuesta como si fuera solo el nombre ("FLAC") y volvía
+    /// a añadir el sample rate → "FLAC · 24 bits · 44 kHz · 44.1kHz". Con este
+    /// helper el formato es siempre un solo nombre ("FLAC", "WAV", "Dolby Digital Plus"…).
+    var formatName: String {
+        let raw = formatDescription.isEmpty ? url.pathExtension.uppercased() : formatDescription
+        let first = raw.split(separator: "·").first?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let first = first, !first.isEmpty { return first }
+        return url.pathExtension.uppercased()
+    }
+
     /// Descripción detallada del formato de audio basada en metadatos reales del archivo
     var audioQualityDescription: String {
         var parts: [String] = []
-        let format = formatDescription.isEmpty ? url.pathExtension.uppercased() : formatDescription
+        let format = formatName
         parts.append(format)
 
         if bitDepth > 0 && (format == "FLAC" || format == "ALAC" || format == "WAV" || format == "AIFF") {

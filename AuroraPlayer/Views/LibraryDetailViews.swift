@@ -297,9 +297,11 @@ struct AlbumDetailView: View {
                 Image(systemName: "opticaldisc").font(.system(size: 13, weight: .semibold)).foregroundStyle(tintColor.opacity(0.9))
                 Text("\(Localization.localized("details.disc")) \(disc)").font(.system(size: 15, weight: .semibold)).foregroundStyle(.secondary)
             }
-            .padding(.horizontal, 4).padding(.top, 6)
+            // ✅ FIX: padding simétrico para que el texto quede centrado
+            // dentro de la cápsula de vidrio (antes era solo .top, quedaba descentrado)
+            .padding(.horizontal, 12).padding(.vertical, 6)
             .nativeGlassCapsule()
-            .padding(.horizontal, 8)
+            .padding(.horizontal, 4)
             ForEach(Array(songs.enumerated()), id: \.element.id) { index, song in
                 // ✅ FIX multi-disco: la cola es el ÁLBUM COMPLETO (cachedSongs
                 // viene ordenado disco 1 → disco 2 → pistas). Antes se pasaba

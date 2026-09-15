@@ -23,27 +23,44 @@ struct ContentView: View {
     @State private var debouncedSearchText = ""
     @State private var searchDebounceTask: Task<Void, Never>?
     
-    @AppStorage("com.aurora.songSort") private var sortOptionRaw = SortOption.title.rawValue
-    private var sortOption: SortOption {
-        SortOption(rawValue: sortOptionRaw) ?? .title
-    }
-    @AppStorage("com.aurora.songSortAscending") private var songSortAscending = true
-    @AppStorage("com.aurora.albumSort") private var albumSortRaw = AlbumSortOption.title.rawValue
-    private var albumSort: AlbumSortOption {
-        AlbumSortOption(rawValue: albumSortRaw) ?? .title
-    }
-    @AppStorage("com.aurora.albumSortAscending") private var albumSortAscending = true
+    // ✅ FIX ordenamiento: @AppStorage leído vía computed property no siempre
+    // invalida la vista al cambiar la opción. Se usa @State (reactivo) sincronizado
+    // bidireccionalmente con @AppStorage (persistente) para garantizar el re-render.
+    @AppStorage("com.aurora.songSort") private var songSortRawStorage = SortOption.title.rawValue
+    @AppStorage("com.aurora.songSortAscending") private var songSortAscendingStorage = true
+    @AppStorage("com.aurora.albumSort") private var albumSortRawStorage = AlbumSortOption.title.rawValue
+    @AppStorage("com.aurora.albumSortAscending") private var albumSortAscendingStorage = true
     // ✅ Orden propio de la categoría Artistas (independiente de canciones/álbumes).
-    @AppStorage("com.aurora.artistSort") private var artistSortRaw = ArtistSortOption.name.rawValue
-    private var artistSort: ArtistSortOption {
-        ArtistSortOption(rawValue: artistSortRaw) ?? .name
-    }
-    @AppStorage("com.aurora.artistSortAscending") private var artistSortAscending = true
+    @AppStorage("com.aurora.artistSort") private var artistSortRawStorage = ArtistSortOption.name.rawValue
+    @AppStorage("com.aurora.artistSortAscending") private var artistSortAscendingStorage = true
+
+    @State private var sortOptionRaw: String = ""
+    @State private var songSortAscending: Bool = true
+    @State private var albumSortRaw: String = ""
+    @State private var albumSortAscending: Bool = true
+    @State private var artistSortRaw: String = ""
+    @State private var artistSortAscending: Bool = true
+
+    private var sortOption: SortOption { SortOption(rawValue: sortOptionRaw) ?? .title }
+    private var albumSort: AlbumSortOption { AlbumSortOption(rawValue: albumSortRaw) ?? .title }
+    private var artistSort: ArtistSortOption { ArtistSortOption(rawValue: artistSortRaw) ?? .name }
     @State private var showSortMenu = false
 
     var body: some View {
         ZStack {
             NavigationStack {
+                Color.clear
+                    .onAppear {
+                        // ✅ Sincronizar @State con @AppStorage al aparecer (solo una vez)
+                        if sortOptionRaw.isEmpty {
+                            sortOptionRaw = songSortRawStorage
+                            songSortAscending = songSortAscendingStorage
+                            albumSortRaw = albumSortRawStorage
+                            albumSortAscending = albumSortAscendingStorage
+                            artistSortRaw = artistSortRawStorage
+                            artistSortAscending = artistSortAscendingStorage
+                        }
+                    }
                 ZStack {
                     AppBackground()
 
@@ -476,9 +493,9 @@ struct ContentView: View {
             current: sortOption,
             optionTitle: { $0.title },
             optionIcon: { $0.icon },
-            currentSelection: { sortOptionRaw = $0.rawValue },
+            currentSelection: { opt in sortOptionRaw = opt.rawValue; songSortRawStorage = opt.rawValue },
             ascending: songSortAscending,
-            onAscendingChange: { songSortAscending = $0 }
+            onAscendingChange: { songSortAscending = $0; songSortAscendingStorage = $0 }
         )
     }
 
@@ -488,9 +505,9 @@ struct ContentView: View {
             current: albumSort,
             optionTitle: { $0.title },
             optionIcon: { $0.icon },
-            currentSelection: { albumSortRaw = $0.rawValue },
+            currentSelection: { opt in albumSortRaw = opt.rawValue; albumSortRawStorage = opt.rawValue },
             ascending: albumSortAscending,
-            onAscendingChange: { albumSortAscending = $0 }
+            onAscendingChange: { albumSortAscending = $0; albumSortAscendingStorage = $0 }
         )
     }
 
@@ -500,9 +517,9 @@ struct ContentView: View {
             current: artistSort,
             optionTitle: { $0.title },
             optionIcon: { $0.icon },
-            currentSelection: { artistSortRaw = $0.rawValue },
+            currentSelection: { opt in artistSortRaw = opt.rawValue; artistSortRawStorage = opt.rawValue },
             ascending: artistSortAscending,
-            onAscendingChange: { artistSortAscending = $0 }
+            onAscendingChange: { artistSortAscending = $0; artistSortAscendingStorage = $0 }
         )
     }
 
