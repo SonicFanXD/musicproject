@@ -95,7 +95,7 @@ struct AudioQualityDetailView: View {
                         )
                         .accessibilityLabel(Localization.localized("audio.quality.title"))
                 }
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: .navigationBarTrailing) {
                     Button(Localization.localized("quality.done")) { dismiss() }
                         .foregroundStyle(AppTheme.accent)
                         .font(.system(size: 15, weight: .semibold))

@@ -414,7 +414,7 @@ struct PlaylistDetailView: View {
         .toolbarBackground(Color(UIColor.systemBackground).opacity(0.92), for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItem(placement: .navigationBarTrailing) {
                 Menu {
                     Button {
                         editedName = playlist.name

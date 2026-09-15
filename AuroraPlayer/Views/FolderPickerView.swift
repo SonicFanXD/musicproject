@@ -56,7 +56,7 @@ struct FolderPickerView: View {
                         .accessibilityLabel("Biblioteca")
                 }
 
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: .navigationBarTrailing) {
                     Button(Localization.localized("actions.done")) {
                         dismiss()
                     }

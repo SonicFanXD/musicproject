@@ -238,7 +238,12 @@ struct LyricsView: View {
                     ForEach(Array(lyrics.lines.enumerated()), id: \.element.id) { index, line in
                         let wordsInLine = index < wordsByLine.count ? wordsByLine[index] : []
 
-                        wordByWordLineView(line: line, words: wordsInLine, isActive: currentLineIndex == index)
+                        wordByWordLineView(line: line, words: wordsInLine, isActive: currentLineIndex == index,
+                            // ✅ FIX KARAOKE: solo la línea ACTIVA recibe su progreso.
+                            // Antes `lineProgress` (calculado SIEMPRE para la línea
+                            // activa) se pasaba a todas → cada línea se iluminaba
+                            // hasta el mismo ancho que la activa.
+                            progress: currentLineIndex == index ? lineProgress : 0)
                             .id(index)
                             .contentShape(Rectangle())
                             .onTapGesture {
@@ -302,18 +307,18 @@ struct LyricsView: View {
     // "cubriendo de blanco" según su progreso. Optimizado: un solo Text
     // con máscara por línea (no re-render por palabra).
     // Single-line "karaoke" usando máscara continua (más suave y barato)
-    private func wordByWordLineView(line: LyricLine, words: [LyricWord], isActive: Bool) -> some View {
+    private func wordByWordLineView(line: LyricLine, words: [LyricWord], isActive: Bool, progress: Double) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             MaskedLyricText(
                 text: words.map(\.text).joined(separator: " "),
                 baseColor: isActive ? Color.secondary : Color.secondary.opacity(0.6),
                 // ✅ FIX: usa AppTheme.accent para respetar el ajuste "Color de acento"
                 highlightColor: AppTheme.accent,
-                progress: lineProgress,
+                progress: progress,
                 fontSize: isActive ? 23 : 19,
                 fontWeight: isActive ? .bold : .medium
             )
-            .animation(.easeOut(duration: 0.15), value: lineProgress)
+            .animation(.easeOut(duration: 0.15), value: progress)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 8)

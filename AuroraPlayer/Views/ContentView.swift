@@ -145,7 +145,7 @@ struct ContentView: View {
                             .accessibilityLabel(Localization.localized("app.name"))
                     }
 
-                    ToolbarItem(placement: .topBarTrailing) {
+                    ToolbarItem(placement: .navigationBarTrailing) {
                         HStack(spacing: 6) {
                             Button {
                                 showPlaylists = true

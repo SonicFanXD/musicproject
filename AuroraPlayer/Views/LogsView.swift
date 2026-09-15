@@ -104,7 +104,7 @@ struct LogsView: View {
                         .accessibilityLabel("Registros")
                 }
 
-                ToolbarItem(placement: .topBarLeading) {
+                ToolbarItem(placement: .navigationBarLeading) {
                     Menu {
                         Button {
                             shareDiagnostics()
@@ -132,7 +132,7 @@ struct LogsView: View {
                     }
                 }
 
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: .navigationBarTrailing) {
                     Button(Localization.localized("actions.done")) {
                         dismiss()
                     }

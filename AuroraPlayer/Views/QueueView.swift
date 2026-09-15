@@ -31,15 +31,17 @@ struct QueueView: View {
 
                     Divider().background(Color.secondary.opacity(0.2))
 
-                    ScrollView {
-                        VStack(spacing: 12) {
-                            switch selectedTab {
-                            case .nextUp: nextUpContent
-                            case .history: historyContent
-                            }
+                    // ✅ FIX iOS 16: era ScrollView → .swipeActions y .onMove eran
+                    // inertes (solo funcionan en List). Al no poder eliminar la
+                    // canción con swipe, la basura "clear queue" era la única vía.
+                    List {
+                        switch selectedTab {
+                        case .nextUp: nextUpContent
+                        case .history: historyContent
                         }
-                        .padding(.horizontal, 16).padding(.top, 16)
                     }
+                    .listStyle(.plain)
+                    .scrollContentBackground(.hidden)
                     .scrollIndicators(.hidden)
                 }
             }
@@ -60,7 +62,7 @@ struct QueueView: View {
                                 .accessibilityLabel(Localization.localized("queue.title"))
                         }
 
-                        ToolbarItem(placement: .topBarTrailing) {
+                        ToolbarItem(placement: .navigationBarTrailing) {
                             HStack(spacing: 8) {
                                 if selectedTab == .nextUp && editableQueue.count > 1 {
                                     Button {
@@ -128,62 +130,71 @@ struct QueueView: View {
 
     @ViewBuilder
     private var nextUpContent: some View {
-        if let current = audioEngine.currentSong {
-            VStack(alignment: .leading, spacing: 8) {
-                Text(Localization.localized("queue.nowPlaying"))
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 4)
+        Section {
+            if let current = audioEngine.currentSong {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(Localization.localized("queue.nowPlaying"))
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.secondary)
 
-                HStack(spacing: 12) {
-                    artworkMiniature(current.artwork, size: 48, corner: 10)
+                    HStack(spacing: 12) {
+                        artworkMiniature(current.artwork, size: 48, corner: 10)
 
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(current.title)
-                            .font(.system(size: 16, weight: .semibold, design: .rounded))
-                            .foregroundStyle(AppTheme.accent).lineLimit(1)
-                        Text(current.displaySubtitle)
-                            .font(.system(size: 13)).foregroundStyle(.secondary).lineLimit(1)
-                    }
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(current.title)
+                                .font(.system(size: 16, weight: .semibold, design: .rounded))
+                                .foregroundStyle(AppTheme.accent).lineLimit(1)
+                            Text(current.displaySubtitle)
+                                .font(.system(size: 13)).foregroundStyle(.secondary).lineLimit(1)
+                        }
 
-                    Spacer()
+                        Spacer()
 
-                    HStack(spacing: 2.5) {
-                        ForEach(0..<3, id: \.self) { bar in
-                            RoundedRectangle(cornerRadius: 1.5)
-                                .fill(AppTheme.accent)
-                                .frame(width: 3, height: audioEngine.isPlaying ? (bar % 2 == 0 ? 14 : 9) : 6)
-                                .animation(
-                                    .easeInOut(duration: 0.45 + Double(bar) * 0.12).repeatForever(autoreverses: true),
-                                    value: audioEngine.isPlaying
-                                )
+                        HStack(spacing: 2.5) {
+                            ForEach(0..<3, id: \.self) { bar in
+                                RoundedRectangle(cornerRadius: 1.5)
+                                    .fill(AppTheme.accent)
+                                    .frame(width: 3, height: audioEngine.isPlaying ? (bar % 2 == 0 ? 14 : 9) : 6)
+                                    .animation(
+                                        .easeInOut(duration: 0.45 + Double(bar) * 0.12).repeatForever(autoreverses: true),
+                                        value: audioEngine.isPlaying
+                                    )
+                            }
                         }
                     }
+                    .padding(12)
+                    .background {
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .fill(AppTheme.accent.opacity(0.1))
+                    }
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .strokeBorder(AppTheme.accent.opacity(0.25), lineWidth: 1)
+                    }
                 }
-                .padding(12)
-                .background {
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(AppTheme.accent.opacity(0.1))
-                }
-                .overlay {
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .strokeBorder(AppTheme.accent.opacity(0.25), lineWidth: 1)
-                }
+                .listRowSeparator(.hidden)
+                .listRowBackground(Color.clear)
+                .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
             }
-        }
 
-        if editableQueue.isEmpty {
-            emptyState(icon: "music.note.list", title: Localization.localized("queue.emptyQueue"), message: Localization.localized("queue.emptyQueueMessage"))
-        } else {
-            VStack(alignment: .leading, spacing: 8) {
+            if editableQueue.isEmpty {
+                emptyState(icon: "music.note.list", title: Localization.localized("queue.emptyQueue"), message: Localization.localized("queue.emptyQueueMessage"))
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+                    .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+            } else {
                 Text(Localization.localized("queue.upNext"))
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(.secondary)
-                    .padding(.horizontal, 4)
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+                    .listRowInsets(EdgeInsets(top: 12, leading: 16, bottom: 4, trailing: 16))
 
-                // ✅ Lista editable: reordenar y eliminar con swipe
-                ForEach(Array(editableQueue.enumerated()), id: \.element.id) { index, song in
-                    queueSongRow(song, index: index + 1)
+                // ✅ FIX iOS 16: reordenar/eliminar en List (antes ScrollView).
+                // Las filas DEBEN ser hijas directas del Section para que
+                // .swipeActions/.onMove funcionen (anidadas en un VStack son inertes).
+                ForEach(editableQueue) { song in
+                    queueSongRow(song, index: (editableQueue.firstIndex(where: { $0.id == song.id }) ?? 0) + 1)
                         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                             Button(role: .destructive) {
                                 Haptics.light()
@@ -198,7 +209,6 @@ struct QueueView: View {
                     moveQueueItem(from: from, to: to)
                 }
             }
-            .padding(.top, 8)
         }
     }
 
@@ -221,18 +231,25 @@ struct QueueView: View {
 
     @ViewBuilder
     private var historyContent: some View {
-        if audioEngine.playHistory.isEmpty {
-            emptyState(icon: "clock.arrow.circlepath", title: Localization.localized("queue.emptyHistory"), message: Localization.localized("queue.emptyQueueMessage"))
-        } else {
-            VStack(alignment: .leading, spacing: 8) {
-                Text(Localization.localized("queue.historyTitle"))
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 4)
+        Section {
+            if audioEngine.playHistory.isEmpty {
+                emptyState(icon: "clock.arrow.circlepath", title: Localization.localized("queue.emptyHistory"), message: Localization.localized("queue.emptyQueueMessage"))
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+                    .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+            } else {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(Localization.localized("queue.historyTitle"))
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.secondary)
 
-                ForEach(Array(audioEngine.playHistory.enumerated()), id: \.element.id) { index, song in
-                    historySongRow(song, index: index)
+                    ForEach(Array(audioEngine.playHistory.enumerated()), id: \.element.id) { index, song in
+                        historySongRow(song, index: index)
+                    }
                 }
+                .listRowSeparator(.hidden)
+                .listRowBackground(Color.clear)
+                .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
             }
         }
     }

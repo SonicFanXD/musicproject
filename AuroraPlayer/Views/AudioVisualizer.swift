@@ -62,6 +62,11 @@ struct AudioVisualizer: View {
 
     var body: some View {
         GeometryReader { geometry in
+            // ✅ FIX DESBORDE: width fijo al contenedor — al usarse en la PlayerBar
+            // (contenedor de ~18pt) el HStack intrínseco (~110pt con 24 barras)
+            // desbordaba a la derecha y tapaba título/artista/corazón. Con
+            // .frame(width:) el HStack se comprime y las barras se recortan
+            // ordenadas de izquierda a derecha, sin salirse nunca del marco.
             HStack(spacing: 2.5) {
                 ForEach(0..<amplitudes.count, id: \.self) { index in
                     let normalizedIndex = Double(index) / Double(amplitudes.count - 1)
@@ -86,6 +91,7 @@ struct AudioVisualizer: View {
                 }
             }
             .frame(height: geometry.size.height, alignment: .bottom)
+            .frame(width: geometry.size.width, alignment: .leading)
             .shadow(color: tintColor.opacity(0.1), radius: 4, y: 1)
         }
         .drawingGroup()

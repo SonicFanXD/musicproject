@@ -38,7 +38,7 @@ struct EqualizerView: View {
                         .accessibilityLabel(Localization.localized("equalizer.title"))
                 }
 
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: .navigationBarTrailing) {
                     Button(Localization.localized("actions.done")) { dismiss() }
                         .foregroundStyle(AppTheme.accent)
                         .frame(width: 44, height: 44)

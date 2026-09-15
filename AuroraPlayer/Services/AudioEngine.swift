@@ -763,7 +763,13 @@ class AudioEngine: NSObject, ObservableObject {
         let frequencies: [Float] = [32, 64, 125, 250, 500, 1000, 2000, 4000, 8000, 16000]
         for (index, freq) in frequencies.enumerated() {
             let band = eq.bands[index]
-            band.filterType = .parametric
+            // ✅ CALIDAD: extremos como SHELVES (estándar en EQ gráfico de 10
+            // bandas). Un paramétrico de ancho 1.0 en 32 Hz/16 kHz solo levanta
+            // una colina estrecha: el realce de "Bajos" no cubría 20–40 Hz de
+            // verdad y el de "Agudos" dejaba el aire (>16 kHz) intacto. Con
+            // lowShelf/highShelf la curva se extiende plana hasta el extremo.
+            band.filterType = index == 0 ? .lowShelf
+                : (index == frequencies.count - 1 ? .highShelf : .parametric)
             band.frequency = freq
             band.bandwidth = 1.0
             band.gain = 0
@@ -872,13 +878,32 @@ class AudioEngine: NSObject, ObservableObject {
     /// banda desactiva el bypass.
     private func updateEQBypassState() {
         equalizerNode?.bypass = !(isEQEnabled && eqPreset != .flat)
+        applyEQHeadroom()
+    }
+
+    /// ✅ CALIDAD (anti-clipping): el EQ puede realzar hasta +8 dB (preset
+    /// Bajos). Sobre másteres modernos que ya rozan 0 dBFS, ese realce hace
+    /// CLIP digital en el DAC (distorsión audible exactamente donde el
+    /// usuario pidió más). Se aplica un preamp automático en la salida
+    /// (mainMixer — nodo DISTINTO del que usa el fade anti-pop) igual a la
+    /// ganancia máxima positiva del EQ: EQ off → 1.0 (bit-transparente);
+    /// EQ on → atenuación justa para que el realce no recorte.
+    private func applyEQHeadroom() {
+        let processing = isEQEnabled && eqPreset != .flat
+        var maxGain: Float = 0
+        if processing, let eq = equalizerNode {
+            maxGain = eq.bands.map(\.gain).max() ?? 0
+        }
+        let attenuation: Float = maxGain > 0 ? pow(10, -min(maxGain, 9) / 20) : 1
+        engine.mainMixerNode.outputVolume = attenuation
     }
 
     func setEQGain(for band: Int, gain: Float) {
         guard let eq = equalizerNode, band >= 0 && band < eq.bands.count else { return }
         eq.bands[band].gain = gain
-        // Edición manual → el EQ ya no es "flat": hay que des-bypassearlo.
-        eq.bypass = !isEQEnabled
+        // ✅ Edición manual → des-bypass + recalcular headroom (una ganancia
+        // subida a mano también puede provocar clipping).
+        updateEQBypassState()
     }
 
     // MARK: - Audio Mono
@@ -1125,6 +1150,13 @@ class AudioEngine: NSObject, ObservableObject {
                 guard let self = self,
                       self.scheduleGeneration == currentGeneration,
                       !self.isStopping else { return }
+                // ✅ FIX: pausa DURANTE la ventana de arranque (0.15s). Sin este
+                // guard, el play() diferido arrancaba el nodo aunque el usuario
+                // ya hubiera pausado (la pausa no cambia scheduleGeneration) →
+                // el audio seguía corriendo en silencio (mixer a 0) con
+                // isPlaying=false, consumiendo CPU/batería con la pantalla
+                // bloqueada y sin que el timer de display corrija nada.
+                guard self.isPlaying else { return }
                 // Re-anclar el reloj a la posición JUSTO antes de play(): el
                 // audio arranca aqui (tras el delay), no cuando se lanzo el
                 // schedule. Sin esto el reloj de pared iria 0.15s adelantado
@@ -1281,6 +1313,14 @@ class AudioEngine: NSObject, ObservableObject {
                 self.engine.pause()
             }
         }
+        // ✅ CALIDAD FIX: si la pausa llega DURANTE la ventana de arranque
+        // (playCurrentSong re-ancla y llama playerNode.play() 0.15s después,
+        // con guard solo de scheduleGeneration), el play diferido saldría
+        // DESPUÉS de esta pausa → nodo reproduciendo con mixer a 0: "suena"
+        // en silencio, avanza la pista, y al reanudar ya va a mitad de
+        // canción sin que el usuario la escuchara. El guard de isPlaying en
+        // el bloque diferido de playCurrentSong cancela ese arranque.
+        volumeFadeGeneration += 1
         isPlaying = false
         AppLog.info(.playback, String(format: "Pausa en %.1fs — '%@'", currentTime, currentSong?.displayName ?? "—"))
         updateNowPlayingInfo()

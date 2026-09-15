@@ -429,14 +429,21 @@ struct EqualizerBars: View {
         HStack(spacing: 2.5) {
             ForEach(0..<3, id: \.self) { bar in
                 RoundedRectangle(cornerRadius: 1).fill(color)
+                    // ✅ FIX iOS 16: la altura se deriva de @State y la animación
+                    // repeatForever se lanza al aparecer. Con .animation(value:)
+                    // la animación persiste (se re-aplica en cada cambio de @State)
+                    // — antes, sin value:, iOS 16 la abandonaba al primer re-render
+                    // y las barras del tema activo quedaban CONGELADAS.
                     .frame(width: 2.5, height: animate ? (bar % 2 == 0 ? 13 : 8) : (bar % 2 == 0 ? 8 : 13))
+                    .animation(
+                        .easeInOut(duration: 0.5).repeatForever(autoreverses: true),
+                        value: animate
+                    )
             }
         }
         .frame(width: 24)
         .onAppear {
-            withAnimation(.easeInOut(duration: 0.5).repeatForever(autoreverses: true)) {
-                animate = true
-            }
+            animate = true
         }
     }
 }
