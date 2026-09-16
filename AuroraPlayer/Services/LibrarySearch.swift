@@ -195,7 +195,7 @@ final class LibrarySearchIndex {
         
         // ✅ OPTIMIZACIÓN A11: limitar resultados en bibliotecas grandes
         let hw = HardwareCapabilities.shared
-        let maxResults = hw.isLowEndDevice ? 50 : 100
+        let maxResults = hw.isLowEnd ? 50 : 100
         
         var scored: [(song: Song, score: Int)] = []
         scored.reserveCapacity(min(songs.count, 64))
@@ -222,7 +222,7 @@ final class LibrarySearchIndex {
         
         // ✅ OPTIMIZACIÓN A11: limitar número de resultados en dispositivos A11
         let results = scored.map(\.song)
-        if hw.isLowEndDevice && results.count > maxResults {
+        if hw.isLowEnd && results.count > maxResults {
             return Array(results.prefix(maxResults))
         }
         return results

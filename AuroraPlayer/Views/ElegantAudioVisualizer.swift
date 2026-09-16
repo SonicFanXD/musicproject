@@ -129,9 +129,9 @@ struct ElegantAudioVisualizer: View {
     private func startVisualization() {
         guard displayLink == nil else { return }
         
-        displayLink = CADisplayLink(target: VisualizerLinkTarget { [self] _ in
+        displayLink = CADisplayLink(target: DisplayLinkTarget { [self] _ in
             updateWaves()
-        }, selector: #selector(VisualizerLinkTarget.fire(displayLink:)))
+        }, selector: #selector(DisplayLinkTarget.fire(displayLink:)))
         displayLink?.add(to: .main, forMode: .common)
         displayLink?.preferredFramesPerSecond = frameRate.fps
     }
@@ -165,16 +165,3 @@ struct ElegantAudioVisualizer: View {
     }
 }
 
-/// Wrapper para CADisplayLink en SwiftUI
-class VisualizerLinkTarget: NSObject {
-    private let handler: () -> Void
-    
-    init(handler: @escaping () -> Void) {
-        self.handler = handler
-        super.init()
-    }
-    
-    @objc func fire(displayLink: CADisplayLink) {
-        handler()
-    }
-}

@@ -9,9 +9,9 @@ final class HardwareCapabilities {
     static let shared = HardwareCapabilities()
     
     private let deviceModel: String
-    private let isA11Chip: Bool
+    private(set) var isA11Chip: Bool
     private let memoryClass: Int
-    private let isLowEndDevice: Bool
+    private(set) var isLowEndDevice: Bool
     
     private init() {
         self.deviceModel = Self.resolveDeviceModel()
@@ -99,6 +99,11 @@ final class HardwareCapabilities {
     /// Tamaño de lote para indexación
     var indexingBatchSize: Int {
         isA11Chip ? 6 : 8
+    }
+    
+    /// Propiedad pública para acceder a isLowEndDevice desde otros módulos
+    var isLowEnd: Bool {
+        isLowEndDevice
     }
     
     /// Descripción del dispositivo para logs

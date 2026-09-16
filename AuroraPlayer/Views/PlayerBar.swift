@@ -235,14 +235,10 @@ struct PlayerBar: View {
     @ViewBuilder
     private func artwork(for song: Song) -> some View {
         if let art = song.artwork {
-            // ✅ ANTI-JETSAM: miniatura con tamaño adaptativo según hardware
-            // A11 usa 72px, otros dispositivos 96px para mejor calidad visual
-            let thumbnailSize = HardwareCapabilities.shared.playerBarArtworkSize
-            let interpolation = HardwareCapabilities.shared.useHighQualityInterpolation ? .high : .medium
-            
-            Image(uiImage: art.preparingThumbnail(of: CGSize(width: thumbnailSize, height: thumbnailSize)) ?? art)
+            // ✅ ANTI-JETSAM: miniatura con tamaño estático (menos riesgo de problemas de concurrencia)
+            Image(uiImage: art.preparingThumbnail(of: CGSize(width: 96, height: 96)) ?? art)
                 .resizable()
-                .interpolation(interpolation) // ✅ Calidad adaptativa según hardware
+                .interpolation(.high)
                 .scaledToFill()
                 .frame(width: 48, height: 48)
                 .clipShape(RoundedRectangle(cornerRadius: CGFloat(artworkCorner * (14.0 / 22.0)), style: .continuous))

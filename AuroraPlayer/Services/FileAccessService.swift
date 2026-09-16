@@ -110,8 +110,9 @@ class FileAccessService: ObservableObject {
         inFlightByGeneration.values.reduce(0, +)
     }
     // ✅ OPTIMIZACIÓN A11: límites de concurrencia adaptativos según hardware
-    private var maxInFlightBatches: Int { HardwareCapabilities.shared.maxConcurrentIndexingBatches }
-    private var metadataBatchSize: Int { HardwareCapabilities.shared.indexingBatchSize }
+    // Usar valores capturados al inicio porque HardwareCapabilities es @MainActor
+    private let maxInFlightBatches: Int
+    private let metadataBatchSize: Int
     private let maxConcurrentMetadataReads = 2
 
     // Colecciones derivadas cacheadas: se recalculan solo cuando cambia `songs`,
@@ -142,6 +143,11 @@ class FileAccessService: ObservableObject {
     }
 
     init() {
+        // Capturar valores de hardware capabilities en init (main actor context)
+        let hw = HardwareCapabilities.shared
+        self.maxInFlightBatches = hw.maxConcurrentIndexingBatches
+        self.metadataBatchSize = hw.indexingBatchSize
+        
         loadFolders()
         loadFiles()
         loadPlaylists()
@@ -153,7 +159,8 @@ class FileAccessService: ObservableObject {
         // ✅ OPTIMIZACIÓN A11: pre-carga agresiva solo en dispositivos potentes
         // En A11, limitar el número de precargas para evitar saturación de memoria
         let hw = HardwareCapabilities.shared
-        let prewarmCount = hw.useAggressiveArtworkPrewarm ? 12 : 6
+        let useAggressivePrewarm = hw.isA11Chip ? false : true
+        let prewarmCount = useAggressivePrewarm ? 12 : 6
         
         // ✅ Snapshot capturado en el hilo actual: leer `songs` (@Published,
         // main-actor) desde el hilo secundario era una carrera de datos.

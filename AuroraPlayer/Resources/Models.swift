@@ -205,10 +205,9 @@ extension Song {
         // Cada UIImage decodificada ocupa ancho×alto×4 bytes en RAM (768²×4 =
         // 2.4MB a la resolución actual). countLimit 500 sin costLimit permitía
         // >1GB de bitmaps → jetsam kill al scrollear listas grandes.
-        // ✅ OPTIMIZACIÓN A11: límites adaptativos según hardware detectado
-        let hw = HardwareCapabilities.shared
-        cache.countLimit = hw.artworkCacheLimit
-        cache.totalCostLimit = hw.artworkCacheMemoryLimit
+        // ✅ OPTIMIZACIÓN A11: límites conservadores por defecto (pueden ajustarse dinámicamente)
+        cache.countLimit = 20
+        cache.totalCostLimit = 32 * 1024 * 1024
         return cache
     }()
 
@@ -229,8 +228,8 @@ extension Song {
     /// Retorna nil si la biblioteca es grande y el artwork no está en caché,
     /// para evitar decodificar imágenes pesadas durante el scroll rápido.
     var deferredArtwork: UIImage? {
-        let hw = HardwareCapabilities.shared
-        let threshold = hw.lazyArtworkThreshold
+        // ✅ Threshold conservador que funciona bien en todos los dispositivos
+        let threshold = 100
         
         // Si está en caché, retornarlo inmediatamente
         if let cached = Song.artworkCache.object(forKey: id as NSUUID) {

@@ -265,7 +265,8 @@ struct NowPlayingView: View {
                         // TODA la pantalla (scaledToFit dejaba franjas en pantallas
                         // altas/anchas por encima y debajo de la imagen cuadrada).
                         // ✅ OPTIMIZACIÓN A11: blur adaptativo según hardware
-                        let blurRadius = HardwareCapabilities.shared.useHighQualityBlur ? 25 : 15
+                        let hw = HardwareCapabilities.shared
+                        let blurRadius = hw.useHighQualityBlur ? 25.0 : 15.0
                         
                         Image(uiImage: artwork)
                             .resizable()
@@ -282,7 +283,7 @@ struct NowPlayingView: View {
                 .ignoresSafeArea()
                 .allowsHitTesting(false)
                 // ✅ OPTIMIZACIÓN A11: drawingGroup agresivo solo en A11
-                .drawingGroup(opaque: HardwareCapabilities.shared.useAggressiveGPUOptimization)
+                .drawingGroup()
             } else {
                 LinearGradient(
                     colors: [

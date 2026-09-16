@@ -106,7 +106,8 @@ struct AlbumDetailView: View {
     // ✅ OPTIMIZACIÓN A11: blur radius adaptativo según hardware
     private func prepareBlurredArtwork(from artwork: UIImage?) {
         guard heroBlurredArtwork == nil, let artwork = artwork else { return }
-        let blurRadius = HardwareCapabilities.shared.useHighQualityBlur ? 40 : 25
+        let hw = HardwareCapabilities.shared
+        let blurRadius = hw.useHighQualityBlur ? 40.0 : 25.0
         
         DispatchQueue.global(qos: .userInitiated).async {
             let blurred = artwork.applyingGaussianBlur(radius: blurRadius)
@@ -580,7 +581,8 @@ struct ArtistDetailView: View {
     // ✅ OPTIMIZACIÓN A11: blur radius adaptativo según hardware
     private func prepareBlurredArtwork(from artwork: UIImage?) {
         guard heroBlurredArtwork == nil, let artwork = artwork else { return }
-        let blurRadius = HardwareCapabilities.shared.useHighQualityBlur ? 40 : 25
+        let hw = HardwareCapabilities.shared
+        let blurRadius = hw.useHighQualityBlur ? 40.0 : 25.0
         
         DispatchQueue.global(qos: .userInitiated).async {
             let blurred = artwork.applyingGaussianBlur(radius: blurRadius)
