@@ -993,8 +993,25 @@ class FileAccessService: ObservableObject {
             channelCount = Int(asbd.pointee.mChannelsPerFrame)
             let fileBits = Int(asbd.pointee.mBitsPerChannel)
             bitDepth = (fileBits > 0 && fileBits <= 32) ? fileBits : 0
-            // ✅ DEBUG: Log para verificar extracción de bitDepth
-            AppLog.debug(.metadata, "Archivo: \(url.lastPathComponent) - bitDepth extraído: \(bitDepth) (raw: \(fileBits))")
+            // ✅ FIX: Para formatos donde mBitsPerChannel es 0 (FLAC/ALAC),
+            // intentar inferir del bitrate
+            if bitDepth == 0 {
+                let fileExtension = url.pathExtension.lowercased()
+                if fileExtension == "flac" || fileExtension == "alac" {
+                    let rate = track.estimatedDataRate
+                    if rate.isFinite && rate > 0 {
+                        let bitrate = rate / 1000 // kbps
+                        // Estimación basada en bitrate típico
+                        if bitrate < 1000 {
+                            bitDepth = 16
+                        } else if bitrate < 2000 {
+                            bitDepth = 24
+                        } else {
+                            bitDepth = 32
+                        }
+                    }
+                }
+            }
         }
         // ✅ LOSSLESS → profundidad real; LOSSY (MP3/AAC, bitDepth 0) →
         // bitrate medio en kbps (la "calidad" equivalente del codec).
