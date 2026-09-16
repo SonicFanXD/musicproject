@@ -647,14 +647,15 @@ class FileAccessService: ObservableObject {
             // ✅ Sort en background (sin sleep, sin bloqueo), sobre la
             // snapshot inmutable capturada en el main.
             // ✅ Deduplicar: un lote que llega mientras se ordena puede quedar
-            // en ambas listas → duplicados en la librería (conteo 13 vs 9).
-            let sortedSongs = dedupeSongsByUrl(snapshot).sorted {
-                $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
-            }
+            // ✅ FIX: NO ordenar alfabéticamente aquí. El ordenamiento debe
+            // controlarse únicamente por las opciones del usuario en ContentView.
+            // Mantener el orden original de carga para respetar las opciones de
+            // ordenamiento (año, recientemente añadido, etc.).
+            let uniqueSongs = dedupeSongsByUrl(snapshot)
 
             DispatchQueue.main.async {
                 self.isSortScheduled = false
-                self.songs = sortedSongs
+                self.songs = uniqueSongs
                 // ✅ ANTES `pendingSongs.removeAll()` borraba TODO, incluso las
                 // canciones que llegaron (desde el main) MIENTRAS se ordenaba en
                 // background → se perdían del índice (biblioteca incompleta).
@@ -711,14 +712,16 @@ class FileAccessService: ObservableObject {
             }
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in
                 guard let self = self else { return }
-                let sortedSongs = allSongs.sorted {
-                    $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
-                }
+                // ✅ FIX: NO ordenar alfabéticamente aquí. El ordenamiento debe
+                // controlarse únicamente por las opciones del usuario en ContentView.
+                // Mantener el orden original de carga para respetar las opciones de
+                // ordenamiento (año, recientemente añadido, etc.).
+                let uniqueSongs = allSongs
 
                 DispatchQueue.main.async {
                     self.isSortScheduled = false
-                    let addedCount = sortedSongs.count - self.songs.count
-                    self.songs = sortedSongs
+                    let addedCount = uniqueSongs.count - self.songs.count
+                    self.songs = uniqueSongs
                     self.indexedSongKeys = Set(sortedSongs.map { Self.libraryKey(for: $0.url) })
                     self.pruneMissingOnFinish = false
                     self.seenOnDiskKeys = []
