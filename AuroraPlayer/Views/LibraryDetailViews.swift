@@ -67,8 +67,7 @@ struct AlbumDetailView: View {
         .background(AppBackground().ignoresSafeArea())
         .navigationTitle(album.name)
         .navigationBarTitleDisplayMode(.inline)
-        // Sin banda gris: el hero inmersivo fluye bajo la barra de navegación
-        .toolbarBackground(.hidden, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
         .searchable(text: $searchText, prompt: Localization.localized("search.prompt"))
         .onChange(of: searchText) { newValue in
             debouncedSearchText = newValue.lowercased()
@@ -543,8 +542,7 @@ struct ArtistDetailView: View {
         .background(AppBackground().ignoresSafeArea())
         .navigationTitle(artist.name)
         .navigationBarTitleDisplayMode(.inline)
-        // Sin banda gris (coherente con AlbumDetailView)
-        .toolbarBackground(.hidden, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
         .searchable(text: $searchText, prompt: Localization.localized("search.prompt"))
         .onChange(of: searchText) { newValue in
             debouncedSearchText = newValue.lowercased()
