@@ -4,14 +4,13 @@ import UIKit
 /// Detección de capacidades de hardware para optimizaciones adaptativas
 /// Permite aplicar mejoras de rendimiento solo en dispositivos que las necesitan
 /// (iPhone 8 Plus/A11) sin sacrificar calidad visual en dispositivos más potentes.
-@MainActor
 final class HardwareCapabilities {
     static let shared = HardwareCapabilities()
     
     private let deviceModel: String
-    private(set) var isA11Chip: Bool
+    let isA11Chip: Bool
     private let memoryClass: Int
-    private(set) var isLowEndDevice: Bool
+    let isLowEndDevice: Bool
     
     private init() {
         self.deviceModel = Self.resolveDeviceModel()
@@ -37,6 +36,11 @@ final class HardwareCapabilities {
             }
         }
         return machine ?? "unknown"
+    }
+    
+    /// Versión pública del modelo para uso externo
+    var deviceModelPublic: String {
+        deviceModel
     }
     
     // MARK: - Configuraciones adaptativas
