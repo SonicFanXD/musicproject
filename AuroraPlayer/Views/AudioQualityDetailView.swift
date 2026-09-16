@@ -271,13 +271,15 @@ struct AudioQualityDetailView: View {
             VStack(spacing: 0) {
                 chainNode(icon: "doc.fill", title: Localization.localized("quality.sourceFile"), detail: fileSummary, color: AppTheme.accent, index: 0)
                 chainArrow
-                chainNode(icon: "waveform", title: Localization.localized("quality.decoder"), detail: "AVAudioFile · \(isLossless ? Localization.localized("quality.lossless") : Localization.localized("quality.compressed"))", color: .indigo, index: 1)
+                chainNode(icon: "waveform", title: Localization.localized("quality.decoder"), detail: codecLabel, color: .indigo, index: 1)
                 chainArrow
-                chainNode(icon: "engine.combustion", title: Localization.localized("quality.audioEngine"), detail: "AVAudioEngine · \(audioEngine.sampleRateDisplay > 0 ? Int(audioEngine.sampleRateDisplay / 1000) : Int((song?.sampleRate ?? 0) / 1000)) kHz", color: AppTheme.accent, index: 2)
+                chainNode(icon: "cpu", title: "DSP", detail: audioEngine.sampleRateDisplay > 0 ? "Resampling: \(Int(audioEngine.sampleRateDisplay / 1000)) kHz" : "Native", color: .purple, index: 2)
                 chainArrow
-                chainNode(icon: "slider.horizontal.3", title: Localization.localized("quality.equalizer"), detail: audioEngine.isEQEnabled ? "\(Localization.localized("quality.active")) · \(audioEngine.eqPreset.displayName) · 10 \(Localization.localized("format.bands"))" : "\(Localization.localized("quality.bypass")) · 10 \(Localization.localized("format.bands"))", color: audioEngine.isEQEnabled ? AppTheme.accent : .gray, index: 3)
+                chainNode(icon: "engine.combustion", title: Localization.localized("quality.audioEngine"), detail: "AVAudioEngine · \(audioEngine.sampleRateDisplay > 0 ? Int(audioEngine.sampleRateDisplay / 1000) : Int((song?.sampleRate ?? 0) / 1000)) kHz", color: AppTheme.accent, index: 3)
                 chainArrow
-                chainNode(icon: outputIcon, title: Localization.localized("quality.output"), detail: outputSummary, color: .orange, index: 4)
+                chainNode(icon: "slider.horizontal.3", title: Localization.localized("quality.equalizer"), detail: audioEngine.isEQEnabled ? "\(Localization.localized("quality.active")) · \(audioEngine.eqPreset.displayName) · 10 \(Localization.localized("format.bands"))" : "\(Localization.localized("quality.bypass")) · 10 \(Localization.localized("format.bands"))", color: audioEngine.isEQEnabled ? AppTheme.accent : .gray, index: 4)
+                chainArrow
+                chainNode(icon: outputIcon, title: Localization.localized("quality.output"), detail: outputSummary, color: .orange, index: 5)
             }
         }
     }
@@ -429,12 +431,9 @@ struct AudioQualityDetailView: View {
         guard let song else { return "—" }
         // Priorizar bitDepth si está disponible (formatos lossless)
         if song.bitDepth > 0 {
-            return "\(song.bitDepth)-bit"
+            return "\(song.bitDepth) bits"
         }
-        // Para formatos con pérdida, mostrar el bitrate si está disponible
-        if let bitrate = song.bitrate, bitrate > 0 {
-            return "~\(bitrate) kbps"
-        }
+        // Para formatos con pérdida, mostrar "—" (no mostrar bitrate aquí)
         return "—"
     }
 
@@ -450,15 +449,33 @@ struct AudioQualityDetailView: View {
         }
     }
 
-    // ✅ Nuevo: Tipo de codec/compresión
+    // ✅ Nuevo: Tipo de codec/compresión con más detalle
     private var codecLabel: String {
         guard let song else { return "—" }
+        let ext = song.url.pathExtension.uppercased()
+        
+        // Para formatos lossless
         if song.bitDepth > 0 {
-            return "Lossless"
+            switch ext {
+            case "FLAC": return "FLAC (Lossless)"
+            case "ALAC", "M4A": return "ALAC (Lossless)"
+            case "WAV", "WAVE": return "WAV (PCM)"
+            case "AIFF", "AIF": return "AIFF (PCM)"
+            default: return "Lossless"
+            }
         }
-        if song.bitrate != nil {
-            return "Lossy"
+        
+        // Para formatos lossy
+        if let bitrate = song.bitrate, bitrate > 0 {
+            switch ext {
+            case "MP3": return "MP3 (Lossy)"
+            case "AAC", "M4A": return "AAC (Lossy)"
+            case "OGG": return "OGG Vorbis (Lossy)"
+            case "OPUS": return "Opus (Lossy)"
+            default: return "Lossy (~\(bitrate) kbps)"
+            }
         }
+        
         return "—"
     }
 
