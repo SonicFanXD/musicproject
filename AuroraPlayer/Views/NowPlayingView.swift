@@ -51,8 +51,8 @@ struct NowPlayingView: View {
     private var isCompactScreen: Bool { availableSize.height < 800 }
 
     private var artworkSize: CGFloat {
-        let maxByWidth = max(0, availableSize.width - 48)
-        let maxByHeight = availableSize.height * (isCompactScreen ? 0.32 : 0.42)
+        let maxByWidth = max(0, availableSize.width - 40)
+        let maxByHeight = availableSize.height * (isCompactScreen ? 0.35 : 0.45)
         return min(340, maxByWidth, maxByHeight)
     }
 

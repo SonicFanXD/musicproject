@@ -314,11 +314,10 @@ struct AudioQualityDetailView: View {
         var parts: [String] = []
         let format = song.formatDescription.isEmpty ? song.url.pathExtension.uppercased() : song.formatDescription
         parts.append(format)
-        if song.bitDepth > 0 { parts.append("\(song.bitDepth)-bit") }
+        if song.bitDepth > 0 { parts.append("\(song.bitDepth) bits") }
         if song.sampleRate > 0 {
             let kHz = Int(song.sampleRate / 1000)
-            let label = song.sampleRate > 48000 ? "\(kHz) kHz (Hi-Res)" : "\(kHz) kHz"
-            parts.append(label)
+            parts.append("\(kHz) kHz")
         }
         return parts.joined(separator: " · ")
     }
