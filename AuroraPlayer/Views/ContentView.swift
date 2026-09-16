@@ -34,11 +34,11 @@ struct ContentView: View {
     @AppStorage("com.aurora.artistSort") private var artistSortRawStorage = ArtistSortOption.name.rawValue
     @AppStorage("com.aurora.artistSortAscending") private var artistSortAscendingStorage = true
 
-    @State private var sortOptionRaw: String = ""
+    @State private var sortOptionRaw: String = SortOption.title.rawValue
     @State private var songSortAscending: Bool = true
-    @State private var albumSortRaw: String = ""
+    @State private var albumSortRaw: String = AlbumSortOption.title.rawValue
     @State private var albumSortAscending: Bool = true
-    @State private var artistSortRaw: String = ""
+    @State private var artistSortRaw: String = ArtistSortOption.name.rawValue
     @State private var artistSortAscending: Bool = true
 
     private var sortOption: SortOption { SortOption(rawValue: sortOptionRaw) ?? .title }
@@ -51,15 +51,14 @@ struct ContentView: View {
             NavigationStack {
                 Color.clear
                     .onAppear {
-                        // ✅ Sincronizar @State con @AppStorage al aparecer (solo una vez)
-                        if sortOptionRaw.isEmpty {
-                            sortOptionRaw = songSortRawStorage
-                            songSortAscending = songSortAscendingStorage
-                            albumSortRaw = albumSortRawStorage
-                            albumSortAscending = albumSortAscendingStorage
-                            artistSortRaw = artistSortRawStorage
-                            artistSortAscending = artistSortAscendingStorage
-                        }
+                        // ✅ Sincronizar @State con @AppStorage al aparecer para garantizar
+                        // que los valores persistidos se carguen correctamente
+                        sortOptionRaw = songSortRawStorage
+                        songSortAscending = songSortAscendingStorage
+                        albumSortRaw = albumSortRawStorage
+                        albumSortAscending = albumSortAscendingStorage
+                        artistSortRaw = artistSortRawStorage
+                        artistSortAscending = artistSortAscendingStorage
                     }
                 ZStack {
                     AppBackground()
@@ -101,6 +100,14 @@ struct ContentView: View {
                                 artists: fileAccessService.artists
                             )
                         }
+                        // ✅ Sincronización bidireccional: mantener @AppStorage actualizado
+                        // cuando cambian las variables @State de ordenamiento
+                        .onChange(of: sortOptionRaw) { songSortRawStorage = $0 }
+                        .onChange(of: songSortAscending) { songSortAscendingStorage = $0 }
+                        .onChange(of: albumSortRaw) { albumSortRawStorage = $0 }
+                        .onChange(of: albumSortAscending) { albumSortAscendingStorage = $0 }
+                        .onChange(of: artistSortRaw) { artistSortRawStorage = $0 }
+                        .onChange(of: artistSortAscending) { artistSortAscendingStorage = $0 }
                         // ✅ DEBOUNCE: filtrar 250ms después de la última tecla.
                         .onChange(of: searchText) { newValue in
                             // ✅ Resincronizar el índice al empezar a buscar

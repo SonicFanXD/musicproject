@@ -1458,6 +1458,16 @@ class AudioEngine: NSObject, ObservableObject {
         activeSegmentToken = 0
         stopDisplayTimer()
         isStopping = false
+        // ✅ BATERÍA: al detener la reproducción, liberar la sesión de audio.
+        // Sin esto, la sesión queda "active" de forma indefinida con la app en
+        // segundo plano (rate 0 pero hardware de audio reservado) — drena batería
+        // y bloquea que otras apps (podcasts, Spotify) usen el audio. El play
+        // posterior reactiva la sesión vía startEngineSafely()/configureSession.
+        // Es ASÍNCRONO y best-effort: si iOS lo rechaza (interrupción en curso,
+        // etc.) no afecta al estado local del motor.
+        DispatchQueue.main.async {
+            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        }
         saveState()
     }
 
@@ -1476,6 +1486,16 @@ class AudioEngine: NSObject, ObservableObject {
             repeat {
                 nextIndex = Int.random(in: 0..<playlist.count)
             } while nextIndex == currentIndex
+            // ✅ REPRODUCCIÓN: con playlist de 2+ canciones, evitar repetir la
+            // canción que acaba de sonar (la primera del historial). Con el
+            // RNG puro la misma canción podía sonar dos veces seguidas.
+            if playlist.count > 1,
+               let lastPlayed = playHistory.first,
+               nextIndex != currentIndex,
+               playlist[nextIndex].id == lastPlayed.id {
+                nextIndex = (nextIndex + 1) % playlist.count
+                if nextIndex == currentIndex { nextIndex = (nextIndex + 1) % playlist.count }
+            }
             return nextIndex
         }
         let next = currentIndex + 1
@@ -1754,11 +1774,11 @@ class AudioEngine: NSObject, ObservableObject {
         var tickCount = 0
         // ✅ OPTIMIZACIÓN DE BATERÍA: en primer plano 0.4s es suficiente para
         // una UI fluida (la barra de progreso responde rápido al seek/pause),
-        // y en segundo plano subimos a 2.0s para reducir drásticamente el
+        // y en segundo plano subimos a 3.0s para reducir drásticamente el
         // consumo de CPU cuando la pantalla está bloqueada o en otra app.
         // iOS interpola el progreso del lock screen/CC con el rate, así que
-        // un update cada 2s es imperceptible visualmente pero ahorra CPU/RAM.
-        let interval: TimeInterval = isBackground ? 2.0 : 0.4
+        // un update cada 3s es imperceptible visualmente pero ahorra CPU/RAM.
+        let interval: TimeInterval = isBackground ? 3.0 : 0.4
         let nowPlayingRefreshTicks = isBackground ? 1 : 2
         displayTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
             guard let self = self, self.isPlaying else { return }
@@ -1794,7 +1814,7 @@ class AudioEngine: NSObject, ObservableObject {
             // Corrige el bug de "barra congelada al final, no pasa la canción".
             self.checkPlaybackEndWatchdog()
             // ✅ FIX Centro de Control / pantalla de bloqueo: refrescar
-            // nowPlayingInfo cada ~0.8s en fg / ~1.5s en bg con el elapsed
+            // nowPlayingInfo cada ~0.8s en fg / ~3.0s en bg con el elapsed
             // EXACTO del reloj de render. En segundo plano iOS ya interpola
             // el progreso con el rate, así que no necesitamos tantos updates.
             tickCount += 1
@@ -1803,11 +1823,11 @@ class AudioEngine: NSObject, ObservableObject {
                 self.updateNowPlayingInfo()
             }
             // ✅ PERSISTENCIA DE POSICIÓN EN VIVO: guardar cada ~15s mientras
-            // suena (37 ticks × 0.4s fg / 10 × 1.5s bg). Así un cierre forzado
+            // suena (37 ticks × 0.4s fg / 5 × 3.0s bg). Así un cierre forzado
             // (kill sin willResignActive) restaura la posición más reciente,
             // no la del último cambio de canción.
             self.persistTickCounter += 1
-            if self.persistTickCounter >= (isBackground ? 8 : 37) {
+            if self.persistTickCounter >= (isBackground ? 5 : 37) {
                 self.persistTickCounter = 0
                 self.saveState()
             }

@@ -184,12 +184,29 @@ enum AppTheme {
             return ThemeManager.shared.accent
         }
 
-        // ✅ Rangos AMPLIADOS: antes (sat 0.40–0.85, br 0.45–0.80) aplastaba
-        // todos los colores al mismo tono medio → muchas portadas "no quedaban"
-        // (un rosa neón y un pastel se veían iguales). Ahora se respeta más la
-        // personalidad real del color y solo se corrige lo ilegible.
-        let newSaturation = min(0.95, max(0.30, saturation))
-        let newBrightness = min(0.88, max(0.40, brightness))
+        // ✅ MEJORA: Rangos más conservadores para respetar el color original.
+        // Solo se corrige cuando es estrictamente necesario para legibilidad.
+        // Esto permite que colores pastel, oscuros o neón mantengan su identidad.
+        let newSaturation: CGFloat
+        let newBrightness: CGFloat
+        
+        // Saturación: solo corregir si es muy baja (<0.15) o muy alta (>0.98)
+        if saturation < 0.15 {
+            newSaturation = 0.20
+        } else if saturation > 0.98 {
+            newSaturation = 0.95
+        } else {
+            newSaturation = saturation
+        }
+        
+        // Brillo: solo corregir si es muy bajo (<0.20) o muy alto (>0.92)
+        if brightness < 0.20 {
+            newBrightness = 0.25
+        } else if brightness > 0.92 {
+            newBrightness = 0.90
+        } else {
+            newBrightness = brightness
+        }
 
         return Color(uiColor: UIColor(
             hue: hue,
@@ -246,8 +263,10 @@ enum AppTheme {
     /// Extrae el color más REPRESENTATIVO y vibrante de una portada:
     /// en vez del promedio (que era apagado/grisáceo), usa un histograma
     /// HSB y elige el bucket con mayor saturación×peso y brillo moderado.
+    /// ✅ OPTIMIZACIÓN: usa un tamaño más pequeño (48x48) para reducir
+    /// consumo de CPU/RAM sin sacrificar precisión en la detección de color.
     static func dominantColor(from artwork: UIImage) -> UIColor? {
-        let size = CGSize(width: 64, height: 64)
+        let size = CGSize(width: 48, height: 48)
         UIGraphicsBeginImageContextWithOptions(size, false, 1.0)
         artwork.draw(in: CGRect(origin: .zero, size: size))
         guard let cgImage = UIGraphicsGetImageFromCurrentImageContext()?.cgImage else {
@@ -300,11 +319,9 @@ enum AppTheme {
                 let delta = maxC - minC
                 let br = maxC
                 let s: Float = maxC == 0 ? 0 : delta / maxC
-                // ✅ FIX carátulas negras/grises: antes se descartaban con
-                // s>=0.15 && br>=0.15 → portadas oscuras devolvían nil y caían
-                // al acento por defecto. Ahora se aceptan con filtros mínimos
-                // (solo descartamos píxeles casi-puros blanco/negro sin matiz).
-                guard s >= 0.03, br >= 0.04 else { continue }
+                // ✅ MEJORA: Filtros más estrictos para evitar ruido y colores microscópicos
+                // Solo descartamos píxeles casi-puros blanco/negro sin matiz.
+                guard s >= 0.05, br >= 0.05, br <= 0.98 else { continue }
                 var h: Float = 0
                 if delta > 0 {
                     if maxC == r { h = ((g - b) / delta).truncatingRemainder(dividingBy: 6) }
@@ -316,12 +333,15 @@ enum AppTheme {
                 let hi = min(hueBins - 1, Int(h * Float(hueBins)))
                 let si = min(satBins - 1, Int(s * Float(satBins)))
                 let bi = min(brBins - 1, Int(br * Float(brBins)))
-                // Peso: saturación² × proximidad del brillo a 0.62 (colores vivos,
-                // no demasiado oscuros/claros). Factor 1.3 escala la campana.
-                // ✅ Peso VIVID-FIRST: saturación^1.5 × campana de brillo (centro
-                // 0.58, más ancho). Un acento pequeño pero vívido (logo, figura)
-                // ahora gana al área enorme y apagada que lo rodea.
-                let weight = pow(s, 1.5) * max(0, 1.2 - abs(br - 0.58) * 1.1)
+                // ✅ MEJORA: Sistema de pesos equilibrado entre área y saturación
+                // - Factor de área: sqrt(count) para penalizar menos colores grandes
+                // - Factor de saturación: s^1.2 para dar importancia a colores vivos
+                // - Factor de brillo: campana más centrada en 0.55 (colores medios)
+                // - Peso base: 1.0 para dar más importancia al área de cobertura
+                let areaWeight = 1.0
+                let satWeight = pow(s, 1.2)
+                let brightWeight = max(0.3, 1.0 - abs(br - 0.55) * 1.5)
+                let weight = areaWeight * satWeight * brightWeight
                 let w = max(weight, 0.0001)
                 let idx = (bi * satBins + si) * hueBins + hi
                 buckets[idx] += w
@@ -339,13 +359,44 @@ enum AppTheme {
             let acceptedPixels = bucketCounts.reduce(0, +)
             let bestW = max(buckets[chosen], 0.0001)
             let avgSatBest = satSum[chosen] / bestW
-            // RESCATE VIVO: si el cluster ganador es casi gris (portada
-            // monocroma con un acento de color pequeno), elegir el cluster mas
-            // saturado con respaldo >= 2% de los pixeles aceptados.
-            if avgSatBest < 0.12, acceptedPixels > 0 {
-                let minPixels = Int(Float(acceptedPixels) * 0.02)
+            let bestCount = bucketCounts[chosen]
+            
+            // ✅ MEJORA: Filtro de área mínima para evitar colores microscópicos
+            // Si el cluster ganador tiene menos del 5% de los píxeles válidos,
+            // buscar un cluster con más área que tenga saturación decente.
+            let minAreaRatio: Float = 0.05
+            if acceptedPixels > 0 && Float(bestCount) / Float(acceptedPixels) < minAreaRatio {
+                let minPixels = Int(Float(acceptedPixels) * minAreaRatio)
+                var bestAreaIdx: Int?
+                var bestAreaScore: Float = 0
+                
+                for (i, count) in bucketCounts.enumerated() where count >= minPixels && buckets[i] > 0 {
+                    let s = satSum[i] / max(buckets[i], 0.0001)
+                    let br = brSum[i] / max(buckets[i], 0.0001)
+                    // Score que equilibra área y saturación
+                    let areaScore = Float(count) / Float(acceptedPixels)
+                    let satScore = s
+                    let brScore = max(0.2, 1.0 - abs(br - 0.55) * 1.5)
+                    let combinedScore = areaScore * 0.6 + satScore * 0.3 + brScore * 0.1
+                    
+                    if combinedScore > bestAreaScore {
+                        bestAreaScore = combinedScore
+                        bestAreaIdx = i
+                    }
+                }
+                
+                if let areaIdx = bestAreaIdx {
+                    chosen = areaIdx
+                }
+            }
+            
+            // ✅ MEJORA: Rescate de colores vivos en portadas monocromáticas
+            // Si el cluster ganador es muy desaturado pero hay un cluster más saturado
+            // con área suficiente, usarlo en su lugar.
+            if avgSatBest < 0.15, acceptedPixels > 0 {
+                let minPixels = Int(Float(acceptedPixels) * 0.03)
                 var vividIdx: Int?
-                var vividSat: Float = 0.12
+                var vividSat: Float = 0.15
                 for (i, w) in buckets.enumerated() where w > 0 && bucketCounts[i] >= minPixels {
                     let s = satSum[i] / max(w, 0.0001)
                     if s > vividSat {
@@ -359,8 +410,9 @@ enum AppTheme {
             let w = buckets[chosen]
             var hue = CGFloat(atan2f(hueY[chosen], hueX[chosen]) / (2 * .pi))
             if hue < 0 { hue += 1 }
-            let saturation = CGFloat(min(0.95, max(0.08, satSum[chosen] / w)))
-            let brightness = CGFloat(min(0.92, max(0.10, brSum[chosen] / w)))
+            // ✅ MEJORA: Rangos más conservadores para mantener el color original
+            let saturation = CGFloat(min(0.98, max(0.05, satSum[chosen] / w)))
+            let brightness = CGFloat(min(0.95, max(0.08, brSum[chosen] / w)))
             return UIColor(hue: hue, saturation: saturation, brightness: brightness, alpha: 1)
         }
         // ✅ Fallback: promedio real de la carátula (p. ej. portada monocromática

@@ -257,7 +257,19 @@ struct QueueView: View {
     private func queueSongRow(_ song: Song, index: Int) -> some View {
         Button {
             Haptics.light()
-            audioEngine.play(song: song, from: audioEngine.playbackQueue)
+            // ✅ FIX REPRODUCCIÓN: tocar una canción de "Siguiente" debe
+            // continuar con la secuencia EDITADA de la cola (eliminaciones y
+            // reordenamientos incluidos), no restaurar la playlist original
+            // completa. Antes se pasaba `playbackQueue` (la playlist entera de
+            // la sesión): las canciones que el usuario había eliminado o
+            // reordenado volvían y el orden editado se descartaba.
+            let sequence: [Song]
+            if let current = audioEngine.currentSong {
+                sequence = [current] + editableQueue
+            } else {
+                sequence = editableQueue
+            }
+            audioEngine.play(song: song, from: sequence)
         } label: {
             HStack(spacing: 14) {
                 artworkMiniature(song.artwork, size: 48, corner: 12)

@@ -179,6 +179,12 @@ class FileAccessService: ObservableObject {
             }
 
             folders.append(folder)
+            // ✅ BOOKMARKS: el handle de acceso se CONSERVA a propósito — el
+            // escaneo que arranca ahora lee el contenido de los archivos de
+            // forma asíncrona (AVAsset + parsers binarios en background) y
+            // necesita el security-scoped access activo. Su stop ocurre en
+            // resolveAndScan(folder) (próximo rescan: stop previo antes de
+            // renovar) o removeFolder — ciclo balanceado, sin fuga acumulada.
             activeURLs[folder.id] = url
             saveFolders()
             scanFolder(url)
@@ -207,11 +213,19 @@ class FileAccessService: ObservableObject {
     func addFiles(urls: [URL]) {
         beginIncrementalProgressIfNeeded()
         for url in urls where supportedExtensions.contains(url.pathExtension.lowercased()) {
+            // ✅ BOOKMARKS: verificar duplicado por nombre ANTES de gastar el
+            // handle de acceso (antes: bookmark creado, @Published mutado y
+            // guard revertido a medias → file huérfano sin indexar + handle
+            // sin liberar).
+            guard !files.contains(where: { $0.displayName == url.lastPathComponent }) else { continue }
             guard url.startAccessingSecurityScopedResource() else { continue }
             do {
                 let bookmark = try url.bookmarkData(options: .minimalBookmark, includingResourceValuesForKeys: nil, relativeTo: nil)
                 let file = MusicFile(displayName: url.lastPathComponent, bookmarkData: bookmark)
                 files.append(file)
+                // ✅ BOOKMARKS: el handle se conserva — la indexación asíncrona
+                // del archivo necesita el acceso activo. Su stop ocurre en
+                // resolveAndScan(file) o removeFile.
                 activeFileURLs[file.id] = url
                 saveFiles()
                 scanSingleFile(url)
@@ -264,6 +278,11 @@ class FileAccessService: ObservableObject {
         do {
             let url = try URL(resolvingBookmarkData: file.bookmarkData, bookmarkDataIsStale: &stale)
             guard url.startAccessingSecurityScopedResource() else { return }
+            // ✅ BOOKMARKS: liberar el acceso previo antes de sobreescribir el
+            // mapa (cada rescan acumulaba un start sin su stop).
+            if let previous = activeFileURLs[file.id] {
+                previous.stopAccessingSecurityScopedResource()
+            }
             activeFileURLs[file.id] = url
             scanSingleFile(url)
         } catch { AppLog.error(.library, "No se pudo restaurar \(file.displayName): \(error.localizedDescription)") }
@@ -301,6 +320,15 @@ class FileAccessService: ObservableObject {
         for file in files {
             resolveAndScan(file)
         }
+        // ✅ FIX isScanning atascado: si TODOS los bookmarks fallan al resolver
+        // (permisos de sandbox reseteados por iOS, carpeta renombrada/borrada),
+        // ningún descubrimiento arranca y NADA vuelve a llamar a
+        // updateScanningState() → el spinner de "Actualizando biblioteca" se
+        // quedaba en true para siempre y el botón de actualizar quedaba
+        // deshabilitado. Recalcular aquí el estado: si algún descubrimiento
+        // arrancó sigue escaneando; si no, cierra limpio (con seenOnDiskKeys
+        // vacío la poda NO se aplica — carpeta ilegible ≠ canciones borradas).
+        updateScanningState()
     }
 
     /// RAM residente actual en MB (diagnóstico de rendimiento en los logs
@@ -600,15 +628,27 @@ class FileAccessService: ObservableObject {
         guard !isSortScheduled else { return }
         isSortScheduled = true
 
+        // ✅ FIX CARRERA DE DATOS: el snapshot se toma AQUÍ, en el main
+        // (scheduleSortAndCache siempre se llama desde el main actor). Antes se
+        // leía `songs + pendingSongs` dentro del DispatchWorkItem (hilo global)
+        // MIENTRAS los MainActor.run de los lotes que terminan hacían
+        // pendingSongs.append en el main → read/write concurrente de un Array
+        // (corrupción de heap: crash raro e irreproducible en bibliotecas
+        // grandes). Las canciones que lleguen durante los 100ms de delay
+        // permanecen en pendingSongs y las incorpora el siguiente sort o el
+        // final (mismas garantías que había, sin la carrera).
+        let snapshot = songs + pendingSongs
+
         // ✅ Usar DispatchWorkItem para poder cancelar si llega otro lote
         sortWorkItem?.cancel()
         sortWorkItem = DispatchWorkItem { [weak self] in
             guard let self = self else { return }
 
-            // ✅ Sort en background (sin sleep, sin bloqueo)
+            // ✅ Sort en background (sin sleep, sin bloqueo), sobre la
+            // snapshot inmutable capturada en el main.
             // ✅ Deduplicar: un lote que llega mientras se ordena puede quedar
             // en ambas listas → duplicados en la librería (conteo 13 vs 9).
-            let sortedSongs = dedupeSongsByUrl(self.songs + self.pendingSongs).sorted {
+            let sortedSongs = dedupeSongsByUrl(snapshot).sorted {
                 $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
             }
 
