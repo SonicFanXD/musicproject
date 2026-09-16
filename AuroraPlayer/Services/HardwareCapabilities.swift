@@ -152,7 +152,7 @@ extension UIDevice {
         // A12-A14 tienen 4GB+ -> memoryClass 4+
         // A15+ tienen 6GB+ -> memoryClass 6+
         // Esta es una estimación basada en modelos conocidos
-        let model = HardwareCapabilities.shared.deviceModel
+        let model = HardwareCapabilities.shared.deviceModelPublic
         
         if model.contains("iPhone9") { // iPhone 8
             return 3
