@@ -50,18 +50,18 @@ struct ContentView: View {
 
     var body: some View {
         ZStack {
+            AppBackground()
+                .onAppear {
+                    // ✅ Sincronizar @State con @AppStorage al aparecer para garantizar
+                    // que los valores persistidos se carguen correctamente
+                    sortOptionRaw = songSortRawStorage
+                    songSortAscending = songSortAscendingStorage
+                    albumSortRaw = albumSortRawStorage
+                    albumSortAscending = albumSortAscendingStorage
+                    artistSortRaw = artistSortRawStorage
+                    artistSortAscending = artistSortAscendingStorage
+                }
             NavigationStack {
-                AppBackground()
-                    .onAppear {
-                        // ✅ Sincronizar @State con @AppStorage al aparecer para garantizar
-                        // que los valores persistidos se carguen correctamente
-                        sortOptionRaw = songSortRawStorage
-                        songSortAscending = songSortAscendingStorage
-                        albumSortRaw = albumSortRawStorage
-                        albumSortAscending = albumSortAscendingStorage
-                        artistSortRaw = artistSortRawStorage
-                        artistSortAscending = artistSortAscendingStorage
-                    }
                 VStack(spacing: 0) {
                     categoryPicker
 
@@ -142,8 +142,8 @@ struct ContentView: View {
                     }
                 }
                 .navigationBarTitleDisplayMode(.inline)
-                .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
-                .toolbarBackground(.visible, for: .navigationBar)
+                .toolbarBackground(.hidden, for: .navigationBar)
+                .toolbarBackground(.hidden, for: .navigationBar)
                 .toolbar {
                     ToolbarItem(placement: .principal) {
                         Text(Localization.localized("app.name"))
