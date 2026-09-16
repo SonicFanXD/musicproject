@@ -796,38 +796,38 @@ struct ContentView: View {
         let isCurrent = audioEngine.currentSong?.id == song.id
         let isLiked = fileAccessService.isLiked(song)
         
-        HStack(spacing: 14) {
+        HStack(spacing: 12) {
             Button {
                 playSong(song)
             } label: {
-                HStack(spacing: 14) {
+                HStack(spacing: 12) {
                     artworkView(for: song)
                     
-                    VStack(alignment: .leading, spacing: 3) {
+                    VStack(alignment: .leading, spacing: 4) {
                         Text(song.displayName)
-                            .font(.system(size: 15, weight: .semibold, design: .rounded))
+                            .font(.system(size: 16, weight: .semibold, design: .rounded))
                             .foregroundStyle(isCurrent ? AppTheme.accent : .primary)
                             .lineLimit(1)
                         
                         Text(song.displaySubtitle)
-                            .font(.system(size: 12))
+                            .font(.system(size: 13))
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                         
                         if !song.album.isEmpty {
                             HStack(spacing: 4) {
                                 Image(systemName: "opticaldisc")
-                                    .font(.system(size: 9))
+                                    .font(.system(size: 8))
                                     .foregroundStyle(.tertiary)
                                 Text(song.album)
-                                    .font(.system(size: 11))
+                                    .font(.system(size: 12))
                                     .foregroundStyle(.tertiary)
                                     .lineLimit(1)
                             }
                         }
                     }
                     
-                    Spacer(minLength: 10)
+                    Spacer(minLength: 8)
                     
                     if isCurrent {
                         // ✅ 60fps: drawingGroup rasteriza las barras animadas
@@ -845,7 +845,7 @@ struct ContentView: View {
                         .drawingGroup()
                     } else {
                         Text(formatDuration(song.duration))
-                            .font(.system(size: 11, weight: .medium).monospacedDigit())
+                            .font(.system(size: 12, weight: .medium).monospacedDigit())
                             .foregroundStyle(.tertiary)
                     }
                 }
@@ -860,29 +860,29 @@ struct ContentView: View {
                 // a 0.7 (antes 0.4, casi invisible) + resalta con accent cuando
                 // la canción está sonando para mantenerse legible en cualquier fondo.
                 Image(systemName: isLiked ? "heart.fill" : "heart")
-                    .font(.system(size: 16, weight: .medium))
+                    .font(.system(size: 17, weight: .medium))
                     .foregroundStyle(isLiked ? Color.red : (isCurrent ? AppTheme.accent : Color.secondary.opacity(0.7)))
-                    .frame(width: 36, height: 36)
+                    .frame(width: 38, height: 38)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
         .background {
                 if isCurrent {
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(AppTheme.accent.opacity(0.08))
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(AppTheme.accent.opacity(0.1))
                         .overlay(
-                            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                .strokeBorder(AppTheme.accent.opacity(0.2), lineWidth: 0.5)
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .strokeBorder(AppTheme.accent.opacity(0.25), lineWidth: 0.75)
                         )
                 } else {
                     // ✅ 60fps: color OPACO (no material blur) — en listas largas
                     // iOS degrada con muchos blurs simultáneos. IDÉNTICO look,
                     // pero sin re-render de blur por fila.
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(Color(UIColor.secondarySystemBackground).opacity(0.6))
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(Color(UIColor.secondarySystemBackground).opacity(0.5))
                 }
             }
             .contextMenu {

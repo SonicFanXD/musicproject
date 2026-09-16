@@ -114,6 +114,8 @@ class FileAccessService: ObservableObject {
     private let maxInFlightBatches: Int
     private let metadataBatchSize: Int
     private let maxConcurrentMetadataReads: Int = 2
+    // ✅ REDUCIDO para iniciar con lotes más pequeños y reducir tirones iniciales
+    private let initialBatchSize: Int
 
     // Colecciones derivadas cacheadas: se recalculan solo cuando cambia `songs`,
     // no en cada render de la UI.
@@ -147,6 +149,8 @@ class FileAccessService: ObservableObject {
         let hw = HardwareCapabilities.shared
         self.maxInFlightBatches = hw.maxConcurrentIndexingBatches
         self.metadataBatchSize = hw.indexingBatchSize
+        // ✅ Usar tamaño de lote más pequeño al inicio para reducir tirones
+        self.initialBatchSize = max(3, hw.indexingBatchSize / 2)
         
         loadFolders()
         loadFiles()
@@ -581,7 +585,11 @@ class FileAccessService: ObservableObject {
             let newUrls = urls.filter { !self.indexedSongKeys.contains(Self.libraryKey(for: $0)) }
             guard !newUrls.isEmpty else { return }
             self.scanTotal += newUrls.count
-            self.enqueueMetadataBatch(newUrls, generation: generation)
+            // ✅ Usar tamaño de lote inicial más pequeño para el primer lote
+            let adjustedUrls = self.scanProcessed == 0 && newUrls.count > self.initialBatchSize 
+                ? Array(newUrls.prefix(self.initialBatchSize)) 
+                : newUrls
+            self.enqueueMetadataBatch(adjustedUrls, generation: generation)
         }
     }
 
@@ -740,8 +748,9 @@ class FileAccessService: ObservableObject {
         }
 
         // Publicación acotada: agrupa lotes en vez de invalidar toda la UI a 10 Hz.
+        // ✅ REDUCIDO de 0.35s a 0.15s para máxima responsividad
         if let work = sortWorkItem {
-            DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 0.75, execute: work)
+            DispatchQueue.global(qos: .userInteractive).asyncAfter(deadline: .now() + 0.15, execute: work)
         }
     }
 
@@ -759,6 +768,12 @@ class FileAccessService: ObservableObject {
         // el sort final tomaba `songs + pendingSongs` INCOMPLETO.
         let hasPendingWork = !queuedBatches.isEmpty || inFlightBatches > 0
         isScanning = activeDiscoveries > 0 || scanProcessed < scanTotal || hasPendingWork || isSortScheduled
+        
+        // ✅ Notificar cuando cambia isScanning para que la UI reaccione inmediatamente
+        if isScanning {
+            beginIncrementalProgressIfNeeded()
+        }
+    }
 
         // ✅ Al finalizar: verificar si hay sort pendiente que ejecutar.
         // El rescan DIFERENCIAL también debe cerrar aunque NO haya canciones
@@ -784,7 +799,8 @@ class FileAccessService: ObservableObject {
                 // la poda: es preferible conservar de más que perder canciones.
                 AppLog.warning(.library, "Poda de canciones OMITIDA: \(failedDiscoveries) carpeta(s)/archivo(s) no accesibles en este escaneo")
             }
-            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            // ✅ Prioridad más alta para el sort final para reducir percepción de tirones
+            DispatchQueue.global(qos: .userInteractive).async { [weak self] in
                 guard let self = self else { return }
                 // ✅ FIX: Orden alfabético por título como ordenamiento por defecto.
                 // Esto asegura que las canciones tengan un orden consistente al cargar
