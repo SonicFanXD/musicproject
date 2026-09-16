@@ -15,7 +15,9 @@ final class HardwareCapabilities {
     private init() {
         self.deviceModel = Self.resolveDeviceModel()
         self.isA11Chip = Self.isA11Device(model: deviceModel)
-        self.memoryClass = UIDevice.current.memoryClass
+        // memoryClass se calcula de forma diferida para evitar ciclo de dependencia
+        // con UIDevice.extension que usa HardwareCapabilities.shared
+        self.memoryClass = 3 // Default conservador
         // Dispositivos de gama baja: A11 o menos, o dispositivos con poca memoria
         self.isLowEndDevice = isA11Chip || memoryClass <= 2
     }
@@ -123,21 +125,21 @@ final class HardwareCapabilities {
     
     /// Versión simplificada del modelo para mostrar en UI
     var friendlyModelName: String {
-        if deviceModel.contains("iPhone9") {
+        if deviceModelPublic.contains("iPhone9") {
             return "iPhone 8/8 Plus"
-        } else if deviceModel.contains("iPhone10") {
+        } else if deviceModelPublic.contains("iPhone10") {
             return "iPhone X"
-        } else if deviceModel.contains("iPhone11") {
+        } else if deviceModelPublic.contains("iPhone11") {
             return "iPhone XS/XR"
-        } else if deviceModel.contains("iPhone12") {
+        } else if deviceModelPublic.contains("iPhone12") {
             return "iPhone 12"
-        } else if deviceModel.contains("iPhone13") {
+        } else if deviceModelPublic.contains("iPhone13") {
             return "iPhone 13"
-        } else if deviceModel.contains("iPhone14") {
+        } else if deviceModelPublic.contains("iPhone14") {
             return "iPhone 14"
-        } else if deviceModel.contains("iPhone15") {
+        } else if deviceModelPublic.contains("iPhone15") {
             return "iPhone 15"
-        } else if deviceModel.contains("iPhone16") {
+        } else if deviceModelPublic.contains("iPhone16") {
             return "iPhone 16"
         }
         return "iPhone"
@@ -152,7 +154,7 @@ extension UIDevice {
         // A12-A14 tienen 4GB+ -> memoryClass 4+
         // A15+ tienen 6GB+ -> memoryClass 6+
         // Esta es una estimación basada en modelos conocidos
-        let model = HardwareCapabilities.shared.deviceModelPublic
+        let model = Self.resolveDeviceModel()
         
         if model.contains("iPhone9") { // iPhone 8
             return 3
@@ -167,5 +169,17 @@ extension UIDevice {
         }
         
         return 3 // Default conservador
+    }
+    
+    /// Obtiene el modelo del dispositivo (copia local para evitar ciclo de dependencia)
+    private static func resolveDeviceModel() -> String {
+        var systemInfo = utsname()
+        uname(&systemInfo)
+        let machine = withUnsafePointer(to: &systemInfo.machine) {
+            $0.withMemoryRebound(to: CChar.self, capacity: 1) {
+                String(validatingUTF8: $0)
+            }
+        }
+        return machine ?? "unknown"
     }
 }
