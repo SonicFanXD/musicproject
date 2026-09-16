@@ -7,8 +7,6 @@ struct AuroraPlayerApp: App {
     @AppStorage("com.aurora.showFPS") private var showFPS = false
     // ✅ Leer el tema guardado (0=Sistema, 1=Claro, 2=Oscuro) para aplicarlo globalmente
     @AppStorage("com.aurora.uiTheme") private var savedThemeIndex = 0
-    // ✅ Manejo de ciclo de vida para evitar errores de touch al reanudar
-    @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
         WindowGroup {
@@ -27,23 +25,6 @@ struct AuroraPlayerApp: App {
                 }
                 .onChange(of: showFPS) { newValue in
                     FPSOverlayController.shared.setEnabled(newValue)
-                }
-                // ✅ FIX: Manejar cambios de ciclo de vida para evitar errores de touch
-                // al reanudar la app desde background. Forzar un refresh de la UI
-                // cuando la app vuelve a activa para limpiar estados inconsistentes.
-                .onChange(of: scenePhase) { newPhase in
-                    switch newPhase {
-                    case .active:
-                        AppLog.info(.lifecycle, "App volvió a estado activo")
-                        // ✅ Forzar actualización de tema y estado para evitar touch bugs
-                        theme.objectWillChange.send()
-                    case .background:
-                        AppLog.info(.lifecycle, "App pasó a background")
-                    case .inactive:
-                        AppLog.info(.lifecycle, "App pasó a inactivo")
-                    @unknown default:
-                        break
-                    }
                 }
         }
     }

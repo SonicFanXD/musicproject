@@ -647,22 +647,23 @@ class FileAccessService: ObservableObject {
             // ✅ Sort en background (sin sleep, sin bloqueo), sobre la
             // snapshot inmutable capturada en el main.
             // ✅ Deduplicar: un lote que llega mientras se ordena puede quedar
-            // ✅ FIX: NO ordenar alfabéticamente aquí. El ordenamiento debe
-            // controlarse únicamente por las opciones del usuario en ContentView.
-            // Mantener el orden original de carga para respetar las opciones de
-            // ordenamiento (año, recientemente añadido, etc.).
-            let uniqueSongs = dedupeSongsByUrl(snapshot)
+            // ✅ FIX: Orden alfabético por título como ordenamiento por defecto.
+            // Esto asegura que las canciones tengan un orden consistente al cargar
+            // desde disco, mientras las opciones del usuario pueden cambiar este orden.
+            let sortedSongs = dedupeSongsByUrl(snapshot).sorted {
+                $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
+            }
 
             DispatchQueue.main.async {
                 self.isSortScheduled = false
-                self.songs = uniqueSongs
+                self.songs = sortedSongs
                 // ✅ ANTES `pendingSongs.removeAll()` borraba TODO, incluso las
                 // canciones que llegaron (desde el main) MIENTRAS se ordenaba en
                 // background → se perdían del índice (biblioteca incompleta).
                 // Ahora solo se descartan las que SÍ influyeron en el sort; las
                 // recién llegadas permanecen en pendingSongs y se incorporan en
                 // el siguiente flush / sort final.
-                let includedIDs = Set(uniqueSongs.map { $0.id })
+                let includedIDs = Set(sortedSongs.map { $0.id })
                 self.pendingSongs.removeAll { includedIDs.contains($0.id) }
                 self.needsRebuild = true // ✅ Reconstruir álbumes/artistas con nuevas canciones
                 self.scheduleCacheSave()
@@ -712,30 +713,31 @@ class FileAccessService: ObservableObject {
             }
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in
                 guard let self = self else { return }
-                // ✅ FIX: NO ordenar alfabéticamente aquí. El ordenamiento debe
-                // controlarse únicamente por las opciones del usuario en ContentView.
-                // Mantener el orden original de carga para respetar las opciones de
-                // ordenamiento (año, recientemente añadido, etc.).
-                let uniqueSongs = allSongs
+                // ✅ FIX: Orden alfabético por título como ordenamiento por defecto.
+                // Esto asegura que las canciones tengan un orden consistente al cargar
+                // desde disco, mientras las opciones del usuario pueden cambiar este orden.
+                let sortedSongs = allSongs.sorted {
+                    $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
+                }
 
                 DispatchQueue.main.async {
                     self.isSortScheduled = false
-                    let addedCount = uniqueSongs.count - self.songs.count
-                    self.songs = uniqueSongs
-                    self.indexedSongKeys = Set(uniqueSongs.map { Self.libraryKey(for: $0.url) })
+                    let addedCount = sortedSongs.count - self.songs.count
+                    self.songs = sortedSongs
+                    self.indexedSongKeys = Set(sortedSongs.map { Self.libraryKey(for: $0.url) })
                     self.pruneMissingOnFinish = false
                     self.seenOnDiskKeys = []
                     // ✅ Solo descartar las canciones que entraron en el sort. Las
                     // que llegaron mientras se ordenaba (p.ej. del lote final) NO
                     // se borran: permanecen en pendingSongs para una pasada final.
-                    let includedIDs = Set(uniqueSongs.map { $0.id })
+                    let includedIDs = Set(sortedSongs.map { $0.id })
                     self.pendingSongs.removeAll { includedIDs.contains($0.id) }
                     self.needsRebuild = true // ✅ Reconstruir álbumes/artistas con nuevas canciones
                     self.scheduleCacheSave()
                     if addedCount > 0 {
-                        AppLog.info(.library, "Indexación completada: \(uniqueSongs.count) canciones (+\(addedCount) nuevas) · RAM \(self.residentMemoryMB) MB")
+                        AppLog.info(.library, "Indexación completada: \(sortedSongs.count) canciones (+\(addedCount) nuevas) · RAM \(self.residentMemoryMB) MB")
                     } else {
-                        AppLog.info(.library, "Indexación completada: \(uniqueSongs.count) canciones (sin cambios) · RAM \(self.residentMemoryMB) MB")
+                        AppLog.info(.library, "Indexación completada: \(sortedSongs.count) canciones (sin cambios) · RAM \(self.residentMemoryMB) MB")
                     }
                     if !self.pendingSongs.isEmpty {
                         self.updateScanningState()
