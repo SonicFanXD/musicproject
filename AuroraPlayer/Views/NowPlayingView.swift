@@ -266,8 +266,9 @@ struct NowPlayingView: View {
                 }
                 .ignoresSafeArea()
                 .allowsHitTesting(false)
-                // ✅ OPTIMIZACIÓN A11: drawingGroup agresivo solo en A11
-                .drawingGroup()
+                // ✅ OPTIMIZACIÓN: drawingGroup solo en dispositivos potentes (no en A11)
+                // En A11 puede aumentar consumo de memoria sin beneficio medible
+                .modifier(DrawingGroupModifier(shouldUse: !HardwareCapabilities.shared.isA11Chip))
             } else {
                 LinearGradient(
                     colors: [
@@ -289,7 +290,7 @@ struct NowPlayingView: View {
             if let artwork = audioEngine.currentSong?.artwork {
                 Image(uiImage: artwork)
                     .resizable()
-                    .interpolation(.high) // ✅ Mejor calidad de interpolación
+                    .interpolation(HardwareCapabilities.shared.useHighQualityInterpolation ? .high : .medium) // ✅ Calidad adaptativa según hardware
                     .scaledToFill()
                     .frame(width: artworkSize, height: artworkSize)
                     .clipShape(RoundedRectangle(cornerRadius: CGFloat(artworkCorner), style: .continuous))
@@ -325,8 +326,8 @@ struct NowPlayingView: View {
                         .font(.system(size: artworkSize * 0.15, weight: .light))
                         .foregroundStyle(extractedColor.opacity(0.8))
                 }
-                .shadow(color: .black.opacity(0.15), radius: 15, x: 0, y: 8)
-                .shadow(color: extractedColor.opacity(0.15), radius: 8, x: 0, y: 4)
+                // ✅ 60fps: sombra ÚNICA consolidada (equivalente visual a las dos anteriores)
+                .shadow(color: .black.opacity(0.18), radius: 14, x: 0, y: 7)
             }
         }
     }

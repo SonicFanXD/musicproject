@@ -146,7 +146,8 @@ struct PlayerBar: View {
                                                 : .easeOut(duration: 0.2),
                                             value: audioEngine.isPlaying
                                         )
-                                        .drawingGroup()
+                                        // ✅ OPTIMIZACIÓN: drawingGroup solo en dispositivos potentes
+                                        .modifier(DrawingGroupModifier(shouldUse: !HardwareCapabilities.shared.isA11Chip))
 
                                     Image(systemName: audioEngine.isPlaying ? "pause.fill" : "play.fill")
                                         .font(.system(size: 16, weight: .bold))

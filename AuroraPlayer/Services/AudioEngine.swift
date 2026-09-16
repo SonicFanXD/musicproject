@@ -112,17 +112,17 @@ class AudioEngine: NSObject, ObservableObject {
     // MARK: - Motor de audio mejorado
     private let engine = AVAudioEngine()
     private let playerNode = AVAudioPlayerNode()
-    // ✅ Audio Mono REAL: mezclador intermedio siempre presente en el grafo.
-    // El downmix se hace reconectando su SALIDA con formato de 1 canal
-    // (AVAudioMixerNode adapta canales por DSP). El método anterior usaba
-    // setPreferredInputNumberOfChannels (ENTRADA/micrófono) → no afectaba
-    // en absoluto a la reproducción.
-    private let monoMixerNode = AVAudioMixerNode()
+    // ✅ Audio Mono: la implementación efectiva es a nivel de AVAudioSession (applySystemMonoOutput)
+    // El mezclador intermedio en el grafo no es necesario ya que iOS respeta el mono a nivel de sesión
+    // private let monoMixerNode = AVAudioMixerNode() // ✅ Comentado: no necesario con implementación a nivel de sesión
     private var audioFile: AVAudioFile?
     private var displayTimer: Timer?
     // Contador para persistir la posición en vivo cada ~15s mientras suena.
     private var persistTickCounter = 0
     private var sampleRate: Double = 44100
+    // ✅ WATCHDOG: timer de seguridad para detectar cuando la reproducción se atasca
+    // (completion handler que nunca se llama). Timeout de 5 segundos para forzar transición.
+    private var watchdogTimer: Timer?
     // ✅ RELOJ DE PARED: la posición de reproducción se extrapola con
     // CACurrentMediaTime (monótono) desde un ancla (posición + instante).
     // Es INMUNE a los reinicios del timeline del AVAudioPlayerNode
@@ -239,6 +239,8 @@ class AudioEngine: NSObject, ObservableObject {
                 self?.segmentDidFinish(token: token, expectedGeneration: generation)
             }
         }
+        // ✅ WATCHDOG: iniciar watchdog cuando se programa un nuevo segmento
+        startWatchdog()
         if connectedFormatKey == nil {
             connectedFormatKey = formatKey(fmt)
         }
@@ -253,6 +255,7 @@ class AudioEngine: NSObject, ObservableObject {
               token != 0, activeSegmentToken == token,
               isPlaying, !isStopping else { return }
         activeSegmentToken = 0
+        stopWatchdog() // ✅ WATCHDOG: detener watchdog cuando el segmento termina normalmente
         AppLog.info(.playback, "Canción terminada: '\(currentSong?.displayName ?? "—")' (\(String(format: "%.1f", duration))s, repeat: \(repeatMode.rawValue))")
         commitChainedSong()
     }
@@ -311,6 +314,31 @@ class AudioEngine: NSObject, ObservableObject {
         currentIndex = index
         playCurrentSong()
         return true
+    }
+
+    // MARK: - Watchdog de seguridad para transiciones atascadas
+    /// Inicia el watchdog de seguridad cuando se programa un nuevo segmento
+    private func startWatchdog() {
+        stopWatchdog()
+        // ✅ WATCHDOG: timeout de 5 segundos para detectar segmentos atascados
+        watchdogTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: false) { [weak self] _ in
+            self?.watchdogFired()
+        }
+    }
+
+    /// Detiene el watchdog cuando la transición ocurre normalmente
+    private func stopWatchdog() {
+        watchdogTimer?.invalidate()
+        watchdogTimer = nil
+    }
+
+    /// Se ejecuta cuando el watchdog detecta que un segmento no terminó
+    private func watchdogFired() {
+        guard isPlaying, !isStopping else { return }
+        AppLog.warning(.playback, "Watchdog: segmento atascado detectado, forzando transición")
+        // Forzar la transición a la siguiente canción
+        activeSegmentToken = 0
+        commitChainedSong()
     }
     
    
@@ -545,10 +573,14 @@ class AudioEngine: NSObject, ObservableObject {
 
         let session = AVAudioSession.sharedInstance()
         do {
-            // ✅ Reactivar la sesión con notifyOthersOnDeactivation para que
-            // otras apps (if any) se enteren y no se pisen. Mantener activa
-            // la sesión es imprescindible para audio en background continuo.
-            try session.setActive(true, options: .notifyOthersOnDeactivation)
+            // ✅ OPTIMIZACIÓN: solo reactivar si la sesión no está ya activa
+            // Evita llamadas innecesarias que pueden causar cortes breves
+            if !session.isActive {
+                // ✅ Reactivar la sesión con notifyOthersOnDeactivation para que
+                // otras apps (if any) se enteren y no se pisen. Mantener activa
+                // la sesión es imprescindible para audio en background continuo.
+                try session.setActive(true, options: .notifyOthersOnDeactivation)
+            }
         } catch {
             AppLog.error(.playback, error, context: "background: reactivar sesión")
         }
@@ -741,7 +773,10 @@ class AudioEngine: NSObject, ObservableObject {
             // en vez de 0.02s) reduce el número de interrupciones del render
             // thread sin degradar la calidad audible (el sample rate y la
             // precisión se mantienen idénticos; solo cambia la latencia).
-            let bufferDurations: [TimeInterval] = [0.04, 0.03, 0.02, 0.05]
+            // ✅ OPTIMIZACIÓN A11: en dispositivos A11 empezamos directamente con
+            // 0.04s para evitar el error -50 que siempre ocurre con 0.02s
+            let hw = HardwareCapabilities.shared
+            let bufferDurations: [TimeInterval] = hw.isA11Chip ? [0.04, 0.05, 0.03] : [0.04, 0.03, 0.02, 0.05]
             for duration in bufferDurations {
                 do {
                     try session.setPreferredIOBufferDuration(duration)
@@ -787,8 +822,7 @@ class AudioEngine: NSObject, ObservableObject {
 
     private func setupEngine() {
         engine.attach(playerNode)
-        // ✅ Mono: el mezclador de downmix vive permanentemente en el grafo
-        engine.attach(monoMixerNode)
+        // ✅ Mono: la implementación efectiva es a nivel de AVAudioSession, no se necesita mezclador en el grafo
     }
 
     private func setupEqualizer() {
@@ -833,10 +867,7 @@ class AudioEngine: NSObject, ObservableObject {
         connectedFormatKey = formatKey(format)
 
         let mixer = engine.mainMixerNode
-        // ✅ Mono: desconectar también la salida previa del mezclador downmix
-        if !engine.outputConnectionPoints(for: monoMixerNode, outputBus: 0).isEmpty {
-            engine.disconnectNodeOutput(monoMixerNode)
-        }
+        // ✅ Mono: implementación simplificada sin mezclador intermedio (mono a nivel de sesión)
         if let eq = equalizerNode {
             // Desconectar nodos previos de forma segura
             if !engine.outputConnectionPoints(for: playerNode, outputBus: 0).isEmpty {
@@ -847,24 +878,13 @@ class AudioEngine: NSObject, ObservableObject {
             }
 
             engine.connect(playerNode, to: eq, format: format)
-            engine.connect(eq, to: monoMixerNode, format: format)
-            engine.connect(monoMixerNode, to: mixer, format: monoMixerOutputFormat())
+            engine.connect(eq, to: mixer, format: format)
         } else {
             if !engine.outputConnectionPoints(for: playerNode, outputBus: 0).isEmpty {
                 engine.disconnectNodeOutput(playerNode)
             }
-            engine.connect(playerNode, to: monoMixerNode, format: format)
-            engine.connect(monoMixerNode, to: mixer, format: monoMixerOutputFormat())
+            engine.connect(playerNode, to: mixer, format: format)
         }
-    }
-
-    /// ✅ Mono: formato de salida del mezclador downmix — 1 canal si el mono
-    /// está activo (downmix real), 2 canales (estéreo transparente) si no.
-    private func monoMixerOutputFormat() -> AVAudioFormat {
-        let channels: AVAudioChannelCount = isMonoAudioEnabled ? 1 : 2
-        let rate = sampleRate > 0 ? sampleRate : 44100
-        return AVAudioFormat(standardFormatWithSampleRate: rate, channels: channels)
-            ?? engine.mainMixerNode.outputFormat(forBus: 0)
     }
 
     func toggleEQ() {
@@ -1007,9 +1027,7 @@ class AudioEngine: NSObject, ObservableObject {
         // intermedio con formato de 1 canal. AVAudioMixerNode hace el downmix
         // estéreo→mono por DSP, y iOS reproduce la señal monofónica por ambos
         // altavoces/auriculares.
-        if !engine.outputConnectionPoints(for: monoMixerNode, outputBus: 0).isEmpty {
-            engine.disconnectNodeOutput(monoMixerNode)
-        }
+        // ✅ Mono: implementación simplificada - no se necesita desconectar mezclador intermedio
         
         // ✅ FIX mono: cambiar el formato de salida de un nodo MIENTRAS el
         // engine renderiza no siempre se aplica. Detener y relanzar el engine
@@ -1020,7 +1038,8 @@ class AudioEngine: NSObject, ObservableObject {
         let hasAudio = audioFile != nil
         
         if wasRunning && hasAudio { engine.stop() }
-        engine.connect(monoMixerNode, to: engine.mainMixerNode, format: monoMixerOutputFormat())
+        // ✅ Mono: implementación simplificada - conectar directamente al mainMixer
+        engine.connect(playerNode, to: engine.mainMixerNode, format: currentFileFormat)
         if wasRunning && hasAudio {
             do { try engine.start() } catch {
                 AppLog.error(.playback, error, context: "applyMonoAudio: relanzar engine")
@@ -1131,7 +1150,7 @@ class AudioEngine: NSObject, ObservableObject {
         let song = playlist[currentIndex]
         // ✅ FIX anti-pop: el fade de PAUSA deja el mixer en volumen 0; si el
         // usuario elige otra canción estando en pausa, el mixer seguiría mudo.
-        monoMixerNode.volume = 1
+        engine.mainMixerNode.volume = 1
         AppLog.info(.playback, "Reproduciendo: \(song.displayName)")
 
         // ✅ FIX: Incrementar scheduleGeneration UNA SOLA VEZ al inicio
@@ -1354,7 +1373,7 @@ class AudioEngine: NSObject, ObservableObject {
         let generation = volumeFadeGeneration
         let steps = 4
         let stepDuration = duration / Double(steps)
-        let mixer = monoMixerNode
+        let mixer = engine.mainMixerNode
         let from = mixer.volume
         func scheduleStep(_ step: Int) {
             guard self.volumeFadeGeneration == generation else { return }

@@ -115,7 +115,7 @@ struct AlbumDetailView: View {
             Group {
                 if let artwork = album.artwork {
                     Image(uiImage: artwork)
-                        .resizable().interpolation(.high).scaledToFill()
+                        .resizable().interpolation(HardwareCapabilities.shared.useHighQualityInterpolation ? .high : .medium).scaledToFill()
                         .frame(width: 200, height: 200)
                         .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
                         .overlay {
@@ -143,7 +143,8 @@ struct AlbumDetailView: View {
                             .font(.system(size: 54, weight: .light))
                             .foregroundStyle(.secondary.opacity(0.7))
                     }
-                    .shadow(color: .black.opacity(0.25), radius: 14, x: 0, y: 8)
+                    // ✅ 60fps: sombra ÚNICA consolidada (equivalente visual a la doble sombra anterior)
+                    .shadow(color: .black.opacity(0.28), radius: 13, x: 0, y: 7)
                 }
             }
             .padding(.top, 8)
@@ -221,7 +222,8 @@ struct AlbumDetailView: View {
                 }
                 .frame(width: geometry.size.width, height: geometry.size.height + 80)
                 .clipped().ignoresSafeArea(edges: .top)
-                .drawingGroup() // ? Optimizaci�n GPU para 60fps
+                // ✅ OPTIMIZACIÓN: drawingGroup solo en dispositivos potentes (no en A11)
+                .modifier(DrawingGroupModifier(shouldUse: !HardwareCapabilities.shared.isA11Chip))
             }
         }
     }
@@ -664,7 +666,8 @@ struct ArtistDetailView: View {
                 }
                 .frame(width: geometry.size.width, height: geometry.size.height + 80)
                 .clipped().ignoresSafeArea(edges: .top)
-                .drawingGroup() // ? Optimizaci�n GPU para 60fps
+                // ✅ OPTIMIZACIÓN: drawingGroup solo en dispositivos potentes (no en A11)
+                .modifier(DrawingGroupModifier(shouldUse: !HardwareCapabilities.shared.isA11Chip))
             }
         }
     }

@@ -129,9 +129,9 @@ struct ElegantAudioVisualizer: View {
     private func startVisualization() {
         guard displayLink == nil else { return }
         
-        displayLink = CADisplayLink(target: DisplayLinkTarget { [self] _ in
+        displayLink = CADisplayLink(target: SimpleDisplayLinkTarget { [self] in
             updateWaves()
-        }, selector: #selector(DisplayLinkTarget.fire(displayLink:)))
+        }, selector: #selector(SimpleDisplayLinkTarget.fire(displayLink:)))
         displayLink?.add(to: .main, forMode: .common)
         displayLink?.preferredFramesPerSecond = frameRate.fps
     }
@@ -144,7 +144,7 @@ struct ElegantAudioVisualizer: View {
     private func updateWaves() {
         guard isVisible, audioEngine.isPlaying else { return }
         
-        // ✅ OPTIMIZACIÓN A11: asegurar tamaño correcto de arrays
+        // ✅ OPTIMIZACIÓN: solo redimensionar si realmente es necesario (no en cada frame)
         if amplitudes.count != waveCount * 2 {
             amplitudes = Array(repeating: 0.5, count: waveCount * 2)
         }

@@ -129,7 +129,8 @@ struct LyricsView: View {
                         .interpolation(.medium)
                         .scaledToFill()
                         .frame(width: geometry.size.width, height: geometry.size.height)
-                        .blur(radius: 60)
+                        // ✅ OPTIMIZACIÓN A11: blur adaptativo según hardware
+                        .blur(radius: HardwareCapabilities.shared.useHighQualityBlur ? 60 : 35)
                         .opacity(0.4)
                         .overlay(Color(UIColor.systemBackground).opacity(0.72))
                 } else {

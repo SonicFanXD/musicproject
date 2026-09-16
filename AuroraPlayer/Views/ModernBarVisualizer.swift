@@ -87,9 +87,9 @@ struct ModernBarVisualizer: View {
     private func startVisualization() {
         guard displayLink == nil else { return }
         
-        displayLink = CADisplayLink(target: DisplayLinkTarget { [self] _ in
+        displayLink = CADisplayLink(target: SimpleDisplayLinkTarget { [self] in
             updateAmplitudes()
-        }, selector: #selector(DisplayLinkTarget.fire(displayLink:)))
+        }, selector: #selector(SimpleDisplayLinkTarget.fire(displayLink:)))
         displayLink?.add(to: .main, forMode: .common)
         displayLink?.preferredFramesPerSecond = frameRate.fps
     }
@@ -104,7 +104,7 @@ struct ModernBarVisualizer: View {
         
         phase += 0.25
         
-        // ✅ OPTIMIZACIÓN A11: asegurar tamaño correcto de arrays
+        // ✅ OPTIMIZACIÓN: solo redimensionar si realmente es necesario (no en cada frame)
         if amplitudes.count != barCount {
             amplitudes = Array(repeating: 0.08, count: barCount)
         }

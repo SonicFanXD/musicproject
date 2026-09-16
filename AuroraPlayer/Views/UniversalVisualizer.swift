@@ -70,12 +70,12 @@ struct UniversalVisualizer: View {
     
     private func startVisualization() {
         stopVisualization()
-        
-        // Asegurar que el array tenga el tamaño correcto
+
+        // ✅ OPTIMIZACIÓN: solo redimensionar si realmente es necesario
         if amplitudes.count != barCount {
             amplitudes = Array(repeating: 0.1, count: barCount)
         }
-        
+
         displayLink = CADisplayLink(target: VisualizerTarget { [self] in
             updateAmplitudes()
         }, selector: #selector(VisualizerTarget.fire))

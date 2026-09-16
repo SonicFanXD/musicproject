@@ -578,7 +578,8 @@ struct PlaylistDetailView: View {
                         Image(uiImage: artwork)
                             .resizable()
                             .scaledToFill()
-                            .blur(radius: 44)
+                            // ✅ OPTIMIZACIÓN A11: blur adaptativo según hardware
+                            .blur(radius: HardwareCapabilities.shared.useHighQualityBlur ? 44 : 28)
                             .opacity(0.35)
                             .overlay(Color(UIColor.systemBackground).opacity(0.45))
                     } else {

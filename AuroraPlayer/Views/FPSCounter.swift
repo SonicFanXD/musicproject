@@ -77,20 +77,6 @@ struct FPSCounter: View {
     }
 }
 
-/// Wrapper para usar CADisplayLink con SwiftUI
-class DisplayLinkTarget: NSObject {
-    private let handler: (CFTimeInterval) -> Void
-
-    init(handler: @escaping (CFTimeInterval) -> Void) {
-        self.handler = handler
-        super.init()
-    }
-
-    @objc func fire(displayLink: CADisplayLink) {
-        handler(displayLink.timestamp)
-    }
-}
-
 /// Overlay que posiciona el FPS counter en una UIWindow independiente con
 /// windowLevel superior a los sheets/modales: visible en TODAS las pantallas
 /// (biblioteca, Now Playing, ajustes, letras, etc.) y deja pasar los toques.

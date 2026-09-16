@@ -149,7 +149,7 @@ struct AudioVisualizer: View {
 
         phase += 0.25
 
-        // ✅ OPTIMIZACIÓN A11: asegurar que los arrays tengan el tamaño correcto
+        // ✅ OPTIMIZACIÓN: solo redimensionar si realmente es necesario (no en cada frame)
         if amplitudes.count != barCount {
             amplitudes = Array(repeating: 0.08, count: barCount)
         }
@@ -189,7 +189,8 @@ struct CircularAudioVisualizer: View {
     // ✅ Batería: mismo controlador de frame rate adaptativo (60↔30fps)
     @ObservedObject private var frameRate = VisualizerFrameRate.shared
     // ✅ OPTIMIZACIÓN A11: número de barras adaptativo según hardware
-    private var barCount: Int { HardwareCapabilities.shared.optimalVisualizerBars * 2 }
+    // ✅ En A11 reducimos aún más el visualizador circular (renderizado circular es más costoso)
+    private var barCount: Int { HardwareCapabilities.shared.isA11Chip ? HardwareCapabilities.shared.optimalVisualizerBars : HardwareCapabilities.shared.optimalVisualizerBars * 2 }
     @State private var amplitudes: [CGFloat] = Array(repeating: 0, count: 48)
     @State private var displayLink: CADisplayLink?
     @State private var isVisible = false

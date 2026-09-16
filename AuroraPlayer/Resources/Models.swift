@@ -205,9 +205,10 @@ extension Song {
         // Cada UIImage decodificada ocupa ancho×alto×4 bytes en RAM (768²×4 =
         // 2.4MB a la resolución actual). countLimit 500 sin costLimit permitía
         // >1GB de bitmaps → jetsam kill al scrollear listas grandes.
-        // ✅ OPTIMIZACIÓN A11: límites conservadores por defecto (pueden ajustarse dinámicamente)
-        cache.countLimit = 20
-        cache.totalCostLimit = 32 * 1024 * 1024
+        // ✅ OPTIMIZACIÓN A11: límites ajustados según hardware para mejor rendimiento
+        let hw = HardwareCapabilities.shared
+        cache.countLimit = hw.isA11Chip ? 30 : 40
+        cache.totalCostLimit = hw.isA11Chip ? 48 * 1024 * 1024 : 64 * 1024 * 1024
         return cache
     }()
 
