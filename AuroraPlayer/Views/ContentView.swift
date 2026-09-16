@@ -142,8 +142,8 @@ struct ContentView: View {
                     }
                 }
                 .navigationBarTitleDisplayMode(.inline)
-                .toolbarBackground(.hidden, for: .navigationBar)
-                .toolbarBackground(.hidden, for: .navigationBar)
+                .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+                .toolbarBackground(.visible, for: .navigationBar)
                 .toolbar {
                     ToolbarItem(placement: .principal) {
                         Text(Localization.localized("app.name"))
@@ -977,11 +977,14 @@ struct ContentView: View {
     // ✅ BÚSQUEDA optimizada: el índice ya tiene las cadenas normalizadas
     // (sin acentos/mayúsculas) y el matching es por palabras con ranking de
     // relevancia. Con consulta vacía se respeta el orden del usuario.
+    // ✅ FIX: Ahora aplica el ordenamiento del usuario también a los resultados
+    // de búsqueda para mantener consistencia con la opción seleccionada.
     private var filteredSongs: [Song] {
         let songs = fileAccessService.songs
         let query = normalizedQuery
         guard !query.isEmpty else { return sortSongs(songs) }
-        return LibrarySearchIndex.shared.searchSongs(songs, query: query)
+        let searchResults = LibrarySearchIndex.shared.searchSongs(songs, query: query)
+        return sortSongs(searchResults)
     }
 
     private func sortSongs(_ songs: [Song]) -> [Song] {
@@ -1027,7 +1030,8 @@ struct ContentView: View {
         let albums = fileAccessService.albums
         let query = normalizedQuery
         guard !query.isEmpty else { return sortAlbums(albums) }
-        return LibrarySearchIndex.shared.searchAlbums(albums, query: query)
+        let searchResults = LibrarySearchIndex.shared.searchAlbums(albums, query: query)
+        return sortAlbums(searchResults)
     }
 
     private func sortAlbums(_ albums: [Album]) -> [Album] {
@@ -1070,7 +1074,8 @@ struct ContentView: View {
         let artists = fileAccessService.artists
         let query = normalizedQuery
         guard !query.isEmpty else { return sortArtists(artists) }
-        return LibrarySearchIndex.shared.searchArtists(artists, query: query)
+        let searchResults = LibrarySearchIndex.shared.searchArtists(artists, query: query)
+        return sortArtists(searchResults)
     }
 
     // ✅ Orden de artistas con opciones propias de la categoría.
