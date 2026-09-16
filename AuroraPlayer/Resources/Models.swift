@@ -205,8 +205,10 @@ extension Song {
         // Cada UIImage decodificada ocupa ancho×alto×4 bytes en RAM (768²×4 =
         // 2.4MB a la resolución actual). countLimit 500 sin costLimit permitía
         // >1GB de bitmaps → jetsam kill al scrollear listas grandes.
-        cache.countLimit = 32
-        cache.totalCostLimit = 48 * 1024 * 1024 // Presupuesto reducido para dispositivos como iPhone 8 Plus
+        // ✅ OPTIMIZACIÓN A11: límites adaptativos según hardware detectado
+        let hw = HardwareCapabilities.shared
+        cache.countLimit = hw.artworkCacheLimit
+        cache.totalCostLimit = hw.artworkCacheMemoryLimit
         return cache
     }()
 
@@ -221,6 +223,23 @@ extension Song {
         let cost = Int(image.size.width * image.scale * image.size.height * image.scale * 4)
         Song.artworkCache.setObject(image, forKey: id as NSUUID, cost: cost)
         return image
+    }
+    
+    /// ✅ OPTIMIZACIÓN A11: artwork diferido para listas grandes
+    /// Retorna nil si la biblioteca es grande y el artwork no está en caché,
+    /// para evitar decodificar imágenes pesadas durante el scroll rápido.
+    var deferredArtwork: UIImage? {
+        let hw = HardwareCapabilities.shared
+        let threshold = hw.lazyArtworkThreshold
+        
+        // Si está en caché, retornarlo inmediatamente
+        if let cached = Song.artworkCache.object(forKey: id as NSUUID) {
+            return cached
+        }
+        
+        // Si no está en caché y la biblioteca es grande, no decodificar ahora
+        // Esto se usa en vistas de lista donde el artwork se puede cargar a demanda
+        return nil
     }
 
     var displayName: String {

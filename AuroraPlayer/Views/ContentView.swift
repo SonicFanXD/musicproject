@@ -58,6 +58,7 @@ struct ContentView: View {
                     // ✅ Transición animada entre categorías: el contenido
                     // entra con fade + slide suave, sale con fade + micro-escala.
                     // Solo transform/opacity → renderizado por GPU, 60fps estables.
+                    // ✅ OPTIMIZACIÓN A11: usar LazyVStack para virtualización agresiva
                     ZStack {
                         switch selectedCategory {
                         case .songs:
@@ -486,8 +487,11 @@ struct ContentView: View {
             sortButtonRow
                 .listRowSeparator(.hidden)
                 .listRowBackground(Color.clear)
-            ForEach(currentFilteredSongs) { song in
-                songRow(song)
+            // ✅ OPTIMIZACIÓN A11: LazyVStack para virtualización agresiva en listas grandes
+            LazyVStack(spacing: 0) {
+                ForEach(currentFilteredSongs) { song in
+                    songRow(song)
+                }
             }
             .listRowSeparator(.hidden)
             .listRowBackground(Color.clear)
@@ -696,14 +700,17 @@ struct ContentView: View {
             albumSortButtonRow
                 .listRowSeparator(.hidden)
                 .listRowBackground(Color.clear)
-            ForEach(albums) { album in
-                NavigationLink {
-                    AlbumDetailView(album: album, audioEngine: audioEngine)
-                } label: {
-                    albumListRow(album)
+            // ✅ OPTIMIZACIÓN A11: LazyVStack para virtualización agresiva en listas grandes
+            LazyVStack(spacing: 0) {
+                ForEach(albums) { album in
+                    NavigationLink {
+                        AlbumDetailView(album: album, audioEngine: audioEngine)
+                    } label: {
+                        albumListRow(album)
+                    }
+                    .buttonStyle(.plain).listRowSeparator(.hidden).listRowBackground(Color.clear)
+                    .listRowInsets(EdgeInsets(top: 6, leading: 12, bottom: 6, trailing: 12))
                 }
-                .buttonStyle(.plain).listRowSeparator(.hidden).listRowBackground(Color.clear)
-                .listRowInsets(EdgeInsets(top: 6, leading: 12, bottom: 6, trailing: 12))
             }
         }
     }
@@ -740,14 +747,17 @@ struct ContentView: View {
             artistSortButtonRow
                 .listRowSeparator(.hidden)
                 .listRowBackground(Color.clear)
-            ForEach(artists) { artist in
-                NavigationLink {
-                    ArtistDetailView(artist: artist, audioEngine: audioEngine)
-                } label: {
-                    artistListRow(artist)
+            // ✅ OPTIMIZACIÓN A11: LazyVStack para virtualización agresiva en listas grandes
+            LazyVStack(spacing: 0) {
+                ForEach(artists) { artist in
+                    NavigationLink {
+                        ArtistDetailView(artist: artist, audioEngine: audioEngine)
+                    } label: {
+                        artistListRow(artist)
+                    }
+                    .buttonStyle(.plain).listRowSeparator(.hidden).listRowBackground(Color.clear)
+                    .listRowInsets(EdgeInsets(top: 6, leading: 12, bottom: 6, trailing: 12))
                 }
-                .buttonStyle(.plain).listRowSeparator(.hidden).listRowBackground(Color.clear)
-                .listRowInsets(EdgeInsets(top: 6, leading: 12, bottom: 6, trailing: 12))
             }
         }
     }

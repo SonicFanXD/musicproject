@@ -192,6 +192,11 @@ final class LibrarySearchIndex {
     func searchSongs(_ songs: [Song], query: String) -> [Song] {
         let words = Self.queryWords(query)
         guard !words.isEmpty else { return songs }
+        
+        // ✅ OPTIMIZACIÓN A11: limitar resultados en bibliotecas grandes
+        let hw = HardwareCapabilities.shared
+        let maxResults = hw.isLowEndDevice ? 50 : 100
+        
         var scored: [(song: Song, score: Int)] = []
         scored.reserveCapacity(min(songs.count, 64))
         var fields: [String] = []
@@ -214,7 +219,13 @@ final class LibrarySearchIndex {
             }
         }
         scored.sort { $0.score > $1.score }
-        return scored.map(\.song)
+        
+        // ✅ OPTIMIZACIÓN A11: limitar número de resultados en dispositivos A11
+        let results = scored.map(\.song)
+        if hw.isLowEndDevice && results.count > maxResults {
+            return Array(results.prefix(maxResults))
+        }
+        return results
     }
 
     func searchAlbums(_ albums: [Album], query: String) -> [Album] {

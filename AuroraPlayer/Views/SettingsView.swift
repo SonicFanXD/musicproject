@@ -34,6 +34,7 @@ struct SettingsView: View {
     @AppStorage("com.aurora.language") private var selectedLanguage = 0 // 0 = español, 1 = inglés
     @AppStorage("com.aurora.showFPS") private var showFPS = false
     @AppStorage("com.aurora.scanOnlyNewSongs") private var scanOnlyNewSongs = true
+    @AppStorage("com.aurora.visualizerStyle") private var visualizerStyle = 0 // 0 = clásico, 1 = elegante, 2 = moderno
 
     // ✅ LOCALIZADOS: computados para reaccionar al cambio de idioma al
     // instante (antes eran `let` hardcodeados en español → el inglés no
@@ -57,6 +58,15 @@ struct SettingsView: View {
         ]
     }
     private var languages: [String] { ["Español", "English"] }
+    
+    private var visualizerStyleName: String {
+        switch visualizerStyle {
+        case 0: return "Clásico"
+        case 1: return "Elegante"
+        case 2: return "Moderno"
+        default: return "Clásico"
+        }
+    }
 
     private let themeDefaultsKey = "com.aurora.uiTheme"
 
@@ -293,6 +303,18 @@ struct SettingsView: View {
                         // Reproducción
                         settingsSection(icon: "dial.max.fill", title: Localization.localized("settings.playback"), color: .orange) {
                             settingsToggleRow(title: Localization.localized("settings.visualizer"), subtitle: Localization.localized("settings.visualizerSubtitle"), icon: "waveform.path.ecg", color: .pink, isOn: $showVisualizer)
+                            settingsDivider
+                            settingsMenuButton(
+                                title: "Estilo visualizador",
+                                subtitle: visualizerStyleName,
+                                icon: "waveform",
+                                color: AppTheme.accent,
+                                options: ["Clásico", "Elegante", "Moderno"],
+                                selection: $visualizerStyle
+                            ) { index in
+                                visualizerStyle = index
+                                AppLog.info(.settings, "Estilo visualizador: \(index)")
+                            }
                             settingsDivider
                             settingsToggleRow(title: Localization.localized("settings.haptics"), subtitle: Localization.localized("settings.hapticsSubtitle"), icon: "iphone.radiowaves.left.and.right", color: .mint, isOn: $enableHaptics)
                             settingsDivider

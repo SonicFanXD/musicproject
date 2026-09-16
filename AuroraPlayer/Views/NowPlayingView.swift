@@ -25,6 +25,7 @@ struct NowPlayingView: View {
     @AppStorage("com.aurora.reduceTransparency") private var reduceTransparency = false
     // ✅ Ajuste "Mostrar letras" (antes no se aplicaba)
     @AppStorage("com.aurora.showLyricsByDefault") private var showLyricsByDefault = false
+    @AppStorage("com.aurora.visualizerStyle") private var visualizerStyle = 0 // 0 = clásico, 1 = elegante, 2 = moderno
 
     @State private var showLyrics = false
     @State private var showEqualizer = false
@@ -122,12 +123,25 @@ struct NowPlayingView: View {
                     Spacer(minLength: isCompactScreen ? 10 : 16)
 
                     if showVisualizer {
-                        // ✅ MEJORADO: AudioVisualizer ya rasteriza internamente
-                        // con .drawingGroup() y maneja la atenuación al pausar.
-                        // Nada de animaciones raras de escala aquí.
-                        AudioVisualizer(audioEngine: audioEngine, tintColor: extractedColor)
-                            .frame(height: isCompactScreen ? 32 : 48)
-                            .padding(.horizontal, 36)
+                        // ✅ MEJORADO: Selector de estilo de visualizador
+                        switch visualizerStyle {
+                        case 1:
+                            // Elegante: ondas fluidas con gradientes
+                            ElegantAudioVisualizer(audioEngine: audioEngine, tintColor: extractedColor)
+                                .frame(height: isCompactScreen ? 50 : 70)
+                                .padding(.horizontal, 0)
+                                .drawingGroup()
+                        case 2:
+                            // Moderno: barras con reflejos y sombras
+                            ModernBarVisualizer(audioEngine: audioEngine, tintColor: extractedColor)
+                                .frame(height: isCompactScreen ? 40 : 50)
+                                .padding(.horizontal, 20)
+                        default:
+                            // Clásico: barras simples originales
+                            AudioVisualizer(audioEngine: audioEngine, tintColor: extractedColor)
+                                .frame(height: isCompactScreen ? 32 : 48)
+                                .padding(.horizontal, 36)
+                        }
                     }
 
                     Spacer(minLength: isCompactScreen ? 8 : 14)
@@ -250,13 +264,16 @@ struct NowPlayingView: View {
                         // ✅ FIX barra negra: scaledToFill + clipped para cubrir
                         // TODA la pantalla (scaledToFit dejaba franjas en pantallas
                         // altas/anchas por encima y debajo de la imagen cuadrada).
+                        // ✅ OPTIMIZACIÓN A11: blur adaptativo según hardware
+                        let blurRadius = HardwareCapabilities.shared.useHighQualityBlur ? 25 : 15
+                        
                         Image(uiImage: artwork)
                             .resizable()
                             .interpolation(.medium)
                             .scaledToFill()
                             .frame(width: geometry.size.width + 60, height: geometry.size.height + 60)
                             .clipped()
-                            .blur(radius: 25)
+                            .blur(radius: blurRadius)
                             .opacity(0.45)
 
                         extractedColor.opacity(0.12)
@@ -264,7 +281,8 @@ struct NowPlayingView: View {
                 }
                 .ignoresSafeArea()
                 .allowsHitTesting(false)
-                .drawingGroup(opaque: false)
+                // ✅ OPTIMIZACIÓN A11: drawingGroup agresivo solo en A11
+                .drawingGroup(opaque: HardwareCapabilities.shared.useAggressiveGPUOptimization)
             } else {
                 LinearGradient(
                     colors: [

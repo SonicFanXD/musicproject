@@ -39,8 +39,10 @@ final class VisualizerFrameRate: ObservableObject {
             fps = 30
             return
         }
+        // ✅ OPTIMIZACIÓN A11: usar threshold adaptativo según hardware
+        let thermalThreshold = HardwareCapabilities.shared.thermalVisualizerThreshold
         switch ProcessInfo.processInfo.thermalState {
-        case .fair, .serious, .critical:
+        case thermalThreshold, .critical:
             fps = 30
         default:
             fps = 60
@@ -54,6 +56,8 @@ struct AudioVisualizer: View {
     // ✅ Observa el frame rate óptimo según batería/térmica para adaptarse
     // en tiempo real (60↔30fps) sin reiniciar el CADisplayLink.
     @ObservedObject private var frameRate = VisualizerFrameRate.shared
+    // ✅ OPTIMIZACIÓN A11: número de barras adaptativo según hardware
+    private var barCount: Int { HardwareCapabilities.shared.optimalVisualizerBars }
     @State private var amplitudes: [CGFloat] = Array(repeating: 0.08, count: 24)
     @State private var displayLink: CADisplayLink?
     @State private var phase: Double = 0
@@ -67,9 +71,10 @@ struct AudioVisualizer: View {
             // desbordaba a la derecha y tapaba título/artista/corazón. Con
             // .frame(width:) el HStack se comprime y las barras se recortan
             // ordenadas de izquierda a derecha, sin salirse nunca del marco.
+            // ✅ OPTIMIZACIÓN A11: usa número de barras adaptativo (16 en A11, 24 en otros)
             HStack(spacing: 2.5) {
-                ForEach(0..<amplitudes.count, id: \.self) { index in
-                    let normalizedIndex = Double(index) / Double(amplitudes.count - 1)
+                ForEach(0..<barCount, id: \.self) { index in
+                    let normalizedIndex = Double(index) / Double(barCount - 1)
                     let sineWave = sin(phase + Double(index) * 0.6) * 0.18
                     let centerBoost = 0.15 * (1.0 - pow(normalizedIndex - 0.5, 2) * 4)
                     let adjustedAmplitude = max(0.05, min(1.0, smoothedAmplitudes[index] + CGFloat(sineWave) + CGFloat(centerBoost)))
@@ -86,7 +91,7 @@ struct AudioVisualizer: View {
                                 endPoint: .top
                             )
                         )
-                        .frame(width: max(2.5, geometry.size.width / CGFloat(amplitudes.count) - 2))
+                        .frame(width: max(2.5, geometry.size.width / CGFloat(barCount) - 2))
                         .frame(height: max(3, adjustedAmplitude * geometry.size.height))
                 }
             }
@@ -144,6 +149,14 @@ struct AudioVisualizer: View {
 
         phase += 0.25
 
+        // ✅ OPTIMIZACIÓN A11: asegurar que los arrays tengan el tamaño correcto
+        if amplitudes.count != barCount {
+            amplitudes = Array(repeating: 0.08, count: barCount)
+        }
+        if smoothedAmplitudes.count != barCount {
+            smoothedAmplitudes = Array(repeating: 0.08, count: barCount)
+        }
+
         let baseAmplitude: CGFloat = 0.35
         for i in 0..<smoothedAmplitudes.count {
             let travel = sin(phase * 1.1 + Double(i) * 0.7) * 0.22
@@ -175,6 +188,8 @@ struct CircularAudioVisualizer: View {
     @ObservedObject var audioEngine: AudioEngine
     // ✅ Batería: mismo controlador de frame rate adaptativo (60↔30fps)
     @ObservedObject private var frameRate = VisualizerFrameRate.shared
+    // ✅ OPTIMIZACIÓN A11: número de barras adaptativo según hardware
+    private var barCount: Int { HardwareCapabilities.shared.optimalVisualizerBars * 2 }
     @State private var amplitudes: [CGFloat] = Array(repeating: 0, count: 48)
     @State private var displayLink: CADisplayLink?
     @State private var isVisible = false
@@ -182,8 +197,8 @@ struct CircularAudioVisualizer: View {
 
     var body: some View {
         ZStack {
-            ForEach(0..<amplitudes.count, id: \.self) { index in
-                let angle = Double(index) / Double(amplitudes.count) * 360
+            ForEach(0..<barCount, id: \.self) { index in
+                let angle = Double(index) / Double(barCount) * 360
                 let height = 8 + amplitudes[index] * 45
 
                 Capsule()

@@ -109,10 +109,9 @@ class FileAccessService: ObservableObject {
     private var inFlightBatches: Int {
         inFlightByGeneration.values.reduce(0, +)
     }
-    // Dos lectores simultáneos: evita abrir hasta 200 AVAsset a la vez.
-    // Lotes pequeños publican resultados pronto sin saturar E/S ni memoria.
-    private let maxInFlightBatches = 1
-    private let metadataBatchSize = 8
+    // ✅ OPTIMIZACIÓN A11: límites de concurrencia adaptativos según hardware
+    private var maxInFlightBatches: Int { HardwareCapabilities.shared.maxConcurrentIndexingBatches }
+    private var metadataBatchSize: Int { HardwareCapabilities.shared.indexingBatchSize }
     private let maxConcurrentMetadataReads = 2
 
     // Colecciones derivadas cacheadas: se recalculan solo cuando cambia `songs`,
@@ -151,11 +150,16 @@ class FileAccessService: ObservableObject {
 
     // 🔄 Precarga de portadas en caché tras recuperar del archivo
     func prewarmArtworkCache() {
+        // ✅ OPTIMIZACIÓN A11: pre-carga agresiva solo en dispositivos potentes
+        // En A11, limitar el número de precargas para evitar saturación de memoria
+        let hw = HardwareCapabilities.shared
+        let prewarmCount = hw.useAggressiveArtworkPrewarm ? 12 : 6
+        
         // ✅ Snapshot capturado en el hilo actual: leer `songs` (@Published,
         // main-actor) desde el hilo secundario era una carrera de datos.
         // Autoreleasepool por imagen libera los bitmaps intermedios de
         // decodificación en el mismo ciclo, sin esperar al pool del hilo.
-        let snapshot = Array(songs.prefix(12))
+        let snapshot = Array(songs.prefix(prewarmCount))
         DispatchQueue.global(qos: .utility).async {
             for song in snapshot {
                 autoreleasepool { _ = song.artwork }

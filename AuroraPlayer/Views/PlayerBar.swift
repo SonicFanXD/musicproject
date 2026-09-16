@@ -21,6 +21,7 @@ struct PlayerBar: View {
     @AppStorage("com.aurora.compactPlayerBar") private var compactPlayerBar = false
     // ✅ Ajuste "Visualizador en barra" (antes no se aplicaba)
     @AppStorage("com.aurora.showVisualizerInBar") private var showVisualizerInBar = true
+    @AppStorage("com.aurora.visualizerStyle") private var visualizerStyle = 0
 
     // ✅ Observar ThemeManager para que los cambios de acento (manual o desde carátula)
     // se apliquen instantáneamente sin necesidad de cambiar de canción.
@@ -234,10 +235,14 @@ struct PlayerBar: View {
     @ViewBuilder
     private func artwork(for song: Song) -> some View {
         if let art = song.artwork {
-            // ✅ ANTI-JETSAM: miniatura 96px (48pt @2x) en vez de la 768px completa.
-            Image(uiImage: art.preparingThumbnail(of: CGSize(width: 96, height: 96)) ?? art)
+            // ✅ ANTI-JETSAM: miniatura con tamaño adaptativo según hardware
+            // A11 usa 72px, otros dispositivos 96px para mejor calidad visual
+            let thumbnailSize = HardwareCapabilities.shared.playerBarArtworkSize
+            let interpolation = HardwareCapabilities.shared.useHighQualityInterpolation ? .high : .medium
+            
+            Image(uiImage: art.preparingThumbnail(of: CGSize(width: thumbnailSize, height: thumbnailSize)) ?? art)
                 .resizable()
-                .interpolation(.high) // ✅ Mejor calidad de interpolación
+                .interpolation(interpolation) // ✅ Calidad adaptativa según hardware
                 .scaledToFill()
                 .frame(width: 48, height: 48)
                 .clipShape(RoundedRectangle(cornerRadius: CGFloat(artworkCorner * (14.0 / 22.0)), style: .continuous))
