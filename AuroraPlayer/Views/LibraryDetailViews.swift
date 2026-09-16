@@ -6,8 +6,6 @@ struct AlbumDetailView: View {
     let album: Album
     @ObservedObject var audioEngine: AudioEngine
     @Environment(\.dismiss) private var dismiss
-    @State private var searchText = ""
-    @State private var debouncedSearchText = ""
 
     // Color dominante VIVO (histograma HSB) extraído en segundo plano
     @State private var liveDominantColor: UIColor? = nil
@@ -50,10 +48,8 @@ struct AlbumDetailView: View {
                         }
                     } else {
                         ForEach(Array(cachedSongs.enumerated()), id: \.element.id) { index, song in
-                            if debouncedSearchText.isEmpty || song.title.localizedCaseInsensitiveContains(debouncedSearchText) {
-                                AlbumSongRow(song: song, index: index, isCurrent: audioEngine.currentSong?.id == song.id, tintColor: tintColor) {
-                                    audioEngine.play(song: song, from: cachedSongs)
-                                }
+                            AlbumSongRow(song: song, index: index, isCurrent: audioEngine.currentSong?.id == song.id, tintColor: tintColor) {
+                                audioEngine.play(song: song, from: cachedSongs)
                             }
                         }
                     }
@@ -68,10 +64,6 @@ struct AlbumDetailView: View {
         .navigationTitle(album.name)
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.visible, for: .navigationBar)
-        .searchable(text: $searchText, prompt: Localization.localized("search.prompt"))
-        .onChange(of: searchText) { newValue in
-            debouncedSearchText = newValue.lowercased()
-        }
         .onAppear {
             // ? Cachear c�mputos una sola vez
             if cachedSongs.isEmpty {
@@ -483,8 +475,6 @@ struct ArtistDetailView: View {
     let artist: Artist
     @ObservedObject var audioEngine: AudioEngine
     @Environment(\.dismiss) private var dismiss
-    @State private var searchText = ""
-    @State private var debouncedSearchText = ""
 
     @State private var appearAnimation = false
     @State private var liveDominantColor: UIColor? = nil
@@ -515,9 +505,7 @@ struct ArtistDetailView: View {
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 14) {
                                 ForEach(cachedAlbums) { album in
-                                    NavigationLink {
-                                        AlbumDetailView(album: album, audioEngine: audioEngine)
-                                    } label: {
+                                    NavigationLink(destination: AlbumDetailView(album: album, audioEngine: audioEngine)) {
                                         ArtistAlbumCard(album: album)
                                     }
                                     .buttonStyle(.plain)
@@ -531,10 +519,8 @@ struct ArtistDetailView: View {
                 LazyVStack(spacing: 10) {
                     sectionHeader(icon: "music.note.list", title: Localization.localized("details.songs"), tintColor: tintColor)
                     ForEach(Array(cachedSongs.enumerated()), id: \.element.id) { index, song in
-                        if debouncedSearchText.isEmpty || song.title.localizedCaseInsensitiveContains(debouncedSearchText) {
-                            ArtistSongRow(song: song, index: index, isCurrent: audioEngine.currentSong?.id == song.id, tintColor: tintColor) {
-                                audioEngine.play(song: song, from: cachedSongs)
-                            }
+                        ArtistSongRow(song: song, index: index, isCurrent: audioEngine.currentSong?.id == song.id, tintColor: tintColor) {
+                            audioEngine.play(song: song, from: cachedSongs)
                         }
                     }
                 }
@@ -547,10 +533,6 @@ struct ArtistDetailView: View {
         .navigationTitle(artist.name)
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.visible, for: .navigationBar)
-        .searchable(text: $searchText, prompt: Localization.localized("search.prompt"))
-        .onChange(of: searchText) { newValue in
-            debouncedSearchText = newValue.lowercased()
-        }
         .onAppear {
             // ? Cachear c�mputos una sola vez
             if cachedAlbums.isEmpty {

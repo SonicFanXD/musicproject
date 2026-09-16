@@ -76,11 +76,12 @@ struct ContentView: View {
                         fileAccessService.refreshAllFolders()
                         try? await Task.sleep(nanoseconds: 600_000_000)
                     }
+                    .searchable(
+                        text: $searchText,
+                        prompt: Localization.localized("search.prompt")
+                    )
                 }
-                .searchable(
-                    text: $searchText,
-                    prompt: Localization.localized("search.prompt")
-                )
+
                 // ✅ BÚSQUEDA: mantener el índice sincronizado con la
                 // librería (solo se reconstruye cuando cambian las
                 // canciones/álbumes/artistas, nunca por tecla).
@@ -703,9 +704,7 @@ struct ContentView: View {
             // ✅ OPTIMIZACIÓN A11: LazyVStack para virtualización agresiva en listas grandes
             LazyVStack(spacing: 0) {
                 ForEach(albums) { album in
-                    NavigationLink {
-                        AlbumDetailView(album: album, audioEngine: audioEngine)
-                    } label: {
+                    NavigationLink(destination: AlbumDetailView(album: album, audioEngine: audioEngine)) {
                         albumListRow(album)
                     }
                     .buttonStyle(.plain).listRowSeparator(.hidden).listRowBackground(Color.clear)
@@ -750,9 +749,7 @@ struct ContentView: View {
             // ✅ OPTIMIZACIÓN A11: LazyVStack para virtualización agresiva en listas grandes
             LazyVStack(spacing: 0) {
                 ForEach(artists) { artist in
-                    NavigationLink {
-                        ArtistDetailView(artist: artist, audioEngine: audioEngine)
-                    } label: {
+                    NavigationLink(destination: ArtistDetailView(artist: artist, audioEngine: audioEngine)) {
                         artistListRow(artist)
                     }
                     .buttonStyle(.plain).listRowSeparator(.hidden).listRowBackground(Color.clear)
@@ -776,9 +773,7 @@ struct ContentView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 16) {
                     ForEach(playlists) { playlist in
-                        NavigationLink {
-                            PlaylistDetailView(playlist: playlist, fileAccessService: fileAccessService, audioEngine: audioEngine)
-                        } label: {
+                        NavigationLink(destination: PlaylistDetailView(playlist: playlist, fileAccessService: fileAccessService, audioEngine: audioEngine)) {
                             playlistLibraryCard(playlist: playlist)
                         }
                         .buttonStyle(.plain)
