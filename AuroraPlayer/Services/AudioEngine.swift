@@ -360,9 +360,48 @@ class AudioEngine: NSObject, ObservableObject {
     }
 
     // MARK: - Equalizador
+    /// ✅ Claves de persistencia del EQ. Antes el ecualizador se reiniciaba a
+    /// "desactivado / Plano" en CADA arranque porque su estado no se guardaba
+    /// (el Android equivalente sí lo guarda en SharedPreferences).
+    private enum EQDefaults {
+        static let enabled = "com.aurora.eqEnabled"
+        static let preset = "com.aurora.eqPreset"
+        static let gains = "com.aurora.eqGains"
+        static let manualEdits = "com.aurora.eqManualEdits"
+    }
+
     private var equalizerNode: AVAudioUnitEQ?
-    @Published var isEQEnabled: Bool = false
-    @Published var eqPreset: EQPreset = .flat
+    /// ✅ Revisión publicada: se incrementa con cada cambio de preset/banda para
+    /// que la UI del ecualizador refresque sus etiquetas ("+x.x dB"). Antes
+    /// `setEQGain` no publicaba nada y el texto quedaba desactualizado.
+    @Published private(set) var eqRevision: Int = 0
+    @Published var isEQEnabled: Bool = UserDefaults.standard.bool(forKey: EQDefaults.enabled) {
+        didSet {
+            if isEQEnabled != oldValue {
+                UserDefaults.standard.set(isEQEnabled, forKey: EQDefaults.enabled)
+                AppLog.info(.equalizer, "EQ \(isEQEnabled ? "activado" : "desactivado") (guardado)")
+            }
+        }
+    }
+    @Published var eqPreset: EQPreset = {
+        if let raw = UserDefaults.standard.string(forKey: EQDefaults.preset),
+           let preset = EQPreset(rawValue: raw) {
+            return preset
+        }
+        return .flat
+    }() {
+        didSet {
+            if eqPreset != oldValue {
+                UserDefaults.standard.set(eqPreset.rawValue, forKey: EQDefaults.preset)
+            }
+        }
+    }
+    /// ✅ Ganancia editada a mano (una o varias bandas): mantiene el EQ fuera
+    /// del bypass aunque el preset sea "Plano" — era el bug por el que mover un
+    /// slider con el preset Plano no sonaba absolutamente nada.
+    private var hasManualEQEdits: Bool = UserDefaults.standard.bool(forKey: EQDefaults.manualEdits) {
+        didSet { UserDefaults.standard.set(hasManualEQEdits, forKey: EQDefaults.manualEdits) }
+    }
     // ✅ Audio Mono: mezcla ambos canales en uno para usuarios con audífono único
     @Published var isMonoAudioEnabled: Bool = UserDefaults.standard.bool(forKey: "com.aurora.monoAudio") {
         didSet {
@@ -776,7 +815,11 @@ class AudioEngine: NSObject, ObservableObject {
             band.bypass = false
         }
 
-        eq.bypass = !isEQEnabled
+        // ✅ Restaurar el EQ guardado (ganancias de la sesión anterior) y
+        // recalcular bypass + headroom reales. Antes el bypass solo miraba
+        // `isEQEnabled` y el estado se perdía al cerrar la app.
+        restorePersistedEQGains()
+        updateEQBypassState()
         engine.attach(eq)
         reconnectPlayerNode(format: AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 2) ?? engine.outputNode.outputFormat(forBus: 0))
     }
@@ -825,10 +868,11 @@ class AudioEngine: NSObject, ObservableObject {
     }
 
     func toggleEQ() {
-        let wasProcessing = isEQEnabled && eqPreset != .flat
-        isEQEnabled.toggle()
+        let wasProcessing = isEQProcessing
+        isEQEnabled.toggle()          // ✅ se persiste en el didSet
         updateEQBypassState()
-        let willProcess = isEQEnabled && eqPreset != .flat
+        eqRevision &+= 1              // refresca las etiquetas de la UI
+        let willProcess = isEQProcessing
 
         // ✅ MÁXIMA CALIDAD: solo se reinicia la reproducción si el estado de
         // procesamiento REAL cambió (flat → sin procesamiento). Encender o
@@ -861,23 +905,32 @@ class AudioEngine: NSObject, ObservableObject {
 
     func setEQPreset(_ preset: EQPreset) {
         guard let eq = equalizerNode else { return }
-        eqPreset = preset
+        eqPreset = preset             // ✅ se persiste en el didSet
+        // ✅ Elegir un preset REEMPLAZA las ediciones manuales: si no, el flag
+        // seguiría activo con ganancias ya distintas a las del preset elegido.
+        hasManualEQEdits = false
         let gains = preset.gains
         for (index, gain) in gains.enumerated() {
             guard index < eq.bands.count else { break }
             eq.bands[index].gain = gain
         }
+        persistEQGains()
+        eqRevision &+= 1
         updateEQBypassState()
-        AppLog.info(.playback, "EQ preset: \(preset.displayName)")
+        AppLog.info(.equalizer, "EQ preset: \(preset.displayName) (guardado)")
     }
 
     /// ✅ MÁXIMA CALIDAD: el nodo EQ solo procesa cuando hace falta. "Flat"
     /// (ganancias a 0) → bypass total del AVAudioUnitEQ → la señal pasa por la
     /// ruta limpia sin pasar por 10 biquads en cascada (cero ruido/redondeo
     /// acumulado). Cualquier preset con ganancias ≠ 0 o edición manual de una
-    /// banda desactiva el bypass.
+    /// banda desactiva el bypass (✅ ahora de verdad, vía `hasManualEQEdits`).
+    private var isEQProcessing: Bool {
+        isEQEnabled && (eqPreset != .flat || hasManualEQEdits)
+    }
+
     private func updateEQBypassState() {
-        equalizerNode?.bypass = !(isEQEnabled && eqPreset != .flat)
+        equalizerNode?.bypass = !isEQProcessing
         applyEQHeadroom()
     }
 
@@ -889,7 +942,7 @@ class AudioEngine: NSObject, ObservableObject {
     /// ganancia máxima positiva del EQ: EQ off → 1.0 (bit-transparente);
     /// EQ on → atenuación justa para que el realce no recorte.
     private func applyEQHeadroom() {
-        let processing = isEQEnabled && eqPreset != .flat
+        let processing = isEQProcessing
         var maxGain: Float = 0
         if processing, let eq = equalizerNode {
             maxGain = eq.bands.map(\.gain).max() ?? 0
@@ -903,7 +956,41 @@ class AudioEngine: NSObject, ObservableObject {
         eq.bands[band].gain = gain
         // ✅ Edición manual → des-bypass + recalcular headroom (una ganancia
         // subida a mano también puede provocar clipping).
+        // ⚠️ BUG corregido: `updateEQBypassState()` solo miraba el preset, así
+        // que con el preset "Plano" el nodo seguía en bypass y mover el slider
+        // NO cambiaba nada el sonido (aunque la UI mostrara ±x dB). El flag
+        // `hasManualEQEdits` mantiene el procesamiento activo y se guarda.
+        hasManualEQEdits = true
+        persistEQGains()
+        eqRevision &+= 1
         updateEQBypassState()
+    }
+
+    // MARK: - Persistencia del ecualizador
+    /// Guarda las 10 ganancias actuales del nodo (preset o edición manual).
+    private func persistEQGains() {
+        guard let eq = equalizerNode else { return }
+        UserDefaults.standard.set(eq.bands.map { Double($0.gain) }, forKey: EQDefaults.gains)
+    }
+
+    /// Restaura las ganancias guardadas; si no hay ninguna válida (primera
+    /// ejecución o biblioteca de bandas distinta), aplica las del preset.
+    private func restorePersistedEQGains() {
+        guard let eq = equalizerNode else { return }
+        if let raw = UserDefaults.standard.array(forKey: EQDefaults.gains) {
+            let saved = raw.compactMap { ($0 as? NSNumber)?.doubleValue }
+            if saved.count == eq.bands.count {
+                for (index, gain) in saved.enumerated() {
+                    eq.bands[index].gain = Float(gain)
+                }
+                AppLog.info(.equalizer, "EQ restaurado: \(isEQEnabled ? "activo" : "desactivado") · \(eqPreset.displayName)\(hasManualEQEdits ? " · bandas editadas a mano" : "")")
+                return
+            }
+        }
+        let gains = eqPreset.gains
+        for (index, gain) in gains.enumerated() where index < eq.bands.count {
+            eq.bands[index].gain = gain
+        }
     }
 
     // MARK: - Audio Mono
@@ -1586,10 +1673,19 @@ class AudioEngine: NSObject, ObservableObject {
     }
 
     func seek(to time: TimeInterval) {
+        guard time.isFinite, duration.isFinite, duration > 0 else { return }
+        // Soltar al 100 % deja el tema en pausa justo antes del último frame;
+        // no debe disparar playNext desde scheduleFile ni desde AVPlayer.
+        if time >= duration { pause() }
+        let upperBound = max(0, duration - 0.05)
+        let targetTime = max(0, min(time, upperBound))
         guard let file = audioFile else {
             if isUsingFallback {
-                let cmTime = CMTime(seconds: time, preferredTimescale: 1000)
+                let cmTime = CMTime(seconds: targetTime, preferredTimescale: 1000)
                 avPlayer?.seek(to: cmTime)
+                currentTime = targetTime
+                anchorPlaybackPosition(targetTime)
+                updateNowPlayingInfo()
             }
             return
         }
@@ -1607,7 +1703,10 @@ class AudioEngine: NSObject, ObservableObject {
         // adelantado; hay que volver a programarla tras el seek.
         clearChainedAhead()
 
-        let clampedTime = max(0, min(time, duration))
+        guard file.length > 0, file.processingFormat.sampleRate.isFinite,
+              file.processingFormat.sampleRate > 0 else { return }
+        let fileEnd = max(0, Double(file.length) / file.processingFormat.sampleRate - 0.05)
+        let clampedTime = min(targetTime, fileEnd)
         currentTime = clampedTime
         // ✅ RELOJ DE PARED: anclar la extrapolación en la posición buscada.
         anchorPlaybackPosition(clampedTime)
@@ -1727,15 +1826,9 @@ class AudioEngine: NSObject, ObservableObject {
         updatePlaybackQueue()
         updateNextUpQueue()
 
-        if state["isPlaying"] as? Bool == true {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
-                guard let self = self, self.currentSong?.id == song.id else { return }
-                // ✅ FIX posición: playCurrentSong(resumingAt:) reanuda desde la
-                // posición guardada (playCurrentSong() a secas siempre arranca
-                // de 0 — antes la canción se reiniciaba al abrir la app).
-                self.playCurrentSong(resumingAt: self.currentTime)
-            }
-        }
+        // Restaurar no debe arrancar audio. ContentView.maybeAutoResume es el
+        // único responsable del ajuste explícito «Reproducir al iniciar».
+
         AppLog.info(.playback, String(format: "Estado restaurado: '%@' @ %.1fs · reproduciendo: %@", song.displayName, currentTime, state["isPlaying"] as? Bool == true ? "sí" : "no"))
         saveState()
     }
@@ -1762,12 +1855,38 @@ class AudioEngine: NSObject, ObservableObject {
     }
 
     private func rebuildPlaylistFromQueue() {
-        // La playlist actual = [canción actual] + cola siguiente
+        // ✅ FIX (cola destructiva): `nextUpQueue` contiene AHORA toda la lista
+        // pendiente (antes solo 3 canciones), así que reconstruir la playlist
+        // como [actual] + cola aplica exactamente la edición del usuario
+        // (reordenar / eliminar / limpiar) SIN perder el resto de la música.
         guard currentIndex >= 0, currentIndex < playlist.count else { return }
         let current = playlist[currentIndex]
         playlist = [current] + nextUpQueue
         currentIndex = 0
+        // El orden aleatorio original ya no representa la lista editada a mano:
+        // descartarlo evita que apagar el shuffle revierta la edición.
         originalPlaylist = []
+        updatePlaybackQueue()
+
+        // ✅ El segmento gapless ya programado en el nodo NO se puede
+        // desprogramar con la API de AVAudioPlayerNode: si la canción que se
+        // había encadenado por adelantado ya no es la siguiente de la cola
+        // (fue eliminada o movida), hay que descartarla re-programando la
+        // canción actual desde su posición exacta — el mismo camino probado del
+        // scrub (seek) — o, en pausa, limpiar el encadenado.
+        let expectedNextID = nextUpQueue.first?.id
+        if let chained = chainedAheadSong, chained.id != expectedNextID {
+            if isPlaying {
+                AppLog.info(.playback, "Cola editada: se descarta el encadenado obsoleto")
+                seek(to: wallClockTime)
+            } else {
+                clearChainedAhead()
+            }
+        } else if let chained = chainedAheadSong,
+                  let newIndex = playlist.firstIndex(where: { $0.id == chained.id }) {
+            // Sigue siendo la siguiente, pero cambió de índice (reordenada).
+            chainedAheadIndex = newIndex
+        }
     }
 
     private func startDisplayTimer(isBackground: Bool = false) {
@@ -1969,7 +2088,14 @@ class AudioEngine: NSObject, ObservableObject {
             return
         }
         let upcoming = Array(playlist.suffix(from: nextIndex))
-        nextUpQueue = Array(upcoming.prefix(3))
+        // ✅ FIX (cola destructiva): antes se publicaban solo las 3 siguientes
+        // (`prefix(3)`), pero rebuildPlaylistFromQueue() reconstruye la playlist
+        // como [actual] + nextUpQueue → CUALQUIER edición en la hoja Cola
+        // (reordenar, eliminar, limpiar) TRUNCABA la reproducción a 4 canciones
+        // y al terminarlas se detenía sola.
+        // Ahora la cola refleja TODA la lista pendiente: editarla altera
+        // exactamente lo que va a sonar y conserva el resto del álbum/playlist.
+        nextUpQueue = upcoming
     }
 
     private func addToHistory(_ song: Song) {
@@ -2055,6 +2181,7 @@ class AudioEngine: NSObject, ObservableObject {
 
     // ✅ Auto-reanudación al conectar audífonos
     private var wasPlayingBeforeRouteChange = false
+    private var wasPlayingBeforeInterruption = false
 
     /// ¿La salida de audio dada es de tipo "audífonos/BT/dispositivo externo"?
     private static func isHeadphonePort(_ port: AVAudioSession.Port) -> Bool {
@@ -2186,23 +2313,16 @@ class AudioEngine: NSObject, ObservableObject {
                   let info = notification.userInfo,
                   let typeVal = info[AVAudioSessionInterruptionTypeKey] as? UInt,
                   let type = AVAudioSession.InterruptionType(rawValue: typeVal) else { return }
-            if type == .began && self.isPlaying {
-                self.pause()
+            if type == .began {
+                self.wasPlayingBeforeInterruption = self.isPlaying
+                if self.isPlaying { self.pause() }
             } else if type == .ended {
                 let shouldResume = (info[AVAudioSessionInterruptionOptionKey] as? UInt)
                     .flatMap { AVAudioSession.InterruptionOptions(rawValue: $0) }
                     .map { $0.contains(.shouldResume) } ?? false
-                // ✅ Resistente a pausas no otorgadas: si la interrupción terminó
-                // (ej. llamada finalizada, video pausado por el usuario) y NO
-                // venía con shouldResume pero la app estaba reproduciendo antes,
-                // reanudamos manualmente para no quedar colgados en pausa.
-                if shouldResume {
-                    self.resume()
-                } else if self.wasPlayingBeforeRouteChange {
-                    // La interrupción fue por el sistema (llamada/video):
-                    // reanudar solo si fue un interruptor temporal que terminó.
-                    self.resume()
-                }
+                let canResume = shouldResume && self.wasPlayingBeforeInterruption
+                self.wasPlayingBeforeInterruption = false
+                if canResume { self.resume() }
             }
         }
     }

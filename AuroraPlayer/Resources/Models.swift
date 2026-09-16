@@ -130,6 +130,18 @@ struct Song: Identifiable, Equatable, Codable {
         self.bitrate = bitrate
     }
 
+    static func displayAlbumName(_ value: String) -> String {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return ["", "Álbum desconocido", "Unknown Album"].contains(trimmed)
+            ? Localization.localized("details.unknownAlbum") : value
+    }
+
+    static func displayArtistName(_ value: String) -> String {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return ["", "Artista desconocido", "Unknown Artist"].contains(trimmed)
+            ? Localization.localized("details.unknownArtist") : value
+    }
+
     static func == (lhs: Song, rhs: Song) -> Bool {
         lhs.id == rhs.id
     }
@@ -193,8 +205,8 @@ extension Song {
         // Cada UIImage decodificada ocupa ancho×alto×4 bytes en RAM (768²×4 =
         // 2.4MB a la resolución actual). countLimit 500 sin costLimit permitía
         // >1GB de bitmaps → jetsam kill al scrollear listas grandes.
-        cache.countLimit = 120
-        cache.totalCostLimit = 200 * 1024 * 1024 // 200MB de bitmaps decodificados
+        cache.countLimit = 32
+        cache.totalCostLimit = 48 * 1024 * 1024 // Presupuesto reducido para dispositivos como iPhone 8 Plus
         return cache
     }()
 
@@ -345,13 +357,13 @@ struct Artist: Identifiable, Equatable {
         // ✅ FIX multi-disco: misma normalización que la biblioteca — los discos
         // del mismo álbum con nombres distintos en los metadatos se unen en uno.
         let grouped = Dictionary(grouping: songs) { song -> String in
-            Song.albumGroupKey(album: song.album, artist: name)
+            Song.albumGroupKey(album: Song.displayAlbumName(song.album), artist: name)
         }
         return grouped.map { (key, albumSongs) in
-            let originalAlbums = albumSongs.map { $0.album.isEmpty ? "Álbum desconocido" : $0.album }
+            let originalAlbums = albumSongs.map { Song.displayAlbumName($0.album) }
             let albumName = originalAlbums.count > 1
                 ? Song.normalizedAlbumName(originalAlbums.first ?? "")
-                : (originalAlbums.first ?? "Álbum desconocido")
+                : (originalAlbums.first ?? Localization.localized("details.unknownAlbum"))
             return Album(
                 name: albumName,
                 artist: name,
@@ -383,6 +395,16 @@ struct Playlist: Identifiable, Codable {
         self.createdAt = createdAt
         self.modifiedAt = modifiedAt
         self.coverArtworkData = coverArtworkData
+    }
+
+    /// Solo cambia la presentación; el nombre guardado conserva la identidad histórica.
+    var displayName: String {
+        name == "Me Gusta" ? Localization.localized("library.likedPlaylist") : name
+    }
+
+    var displayDescription: String {
+        name == "Me Gusta" && description == "Canciones que te gustan"
+            ? Localization.localized("library.likedPlaylistDesc") : description
     }
 
     var artwork: UIImage? {

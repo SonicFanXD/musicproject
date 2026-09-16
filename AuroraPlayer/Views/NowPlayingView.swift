@@ -12,6 +12,10 @@ struct NowPlayingView: View {
     let clock: PlaybackClock
     // ✅ Observar el idioma: al cambiar, esta vista se re-renderiza al instante
     @ObservedObject private var localization = Localization.shared
+    // ✅ Observar el tema: al activar/desactivar "Acento desde carátula" (o al
+    // resolverse el color dominante de forma asíncrona) esta vista se entera y
+    // vuelve a aplicar los colores, sin quedarse con los de la portada anterior.
+    @ObservedObject private var theme = ThemeManager.shared
     @Environment(\.dismiss) private var dismiss
 
     // Configuraciones de personalización
@@ -42,21 +46,17 @@ struct NowPlayingView: View {
     // ✅ Scrub optimizado: preview local a 60fps, seek real solo al soltar.
     // (isScrubbing/scrubPreviewTime/progressBarWidth viven en ProgressScrubView)
 
-    // MARK: - Adaptive sizing for iOS 16 & iPhone 8 Plus
-    private var isCompactScreen: Bool {
-        UIScreen.main.bounds.height < 800
-    }
+    // Tamaño de la vista presentada, no de la pantalla física (rotación/iPad).
+    @State private var availableSize = CGSize(width: 414, height: 736)
+    private var isCompactScreen: Bool { availableSize.height < 800 }
 
     private var artworkSize: CGFloat {
-        let screenWidth = UIScreen.main.bounds.width
-        let screenHeight = UIScreen.main.bounds.height
-        // ✅ MEJORADO: Portada más grande y mejor centrada
-        let maxByWidth = screenWidth - 40
-        let maxByHeight = screenHeight * (isCompactScreen ? 0.32 : 0.42)
+        let maxByWidth = max(0, availableSize.width - 48)
+        let maxByHeight = availableSize.height * (isCompactScreen ? 0.32 : 0.42)
         return min(340, maxByWidth, maxByHeight)
     }
 
-    // ✅ Contraste: si el color dominante es claro → texto oscuro; si es oscuro → texto blanco
+    // Blanco fijo por preferencia de diseño.
     private var playIconColor: Color { AppTheme.contrastingText(on: extractedUIColor) }
 
     // ✅ NUEVO: resoluciones para el menú de 3 puntos (artista/álbum actuales)
@@ -159,6 +159,13 @@ struct NowPlayingView: View {
                 .padding(.horizontal, 24)
                 .fixedSize(horizontal: false, vertical: true)
             }
+            .background {
+                GeometryReader { geometry in
+                    Color.clear
+                        .onAppear { availableSize = geometry.size }
+                        .onChange(of: geometry.size) { availableSize = $0 }
+                }
+            }
             .onAppear {
                 extractColorFromArtwork()
                 AppLog.info(.interface, "NowPlaying abierto: '\(audioEngine.currentSong?.displayName ?? "—")'")
@@ -181,15 +188,21 @@ struct NowPlayingView: View {
                 // y todas las vistas que lo observen se actualicen al instante
                 ThemeManager.shared.updateArtworkAccent(from: audioEngine.currentSong)
             }
-            .onChange(of: ThemeManager.shared.accentFromArtwork) { value in
-                // ✅ FIX: propaga el color a ThemeManager (que a su vez publica a
-                // PlayerBar y todas las vistas) — no solo re-extraer localmente.
-                // Así PlayerBar/NowPlaying cambian de acento al activar el toggle
-                // en Settings sin esperar a un cambio de canción.
+            .onChange(of: theme.accentFromArtwork) { value in
+                // ✅ FIX: se re-extrae en AMBOS sentidos. Antes, al DESACTIVAR
+                // el acento desde la carátula, `extractedUIColor` se quedaba con
+                // el color de la portada anterior → mezcla de colores en la
+                // vista (barra con el acento real e iconos/tiempos con el viejo).
                 if value, let song = audioEngine.currentSong {
                     ThemeManager.shared.updateArtworkAccent(from: song)
-                    extractColorFromArtwork()
                 }
+                extractColorFromArtwork()
+            }
+            .onChange(of: theme.artworkAccentUIColor) { _ in
+                // El color dominante puede resolverse de forma asíncrona (o
+                // llegar desde otra vista): al cambiar, se vuelve a aplicar para
+                // que barra, iconos y tiempos usen siempre el mismo color.
+                extractColorFromArtwork()
             }
             // ✅ NUEVO: destinos del menú de 3 puntos
             .sheet(isPresented: $showArtistDetail) {
@@ -760,13 +773,18 @@ struct NowPlayingView: View {
 private func extractColorFromArtwork() {
         // UNIFICADO: un solo ajuste maestro (ThemeManager.accentFromArtwork)
         // controla el acento de portada en TODOS los entornos.
+        // ✅ FIX: SIEMPRE se actualizan los DOS colores (antes solo se reseteaba
+        // `extractedColor`, así que `extractedUIColor` conservaba el color de la
+        // portada anterior → iconos y textos con un color y la barra con otro).
         guard ThemeManager.shared.accentFromArtwork else {
             extractedColor = AppTheme.accent
+            extractedUIColor = AppTheme.accentUIColor
             return
         }
 
         guard let artwork = audioEngine.currentSong?.artwork, let songID = audioEngine.currentSong?.id else {
             extractedColor = AppTheme.accent
+            extractedUIColor = AppTheme.accentUIColor
             return
         }
 
@@ -776,7 +794,9 @@ private func extractColorFromArtwork() {
             extractedUIColor = cached
             return
         }
+        // Sin color calculable → volver al acento real (y no dejar el anterior).
         extractedColor = AppTheme.accent
+        extractedUIColor = AppTheme.accentUIColor
     }
 }
 
@@ -818,7 +838,7 @@ private struct ProgressScrubView: View {
             GeometryReader { geometry in
                 // ✅ Feedback táctil: la barra engrosa al hacer scrub
                 // (animación de frame → GPU, sin costo de calidad)
-                let barHeight: CGFloat = isScrubbing ? 10 : 6
+                let barHeight: CGFloat = isScrubbing ? 10 : 4
                 ZStack(alignment: .leading) {
                     RoundedRectangle(cornerRadius: 5, style: .continuous)
                         .fill(Color.secondary.opacity(0.2))
@@ -841,7 +861,7 @@ private struct ProgressScrubView: View {
                         .overlay(alignment: .leading) {
                             Circle()
                                 .fill(.white)
-                                .frame(width: isScrubbing ? 14 : 10, height: isScrubbing ? 14 : 10)
+                                .frame(width: isScrubbing ? 14 : 12, height: isScrubbing ? 14 : 12)
                                 .shadow(color: .black.opacity(0.2), radius: 3, x: 0, y: 1)
                                 .position(
                                     x: geometry.size.width * progress,
@@ -871,11 +891,18 @@ private struct ProgressScrubView: View {
             .gesture(
                 DragGesture(minimumDistance: 0)
                     .onChanged { value in
+                        guard progressBarWidth.isFinite, progressBarWidth > 0,
+                              value.location.x.isFinite, audioEngine.duration.isFinite,
+                              audioEngine.duration > 0 else { return }
                         isScrubbing = true
                         let percentage = max(0, min(1, value.location.x / progressBarWidth))
                         scrubPreviewTime = audioEngine.duration * percentage
                     }
                     .onEnded { value in
+                        defer { isScrubbing = false }
+                        guard progressBarWidth.isFinite, progressBarWidth > 0,
+                              value.location.x.isFinite, audioEngine.duration.isFinite,
+                              audioEngine.duration > 0 else { return }
                         let percentage = max(0, min(1, value.location.x / progressBarWidth))
                         let newTime = audioEngine.duration * percentage
                         isScrubbing = false

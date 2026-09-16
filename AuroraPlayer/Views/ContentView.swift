@@ -897,7 +897,7 @@ struct ContentView: View {
                             Haptics.light()
                             fileAccessService.addSongToPlaylist(song, playlist: playlist)
                         } label: {
-                            Label(playlist.name, systemImage: "music.note.list")
+                            Label(playlist.displayName, systemImage: "music.note.list")
                         }
                     }
                 } label: {
@@ -1084,11 +1084,11 @@ struct ContentView: View {
             return ascending ? artists.sorted { $0.songs.count < $1.songs.count }
                              : artists.sorted { $0.songs.count > $1.songs.count }
         case .albumCount:
-            let counts = Dictionary(uniqueKeysWithValues: artists.map { ($0.id, $0.albums.count) })
+            let counts = Dictionary(artists.map { ($0.id, $0.albums.count) }, uniquingKeysWith: { first, _ in first })
             return ascending ? artists.sorted { counts[$0.id, default: 0] < counts[$1.id, default: 0] }
                              : artists.sorted { counts[$0.id, default: 0] > counts[$1.id, default: 0] }
         case .duration:
-            let durations = Dictionary(uniqueKeysWithValues: artists.map { ($0.id, $0.songs.reduce(0) { $0 + $1.duration }) })
+            let durations = Dictionary(artists.map { ($0.id, $0.songs.reduce(0) { $0 + $1.duration }) }, uniquingKeysWith: { first, _ in first })
             return ascending ? artists.sorted { durations[$0.id, default: 0] < durations[$1.id, default: 0] }
                              : artists.sorted { durations[$0.id, default: 0] > durations[$1.id, default: 0] }
         }
@@ -1122,7 +1122,8 @@ struct ContentView: View {
               audioEngine.currentSong != nil,
               !audioEngine.isPlaying else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [audioEngine] in
-            if audioEngine.currentSong != nil, !audioEngine.isPlaying {
+            if UserDefaults.standard.bool(forKey: "com.aurora.autoPlayOnStart"),
+               audioEngine.currentSong != nil, !audioEngine.isPlaying {
                 audioEngine.resume()
             }
         }
@@ -1603,7 +1604,7 @@ struct playlistLibraryCard: View {
             }
 
             VStack(alignment: .leading, spacing: 3) {
-                Text(playlist.name)
+                Text(playlist.displayName)
                     .font(.system(size: 14, weight: .semibold, design: .rounded))
                     .foregroundStyle(.primary).lineLimit(1)
                 Text(localizedSongCount(playlist.songIDs.count))

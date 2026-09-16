@@ -82,6 +82,13 @@ class FileAccessService: ObservableObject {
     private var seenOnDiskKeys = Set<String>()
     private var pruneMissingOnFinish = false
     private var activeDiscoveries = 0
+    /// ✅ PODA SEGURA: número de carpetas/archivos que NO se pudieron consultar
+    /// en el escaneo actual (bookmark que no resuelve, sin permiso, enumerador
+    /// caído). Con ≥1 fallo la poda de "canciones borradas" se OMITE, porque no
+    /// se puede distinguir entre "borrada del disco" y "no accesible ahora
+    /// mismo" (iCloud sin descargar, carpeta de red caída, permiso reseteado).
+    private var failedDiscoveries = 0
+    private let cacheWriteQueue = DispatchQueue(label: "com.aurora.libraryCache", qos: .utility)
     private var cacheSaveWorkItem: DispatchWorkItem?
     private var sortWorkItem: DispatchWorkItem?
 
@@ -102,16 +109,17 @@ class FileAccessService: ObservableObject {
     private var inFlightBatches: Int {
         inFlightByGeneration.values.reduce(0, +)
     }
-    // ✅ CONCURRENCIA OPTIMIZADA: 4 lotes en paralelo × 50 URLs = máx 200
-    // AVAsset.load simultáneos. Balance entre velocidad y estabilidad.
-    private let maxInFlightBatches = 4
-    // ✅ Lotes optimizados: tamaño moderado para evitar picos de memoria
-    private let metadataBatchSize = 50
+    // Dos lectores simultáneos: evita abrir hasta 200 AVAsset a la vez.
+    // Lotes pequeños publican resultados pronto sin saturar E/S ni memoria.
+    private let maxInFlightBatches = 1
+    private let metadataBatchSize = 8
+    private let maxConcurrentMetadataReads = 2
 
     // Colecciones derivadas cacheadas: se recalculan solo cuando cambia `songs`,
     // no en cada render de la UI.
     private var cachedAlbums: [Album] = []
     private var cachedArtists: [Artist] = []
+    private var derivedLanguage: Localization.Language?
     private var pendingSongs: [Song] = []
     private var isSortScheduled = false
 
@@ -143,11 +151,14 @@ class FileAccessService: ObservableObject {
 
     // 🔄 Precarga de portadas en caché tras recuperar del archivo
     func prewarmArtworkCache() {
-        DispatchQueue.global(qos: .utility).async { [weak self] in
-            guard let self else { return }
-            let songsToWarm = self.songs.prefix(50)
-            for song in songsToWarm {
-                _ = song.artwork // Fuerza la extracción y caché
+        // ✅ Snapshot capturado en el hilo actual: leer `songs` (@Published,
+        // main-actor) desde el hilo secundario era una carrera de datos.
+        // Autoreleasepool por imagen libera los bitmaps intermedios de
+        // decodificación en el mismo ciclo, sin esperar al pool del hilo.
+        let snapshot = Array(songs.prefix(12))
+        DispatchQueue.global(qos: .utility).async {
+            for song in snapshot {
+                autoreleasepool { _ = song.artwork }
             }
         }
     }
@@ -277,7 +288,10 @@ class FileAccessService: ObservableObject {
         var stale = false
         do {
             let url = try URL(resolvingBookmarkData: file.bookmarkData, bookmarkDataIsStale: &stale)
-            guard url.startAccessingSecurityScopedResource() else { return }
+            guard url.startAccessingSecurityScopedResource() else {
+                noteDiscoveryFailure("sin acceso al archivo \(file.displayName)")
+                return
+            }
             // ✅ BOOKMARKS: liberar el acceso previo antes de sobreescribir el
             // mapa (cada rescan acumulaba un start sin su stop).
             if let previous = activeFileURLs[file.id] {
@@ -285,7 +299,10 @@ class FileAccessService: ObservableObject {
             }
             activeFileURLs[file.id] = url
             scanSingleFile(url)
-        } catch { AppLog.error(.library, "No se pudo restaurar \(file.displayName): \(error.localizedDescription)") }
+        } catch {
+            noteDiscoveryFailure("bookmark no resoluble de \(file.displayName)")
+            AppLog.error(.library, "No se pudo restaurar \(file.displayName): \(error.localizedDescription)")
+        }
     }
 
     private func rescanAllFolders() {
@@ -298,6 +315,7 @@ class FileAccessService: ObservableObject {
         // 3) al terminar, se eliminan las que ya no existen en disco
         //    (canciones borradas fuera de la app).
         scanGeneration += 1
+        sortWorkItem?.cancel()
         queuedBatches.removeAll(keepingCapacity: true)
         pendingSongs = []
         isSortScheduled = false
@@ -307,6 +325,7 @@ class FileAccessService: ObservableObject {
         scanTotal = 0
         scanProcessed = 0
         activeDiscoveries = 0
+        failedDiscoveries = 0
         isScanning = !folders.isEmpty || !files.isEmpty
         AppLog.info(.library, "Re-escaneo iniciado: \(folders.count) carpetas, \(files.count) archivos sueltos")
         guard !folders.isEmpty || !files.isEmpty else {
@@ -329,6 +348,18 @@ class FileAccessService: ObservableObject {
         // arrancó sigue escaneando; si no, cierra limpio (con seenOnDiskKeys
         // vacío la poda NO se aplica — carpeta ilegible ≠ canciones borradas).
         updateScanningState()
+    }
+
+    /// ✅ PODA SEGURA: registra que una carpeta/archivo no pudo consultarse en
+    /// este escaneo. Se contabiliza en el main para que el contador esté
+    /// sincronizado cuando `updateScanningState()` decide si puede podar.
+    private func noteDiscoveryFailure(_ detail: String) {
+        if Thread.isMainThread {
+            failedDiscoveries += 1
+        } else {
+            DispatchQueue.main.async { [weak self] in self?.failedDiscoveries += 1 }
+        }
+        AppLog.warning(.library, "Descubrimiento fallido (\(detail)): se omitirá la poda de este escaneo")
     }
 
     /// RAM residente actual en MB (diagnóstico de rendimiento en los logs
@@ -395,6 +426,7 @@ class FileAccessService: ObservableObject {
             )
 
             guard url.startAccessingSecurityScopedResource() else {
+                noteDiscoveryFailure("sin acceso a la carpeta \(folder.displayName)")
                 AppLog.error(.library, "No se pudo acceder a: \(folder.displayName)")
                 return
             }
@@ -426,6 +458,7 @@ class FileAccessService: ObservableObject {
 
             scanFolder(url)
         } catch {
+            noteDiscoveryFailure("bookmark no resoluble de la carpeta \(folder.displayName)")
             AppLog.error(.library, "Error al resolver bookmark de \(folder.displayName): \(error.localizedDescription)")
         }
     }
@@ -459,8 +492,18 @@ class FileAccessService: ObservableObject {
             guard let enumerator = FileManager.default.enumerator(
                 at: url,
                 includingPropertiesForKeys: keys,
-                options: [.skipsHiddenFiles]
+                options: [.skipsHiddenFiles],
+                errorHandler: { failedURL, error in
+                    DispatchQueue.main.async { [weak self] in
+                        guard let self, self.scanGeneration == generation else { return }
+                        self.noteDiscoveryFailure("\(failedURL.lastPathComponent): \(error.localizedDescription)")
+                    }
+                    return true // Continuar con las demás carpetas, pero no podar.
+                }
             ) else {
+                // ✅ Un enumerador imposible (permiso revocado, unidad de red
+                // caída…) NO significa que las canciones se borraran.
+                noteDiscoveryFailure("enumerador no disponible en \(url.lastPathComponent)")
                 AppLog.error(.library, "No se pudo crear enumerador para: \(url.lastPathComponent)")
                 return
             }
@@ -587,16 +630,25 @@ class FileAccessService: ObservableObject {
             // INDEXACIÓN PARALELA: procesar las URLs del lote CONCURRENTEMENTE.
             // Los índices preservan el orden original para resultados deterministas.
             let foundSongs: [Song] = await withTaskGroup(of: (Int, Song?).self) { group in
-                for (index, url) in batch.urls.enumerated() {
-                    group.addTask { [weak self] in
-                        guard let self else { return (index, nil) }
-                        let song = await self.makeSong(from: url)
-                        return (index, song)
+                let initialCount = min(self.maxConcurrentMetadataReads, batch.urls.count)
+                for index in 0..<initialCount {
+                    group.addTask {
+                        (index, await self.makeSong(from: batch.urls[index]))
                     }
                 }
+                var nextIndex = initialCount
                 var results = Array<Song?>(repeating: nil, count: batch.urls.count)
                 for await (index, song) in group {
                     results[index] = song
+                    // Ventana acotada: no crear una tarea por cada URL del lote.
+                    let isCurrent = await MainActor.run { self.scanGeneration == generation }
+                    if isCurrent, nextIndex < batch.urls.count {
+                        let workIndex = nextIndex
+                        nextIndex += 1
+                        group.addTask {
+                            (workIndex, await self.makeSong(from: batch.urls[workIndex]))
+                        }
+                    }
                 }
                 return results.compactMap { $0 }
             }
@@ -637,6 +689,7 @@ class FileAccessService: ObservableObject {
         // grandes). Las canciones que lleguen durante los 100ms de delay
         // permanecen en pendingSongs y las incorpora el siguiente sort o el
         // final (mismas garantías que había, sin la carrera).
+        let generation = scanGeneration
         let snapshot = songs + pendingSongs
 
         // ✅ Usar DispatchWorkItem para poder cancelar si llega otro lote
@@ -653,6 +706,7 @@ class FileAccessService: ObservableObject {
             }
 
             DispatchQueue.main.async {
+                guard self.scanGeneration == generation else { return }
                 self.isSortScheduled = false
                 self.songs = sortedSongs
                 // ✅ ANTES `pendingSongs.removeAll()` borraba TODO, incluso las
@@ -667,15 +721,17 @@ class FileAccessService: ObservableObject {
                 self.scheduleCacheSave()
                 // Si quedaron canciones por incorporar (caso límite de orden de
                 // llegada), re-intentar el flush/sort final.
-                if !self.pendingSongs.isEmpty {
-                    self.updateScanningState()
+                if !self.pendingSongs.isEmpty && self.isScanning {
+                    self.scheduleSortAndCache()
                 }
+                self.updateScanningState()
             }
         }
 
-        // ✅ OPTIMIZACIÓN: Delay reducido de 200ms a 100ms para mayor velocidad
-        // sin bloquear el thread principal
-        DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 0.1, execute: sortWorkItem!)
+        // Publicación acotada: agrupa lotes en vez de invalidar toda la UI a 10 Hz.
+        if let work = sortWorkItem {
+            DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 0.75, execute: work)
+        }
     }
 
     private func finishDiscovery(generation: Int) {
@@ -685,29 +741,37 @@ class FileAccessService: ObservableObject {
     }
 
     private func updateScanningState() {
-        let wasScanning = isScanning
+        // Incluye la publicación pendiente: el indicador no termina antes del último lote.
         // ✅ FIX: isScanning también debe considerar los lotes pendientes de
         // procesar. Antes, si finishDiscovery bajaba activeDiscoveries a 0 pero
         // quedaban lotes en la cola, isScanning pasaba a false prematuramente y
         // el sort final tomaba `songs + pendingSongs` INCOMPLETO.
         let hasPendingWork = !queuedBatches.isEmpty || inFlightBatches > 0
-        isScanning = activeDiscoveries > 0 || scanProcessed < scanTotal || hasPendingWork
+        isScanning = activeDiscoveries > 0 || scanProcessed < scanTotal || hasPendingWork || isSortScheduled
 
         // ✅ Al finalizar: verificar si hay sort pendiente que ejecutar.
         // El rescan DIFERENCIAL también debe cerrar aunque NO haya canciones
         // nuevas (pendingSongs vacío): si no, la poda de borrados nunca corre
         // y el pruneMissingOnFinish quedaría pendiente para siempre.
-        if wasScanning && !isScanning && (!pendingSongs.isEmpty || pruneMissingOnFinish) && !isSortScheduled {
-            // ✅ Final sort en background para evitar congelamiento (sin sleep)
+        if !isScanning && (!pendingSongs.isEmpty || pruneMissingOnFinish) && !isSortScheduled {
+            // El cierre puede llegar después del sort parcial, sin transición true→false.
             isSortScheduled = true
+            isScanning = true
+            let generation = scanGeneration
             let shouldPrune = pruneMissingOnFinish
             let seenKeys = seenOnDiskKeys
             // ✅ Deduplicar al fusionar (mismos duplicados que en el sort de arriba).
             var allSongs = dedupeSongsByUrl(songs + pendingSongs)
-            if shouldPrune, !seenKeys.isEmpty {
+            if shouldPrune, !seenKeys.isEmpty, failedDiscoveries == 0 {
                 // ✅ Podar borrados: conserva las que se vieron en disco. Con
                 // Set vacío NO se poda (carpeta ilegible ≠ canciones borradas).
                 allSongs = allSongs.filter { seenKeys.contains(Self.libraryKey(for: $0.url)) }
+            } else if shouldPrune, failedDiscoveries > 0 {
+                // ✅ PODA SEGURA: si alguna carpeta/archivo no se pudo consultar
+                // en este escaneo, sus canciones no aparecen en `seenKeys` y se
+                // borrarían de la biblioteca (y de la caché) por error. Se omite
+                // la poda: es preferible conservar de más que perder canciones.
+                AppLog.warning(.library, "Poda de canciones OMITIDA: \(failedDiscoveries) carpeta(s)/archivo(s) no accesibles en este escaneo")
             }
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in
                 guard let self = self else { return }
@@ -719,12 +783,15 @@ class FileAccessService: ObservableObject {
                 }
 
                 DispatchQueue.main.async {
+                    guard self.scanGeneration == generation else { return }
                     self.isSortScheduled = false
                     let addedCount = sortedSongs.count - self.songs.count
                     self.songs = sortedSongs
                     self.indexedSongKeys = Set(sortedSongs.map { Self.libraryKey(for: $0.url) })
                     self.pruneMissingOnFinish = false
                     self.seenOnDiskKeys = []
+                    // ✅ Los fallos de este escaneo ya se han tenido en cuenta.
+                    self.failedDiscoveries = 0
                     // ✅ Solo descartar las canciones que entraron en el sort. Las
                     // que llegaron mientras se ordenaba (p.ej. del lote final) NO
                     // se borran: permanecen en pendingSongs para una pasada final.
@@ -737,9 +804,7 @@ class FileAccessService: ObservableObject {
                     } else {
                         AppLog.info(.library, "Indexación completada: \(sortedSongs.count) canciones (sin cambios) · RAM \(self.residentMemoryMB) MB")
                     }
-                    if !self.pendingSongs.isEmpty {
-                        self.updateScanningState()
-                    }
+                    self.updateScanningState()
                 }
             }
         }
@@ -798,10 +863,13 @@ class FileAccessService: ObservableObject {
         // año. Mejor SIN año que con un año INVENTADO.
         var duration: TimeInterval = 0
 
-        // ✅ Timeout para evitar que archivos corruptos congelen la indexación
+        // Cancelación real de las cargas AVAsset pendientes (no un sleep sin efecto).
         let timeoutTask = Task {
-            try? await Task.sleep(nanoseconds: 5_000_000_000) // 5 segundos timeout
+            do { try await Task.sleep(nanoseconds: 10_000_000_000) }
+            catch { return }
+            asset.cancelLoading()
         }
+        defer { timeoutTask.cancel() }
 
         do {
             // ✅ OPTIMIZACIÓN: Cargar TODOS los valores en paralelo
@@ -812,8 +880,7 @@ class FileAccessService: ObservableObject {
             let durationTime = try await durationTask
             duration = durationTime.seconds
 
-            // ✅ Cancelar timeout si carga fue exitosa
-            timeoutTask.cancel()
+            // El watchdog sigue activo durante las lecturas de metadatos/tracks.
 
             for item in commonMetadata {
                 switch item.commonKey?.rawValue {
@@ -986,8 +1053,9 @@ class FileAccessService: ObservableObject {
         var bitrateKbps: Int?
         let audioTrack: AVAssetTrack? = (try? await asset.loadTracks(withMediaType: .audio))?.first
         if let track = audioTrack,
-           let firstDesc = track.formatDescriptions.first,
-           let desc = firstDesc as! CMAudioFormatDescription?,
+           let descriptions = try? await track.load(.formatDescriptions),
+           let desc = descriptions.first,
+           CMFormatDescriptionGetMediaType(desc) == kCMMediaType_Audio,
            let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(desc) {
             sampleRate = Double(asbd.pointee.mSampleRate)
             channelCount = Int(asbd.pointee.mChannelsPerFrame)
@@ -1126,8 +1194,9 @@ class FileAccessService: ObservableObject {
         let fileBits: Int
         let channels: Int
         if let track = audioTrack,
-           let firstDesc = track.formatDescriptions.first,
-           let desc = firstDesc as! CMAudioFormatDescription?,
+           let descriptions = try? await track.load(.formatDescriptions),
+           let desc = descriptions.first,
+           CMFormatDescriptionGetMediaType(desc) == kCMMediaType_Audio,
            let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(desc) {
             sampleRate = Double(asbd.pointee.mSampleRate)
             fileBits = Int(asbd.pointee.mBitsPerChannel)
@@ -1168,6 +1237,10 @@ class FileAccessService: ObservableObject {
     }
 
     private func thumbnailArtwork(_ data: Data) -> Data {
+        autoreleasepool { makeArtworkThumbnail(data) }
+    }
+
+    private func makeArtworkThumbnail(_ data: Data) -> Data {
         // ✅ PUNTO DULCE NITIDEZ/MEMORIA: 768px @ 0.72.
         // - 640px (original) se veía borroso en NowPlaying (350pt @2x = 700px).
         // - 1280px (intento anterior) CRASHEABA a ~900 canciones: ~300KB de Data
@@ -1179,8 +1252,10 @@ class FileAccessService: ObservableObject {
         //   calidad visual idéntica a 768px (los artefactos del JPEG son
         //   inapreciables a este tamaño); bibliotecas de 1300+ temas bajan
         //   ~25-30MB de RAM (aviso de memoria repetido en iPhone 8 / 2GB).
-        guard data.count > 100_000,
-              let source = CGImageSourceCreateWithData(data as CFData, nil) else { return data }
+        // El tamaño comprimido no limita las dimensiones: incluso un PNG pequeño
+        // puede ocupar decenas de MB al decodificarse. Limitar siempre los píxeles.
+        guard let source = CGImageSourceCreateWithData(data as CFData,
+            [kCGImageSourceShouldCache: false] as CFDictionary) else { return Data() }
         let options: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
             kCGImageSourceThumbnailMaxPixelSize: 768,
@@ -1188,7 +1263,7 @@ class FileAccessService: ObservableObject {
             kCGImageSourceShouldCacheImmediately: true
         ]
         guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary),
-              let compressed = UIImage(cgImage: image).jpegData(compressionQuality: 0.72) else { return data }
+              let compressed = UIImage(cgImage: image).jpegData(compressionQuality: 0.72) else { return Data() }
         return compressed
     }
 
@@ -1731,7 +1806,7 @@ class FileAccessService: ObservableObject {
 
     func songsInPlaylist(_ playlist: Playlist) -> [Song] {
         // Diccionario para búsqueda O(1) en lugar de O(n) por canción
-        let songsByID = Dictionary(uniqueKeysWithValues: songs.map { ($0.id, $0) })
+        let songsByID = Dictionary(songs.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         return playlist.songIDs.compactMap { songsByID[$0] }
     }
     
@@ -1854,7 +1929,7 @@ class FileAccessService: ObservableObject {
         // doble + crash. La instantánea de `songs` se captura aquí (main) y el
         // encode/escritura corren fuera.
         let snapshot = songs
-        DispatchQueue.global(qos: .utility).async {
+        cacheWriteQueue.async {
             guard let data = try? JSONEncoder().encode(snapshot) else { return }
             do {
                 try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -1869,26 +1944,27 @@ class FileAccessService: ObservableObject {
     private func removeCachedSongs() {
         cacheSaveWorkItem?.cancel()
         guard let url = libraryCacheURL else { return }
-        try? FileManager.default.removeItem(at: url)
+        // Se ejecuta después de las escrituras anteriores, que no podrán resucitar la caché.
+        cacheWriteQueue.async { try? FileManager.default.removeItem(at: url) }
     }
 
     // MARK: - Albums y Artists (cacheados: se recalculan solo cuando cambia `songs`)
 
     var albums: [Album] {
-        if needsRebuild { rebuildDerivedCollections() }
+        if needsRebuild || derivedLanguage != Localization.shared.currentLanguage { rebuildDerivedCollections() }
         return cachedAlbums
     }
     var artists: [Artist] {
-        if needsRebuild { rebuildDerivedCollections() }
+        if needsRebuild || derivedLanguage != Localization.shared.currentLanguage { rebuildDerivedCollections() }
         return cachedArtists
     }
 
     /// ✅ Deduplicación por URL (mantiene la primera aparición). Usada al
     /// cargar caché, al fusionar lotes del escaneo y al agrupar álbumes/artistas.
     private func dedupeSongsByUrl(_ input: [Song]) -> [Song] {
-        var seen = Set<URL>()
+        var seen = Set<String>()
         seen.reserveCapacity(input.count)
-        return input.filter { seen.insert($0.url).inserted }
+        return input.filter { seen.insert(Self.libraryKey(for: $0.url)).inserted }
     }
 
     private func rebuildDerivedCollections() {
@@ -1902,22 +1978,22 @@ class FileAccessService: ObservableObject {
         // variante creaba un álbum separado → no se reproducían de corrido y
         // repeat-all no volvía a empezar por el disco 1.
         let groupedAlbums = Dictionary(grouping: allSongs) { song -> String in
-            let albumName = song.album.isEmpty ? "Álbum desconocido" : song.album
-            let artistName = song.albumArtist.isEmpty ? (song.artist.isEmpty ? "Artista desconocido" : song.artist) : song.albumArtist
+            let albumName = Song.displayAlbumName(song.album)
+            let artistName = Song.displayArtistName(song.albumArtist.isEmpty ? song.artist : song.albumArtist)
             return Song.albumGroupKey(album: albumName, artist: artistName)
         }
 
         cachedAlbums = groupedAlbums.map { (key, albumSongs) in
             // Nombre visible: si el grupo unió varios nombres originales (discos),
             // mostrar la versión normalizada; si solo hay uno, respetar el original.
-            let originalAlbums = albumSongs.map { $0.album.isEmpty ? "Álbum desconocido" : $0.album }
+            let originalAlbums = albumSongs.map { Song.displayAlbumName($0.album) }
             let name = originalAlbums.count > 1
                 ? Song.normalizedAlbumName(originalAlbums.first ?? "")
                 : (originalAlbums.first ?? key)
             // Artista visible: el más frecuente entre las canciones del grupo
             // (respeta la capitalización original de los metadatos).
             let artistCounts = Dictionary(grouping: albumSongs) { song in
-                song.albumArtist.isEmpty ? (song.artist.isEmpty ? "Artista desconocido" : song.artist) : song.albumArtist
+                Song.displayArtistName(song.albumArtist.isEmpty ? song.artist : song.albumArtist)
             }
             let artist = artistCounts.max { $0.value.count < $1.value.count }?.key ?? key
             return Album(
@@ -1932,13 +2008,13 @@ class FileAccessService: ObservableObject {
         // escritura del mismo artista ("X" vs "x") ya NO crean buckets
         // separados. El nombre visible es la variante más frecuente.
         let groupedArtists = Dictionary(grouping: allSongs) { song -> String in
-            let effective = song.albumArtist.isEmpty ? (song.artist.isEmpty ? "Artista desconocido" : song.artist) : song.albumArtist
+            let effective = Song.displayArtistName(song.albumArtist.isEmpty ? song.artist : song.albumArtist)
             return Song.artistGroupKey(effective)
         }
 
         cachedArtists = groupedArtists.map { (artistKey, artistSongs) in
             let nameCounts = Dictionary(grouping: artistSongs) { song -> String in
-                song.albumArtist.isEmpty ? (song.artist.isEmpty ? "Artista desconocido" : song.artist) : song.albumArtist
+                Song.displayArtistName(song.albumArtist.isEmpty ? song.artist : song.albumArtist)
             }
             let displayName = nameCounts.max { $0.value.count < $1.value.count }?.key ?? artistKey
             return Artist(
@@ -1947,6 +2023,7 @@ class FileAccessService: ObservableObject {
             )
         }.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
 
+        derivedLanguage = Localization.shared.currentLanguage
         needsRebuild = false // ✅ Marcar como actualizado
     }
 

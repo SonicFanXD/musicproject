@@ -234,14 +234,11 @@ enum AppTheme {
         return 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b)
     }
 
-    /// Devuelve siempre blanco para mantener consistencia visual
-    /// (el usuario prefiere texto blanco en lugar de contraste automático).
-    static func contrastingText(on uiColor: UIColor) -> Color {
-        .white
-    }
-    static func contrastingText(on uiColor: UIColor?) -> Color {
-        .white
-    }
+    /// Blanco fijo por preferencia de diseño, también en temas y portadas claros.
+    /// No aplicar contraste automático a estos textos e iconos.
+    static func contrastingText(on uiColor: UIColor) -> Color { .white }
+
+    static func contrastingText(on uiColor: UIColor?) -> Color { .white }
 
     // MARK: - Extracción de color dominante (más vivo)
 

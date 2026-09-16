@@ -34,6 +34,9 @@ struct LogsView: View {
     // ✅ Mensajes expandibles: ids de entradas con mensaje desplegado
     @State private var expandedIDs = Set<UUID>()
 
+    // ✅ Localización reactiva: al cambiar el idioma los textos se actualizan.
+    @ObservedObject private var localization = Localization.shared
+
     private var filteredEntries: [InAppLogEntry] {
         var entries = AppLog.entries
 
@@ -73,7 +76,7 @@ struct LogsView: View {
                 if copiedToast {
                     VStack {
                         Spacer()
-                        Label("Diagnóstico copiado", systemImage: "checkmark.circle.fill")
+                        Label(Localization.localized("logs.copied"), systemImage: "checkmark.circle.fill")
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(.white)
                             .padding(.horizontal, 16)
@@ -92,7 +95,7 @@ struct LogsView: View {
             .toolbar {
                 // Título personalizado consistente con la app
                 ToolbarItem(placement: .principal) {
-                    Text("Registros")
+                    Text(Localization.localized("logs.title"))
                         .font(.system(size: 20, weight: .bold, design: .rounded))
                         .foregroundStyle(
                             LinearGradient(
@@ -101,7 +104,7 @@ struct LogsView: View {
                                 endPoint: .trailing
                             )
                         )
-                        .accessibilityLabel("Registros")
+                        .accessibilityLabel(Localization.localized("logs.title"))
                 }
 
                 ToolbarItem(placement: .navigationBarLeading) {
@@ -109,13 +112,13 @@ struct LogsView: View {
                         Button {
                             shareDiagnostics()
                         } label: {
-                            Label("Compartir / Guardar diagnóstico", systemImage: "square.and.arrow.up")
+                            Label(Localization.localized("logs.share"), systemImage: "square.and.arrow.up")
                         }
 
                         Button {
                             copyDiagnostics()
                         } label: {
-                            Label("Copiar diagnóstico completo", systemImage: "doc.on.doc")
+                            Label(Localization.localized("logs.copyAll"), systemImage: "doc.on.doc")
                         }
 
                         Divider()
@@ -123,7 +126,7 @@ struct LogsView: View {
                         Button(role: .destructive) {
                             AppLog.clearEntries()
                         } label: {
-                            Label("Borrar registros", systemImage: "trash")
+                            Label(Localization.localized("logs.clear"), systemImage: "trash")
                         }
                     } label: {
                         Image(systemName: "ellipsis.circle")
@@ -142,7 +145,7 @@ struct LogsView: View {
             }
             .searchable(
                 text: $searchText,
-                prompt: "Buscar en logs"
+                prompt: Localization.localized("logs.searchPrompt")
             )
             .sheet(item: $shareItem) { item in
                 ActivityShareSheet(items: [item.url])
@@ -178,28 +181,28 @@ struct LogsView: View {
         HStack(spacing: 12) {
             statCard(
                 icon: "doc.text",
-                title: "Total",
+                title: Localization.localized("logs.statTotal"),
                 value: "\(AppLog.entries.count)",
                 color: .blue
             )
 
             statCard(
                 icon: "xmark.circle.fill",
-                title: "Errores",
+                title: Localization.localized("logs.statErrors"),
                 value: "\(AppLog.errorCount)",
                 color: .red
             )
 
             statCard(
                 icon: "exclamationmark.triangle.fill",
-                title: "Advertencias",
+                title: Localization.localized("logs.statWarnings"),
                 value: "\(AppLog.warningCount)",
                 color: .orange
             )
 
             statCard(
                 icon: "clock.fill",
-                title: "Último",
+                title: Localization.localized("logs.latest"),
                 value: lastLogTime,
                 color: .green
             )
@@ -245,7 +248,7 @@ struct LogsView: View {
     private var categoryFilter: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-                filterChip(title: "Todos", isSelected: selectedCategory == nil) {
+                filterChip(title: Localization.localized("logs.filterAll"), isSelected: selectedCategory == nil) {
                     selectedCategory = nil
                 }
 
@@ -255,7 +258,7 @@ struct LogsView: View {
                     }
                 }
 
-                filterChip(title: "Solo errores", isSelected: showOnlyErrors) {
+                filterChip(title: Localization.localized("logs.filterErrorsOnly"), isSelected: showOnlyErrors) {
                     showOnlyErrors.toggle()
                 }
             }
@@ -300,7 +303,7 @@ struct LogsView: View {
                             .font(.system(size: 40))
                             .foregroundStyle(.tertiary)
 
-                        Text("No hay logs que coincidan")
+                        Text(Localization.localized("logs.emptyFiltered"))
                             .font(.system(size: 16, weight: .semibold))
                             .foregroundStyle(.secondary)
                     }
@@ -362,7 +365,7 @@ struct LogsView: View {
                             }
                         }
                     }
-                    .accessibilityHint("Toca para expandir o colapsar el mensaje")
+                    .accessibilityHint(Localization.localized("logs.expandHint"))
 
                 HStack(spacing: 8) {
                     Image(systemName: "clock")

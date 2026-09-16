@@ -217,13 +217,13 @@ struct PlaylistsView: View {
 
             // Playlist info
             VStack(alignment: .leading, spacing: 4) {
-                Text(playlist.name)
+                Text(playlist.displayName)
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
 
                 if !playlist.description.isEmpty {
-                    Text(playlist.description)
+                    Text(playlist.displayDescription)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -409,7 +409,7 @@ struct PlaylistDetailView: View {
                 }
             }
         }
-        .navigationTitle(playlist.name) // Needed for back button label
+        .navigationTitle(playlist.displayName) // Needed for back button label
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(Color(UIColor.systemBackground).opacity(0.92), for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
@@ -440,7 +440,7 @@ struct PlaylistDetailView: View {
         .sheet(isPresented: $showEditPlaylist) {
             editPlaylistSheet
         }
-        .alert(String(format: Localization.localized("playlists.deleteConfirm"), playlist.name), isPresented: $showDeleteConfirmation) {
+        .alert(String(format: Localization.localized("playlists.deleteConfirm"), playlist.displayName), isPresented: $showDeleteConfirmation) {
             Button(Localization.localized("actions.cancel"), role: .cancel) {}
             Button(Localization.localized("queue.remove"), role: .destructive) {
                 fileAccessService.deletePlaylist(playlist)
@@ -493,14 +493,14 @@ struct PlaylistDetailView: View {
 
             // Playlist info
             VStack(spacing: 6) {
-                Text(playlist.name)
+                Text(playlist.displayName)
                     .font(.system(size: 24, weight: .bold))
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.primary)
                     .lineLimit(2)
 
                 if !playlist.description.isEmpty {
-                    Text(playlist.description)
+                    Text(playlist.displayDescription)
                         .font(.system(size: 15))
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)

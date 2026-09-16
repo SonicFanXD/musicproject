@@ -27,7 +27,15 @@ final class Localization: ObservableObject {
     }
 
     static func localized(_ key: String) -> String {
-        let strings: [String: [Language: String]] = [
+        // No reconstruir el diccionario de traducciones por canción/etiqueta.
+        let strings = Self.strings
+        if let langStrings = strings[key], let translation = langStrings[Localization.shared.currentLanguage] {
+            return translation
+        }
+        return key
+    }
+
+    private static let strings: [String: [Language: String]] = [
             // Configuración / Settings
             "settings.title": [.spanish: "Ajustes", .english: "Settings"],
             "settings.library": [.spanish: "Biblioteca", .english: "Library"],
@@ -369,6 +377,40 @@ final class Localization: ObservableObject {
             "eq.jazz": [.spanish: "Jazz", .english: "Jazz"],
             "eq.concert": [.spanish: "Concierto", .english: "Concert"],
 
+            "logs.latest": [.spanish: "Último", .english: "Latest"],
+            "library.likedPlaylist": [.spanish: "Me Gusta", .english: "Liked Songs"],
+            "library.likedPlaylistDesc": [.spanish: "Canciones que te gustan", .english: "Songs you like"],
+            // Registros / Logs (diagnóstico)
+            "logs.title": [.spanish: "Registros", .english: "Logs"],
+            "logs.searchPrompt": [.spanish: "Buscar en logs", .english: "Search logs"],
+            "logs.copied": [.spanish: "Diagnóstico copiado", .english: "Diagnostics copied"],
+            "logs.share": [.spanish: "Compartir / Guardar diagnóstico", .english: "Share / Save diagnostics"],
+            "logs.copyAll": [.spanish: "Copiar diagnóstico completo", .english: "Copy full diagnostics"],
+            "logs.clear": [.spanish: "Borrar registros", .english: "Clear logs"],
+            "logs.emptyFiltered": [.spanish: "No hay logs que coincidan", .english: "No matching logs"],
+            "logs.filterAll": [.spanish: "Todos", .english: "All"],
+            "logs.filterErrorsOnly": [.spanish: "Solo errores", .english: "Errors only"],
+            "logs.statTotal": [.spanish: "Total", .english: "Total"],
+            "logs.statErrors": [.spanish: "Errores", .english: "Errors"],
+            "logs.statWarnings": [.spanish: "Advertencias", .english: "Warnings"],
+            "logs.expandHint": [.spanish: "Toca para expandir o colapsar el mensaje", .english: "Tap to expand or collapse the message"],
+
+            // Selector de carpetas / Folder picker
+            "folders.title": [.spanish: "Biblioteca", .english: "Library"],
+            "folders.addFolder": [.spanish: "Añadir carpeta", .english: "Add Folder"],
+            "folders.addFolderSubtitle": [.spanish: "Selecciona una carpeta completa", .english: "Select a complete folder"],
+            "folders.addFiles": [.spanish: "Añadir archivos", .english: "Add Files"],
+            "folders.addFilesSubtitle": [.spanish: "Selecciona canciones individuales", .english: "Select individual songs"],
+            "folders.updateLibrary": [.spanish: "Actualizar biblioteca", .english: "Update Library"],
+            "folders.rescan": [.spanish: "Rescanear carpetas existentes", .english: "Rescan existing folders"],
+            "folders.scanning": [.spanish: "Escaneando biblioteca...", .english: "Scanning library..."],
+            "folders.section": [.spanish: "Carpetas", .english: "Folders"],
+            "files.section": [.spanish: "Archivos individuales", .english: "Individual Files"],
+            "folders.added": [.spanish: "Carpeta añadida", .english: "Folder added"],
+            "files.added": [.spanish: "Archivo individual", .english: "Individual file"],
+            "library.emptyTitle": [.spanish: "Tu biblioteca está vacía", .english: "Your library is empty"],
+            "library.emptyMessage": [.spanish: "Añade carpetas o archivos para empezar", .english: "Add folders or files to get started"],
+
             // Formats
             "format.flac": [.spanish: "FLAC (Free Lossless Audio Codec)", .english: "FLAC (Free Lossless Audio Codec)"],
             "format.alac": [.spanish: "ALAC/M4A (Apple Lossless)", .english: "ALAC/M4A (Apple Lossless)"],
@@ -383,10 +425,4 @@ final class Localization: ObservableObject {
             "quality.accessibility.queue": [.spanish: "Cola de reproducción", .english: "Playback queue"],
             "quality.accessibility.airplay": [.spanish: "AirPlay", .english: "AirPlay"],
         ]
-
-        if let langStrings = strings[key], let translation = langStrings[Localization.shared.currentLanguage] {
-            return translation
-        }
-        return key
-    }
 }
