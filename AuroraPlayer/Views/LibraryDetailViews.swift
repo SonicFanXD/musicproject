@@ -6,8 +6,10 @@ struct AlbumDetailView: View {
     let album: Album
     @ObservedObject var audioEngine: AudioEngine
     @Environment(\.dismiss) private var dismiss
+    @State private var searchText = ""
+    @State private var debouncedSearchText = ""
 
-    // ? Color dominante VIVO (histograma HSB) extra�do en segundo plano
+    // Color dominante VIVO (histograma HSB) extraído en segundo plano
     @State private var liveDominantColor: UIColor? = nil
     @State private var appearAnimation = false
     // ? OPT: blur precalculado UNA vez (en background) en vez de re-renderizar .blur(50) en cada frame
@@ -48,8 +50,10 @@ struct AlbumDetailView: View {
                         }
                     } else {
                         ForEach(Array(cachedSongs.enumerated()), id: \.element.id) { index, song in
-                            AlbumSongRow(song: song, index: index, isCurrent: audioEngine.currentSong?.id == song.id, tintColor: tintColor) {
-                                audioEngine.play(song: song, from: cachedSongs)
+                            if debouncedSearchText.isEmpty || song.title.localizedCaseInsensitiveContains(debouncedSearchText) {
+                                AlbumSongRow(song: song, index: index, isCurrent: audioEngine.currentSong?.id == song.id, tintColor: tintColor) {
+                                    audioEngine.play(song: song, from: cachedSongs)
+                                }
                             }
                         }
                     }
@@ -63,8 +67,12 @@ struct AlbumDetailView: View {
         .background(AppBackground().ignoresSafeArea())
         .navigationTitle(album.name)
         .navigationBarTitleDisplayMode(.inline)
-        // ? Sin banda gris: el hero inmersivo fluye bajo la barra de navegaci�n
+        // Sin banda gris: el hero inmersivo fluye bajo la barra de navegación
         .toolbarBackground(.hidden, for: .navigationBar)
+        .searchable(text: $searchText, prompt: Localization.localized("search.prompt"))
+        .onChange(of: searchText) { newValue in
+            debouncedSearchText = newValue.lowercased()
+        }
         .onAppear {
             // ? Cachear c�mputos una sola vez
             if cachedSongs.isEmpty {
@@ -472,6 +480,8 @@ struct ArtistDetailView: View {
     let artist: Artist
     @ObservedObject var audioEngine: AudioEngine
     @Environment(\.dismiss) private var dismiss
+    @State private var searchText = ""
+    @State private var debouncedSearchText = ""
 
     @State private var appearAnimation = false
     @State private var liveDominantColor: UIColor? = nil
@@ -518,8 +528,10 @@ struct ArtistDetailView: View {
                 LazyVStack(spacing: 10) {
                     sectionHeader(icon: "music.note.list", title: Localization.localized("details.songs"), tintColor: tintColor)
                     ForEach(Array(cachedSongs.enumerated()), id: \.element.id) { index, song in
-                        ArtistSongRow(song: song, index: index, isCurrent: audioEngine.currentSong?.id == song.id, tintColor: tintColor) {
-                            audioEngine.play(song: song, from: cachedSongs)
+                        if debouncedSearchText.isEmpty || song.title.localizedCaseInsensitiveContains(debouncedSearchText) {
+                            ArtistSongRow(song: song, index: index, isCurrent: audioEngine.currentSong?.id == song.id, tintColor: tintColor) {
+                                audioEngine.play(song: song, from: cachedSongs)
+                            }
                         }
                     }
                 }
@@ -531,8 +543,12 @@ struct ArtistDetailView: View {
         .background(AppBackground().ignoresSafeArea())
         .navigationTitle(artist.name)
         .navigationBarTitleDisplayMode(.inline)
-        // ? Sin banda gris (coherente con AlbumDetailView)
+        // Sin banda gris (coherente con AlbumDetailView)
         .toolbarBackground(.hidden, for: .navigationBar)
+        .searchable(text: $searchText, prompt: Localization.localized("search.prompt"))
+        .onChange(of: searchText) { newValue in
+            debouncedSearchText = newValue.lowercased()
+        }
         .onAppear {
             // ? Cachear c�mputos una sola vez
             if cachedAlbums.isEmpty {
