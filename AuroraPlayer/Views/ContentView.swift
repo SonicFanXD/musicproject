@@ -85,61 +85,60 @@ struct ContentView: View {
                         fileAccessService.refreshAllFolders()
                         try? await Task.sleep(nanoseconds: 600_000_000)
                     }
-                    .searchable(
-                        text: $searchText,
-                        prompt: Localization.localized("search.prompt")
+                }
+                .searchable(
+                    text: $searchText,
+                    prompt: Localization.localized("search.prompt")
+                )
+                // ✅ BÚSQUEDA: mantener el índice sincronizado con la
+                // librería (solo se reconstruye cuando cambian las
+                // canciones/álbumes/artistas, nunca por tecla).
+                .onReceive(fileAccessService.$songs) { songs in
+                    LibrarySearchIndex.shared.update(
+                        songs: songs,
+                        albums: fileAccessService.albums,
+                        artists: fileAccessService.artists
                     )
-                        // ✅ BÚSQUEDA: mantener el índice sincronizado con la
-                        // librería (solo se reconstruye cuando cambian las
-                        // canciones/álbumes/artistas, nunca por tecla).
-                        .onReceive(fileAccessService.$songs) { songs in
-                            LibrarySearchIndex.shared.update(
-                                songs: songs,
-                                albums: fileAccessService.albums,
-                                artists: fileAccessService.artists
-                            )
-                        }
-                        // ✅ Sincronización bidireccional: mantener @AppStorage actualizado
-                        // cuando cambian las variables @State de ordenamiento
-                        .onChange(of: sortOptionRaw) { songSortRawStorage = $0 }
-                        .onChange(of: songSortAscending) { songSortAscendingStorage = $0 }
-                        .onChange(of: albumSortRaw) { albumSortRawStorage = $0 }
-                        .onChange(of: albumSortAscending) { albumSortAscendingStorage = $0 }
-                        .onChange(of: artistSortRaw) { artistSortRawStorage = $0 }
-                        .onChange(of: artistSortAscending) { artistSortAscendingStorage = $0 }
-                        // ✅ DEBOUNCE: filtrar 250ms después de la última tecla.
-                        .onChange(of: searchText) { newValue in
-                            // ✅ Resincronizar el índice al empezar a buscar
-                            // (barato: se salta si nada cambió desde la última vez).
-                            LibrarySearchIndex.shared.update(
-                                songs: fileAccessService.songs,
-                                albums: fileAccessService.albums,
-                                artists: fileAccessService.artists
-                            )
-                            searchDebounceTask?.cancel()
-                            searchDebounceTask = Task {
-                                try? await Task.sleep(nanoseconds: 250_000_000)
-                                guard !Task.isCancelled else { return }
-                                debouncedSearchText = newValue
-                            }
-                        }
-                        // ✅ Sincronizar el índice también al cambiar de categoría
-                        // (álbumes/artistas pueden haberse reconstruido).
-                        .onChange(of: selectedCategoryRaw) { _ in
-                            LibrarySearchIndex.shared.update(
-                                songs: fileAccessService.songs,
-                                albums: fileAccessService.albums,
-                                artists: fileAccessService.artists
-                            )
-                        }
-                        // ✅ DETECCIÓN EN SEGUNDO PLANO: cuando la app vuelve a activa,
-                        // verificar si hay nuevas canciones y indexarlas automáticamente.
-                        .onChange(of: scenePhase) { newPhase in
-                            if newPhase == .active {
-                                AppLog.info(.lifecycle, "App volvió a activo, verificando nuevas canciones...")
-                                fileAccessService.refreshAllFolders()
-                            }
-                        }
+                }
+                // ✅ Sincronización bidireccional: mantener @AppStorage actualizado
+                // cuando cambian las variables @State de ordenamiento
+                .onChange(of: sortOptionRaw) { songSortRawStorage = $0 }
+                .onChange(of: songSortAscending) { songSortAscendingStorage = $0 }
+                .onChange(of: albumSortRaw) { albumSortRawStorage = $0 }
+                .onChange(of: albumSortAscending) { albumSortAscendingStorage = $0 }
+                .onChange(of: artistSortRaw) { artistSortRawStorage = $0 }
+                .onChange(of: artistSortAscending) { artistSortAscendingStorage = $0 }
+                // ✅ DEBOUNCE: filtrar 250ms después de la última tecla.
+                .onChange(of: searchText) { newValue in
+                    // ✅ Resincronizar el índice al empezar a buscar
+                    // (barato: se salta si nada cambió desde la última vez).
+                    LibrarySearchIndex.shared.update(
+                        songs: fileAccessService.songs,
+                        albums: fileAccessService.albums,
+                        artists: fileAccessService.artists
+                    )
+                    searchDebounceTask?.cancel()
+                    searchDebounceTask = Task {
+                        try? await Task.sleep(nanoseconds: 250_000_000)
+                        guard !Task.isCancelled else { return }
+                        debouncedSearchText = newValue
+                    }
+                }
+                // ✅ Sincronizar el índice también al cambiar de categoría
+                // (álbumes/artistas pueden haberse reconstruido).
+                .onChange(of: selectedCategoryRaw) { _ in
+                    LibrarySearchIndex.shared.update(
+                        songs: fileAccessService.songs,
+                        albums: fileAccessService.albums,
+                        artists: fileAccessService.artists
+                    )
+                }
+                // ✅ DETECCIÓN EN SEGUNDO PLANO: cuando la app vuelve a activa,
+                // verificar si hay nuevas canciones y indexarlas automáticamente.
+                .onChange(of: scenePhase) { newPhase in
+                    if newPhase == .active {
+                        AppLog.info(.lifecycle, "App volvió a activo, verificando nuevas canciones...")
+                        fileAccessService.refreshAllFolders()
                     }
                 }
                 .navigationBarTitleDisplayMode(.inline)
