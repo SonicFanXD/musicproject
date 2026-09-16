@@ -25,7 +25,6 @@ struct NowPlayingView: View {
     @AppStorage("com.aurora.reduceTransparency") private var reduceTransparency = false
     // ✅ Ajuste "Mostrar letras" (antes no se aplicaba)
     @AppStorage("com.aurora.showLyricsByDefault") private var showLyricsByDefault = false
-    @AppStorage("com.aurora.visualizerStyle") private var visualizerStyle = 0 // 0 = clásico, 1 = elegante, 2 = moderno
 
     @State private var showLyrics = false
     @State private var showEqualizer = false
@@ -49,12 +48,12 @@ struct NowPlayingView: View {
 
     // Tamaño de la vista presentada, no de la pantalla física (rotación/iPad).
     @State private var availableSize = CGSize(width: 414, height: 736)
-    private var isCompactScreen: Bool { availableSize.height < 800 }
+    private var isCompactScreen: Bool { availableSize.height < 750 }
 
     private var artworkSize: CGFloat {
-        let maxByWidth = max(0, availableSize.width - 40)
-        let maxByHeight = availableSize.height * (isCompactScreen ? 0.35 : 0.45)
-        return min(340, maxByWidth, maxByHeight)
+        let maxByWidth = max(0, availableSize.width - 50)
+        let maxByHeight = availableSize.height * (isCompactScreen ? 0.32 : 0.40)
+        return min(320, maxByWidth, maxByHeight)
     }
 
     // Blanco fijo por preferencia de diseño.
@@ -93,8 +92,8 @@ struct NowPlayingView: View {
                         } label: {
                             Image(systemName: "chevron.down")
                                 .foregroundStyle(playIconColor)
-                                .font(.system(size: 17, weight: .semibold))
-                                .frame(width: 44, height: 44)
+                                .font(.system(size: 16, weight: .semibold))
+                                .frame(width: 40, height: 40)
                                 .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
@@ -103,16 +102,16 @@ struct NowPlayingView: View {
                         Spacer()
 
                         Text(Localization.localized("nowPlaying.title"))
-                            .font(.system(size: 16, weight: .semibold, design: .rounded))
+                            .font(.system(size: 15, weight: .semibold, design: .rounded))
                             .foregroundStyle(playIconColor.opacity(0.9))
                             .shadow(color: .black.opacity(0.15), radius: 4, y: 1)
 
                         Spacer()
-                        Color.clear.frame(width: 44, height: 44)
+                        Color.clear.frame(width: 40, height: 40)
                     }
-                    .padding(.horizontal, 8)
+                    .padding(.horizontal, 6)
 
-                    Spacer(minLength: isCompactScreen ? 4 : 10)
+                    Spacer(minLength: isCompactScreen ? 6 : 10)
 
                     artworkView
                         // ✅ MEJORADO: la portada solo anima al CAMBIAR de canción,
@@ -120,36 +119,21 @@ struct NowPlayingView: View {
                         // escala (1.02 → 1.0) que se veía artificial al tocar play/pause.
                         .animation(.easeInOut(duration: 0.2), value: audioEngine.currentSong?.id)
 
-                    Spacer(minLength: isCompactScreen ? 10 : 16)
+                    Spacer(minLength: isCompactScreen ? 10 : 14)
 
                     if showVisualizer {
-                        // ✅ MEJORADO: Selector de estilo de visualizador
-                        switch visualizerStyle {
-                        case 1:
-                            // Elegante: ondas fluidas con gradientes
-                            ElegantAudioVisualizer(audioEngine: audioEngine, tintColor: extractedColor)
-                                .frame(height: isCompactScreen ? 50 : 70)
-                                .padding(.horizontal, 0)
-                                .drawingGroup()
-                        case 2:
-                            // Moderno: barras con reflejos y sombras
-                            ModernBarVisualizer(audioEngine: audioEngine, tintColor: extractedColor)
-                                .frame(height: isCompactScreen ? 40 : 50)
-                                .padding(.horizontal, 20)
-                        default:
-                            // Clásico: barras simples originales
-                            AudioVisualizer(audioEngine: audioEngine, tintColor: extractedColor)
-                                .frame(height: isCompactScreen ? 32 : 48)
-                                .padding(.horizontal, 36)
-                        }
+                        // ✅ VISUALIZADOR UNIVERSAL: diseño consistente y optimizado
+                        UniversalVisualizer(audioEngine: audioEngine, tintColor: extractedColor)
+                            .frame(height: isCompactScreen ? 36 : 44)
+                            .padding(.horizontal, 16)
                     }
 
-                    Spacer(minLength: isCompactScreen ? 8 : 14)
+                    Spacer(minLength: isCompactScreen ? 8 : 12)
 
                     songInfoView
                         .animation(.easeInOut(duration: 0.15), value: audioEngine.currentSong?.id)
 
-                    Spacer(minLength: isCompactScreen ? 8 : 14)
+                    Spacer(minLength: isCompactScreen ? 6 : 10)
 
                     ProgressScrubView(
                         audioEngine: audioEngine,
@@ -160,17 +144,17 @@ struct NowPlayingView: View {
                         isCompactScreen: isCompactScreen
                     )
 
-                    Spacer(minLength: isCompactScreen ? 10 : 18)
+                    Spacer(minLength: isCompactScreen ? 8 : 12)
 
                     controlsView
 
-                    Spacer(minLength: isCompactScreen ? 8 : 14)
+                    Spacer(minLength: isCompactScreen ? 6 : 10)
 
                     featureButtonsView
 
                     Spacer(minLength: 0)
                 }
-                .padding(.horizontal, 24)
+                .padding(.horizontal, 20)
                 .fixedSize(horizontal: false, vertical: true)
             }
             .background {
@@ -430,7 +414,7 @@ struct NowPlayingView: View {
 
     // MARK: - Controls
     private var controlsView: some View {
-        HStack(spacing: isCompactScreen ? 8 : 14) {
+        HStack(spacing: isCompactScreen ? 6 : 12) {
             // Shuffle
             Button {
                 Haptics.light()
@@ -439,13 +423,13 @@ struct NowPlayingView: View {
                 ZStack {
                     Capsule()
                         .fill(audioEngine.isShuffleEnabled ? extractedColor.opacity(0.45) : Color.clear)
-                        .frame(width: isCompactScreen ? 42 : 46, height: isCompactScreen ? 30 : 36)
+                        .frame(width: isCompactScreen ? 38 : 44, height: isCompactScreen ? 28 : 32)
 
                     Image(systemName: "shuffle")
-                        .font(.system(size: isCompactScreen ? 15 : 17, weight: audioEngine.isShuffleEnabled ? .bold : .semibold))
+                        .font(.system(size: isCompactScreen ? 14 : 16, weight: audioEngine.isShuffleEnabled ? .bold : .semibold))
                         .foregroundStyle(audioEngine.isShuffleEnabled ? playIconColor : AppTheme.contrastingText(on: extractedUIColor).opacity(0.7))
                 }
-                .frame(width: isCompactScreen ? 56 : 64, height: isCompactScreen ? 56 : 64)
+                .frame(width: isCompactScreen ? 50 : 58, height: isCompactScreen ? 50 : 58)
                 .contentShape(Rectangle())
             }
             // ✅ Feedback de PRENSIÓN visible (antes .plain: sin reacción al tocar
@@ -460,12 +444,12 @@ struct NowPlayingView: View {
                 audioEngine.playPrevious()
             } label: {
                 ZStack {
-                    Circle().fill(controlBackground).frame(width: isCompactScreen ? 44 : 50, height: isCompactScreen ? 44 : 50)
+                    Circle().fill(controlBackground).frame(width: isCompactScreen ? 40 : 46, height: isCompactScreen ? 40 : 46)
                     Image(systemName: "backward.fill")
-                        .font(.system(size: isCompactScreen ? 16 : 18, weight: .semibold))
+                        .font(.system(size: isCompactScreen ? 15 : 17, weight: .semibold))
                         .foregroundStyle(playIconColor)
                 }
-                .frame(width: isCompactScreen ? 56 : 64, height: isCompactScreen ? 56 : 64)
+                .frame(width: isCompactScreen ? 50 : 58, height: isCompactScreen ? 50 : 58)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -480,17 +464,17 @@ struct NowPlayingView: View {
                 }
             } label: {
                 ZStack {
-                    Circle().fill(extractedColor).frame(width: isCompactScreen ? 62 : 72, height: isCompactScreen ? 62 : 72)
+                    Circle().fill(extractedColor).frame(width: isCompactScreen ? 56 : 64, height: isCompactScreen ? 56 : 64)
                     // ✅ El icono cambia instantáneamente (sin .id() ni transición
                     // de reemplazo — recreaba la vista entera y se sentía lento en
                     // A11); solo un breve fade de 0.1s suaviza el cambio visual.
                     Image(systemName: audioEngine.isPlaying ? "pause.fill" : "play.fill")
-                        .font(.system(size: isCompactScreen ? 22 : 26, weight: .bold))
+                        .font(.system(size: isCompactScreen ? 20 : 24, weight: .bold))
                         .foregroundStyle(playIconColor)
                 }
                 .shadow(color: extractedColor.opacity(0.35), radius: 10, x: 0, y: 4)
                 .animation(.easeOut(duration: 0.1), value: audioEngine.isPlaying)
-                .frame(width: isCompactScreen ? 76 : 88, height: isCompactScreen ? 76 : 88)
+                .frame(width: isCompactScreen ? 68 : 80, height: isCompactScreen ? 68 : 80)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -501,12 +485,12 @@ struct NowPlayingView: View {
                 audioEngine.playNext()
             } label: {
                 ZStack {
-                    Circle().fill(controlBackground).frame(width: isCompactScreen ? 44 : 50, height: isCompactScreen ? 44 : 50)
+                    Circle().fill(controlBackground).frame(width: isCompactScreen ? 40 : 46, height: isCompactScreen ? 40 : 46)
                     Image(systemName: "forward.fill")
-                        .font(.system(size: isCompactScreen ? 16 : 18, weight: .semibold))
+                        .font(.system(size: isCompactScreen ? 15 : 17, weight: .semibold))
                         .foregroundStyle(playIconColor)
                 }
-                .frame(width: isCompactScreen ? 56 : 64, height: isCompactScreen ? 56 : 64)
+                .frame(width: isCompactScreen ? 50 : 58, height: isCompactScreen ? 50 : 58)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -519,13 +503,13 @@ struct NowPlayingView: View {
                 ZStack {
                     Capsule()
                         .fill(audioEngine.repeatMode != .off ? extractedColor.opacity(0.45) : Color.clear)
-                        .frame(width: isCompactScreen ? 42 : 46, height: isCompactScreen ? 30 : 36)
+                        .frame(width: isCompactScreen ? 38 : 44, height: isCompactScreen ? 28 : 32)
 
                     Image(systemName: repeatIcon)
-                        .font(.system(size: isCompactScreen ? 15 : 17, weight: audioEngine.repeatMode != .off ? .bold : .semibold))
+                        .font(.system(size: isCompactScreen ? 14 : 16, weight: audioEngine.repeatMode != .off ? .bold : .semibold))
                         .foregroundStyle(audioEngine.repeatMode != .off ? playIconColor : AppTheme.contrastingText(on: extractedUIColor).opacity(0.7))
                 }
-                .frame(width: isCompactScreen ? 56 : 64, height: isCompactScreen ? 56 : 64)
+                .frame(width: isCompactScreen ? 50 : 58, height: isCompactScreen ? 50 : 58)
                 .contentShape(Rectangle())
             }
             // ✅ Mismo tratamiento que shuffle: feedback de presión visible y
@@ -539,12 +523,12 @@ struct NowPlayingView: View {
 
     // MARK: - Feature Buttons (EQ · Letras · Cola · AirPlay en una sola línea)
     private var featureButtonsView: some View {
-        let buttonSize: CGFloat = isCompactScreen ? 60 : 68
-        let capsuleWidth: CGFloat = isCompactScreen ? 44 : 50
-        let capsuleHeight: CGFloat = isCompactScreen ? 34 : 38
-        let iconSize: CGFloat = isCompactScreen ? 15 : 17
+        let buttonSize: CGFloat = isCompactScreen ? 54 : 62
+        let capsuleWidth: CGFloat = isCompactScreen ? 40 : 46
+        let capsuleHeight: CGFloat = isCompactScreen ? 30 : 34
+        let iconSize: CGFloat = isCompactScreen ? 14 : 16
 
-        return HStack(spacing: isCompactScreen ? 10 : 14) {
+        return HStack(spacing: isCompactScreen ? 8 : 12) {
             // Equalizador
             Button {
                 Haptics.light()
