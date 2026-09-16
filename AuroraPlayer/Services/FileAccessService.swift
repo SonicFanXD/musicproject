@@ -1825,21 +1825,13 @@ class FileAccessService: ObservableObject {
         isInitialLibraryLoaded = true
         hasEverLoadedSongs = true
         indexedSongKeys = Set(uniqueCached.map { Self.libraryKey(for: $0.url) })
-        if uniqueCached.isEmpty && (!folders.isEmpty || !files.isEmpty) {
+        // ✅ FIX: Siempre hacer re-escaneo diferencial cuando hay carpetas/archivos,
+        // incluso si el caché tiene contenido. Esto detecta canciones nuevas o borradas.
+        if !folders.isEmpty || !files.isEmpty {
+            AppLog.info(.library, "Iniciando re-escaneo diferencial desde caché...")
             rescanAllFolders()
         } else {
             restoreSecurityScopedAccess()
-            // Verificar accesibilidad en un hilo de fondo: con 1000+ canciones,
-            // hacer fileExists en el hilo principal congela la app al iniciar.
-            let urls = uniqueCached.map(\.url)
-            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-                let inaccessibleCount = urls.filter { !FileManager.default.fileExists(atPath: $0.path) }.count
-                DispatchQueue.main.async {
-                    guard inaccessibleCount > 0 else { return }
-                    AppLog.warning(.library, "\(inaccessibleCount) canciones inaccesibles, re-escaneando")
-                    self?.rescanAllFolders()
-                }
-            }
         }
         if !cachedSongs.isEmpty {
             AppLog.info(.library, "Biblioteca recuperada de caché: \(cachedSongs.count) canciones")
