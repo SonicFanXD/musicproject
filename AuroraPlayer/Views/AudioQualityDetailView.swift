@@ -269,13 +269,13 @@ struct AudioQualityDetailView: View {
     private var signalChainSection: some View {
         settingsSection(title: Localization.localized("quality.signalChain"), icon: "arrow.triangle.branch") {
             VStack(spacing: 0) {
-                chainNode(icon: "doc.fill", title: Localization.localized("quality.sourceFile"), detail: fileSummary, color: .accentColor, index: 0)
+                chainNode(icon: "doc.fill", title: Localization.localized("quality.sourceFile"), detail: fileSummary, color: AppTheme.accent, index: 0)
                 chainArrow
                 chainNode(icon: "waveform", title: Localization.localized("quality.decoder"), detail: "AVAudioFile · \(isLossless ? Localization.localized("quality.lossless") : Localization.localized("quality.compressed"))", color: .indigo, index: 1)
                 chainArrow
-                chainNode(icon: "engine.combustion", title: Localization.localized("quality.audioEngine"), detail: "AVAudioEngine · \(audioEngine.sampleRateDisplay > 0 ? Int(audioEngine.sampleRateDisplay / 1000) : Int((song?.sampleRate ?? 0) / 1000)) kHz", color: .accentColor, index: 2)
+                chainNode(icon: "engine.combustion", title: Localization.localized("quality.audioEngine"), detail: "AVAudioEngine · \(audioEngine.sampleRateDisplay > 0 ? Int(audioEngine.sampleRateDisplay / 1000) : Int((song?.sampleRate ?? 0) / 1000)) kHz", color: AppTheme.accent, index: 2)
                 chainArrow
-                chainNode(icon: "slider.horizontal.3", title: Localization.localized("quality.equalizer"), detail: audioEngine.isEQEnabled ? "\(Localization.localized("quality.active")) · \(audioEngine.eqPreset.displayName) · 10 \(Localization.localized("format.bands"))" : "\(Localization.localized("quality.bypass")) · 10 \(Localization.localized("format.bands"))", color: audioEngine.isEQEnabled ? .accentColor : .gray, index: 3)
+                chainNode(icon: "slider.horizontal.3", title: Localization.localized("quality.equalizer"), detail: audioEngine.isEQEnabled ? "\(Localization.localized("quality.active")) · \(audioEngine.eqPreset.displayName) · 10 \(Localization.localized("format.bands"))" : "\(Localization.localized("quality.bypass")) · 10 \(Localization.localized("format.bands"))", color: audioEngine.isEQEnabled ? AppTheme.accent : .gray, index: 3)
                 chainArrow
                 chainNode(icon: outputIcon, title: Localization.localized("quality.output"), detail: outputSummary, color: .orange, index: 4)
             }
@@ -425,8 +425,17 @@ struct AudioQualityDetailView: View {
     // ✅ Profundidad REAL: lossless muestra sus bits (16/24/32); los codecs
     // con pérdida (MP3/AAC) no tienen profundidad lineal → "—" (nunca "0").
     private var bitDepthLabel: String {
-        guard let song, song.bitDepth > 0 else { return "—" }
-        return "\(song.bitDepth) bits"
+        guard let song else { return "—" }
+        // ✅ DEBUG: Log para verificar valor de bitDepth
+        AppLog.debug(.playback, "bitDepthLabel - song: \(song.title), bitDepth: \(song.bitDepth)")
+        if song.bitDepth > 0 {
+            return "\(song.bitDepth) bits"
+        }
+        // Para formatos con pérdida, mostrar el bitrate si está disponible
+        if let bitrate = song.bitrate, bitrate > 0 {
+            return "~\(bitrate) kbps"
+        }
+        return "—"
     }
 
     // ✅ Detección por portType, independiente del idioma del sistema

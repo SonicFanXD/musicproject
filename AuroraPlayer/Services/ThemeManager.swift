@@ -234,14 +234,13 @@ enum AppTheme {
         return 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b)
     }
 
-    /// Devuelve blanco o negro según contraste con el fondo dado
-    /// (texto/borde siempre legible sobre el color de la portada).
+    /// Devuelve siempre blanco para mantener consistencia visual
+    /// (el usuario prefiere texto blanco en lugar de contraste automático).
     static func contrastingText(on uiColor: UIColor) -> Color {
-        luminance(of: uiColor) > 0.5 ? Color.black : Color.white
+        .white
     }
     static func contrastingText(on uiColor: UIColor?) -> Color {
-        guard let uiColor else { return .white }
-        return contrastingText(on: uiColor)
+        .white
     }
 
     // MARK: - Extracción de color dominante (más vivo)

@@ -701,9 +701,9 @@ struct NowPlayingView: View {
 
                 AudioQualityDetailView(audioEngine: audioEngine, embeddedInCard: true)
             }
-            // ✅ Panel COMPACTO: deja ver el entorno de NowPlaying alrededor
-            // (antes ocupaba casi toda la pantalla en pantallas pequeñas).
-            .frame(maxWidth: 480, maxHeight: 440)
+            // ✅ Panel EXPANDIDO: mejor legibilidad y espacio para todos los detalles
+            // Aumentado de 480x440 a 520x500 para mejor experiencia visual.
+            .frame(maxWidth: 520, maxHeight: 500)
             .background {
                 // Cristal ultraThinMaterial: el arte borroso del fondo se ve
                 // a través del panel, con borde luminoso y profundidad.

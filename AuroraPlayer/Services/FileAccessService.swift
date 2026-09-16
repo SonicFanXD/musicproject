@@ -750,7 +750,7 @@ class FileAccessService: ObservableObject {
 
     private func makeSong(from url: URL) async -> Song {
         let metadata = await readMetadata(from: url)
-        return Song(url: url, title: metadata.title, artist: metadata.artist, albumArtist: metadata.albumArtist, album: metadata.album, artworkData: metadata.artworkData, duration: metadata.duration, lyrics: metadata.lyrics, formatDescription: metadata.formatDescription, discNumber: metadata.discNumber, trackNumber: metadata.trackNumber, releaseDate: metadata.releaseDate, sampleRate: metadata.sampleRate, bitDepth: metadata.bitDepth, channelCount: metadata.channelCount)
+        return Song(url: url, title: metadata.title, artist: metadata.artist, albumArtist: metadata.albumArtist, album: metadata.album, artworkData: metadata.artworkData, duration: metadata.duration, lyrics: metadata.lyrics, formatDescription: metadata.formatDescription, discNumber: metadata.discNumber, trackNumber: metadata.trackNumber, releaseDate: metadata.releaseDate, sampleRate: metadata.sampleRate, bitDepth: metadata.bitDepth, channelCount: metadata.channelCount, bitrate: metadata.bitrate)
     }
 
     private struct SongMetadata {
@@ -768,6 +768,7 @@ class FileAccessService: ObservableObject {
         let sampleRate: Double
         let bitDepth: Int
         let channelCount: Int
+        let bitrate: Int?
     }
 
     // MARK: - readMetadata (OPTIMIZADO: una sola apertura de archivo, sin lecturas redundantes, con timeout)
@@ -989,6 +990,8 @@ class FileAccessService: ObservableObject {
             channelCount = Int(asbd.pointee.mChannelsPerFrame)
             let fileBits = Int(asbd.pointee.mBitsPerChannel)
             bitDepth = (fileBits > 0 && fileBits <= 32) ? fileBits : 0
+            // ✅ DEBUG: Log para verificar extracción de bitDepth
+            AppLog.debug(.fileAccess, "Archivo: \(url.lastPathComponent) - bitDepth extraído: \(bitDepth) (raw: \(fileBits))")
         }
         // ✅ LOSSLESS → profundidad real; LOSSY (MP3/AAC, bitDepth 0) →
         // bitrate medio en kbps (la "calidad" equivalente del codec).
@@ -1020,7 +1023,8 @@ class FileAccessService: ObservableObject {
             releaseDate: releaseDate,
             sampleRate: sampleRate,
             bitDepth: bitDepth,
-            channelCount: channelCount
+            channelCount: channelCount,
+            bitrate: bitrateKbps
         )
     }
 
@@ -1138,7 +1142,8 @@ class FileAccessService: ObservableObject {
             releaseDate: releaseDate,
             sampleRate: sampleRate,
             bitDepth: Int(bits),
-            channelCount: Int(channels)
+            channelCount: Int(channels),
+            bitrate: lastFormatBitrate
         )
     }
 

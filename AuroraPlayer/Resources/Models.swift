@@ -90,6 +90,7 @@ struct Song: Identifiable, Equatable, Codable {
     let sampleRate: Double
     let bitDepth: Int
     let channelCount: Int
+    let bitrate: Int?  // ✅ Bitrate para formatos con pérdida (MP3/AAC)
 
     init(
         id: UUID = UUID(),
@@ -107,7 +108,8 @@ struct Song: Identifiable, Equatable, Codable {
         releaseDate: Date? = nil,
         sampleRate: Double = 0,
         bitDepth: Int = 0,
-        channelCount: Int = 0
+        channelCount: Int = 0,
+        bitrate: Int? = nil
     ) {
         self.id = id
         self.url = url
@@ -125,6 +127,7 @@ struct Song: Identifiable, Equatable, Codable {
         self.sampleRate = sampleRate
         self.bitDepth = bitDepth
         self.channelCount = channelCount
+        self.bitrate = bitrate
     }
 
     static func == (lhs: Song, rhs: Song) -> Bool {

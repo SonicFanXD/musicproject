@@ -305,7 +305,7 @@ struct SettingsView: View {
                         settingsSection(icon: "wand.and.rays", title: Localization.localized("settings.customization"), color: .indigo) {
                             settingsSliderRow(title: Localization.localized("settings.hapticIntensity"), value: $hapticIntensity, range: 0.0...1.0, step: 0.1, color: .mint, suffix: "")
                             settingsDivider
-                            settingsToggleRow(title: Localization.localized("settings.showVisualizerInBar"), subtitle: Localization.localized("settings.showVisualizerInBarSubtitle"), icon: "waveform", color: .accentColor, isOn: $showVisualizerInBar)
+                            settingsToggleRow(title: Localization.localized("settings.showVisualizerInBar"), subtitle: Localization.localized("settings.showVisualizerInBarSubtitle"), icon: "waveform", color: AppTheme.accent, isOn: $showVisualizerInBar)
                             settingsDivider
                             settingsToggleRow(title: Localization.localized("settings.compactPlayerBar"), subtitle: Localization.localized("settings.compactPlayerBarSubtitle"), icon: "rectangle.compress.vertical", color: .gray, isOn: $compactPlayerBar)
                             settingsDivider
