@@ -662,7 +662,7 @@ class FileAccessService: ObservableObject {
                 // Ahora solo se descartan las que SÍ influyeron en el sort; las
                 // recién llegadas permanecen en pendingSongs y se incorporan en
                 // el siguiente flush / sort final.
-                let includedIDs = Set(sortedSongs.map { $0.id })
+                let includedIDs = Set(uniqueSongs.map { $0.id })
                 self.pendingSongs.removeAll { includedIDs.contains($0.id) }
                 self.needsRebuild = true // ✅ Reconstruir álbumes/artistas con nuevas canciones
                 self.scheduleCacheSave()
@@ -722,20 +722,20 @@ class FileAccessService: ObservableObject {
                     self.isSortScheduled = false
                     let addedCount = uniqueSongs.count - self.songs.count
                     self.songs = uniqueSongs
-                    self.indexedSongKeys = Set(sortedSongs.map { Self.libraryKey(for: $0.url) })
+                    self.indexedSongKeys = Set(uniqueSongs.map { Self.libraryKey(for: $0.url) })
                     self.pruneMissingOnFinish = false
                     self.seenOnDiskKeys = []
                     // ✅ Solo descartar las canciones que entraron en el sort. Las
                     // que llegaron mientras se ordenaba (p.ej. del lote final) NO
                     // se borran: permanecen en pendingSongs para una pasada final.
-                    let includedIDs = Set(sortedSongs.map { $0.id })
+                    let includedIDs = Set(uniqueSongs.map { $0.id })
                     self.pendingSongs.removeAll { includedIDs.contains($0.id) }
                     self.needsRebuild = true // ✅ Reconstruir álbumes/artistas con nuevas canciones
                     self.scheduleCacheSave()
                     if addedCount > 0 {
-                        AppLog.info(.library, "Indexación completada: \(sortedSongs.count) canciones (+\(addedCount) nuevas) · RAM \(self.residentMemoryMB) MB")
+                        AppLog.info(.library, "Indexación completada: \(uniqueSongs.count) canciones (+\(addedCount) nuevas) · RAM \(self.residentMemoryMB) MB")
                     } else {
-                        AppLog.info(.library, "Indexación completada: \(sortedSongs.count) canciones (sin cambios) · RAM \(self.residentMemoryMB) MB")
+                        AppLog.info(.library, "Indexación completada: \(uniqueSongs.count) canciones (sin cambios) · RAM \(self.residentMemoryMB) MB")
                     }
                     if !self.pendingSongs.isEmpty {
                         self.updateScanningState()
