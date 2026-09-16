@@ -338,7 +338,7 @@ enum AppTheme {
                 // - Factor de saturación: s^1.2 para dar importancia a colores vivos
                 // - Factor de brillo: campana más centrada en 0.55 (colores medios)
                 // - Peso base: 1.0 para dar más importancia al área de cobertura
-                let areaWeight = 1.0
+                let areaWeight: Float = 1.0
                 let satWeight = pow(s, 1.2)
                 let brightWeight = max(0.3, 1.0 - abs(br - 0.55) * 1.5)
                 let weight = areaWeight * satWeight * brightWeight
