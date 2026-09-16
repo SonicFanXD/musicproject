@@ -647,9 +647,7 @@ class FileAccessService: ObservableObject {
             // ✅ Sort en background (sin sleep, sin bloqueo), sobre la
             // snapshot inmutable capturada en el main.
             // ✅ Deduplicar: un lote que llega mientras se ordena puede quedar
-            // ✅ FIX: Orden alfabético por título como ordenamiento por defecto.
-            // Esto asegura que las canciones tengan un orden consistente al cargar
-            // desde disco, mientras las opciones del usuario pueden cambiar este orden.
+            // en ambas listas → duplicados en la librería (conteo 13 vs 9).
             let sortedSongs = dedupeSongsByUrl(snapshot).sorted {
                 $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
             }

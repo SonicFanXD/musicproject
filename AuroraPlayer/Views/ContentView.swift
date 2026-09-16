@@ -22,6 +22,8 @@ struct ContentView: View {
     // re-ordenaba toda la librería → lag al escribir.
     @State private var debouncedSearchText = ""
     @State private var searchDebounceTask: Task<Void, Never>?
+    // ✅ Manejo de ciclo de vida para detectar cambios en segundo plano
+    @Environment(\.scenePhase) private var scenePhase
     
     // ✅ FIX ordenamiento: @AppStorage leído vía computed property no siempre
     // invalida la vista al cambiar la opción. Se usa @State (reactivo) sincronizado
@@ -49,7 +51,7 @@ struct ContentView: View {
     var body: some View {
         ZStack {
             NavigationStack {
-                Color.clear
+                AppBackground()
                     .onAppear {
                         // ✅ Sincronizar @State con @AppStorage al aparecer para garantizar
                         // que los valores persistidos se carguen correctamente
@@ -60,36 +62,33 @@ struct ContentView: View {
                         artistSortRaw = artistSortRawStorage
                         artistSortAscending = artistSortAscendingStorage
                     }
-                ZStack {
-                    AppBackground()
+                VStack(spacing: 0) {
+                    categoryPicker
 
-                    VStack(spacing: 0) {
-                        categoryPicker
-
-                        // ✅ Transición animada entre categorías: el contenido
-                        // entra con fade + slide suave, sale con fade + micro-escala.
-                        // Solo transform/opacity → renderizado por GPU, 60fps estables.
-                        ZStack {
-                            switch selectedCategory {
-                            case .songs:
-                                libraryList(id: "songs") { songsSection }
-                            case .albums:
-                                libraryList(id: "albums") { albumsSection }
-                            case .artists:
-                                libraryList(id: "artists") { artistsSection }
-                            case .playlists:
-                                libraryList(id: "playlists") { playlistsSection }
-                            }
+                    // ✅ Transición animada entre categorías: el contenido
+                    // entra con fade + slide suave, sale con fade + micro-escala.
+                    // Solo transform/opacity → renderizado por GPU, 60fps estables.
+                    ZStack {
+                        switch selectedCategory {
+                        case .songs:
+                            libraryList(id: "songs") { songsSection }
+                        case .albums:
+                            libraryList(id: "albums") { albumsSection }
+                        case .artists:
+                            libraryList(id: "artists") { artistsSection }
+                        case .playlists:
+                            libraryList(id: "playlists") { playlistsSection }
                         }
-                        .animation(.spring(response: 0.32, dampingFraction: 0.88), value: selectedCategory)
-                        .refreshable {
-                            fileAccessService.refreshAllFolders()
-                            try? await Task.sleep(nanoseconds: 600_000_000)
-                        }
-                        .searchable(
-                            text: $searchText,
-                            prompt: Localization.localized("search.prompt")
-                        )
+                    }
+                    .animation(.spring(response: 0.32, dampingFraction: 0.88), value: selectedCategory)
+                    .refreshable {
+                        fileAccessService.refreshAllFolders()
+                        try? await Task.sleep(nanoseconds: 600_000_000)
+                    }
+                    .searchable(
+                        text: $searchText,
+                        prompt: Localization.localized("search.prompt")
+                    )
                         // ✅ BÚSQUEDA: mantener el índice sincronizado con la
                         // librería (solo se reconstruye cuando cambian las
                         // canciones/álbumes/artistas, nunca por tecla).
@@ -132,6 +131,14 @@ struct ContentView: View {
                                 albums: fileAccessService.albums,
                                 artists: fileAccessService.artists
                             )
+                        }
+                        // ✅ DETECCIÓN EN SEGUNDO PLANO: cuando la app vuelve a activa,
+                        // verificar si hay nuevas canciones y indexarlas automáticamente.
+                        .onChange(of: scenePhase) { newPhase in
+                            if newPhase == .active {
+                                AppLog.info(.lifecycle, "App volvió a activo, verificando nuevas canciones...")
+                                fileAccessService.refreshAllFolders()
+                            }
                         }
                     }
                 }

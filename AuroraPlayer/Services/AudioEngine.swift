@@ -1300,10 +1300,11 @@ class AudioEngine: NSObject, ObservableObject {
         }
         clock.time = currentTime
         // ✅ FADE anti-pop: bajar el volume a 0 y SOLO entonces cortar el nodo.
-        // El corte real se difiere 45 ms; si en ese lapso llega resume() (que
-        // sube el volumen), el nodo ni se toca → transición limpia en ambos sentidos.
-        rampMixerVolume(to: 0, duration: 0.04)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+        // El corte real se difiere 30ms (reducido de 45ms para respuesta más inmediata);
+        // si en ese lapso llega resume() (que sube el volumen), el nodo ni se toca
+        // → transición limpia en ambos sentidos.
+        rampMixerVolume(to: 0, duration: 0.03)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) { [weak self] in
             guard let self, !self.isPlaying else { return }
             if self.playerNode.isPlaying {
                 self.playerNode.pause()
@@ -1368,10 +1369,10 @@ class AudioEngine: NSObject, ObservableObject {
     }
 
     func resume() {
-        // ✅ ANTI-DOBLE-RESUME: ya reproduciendo + llamada duplicada en 150ms
-        // (ruta que llega con 2 notificaciones) → ignorar.
+        // ✅ ANTI-DOBLE-RESUME: ya reproduciendo + llamada duplicada en 100ms
+        // (reducido de 150ms para respuesta más inmediata).
         let now = CACurrentMediaTime()
-        if isPlaying, now - lastResumeCallTime < 0.15 {
+        if isPlaying, now - lastResumeCallTime < 0.1 {
             return
         }
         lastResumeCallTime = now
