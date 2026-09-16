@@ -113,7 +113,7 @@ class FileAccessService: ObservableObject {
     // Capturados en init para evitar problemas de concurrencia
     private let maxInFlightBatches: Int
     private let metadataBatchSize: Int
-    private let maxConcurrentMetadataReads: 2
+    private let maxConcurrentMetadataReads: Int = 2
 
     // Colecciones derivadas cacheadas: se recalculan solo cuando cambia `songs`,
     // no en cada render de la UI.
