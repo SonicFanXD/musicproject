@@ -65,7 +65,7 @@ final class ThemeManager: ObservableObject {
             applyGlobalUIKitTint()
             return
         }
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+        DispatchQueue.global(qos: .userInteractive).async { [weak self] in
             let dominant = AppTheme.dominantColor(from: artwork)
             guard let dominant else { return }
             AppTheme.artworkColorCache.setObject(dominant, forKey: cacheKey)

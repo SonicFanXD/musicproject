@@ -134,11 +134,16 @@ struct ContentView: View {
                     )
                 }
                 // ✅ DETECCIÓN EN SEGUNDO PLANO: cuando la app vuelve a activa,
-                // verificar si hay nuevas canciones y indexarlas automáticamente.
+                // verificar si hay nuevas canciones y indexarlas automáticamente con debounce.
                 .onChange(of: scenePhase) { newPhase in
                     if newPhase == .active {
                         AppLog.info(.lifecycle, "App volvió a activo, verificando nuevas canciones...")
-                        fileAccessService.refreshAllFolders()
+                        // ✅ FIX: Usar debounce para evitar múltiples re-escaneos rápidos
+                        Task {
+                            try? await Task.sleep(nanoseconds: 500_000_000) // 500ms debounce
+                            guard !Task.isCancelled else { return }
+                            fileAccessService.refreshAllFolders()
+                        }
                     }
                 }
                 .navigationBarTitleDisplayMode(.inline)

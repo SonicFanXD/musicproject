@@ -117,7 +117,7 @@ struct NowPlayingView: View {
                         // ✅ MEJORADO: la portada solo anima al CAMBIAR de canción,
                         // no al pausar/resumir. Antes había una animación rara de
                         // escala (1.02 → 1.0) que se veía artificial al tocar play/pause.
-                        .animation(.easeInOut(duration: 0.3), value: audioEngine.currentSong?.id)
+                        .animation(.easeInOut(duration: 0.2), value: audioEngine.currentSong?.id)
 
                     Spacer(minLength: isCompactScreen ? 10 : 16)
 
@@ -133,7 +133,7 @@ struct NowPlayingView: View {
                     Spacer(minLength: isCompactScreen ? 8 : 14)
 
                     songInfoView
-                        .animation(.easeInOut(duration: 0.25), value: audioEngine.currentSong?.id)
+                        .animation(.easeInOut(duration: 0.15), value: audioEngine.currentSong?.id)
 
                     Spacer(minLength: isCompactScreen ? 8 : 14)
 
@@ -225,7 +225,7 @@ struct NowPlayingView: View {
                         .transition(.opacity.combined(with: .scale(scale: 0.92)))
                 }
             }
-            .animation(.easeOut(duration: 0.22), value: showQualityDetail)
+            .animation(.easeOut(duration: 0.15), value: showQualityDetail)
     }
 
     // MARK: - Background (respeta "Reducir transparencia")
@@ -385,7 +385,7 @@ struct NowPlayingView: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .animation(.spring(response: 0.3, dampingFraction: 0.6), value: isCurrentLiked)
+            .animation(.spring(response: 0.2, dampingFraction: 0.7), value: isCurrentLiked)
             .accessibilityLabel(Localization.localized("actions.like"))
         }
         .padding(.horizontal, 6)
@@ -420,7 +420,7 @@ struct NowPlayingView: View {
             // y el cambio de estado era casi invisible sobre la portada). El
             // .animation(value:) colorea el icono AL INSTANTE al conmutar.
             .buttonStyle(PressableButtonStyle(scale: 0.86))
-            .animation(.easeInOut(duration: 0.2), value: audioEngine.isShuffleEnabled)
+            .animation(.easeInOut(duration: 0.15), value: audioEngine.isShuffleEnabled)
 
             // Previous
             Button {
