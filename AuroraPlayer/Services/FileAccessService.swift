@@ -991,7 +991,7 @@ class FileAccessService: ObservableObject {
             let fileBits = Int(asbd.pointee.mBitsPerChannel)
             bitDepth = (fileBits > 0 && fileBits <= 32) ? fileBits : 0
             // ✅ DEBUG: Log para verificar extracción de bitDepth
-            AppLog.debug(.fileAccess, "Archivo: \(url.lastPathComponent) - bitDepth extraído: \(bitDepth) (raw: \(fileBits))")
+            AppLog.debug(.metadata, "Archivo: \(url.lastPathComponent) - bitDepth extraído: \(bitDepth) (raw: \(fileBits))")
         }
         // ✅ LOSSLESS → profundidad real; LOSSY (MP3/AAC, bitDepth 0) →
         // bitrate medio en kbps (la "calidad" equivalente del codec).

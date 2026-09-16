@@ -426,8 +426,6 @@ struct AudioQualityDetailView: View {
     // con pérdida (MP3/AAC) no tienen profundidad lineal → "—" (nunca "0").
     private var bitDepthLabel: String {
         guard let song else { return "—" }
-        // ✅ DEBUG: Log para verificar valor de bitDepth
-        AppLog.debug(.playback, "bitDepthLabel - song: \(song.title), bitDepth: \(song.bitDepth)")
         if song.bitDepth > 0 {
             return "\(song.bitDepth) bits"
         }
