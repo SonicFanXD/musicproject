@@ -7,7 +7,7 @@ import UIKit
 final class HardwareCapabilities {
     static let shared = HardwareCapabilities()
     
-    private(set) let deviceModel: String
+    private let deviceModel: String
     let isA11Chip: Bool
     private let memoryClass: Int
     let isLowEndDevice: Bool
