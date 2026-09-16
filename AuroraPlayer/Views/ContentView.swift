@@ -17,7 +17,7 @@ struct ContentView: View {
     }
     @State private var searchText = ""
     // ✅ DEBOUNCE de búsqueda: el campo escribe en `searchText` (fluido),
-    // pero el filtrado usa `debouncedSearchText`, que se actualiza 250ms
+    // pero el filtrado usa `debouncedSearchText`, que se actualiza 200ms
     // después de la última tecla. Antes cada carácter re-filtraba y
     // re-ordenaba toda la librería → lag al escribir.
     @State private var debouncedSearchText = ""
@@ -108,7 +108,7 @@ struct ContentView: View {
                 .onChange(of: albumSortAscending) { albumSortAscendingStorage = $0 }
                 .onChange(of: artistSortRaw) { artistSortRawStorage = $0 }
                 .onChange(of: artistSortAscending) { artistSortAscendingStorage = $0 }
-                // ✅ DEBOUNCE: filtrar 250ms después de la última tecla.
+                // ✅ DEBOUNCE: filtrar 200ms después de la última tecla (reducido de 250ms para respuesta más rápida).
                 .onChange(of: searchText) { newValue in
                     // ✅ Resincronizar el índice al empezar a buscar
                     // (barato: se salta si nada cambió desde la última vez).
@@ -119,7 +119,7 @@ struct ContentView: View {
                     )
                     searchDebounceTask?.cancel()
                     searchDebounceTask = Task {
-                        try? await Task.sleep(nanoseconds: 250_000_000)
+                        try? await Task.sleep(nanoseconds: 200_000_000)
                         guard !Task.isCancelled else { return }
                         debouncedSearchText = newValue
                     }

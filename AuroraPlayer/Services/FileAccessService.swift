@@ -102,11 +102,11 @@ class FileAccessService: ObservableObject {
     private var inFlightBatches: Int {
         inFlightByGeneration.values.reduce(0, +)
     }
-    // ✅ CONCURRENCIA OPTIMIZADA: 4 lotes en paralelo × 75 URLs = máx 300
+    // ✅ CONCURRENCIA OPTIMIZADA: 6 lotes en paralelo × 100 URLs = máx 600
     // AVAsset.load simultáneos. Aumentamos la velocidad sin saturar memoria.
-    private let maxInFlightBatches = 4
+    private let maxInFlightBatches = 6
     // ✅ Lotes optimizados: mayor tamaño = menos overhead de scheduling
-    private let metadataBatchSize = 75
+    private let metadataBatchSize = 100
 
     // Colecciones derivadas cacheadas: se recalculan solo cuando cambia `songs`,
     // no en cada render de la UI.
@@ -1850,10 +1850,9 @@ class FileAccessService: ObservableObject {
         cacheSaveWorkItem?.cancel()
         let workItem = DispatchWorkItem { [weak self] in self?.saveCachedSongs() }
         cacheSaveWorkItem = workItem
-        // ✅ ANTI-CRASH: delay 5s (antes 1s). Con bibliotecas grandes el JSON
-        // pesa ~200-300MB (portadas incluidas); serializarlo tras cada lote del
-        // escaneo multiplicaba los picos de memoria → jetsam kill ~900 canciones.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 5, execute: workItem)
+        // ✅ OPTIMIZACIÓN: delay 3s (reducido de 5s). Mejora la velocidad de caché
+        // sin causar picos de memoria excesivos.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3, execute: workItem)
     }
 
     private func saveCachedSongs() {
