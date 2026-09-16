@@ -307,6 +307,7 @@ final class Localization: ObservableObject {
             "quality.unknownQuality": [.spanish: "CALIDAD DESCONOCIDA", .english: "UNKNOWN QUALITY"],
             "quality.file": [.spanish: "Archivo", .english: "File"],
             "quality.format": [.spanish: "Formato", .english: "Format"],
+            "quality.codec": [.spanish: "Codec", .english: "Codec"],
             "quality.sampleRate": [.spanish: "Tasa de muestreo", .english: "Sample Rate"],
             "quality.bitDepth": [.spanish: "Profundidad de bits", .english: "Bit Depth"],
             "quality.channels": [.spanish: "Canales", .english: "Channels"],

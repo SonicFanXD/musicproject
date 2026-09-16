@@ -345,6 +345,7 @@ struct AudioQualityDetailView: View {
     private var fileDetailsSection: some View {
         settingsSection(title: Localization.localized("quality.file"), icon: "info.circle") {
             detailRow(Localization.localized("quality.format"), formatLabel)
+            detailRow(Localization.localized("quality.codec"), codecLabel)
             detailRow(Localization.localized("quality.sampleRate"), sampleRateLabel)
             detailRow(Localization.localized("quality.bitDepth"), bitDepthLabel)
             detailRow(Localization.localized("quality.channels"), channelsLabel)
@@ -426,12 +427,47 @@ struct AudioQualityDetailView: View {
     // con pérdida (MP3/AAC) no tienen profundidad lineal → "—" (nunca "0").
     private var bitDepthLabel: String {
         guard let song else { return "—" }
+        // Priorizar bitDepth si está disponible (formatos lossless)
         if song.bitDepth > 0 {
-            return "\(song.bitDepth) bits"
+            return "\(song.bitDepth)-bit"
         }
         // Para formatos con pérdida, mostrar el bitrate si está disponible
         if let bitrate = song.bitrate, bitrate > 0 {
             return "~\(bitrate) kbps"
+        }
+        return "—"
+    }
+
+    // ✅ Nuevo: Label de sample rate con más detalle audiófilo
+    private var sampleRateLabel: String {
+        guard let song else { return "—" }
+        let rate = song.sampleRate
+        if rate > 0 {
+            return "\(Int(rate/1000)) kHz"
+        }
+        return "—"
+    }
+
+    // ✅ Nuevo: Label de canales
+    private var channelLabel: String {
+        guard let song else { return "—" }
+        switch song.channelCount {
+        case 1: return "Mono"
+        case 2: return "Stereo"
+        case 6: return "5.1 Surround"
+        case 8: return "7.1 Surround"
+        default: return "\(song.channelCount)ch"
+        }
+    }
+
+    // ✅ Nuevo: Tipo de codec/compresión
+    private var codecLabel: String {
+        guard let song else { return "—" }
+        if song.bitDepth > 0 {
+            return "Lossless"
+        }
+        if song.bitrate != nil {
+            return "Lossy"
         }
         return "—"
     }
