@@ -348,7 +348,7 @@ struct AudioQualityDetailView: View {
             detailRow(Localization.localized("quality.codec"), codecLabel)
             detailRow(Localization.localized("quality.sampleRate"), sampleRateLabel)
             detailRow(Localization.localized("quality.bitDepth"), bitDepthLabel)
-            detailRow(Localization.localized("quality.channels"), channelsLabel)
+            detailRow(Localization.localized("quality.channels"), channelLabel)
             detailRow(Localization.localized("quality.duration"), durationLabel)
             detailRow(Localization.localized("quality.fileSize"), fileSizeLabel)
             detailRow(Localization.localized("quality.estBitrate"), bitrateLabel)
@@ -434,16 +434,6 @@ struct AudioQualityDetailView: View {
         // Para formatos con pérdida, mostrar el bitrate si está disponible
         if let bitrate = song.bitrate, bitrate > 0 {
             return "~\(bitrate) kbps"
-        }
-        return "—"
-    }
-
-    // ✅ Nuevo: Label de sample rate con más detalle audiófilo
-    private var sampleRateLabel: String {
-        guard let song else { return "—" }
-        let rate = song.sampleRate
-        if rate > 0 {
-            return "\(Int(rate/1000)) kHz"
         }
         return "—"
     }
