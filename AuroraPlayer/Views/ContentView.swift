@@ -50,18 +50,18 @@ struct ContentView: View {
 
     var body: some View {
         ZStack {
+            AppBackground()
+                .onAppear {
+                    // ✅ Sincronizar @State con @AppStorage al aparecer para garantizar
+                    // que los valores persistidos se carguen correctamente
+                    sortOptionRaw = songSortRawStorage
+                    songSortAscending = songSortAscendingStorage
+                    albumSortRaw = albumSortRawStorage
+                    albumSortAscending = albumSortAscendingStorage
+                    artistSortRaw = artistSortRawStorage
+                    artistSortAscending = artistSortAscendingStorage
+                }
             NavigationStack {
-                AppBackground()
-                    .onAppear {
-                        // ✅ Sincronizar @State con @AppStorage al aparecer para garantizar
-                        // que los valores persistidos se carguen correctamente
-                        sortOptionRaw = songSortRawStorage
-                        songSortAscending = songSortAscendingStorage
-                        albumSortRaw = albumSortRawStorage
-                        albumSortAscending = albumSortAscendingStorage
-                        artistSortRaw = artistSortRawStorage
-                        artistSortAscending = artistSortAscendingStorage
-                    }
                 VStack(spacing: 0) {
                     categoryPicker
 
