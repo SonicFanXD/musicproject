@@ -484,15 +484,9 @@ struct ContentView: View {
         } else if currentFilteredSongs.isEmpty {
             if fileAccessService.isScanning && fileAccessService.scanTotal > 0 {
                 indexingProgressCard
-<<<<<<< HEAD
                     .listRowSeparator(.hidden)
                     .listRowBackground(Color.clear)
             } else if searchText.isEmpty {
-=======
-                    .padding(.horizontal, 12)
-                    .padding(.top, 8)
-            } else if debouncedSearchText.isEmpty {
->>>>>>> origin/main
                 emptyLibraryView(
                     icon: "music.note.list",
                     title: Localization.localized("library.empty.title"),
