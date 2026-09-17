@@ -141,11 +141,15 @@ struct ContentView: View {
                     )
                 }
                 // ✅ DETECCIÓN EN SEGUNDO PLANO: cuando la app vuelve a activa,
-                // verificar si hay nuevas canciones y indexarlas automáticamente.
+                // verificar si hay canciones nuevas SILENCIOSAMENTE (sin tarjeta
+                // compacta ni re-indexado visible). Antes aquí se lanzaba un
+                // rescan completo (refreshAllFolders) en CADA activación,
+                // incluida la primera apertura → era la causa de que al abrir
+                // la app arrancara "a indexar todo" con la animación compacta.
                 .onChange(of: scenePhase) { newPhase in
                     if newPhase == .active {
-                        AppLog.info(.lifecycle, "App volvió a activo, verificando nuevas canciones...")
-                        fileAccessService.refreshAllFolders()
+                        AppLog.info(.lifecycle, "App volvió a activo, detección silenciosa de canciones nuevas...")
+                        fileAccessService.backgroundScanForNewSongs()
                     }
                 }
                 .navigationBarTitleDisplayMode(.inline)
@@ -1145,9 +1149,11 @@ struct ContentView: View {
         guard !hasRestored else { return }
         hasRestored = true
         audioEngine.restoreState(with: fileAccessService.songs)
-        // ✅ Escaneo en segundo plano para detectar canciones nuevas
-        // Solo se ejecuta si ya se cargaron canciones previamente (no es primera vez)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+        // ✅ Detección silenciosa al abrir: enumera el disco en background SIN
+        // tarjeta compacta ni re-renders. Solo indexa lo NUEVO; si no hay nada
+        // nuevo la lista ni parpadea. Delay de 2s para que el arranque (splash
+        // + primera lista) vaya primero y la enumeración no compita con él.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
             fileAccessService.backgroundScanForNewSongs()
         }
     }
