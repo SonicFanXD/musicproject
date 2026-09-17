@@ -65,19 +65,30 @@ struct ContentView: View {
                 VStack(spacing: 0) {
                     categoryPicker
 
+                    // ✅ FIX barra de búsqueda: campo INLINE debajo del picker,
+                    // NO .searchable del NavigationStack. .searchable + List +
+                    // toolbar ultraThinMaterial dejaba la barra cortada/fantasma
+                    // y un rectángulo negro debajo (fondo del search scope sin
+                    // contenido). Este TextField nativo tiene el mismo look,
+                    // siempre visible, sin pelear con la navigationBar.
+                    searchFieldInline
+                        .padding(.horizontal, 12)
+                        .padding(.top, 8)
+                        .padding(.bottom, 4)
+
                     // ✅ Transición animada entre categorías: el contenido
                     // entra con fade + slide suave, sale con fade + micro-escala.
                     // Solo transform/opacity → renderizado por GPU, 60fps estables.
                     ZStack {
                         switch selectedCategory {
                         case .songs:
-                            libraryList(id: "songs") { songsSection }
+                            libraryScroll(id: "songs") { songsSection }
                         case .albums:
-                            libraryList(id: "albums") { albumsSection }
+                            libraryScroll(id: "albums") { albumsSection }
                         case .artists:
-                            libraryList(id: "artists") { artistsSection }
+                            libraryScroll(id: "artists") { artistsSection }
                         case .playlists:
-                            libraryList(id: "playlists") { playlistsSection }
+                            libraryScroll(id: "playlists") { playlistsSection }
                         }
                     }
                     .animation(.spring(response: 0.32, dampingFraction: 0.88), value: selectedCategory)
@@ -86,10 +97,6 @@ struct ContentView: View {
                         try? await Task.sleep(nanoseconds: 600_000_000)
                     }
                 }
-                .searchable(
-                    text: $searchText,
-                    prompt: Localization.localized("search.prompt")
-                )
                 // ✅ BÚSQUEDA: mantener el índice sincronizado con la
                 // librería (solo se reconstruye cuando cambian las
                 // canciones/álbumes/artistas, nunca por tecla).
@@ -349,31 +356,58 @@ struct ContentView: View {
                 .buttonStyle(PressableButtonStyle(scale: 0.96))
             }
         }
-        .listRowSeparator(.hidden)
-        .listRowBackground(Color.clear)
     }
 
-    private func libraryList<Content: View>(
+    // ✅ Contenedor de biblioteca con ScrollView + LazyVStack (NO List).
+    // List + .searchable + toolbar ultraThinMaterial = barra de búsqueda
+    // cortada/fantasma y rectángulo negro debajo (celda de scope bar vacía).
+    // ScrollView + LazyVStack no toca la navigationBar: el buscador inline
+    // de arriba siempre se ve bien y el scroll rinde igual (lazy).
+    // Se conserva el inset inferior para la PlayerBar flotante (sin él, la
+    // última fila quedaba oculta detrás de la barra).
+    private func libraryScroll<Content: View>(
         id: String,
         @ViewBuilder content: () -> Content
     ) -> some View {
-        List {
-            content()
-                .id(id)
+        ScrollView {
+            LazyVStack(spacing: 0) {
+                content()
+            }
+            .id(id)
+            // ✅ Espacio al pie para la PlayerBar flotante (96pt solo con
+            // canción activa; 24pt de respiro base sin canción).
+            .padding(.bottom, audioEngine.currentSong != nil ? 96 : 24)
         }
         .id(id)
-        .listStyle(.plain)
-        .scrollContentBackground(.hidden)
-        // ✅ FIX scroll: reservar espacio al pie para la PlayerBar flotante.
-        // Sin esto, la última fila (canción/álbum/artista) quedaba oculta
-        // detrás de la barra al llegar al final de la lista. safeAreaInset
-        // reduce el área scrolleable — funciona igual en todas las categorías.
-        // Condicional: la PlayerBar se oculta (altura 0) sin canción activa,
-        // así que el inset solo existe cuando la barra es visible.
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            Color.clear
-                .frame(height: audioEngine.currentSong != nil ? 96 : 0)
-                .allowsHitTesting(false)
+        .scrollIndicators(.hidden)
+    }
+
+    // ✅ Buscador INLINE con look nativo (lupa + fondo secondarySystemBackground).
+    // Sustituye a .searchable del NavigationStack sin pelear con la navBar.
+    private var searchFieldInline: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 15, weight: .medium))
+                .foregroundStyle(.secondary)
+            TextField(Localization.localized("search.prompt"), text: $searchText)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            if !searchText.isEmpty {
+                Button {
+                    searchText = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+        .background {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color(UIColor.secondarySystemBackground))
         }
     }
 
@@ -446,38 +480,37 @@ struct ContentView: View {
         if firstTimeIndexing {
             indexingProgressCard
                 .transition(.opacity)
-                .listRowSeparator(.hidden)
-                .listRowBackground(Color.clear)
+                .padding(.horizontal, 12)
+                .padding(.top, 8)
             if !currentFilteredSongs.isEmpty {
                 sortButtonRow
-                    .listRowSeparator(.hidden)
-                    .listRowBackground(Color.clear)
+                    .padding(.horizontal, 12)
+                    .padding(.top, 8)
                 ForEach(currentFilteredSongs) { song in
                     songRow(song)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
                 }
-                .listRowSeparator(.hidden)
-                .listRowBackground(Color.clear)
-                .listRowInsets(EdgeInsets(top: 6, leading: 12, bottom: 6, trailing: 12))
             }
         } else if currentFilteredSongs.isEmpty {
             if fileAccessService.isScanning && fileAccessService.scanTotal > 0 {
                 indexingProgressCard
-                    .listRowSeparator(.hidden)
-                    .listRowBackground(Color.clear)
+                    .padding(.horizontal, 12)
+                    .padding(.top, 8)
             } else if debouncedSearchText.isEmpty {
                 emptyLibraryView(
                     icon: "music.note.list",
                     title: Localization.localized("library.empty.title"),
                     message: Localization.localized("library.empty.message")
                 )
+                .padding(.horizontal, 12)
             } else {
                 ContentUnavailableLibraryView(
                     icon: "music.note.list",
                     title: Localization.localized("library.noSongsFound.title"),
                     message: Localization.localized("library.noSongsFound.message")
                 )
-                .listRowSeparator(.hidden)
-                .listRowBackground(Color.clear)
+                .padding(.horizontal, 12)
             }
         } else {
             // ✅ ESCANEO CON CANCIONES EXISTENTES: indicador compacto SOLO en
@@ -485,18 +518,16 @@ struct ContentView: View {
             // primera indexación usa la tarjeta grande.
             if fileAccessService.isScanning && fileAccessService.scanTotal > 0 && !firstTimeIndexing {
                 compactIndexingRow
-                    .listRowSeparator(.hidden)
-                    .listRowBackground(Color.clear)
+                    .padding(.top, 8)
             }
             sortButtonRow
-                .listRowSeparator(.hidden)
-                .listRowBackground(Color.clear)
+                .padding(.horizontal, 12)
+                .padding(.top, 8)
             ForEach(currentFilteredSongs) { song in
                 songRow(song)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
             }
-            .listRowSeparator(.hidden)
-            .listRowBackground(Color.clear)
-            .listRowInsets(EdgeInsets(top: 6, leading: 12, bottom: 6, trailing: 12))
         }
     }
     
@@ -676,8 +707,8 @@ struct ContentView: View {
         if firstTimeIndexing {
             indexingProgressCard
                 .transition(.opacity)
-                .listRowSeparator(.hidden)
-                .listRowBackground(Color.clear)
+                .padding(.horizontal, 12)
+                .padding(.top, 8)
         }
         if albums.isEmpty {
             if !firstTimeIndexing {
@@ -688,27 +719,27 @@ struct ContentView: View {
                         ? Localization.localized("library.noAlbums.empty")
                         : Localization.localized("library.noAlbums.search")
                 )
-                .listRowSeparator(.hidden).listRowBackground(Color.clear)
+                .padding(.horizontal, 12)
             }
         } else {
             // ✅ ESCANEO CON ÁLBUMES EXISTENTES: indicador compacto SOLO en
             // re-escaneos (la primera indexación usa la tarjeta grande).
             if fileAccessService.isScanning && fileAccessService.scanTotal > 0 && !firstTimeIndexing {
                 compactIndexingRow
-                    .listRowSeparator(.hidden)
-                    .listRowBackground(Color.clear)
+                    .padding(.top, 8)
             }
             albumSortButtonRow
-                .listRowSeparator(.hidden)
-                .listRowBackground(Color.clear)
+                .padding(.horizontal, 12)
+                .padding(.top, 8)
             ForEach(albums) { album in
                 NavigationLink {
                     AlbumDetailView(album: album, audioEngine: audioEngine)
                 } label: {
                     albumListRow(album)
                 }
-                .buttonStyle(.plain).listRowSeparator(.hidden).listRowBackground(Color.clear)
-                .listRowInsets(EdgeInsets(top: 6, leading: 12, bottom: 6, trailing: 12))
+                .buttonStyle(.plain)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
             }
         }
     }
@@ -720,8 +751,8 @@ struct ContentView: View {
         if firstTimeIndexing {
             indexingProgressCard
                 .transition(.opacity)
-                .listRowSeparator(.hidden)
-                .listRowBackground(Color.clear)
+                .padding(.horizontal, 12)
+                .padding(.top, 8)
         }
         if artists.isEmpty {
             if !firstTimeIndexing {
@@ -732,27 +763,27 @@ struct ContentView: View {
                         ? Localization.localized("library.noArtists.empty")
                         : Localization.localized("library.noArtists.search")
                 )
-                .listRowSeparator(.hidden).listRowBackground(Color.clear)
+                .padding(.horizontal, 12)
             }
         } else {
             // ✅ ESCANEO CON ARTISTAS EXISTENTES: indicador compacto SOLO en
             // re-escaneos (la primera indexación usa la tarjeta grande).
             if fileAccessService.isScanning && fileAccessService.scanTotal > 0 && !firstTimeIndexing {
                 compactIndexingRow
-                    .listRowSeparator(.hidden)
-                    .listRowBackground(Color.clear)
+                    .padding(.top, 8)
             }
             artistSortButtonRow
-                .listRowSeparator(.hidden)
-                .listRowBackground(Color.clear)
+                .padding(.horizontal, 12)
+                .padding(.top, 8)
             ForEach(artists) { artist in
                 NavigationLink {
                     ArtistDetailView(artist: artist, audioEngine: audioEngine)
                 } label: {
                     artistListRow(artist)
                 }
-                .buttonStyle(.plain).listRowSeparator(.hidden).listRowBackground(Color.clear)
-                .listRowInsets(EdgeInsets(top: 6, leading: 12, bottom: 6, trailing: 12))
+                .buttonStyle(.plain)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
             }
         }
     }
@@ -766,7 +797,7 @@ struct ContentView: View {
                 title: Localization.localized("library.noPlaylists.title"),
                 message: Localization.localized("library.noPlaylists.message")
             )
-            .listRowSeparator(.hidden).listRowBackground(Color.clear)
+            .padding(.horizontal, 12)
         } else {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 16) {
@@ -781,8 +812,7 @@ struct ContentView: View {
                 }
                 .padding(.horizontal, 20)
             }
-            .listRowSeparator(.hidden).listRowBackground(Color.clear)
-            .listRowInsets(EdgeInsets(top: 16, leading: 0, bottom: 16, trailing: 0))
+            .padding(.vertical, 16)
         }
     }
 
@@ -929,8 +959,6 @@ struct ContentView: View {
                 Label(Localization.localized("context.playNow"), systemImage: "play.circle.fill")
             }
         }
-        .listRowInsets(EdgeInsets(top: 3, leading: 10, bottom: 3, trailing: 10))
-        .listRowBackground(Color.clear)
     }
 
     private func formatDuration(_ seconds: TimeInterval) -> String {

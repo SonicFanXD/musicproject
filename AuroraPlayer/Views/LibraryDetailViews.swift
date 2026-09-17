@@ -178,10 +178,8 @@ struct AlbumDetailView: View {
                 // canciones con distinto sample rate, se muestra el de la
                 // mayoría — p. ej. "24-bit · 44.1 kHz" o "44.1 kHz".
                 if let q = cachedQuality {
-                    let khz = q.khz / 1000.0
-                    let khzText = khz.truncatingRemainder(dividingBy: 1) == 0
-                        ? "\(Int(khz)) kHz"
-                        : String(format: "%.1f kHz", khz)
+                    // ✅ Helper compartido: mismo "44.1 kHz" en todos lados.
+                    let khzText = AlbumDetailView.khzLabel(q.khz)
                     let text = q.bits > 0 ? "\(q.bits)-bit · \(khzText)" : khzText
                     statPill(icon: "waveform", text: text)
                 }
@@ -328,6 +326,19 @@ struct AlbumDetailView: View {
         .foregroundStyle(.secondary).padding(.horizontal, 12).padding(.vertical, 6)
         .fixedSize()
         .nativeGlassCapsule()
+    }
+
+    // ✅ Formatea kHz UNA sola vez y sin duplicar: 44100 → "44.1 kHz",
+    // 48000 → "48 kHz", 96000 → "96 kHz". El `Int(.../1000)` anterior
+    // truncaba 44.1 → "44 kHz" y, combinado con formatDescription (que ya
+    // trae "44 kHz"), el origen mostraba "44 kHz · 44 kHz".
+    static func khzLabel(_ sampleRate: Double) -> String {
+        guard sampleRate > 0 else { return "—" }
+        let kHz = sampleRate / 1000.0
+        if kHz.truncatingRemainder(dividingBy: 1) == 0 {
+            return "\(Int(kHz)) kHz"
+        }
+        return String(format: "%.1f kHz", kHz)
     }
 
     // ✅ Formatear año de salida del álbum (locale/calendario/zona FIJOS:

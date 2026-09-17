@@ -219,17 +219,14 @@ struct AudioQualityDetailView: View {
     }
 
     /// ✅ Lectura tipo DAC: bits REALES del archivo (fileFormat) + sample rate.
+    /// Usa khzLabel compartido para no duplicar/truncar ("44.1 kHz", no "44 kHz").
     private func dacReadout(for song: Song) -> String {
         var parts: [String] = []
         if song.bitDepth > 0 {
             parts.append("\(song.bitDepth)-bit")
         }
         if song.sampleRate > 0 {
-            let kHz = song.sampleRate / 1000.0
-            let rate = kHz.truncatingRemainder(dividingBy: 1) == 0
-                ? "\(Int(kHz)) kHz"
-                : String(format: "%.1f kHz", kHz)
-            parts.append(rate)
+            parts.append(AlbumDetailView.khzLabel(song.sampleRate))
         }
         if parts.isEmpty { return "—" }
         return parts.joined(separator: " · ")
@@ -273,7 +270,7 @@ struct AudioQualityDetailView: View {
                 chainArrow
                 chainNode(icon: "waveform", title: Localization.localized("quality.decoder"), detail: "AVAudioFile · \(isLossless ? Localization.localized("quality.lossless") : Localization.localized("quality.compressed"))", color: .indigo, index: 1)
                 chainArrow
-                chainNode(icon: "engine.combustion", title: Localization.localized("quality.audioEngine"), detail: "AVAudioEngine · \(audioEngine.sampleRateDisplay > 0 ? Int(audioEngine.sampleRateDisplay / 1000) : Int((song?.sampleRate ?? 0) / 1000)) kHz", color: AppTheme.accent, index: 2)
+                chainNode(icon: "engine.combustion", title: Localization.localized("quality.audioEngine"), detail: "AVAudioEngine · \(AlbumDetailView.khzLabel(audioEngine.sampleRateDisplay > 0 ? audioEngine.sampleRateDisplay : (song?.sampleRate ?? 0)))", color: AppTheme.accent, index: 2)
                 chainArrow
                 chainNode(icon: "slider.horizontal.3", title: Localization.localized("quality.equalizer"), detail: audioEngine.isEQEnabled ? "\(Localization.localized("quality.active")) · \(audioEngine.eqPreset.displayName) · 10 \(Localization.localized("format.bands"))" : "\(Localization.localized("quality.bypass")) · 10 \(Localization.localized("format.bands"))", color: audioEngine.isEQEnabled ? AppTheme.accent : .gray, index: 3)
                 chainArrow
@@ -309,14 +306,16 @@ struct AudioQualityDetailView: View {
 
     private var fileSummary: String {
         guard let song = song else { return "—" }
+        // ✅ Sin kHz duplicado: formatDescription YA trae "MP3 · ~320 kbps ·
+        // 44 kHz", así que no se re-agrega el sample rate aquí. Antes el
+        // origen mostraba "44 kHz · 44 kHz" (doble). Solo se agrega el
+        // bit-depth si el formatDescription no lo trae (canciones cacheadas
+        // con formato viejo).
         var parts: [String] = []
         let format = song.formatDescription.isEmpty ? song.url.pathExtension.uppercased() : song.formatDescription
         parts.append(format)
-        if song.bitDepth > 0 { parts.append("\(song.bitDepth)-bit") }
-        if song.sampleRate > 0 {
-            let kHz = Int(song.sampleRate / 1000)
-            let label = song.sampleRate > 48000 ? "\(kHz) kHz (Hi-Res)" : "\(kHz) kHz"
-            parts.append(label)
+        if song.bitDepth > 0, !format.localizedCaseInsensitiveContains("bit") {
+            parts.append("\(song.bitDepth)-bit")
         }
         return parts.joined(separator: " · ")
     }
@@ -336,7 +335,10 @@ struct AudioQualityDetailView: View {
 
     private var outputSummary: String {
         var parts: [String] = [audioEngine.routeDisplay]
-        if audioEngine.outputSampleRate > 0 { parts.append("\(Int(audioEngine.outputSampleRate / 1000)) kHz") }
+        if audioEngine.outputSampleRate > 0 {
+            // ✅ Helper compartido: "44.1 kHz" exacto, no "44 kHz" truncado.
+            parts.append(AlbumDetailView.khzLabel(audioEngine.outputSampleRate))
+        }
         if audioEngine.outputChannelCount > 0 { parts.append(audioEngine.outputChannelCount >= 2 ? Localization.localized("quality.stereo") : Localization.localized("quality.mono")) }
         return parts.joined(separator: " · ")
     }
@@ -389,9 +391,8 @@ struct AudioQualityDetailView: View {
 
     private var sampleRateLabel: String {
         guard let song = song, song.sampleRate > 0 else { return "—" }
-        let kHz = Int(song.sampleRate / 1000)
-        let label = song.sampleRate > 48000 ? "\(kHz) kHz (Hi-Res)" : "\(kHz) kHz"
-        return label
+        let base = AlbumDetailView.khzLabel(song.sampleRate)
+        return song.sampleRate > 48000 ? "\(base) (Hi-Res)" : base
     }
 
     private var channelsLabel: String {
@@ -422,16 +423,15 @@ struct AudioQualityDetailView: View {
         return "\(kbps) kbps"
     }
 
-    // ✅ Profundidad REAL: lossless muestra sus bits (16/24/32); los codecs
-    // con pérdida (MP3/AAC) no tienen profundidad lineal → "—" (nunca "0").
+    // ✅ Profundidad REAL: lossless muestra sus bits (16/24/32). Los codecs
+    // con pérdida (MP3/AAC, bitDepth == 0) NO tienen profundidad lineal:
+    // mostrar "—" en vez de kbps (los kbps ya tienen su propia fila
+    // "Bitrate estimado"). Antes la fila decía "~320 kbps" donde debían ir
+    // los bits.
     private var bitDepthLabel: String {
         guard let song else { return "—" }
         if song.bitDepth > 0 {
             return "\(song.bitDepth) bits"
-        }
-        // Para formatos con pérdida, mostrar el bitrate si está disponible
-        if let bitrate = song.bitrate, bitrate > 0 {
-            return "~\(bitrate) kbps"
         }
         return "—"
     }

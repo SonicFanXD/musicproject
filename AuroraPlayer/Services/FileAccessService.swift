@@ -102,11 +102,18 @@ class FileAccessService: ObservableObject {
     private var inFlightBatches: Int {
         inFlightByGeneration.values.reduce(0, +)
     }
-    // ✅ CONCURRENCIA OPTIMIZADA: 4 lotes en paralelo × 75 URLs = máx 300
-    // AVAsset.load simultáneos. Aumentamos la velocidad sin saturar memoria.
-    private let maxInFlightBatches = 4
-    // ✅ Lotes optimizados: mayor tamaño = menos overhead de scheduling
-    private let metadataBatchSize = 75
+    // ✅ CONCURRENCIA SEGURA: ventana acotada de lecturas AVAsset en vuelo.
+    // Cada lote de 50 URLs lanzaba 50 makeSong() concurrentes (cada uno con
+    // varios asset.load en paralelo) × 3 lotes = ~150+ lecturas AVFoundation
+    // simultáneas → picos de CPU/RAM y tirones en el scroll. Con la ventana
+    // de 4, el throughput se mantiene (4 canciones en paralelo) pero sin
+    // saturar el sistema: indexa igual de rápido en la práctica y la UI va
+    // fluida. Los índices preservan el orden original (determinista).
+    private let maxConcurrentMetadataReads = 4
+    // ✅ Lotes de 3 en vuelo × 50 URLs: suficiente paralelismo para indexar
+    // rápido sin los picos de memoria de lotes gigantes.
+    private let maxInFlightBatches = 3
+    private let metadataBatchSize = 50
 
     // Colecciones derivadas cacheadas: se recalculan solo cuando cambia `songs`,
     // no en cada render de la UI.
@@ -584,19 +591,29 @@ class FileAccessService: ObservableObject {
                 }
             }
 
-            // INDEXACIÓN PARALELA: procesar las URLs del lote CONCURRENTEMENTE.
-            // Los índices preservan el orden original para resultados deterministas.
+            // INDEXACIÓN PARALELA CON VENTANA ACOTADA: procesar las URLs del
+            // lote con máx `maxConcurrentMetadataReads` lecturas en vuelo.
+            // Sin ventana (una tarea por URL del lote) se saturaba CPU/RAM y
+            // la UI pegaba tirones. Los índices preservan el orden original
+            // para resultados deterministas.
             let foundSongs: [Song] = await withTaskGroup(of: (Int, Song?).self) { group in
-                for (index, url) in batch.urls.enumerated() {
-                    group.addTask { [weak self] in
-                        guard let self else { return (index, nil) }
-                        let song = await self.makeSong(from: url)
-                        return (index, song)
+                let initialCount = min(self.maxConcurrentMetadataReads, batch.urls.count)
+                for index in 0..<initialCount {
+                    group.addTask {
+                        (index, await self.makeSong(from: batch.urls[index]))
                     }
                 }
+                var nextIndex = initialCount
                 var results = Array<Song?>(repeating: nil, count: batch.urls.count)
                 for await (index, song) in group {
                     results[index] = song
+                    if nextIndex < batch.urls.count {
+                        let queuedIndex = nextIndex
+                        nextIndex += 1
+                        group.addTask {
+                            (queuedIndex, await self.makeSong(from: batch.urls[queuedIndex]))
+                        }
+                    }
                 }
                 return results.compactMap { $0 }
             }
@@ -673,9 +690,13 @@ class FileAccessService: ObservableObject {
             }
         }
 
-        // ✅ OPTIMIZACIÓN: Delay reducido de 200ms a 100ms para mayor velocidad
-        // sin bloquear el thread principal
-        DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 0.1, execute: sortWorkItem!)
+        // ✅ OPTIMIZACIÓN: Delay de 0.35s para agrupar lotes (publicación
+        // acotada). Publicar `songs` en cada lote re-renderizaba la lista
+        // completa + reconstruía álbumes/artistas a 10Hz → tirones. Con el
+        // delay, los lotes que llegan en la misma ventana se fusionan en UN
+        // solo sort + UNA sola publicación. Más rápido en la práctica y sin
+        // tirones (mismo patrón que el debounce del buscador).
+        DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 0.35, execute: sortWorkItem!)
     }
 
     private func finishDiscovery(generation: Int) {
