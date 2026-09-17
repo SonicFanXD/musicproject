@@ -768,12 +768,11 @@ class FileAccessService: ObservableObject {
         // el sort final tomaba `songs + pendingSongs` INCOMPLETO.
         let hasPendingWork = !queuedBatches.isEmpty || inFlightBatches > 0
         isScanning = activeDiscoveries > 0 || scanProcessed < scanTotal || hasPendingWork || isSortScheduled
-        
+
         // ✅ Notificar cuando cambia isScanning para que la UI reaccione inmediatamente
         if isScanning {
             beginIncrementalProgressIfNeeded()
         }
-    }
 
         // ✅ Al finalizar: verificar si hay sort pendiente que ejecutar.
         // El rescan DIFERENCIAL también debe cerrar aunque NO haya canciones
