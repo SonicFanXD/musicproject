@@ -206,7 +206,7 @@ final class LibrarySearchIndex {
             fields = [e.title, e.artist, e.albumArtist, e.album]
             if let score = Self.matchScore(words: words, fields: fields) {
                 scored.append((song, score))
-            } else if words.count > 1, let relaxed = Self.relaxedScore(words: words, fields: fields) {
+            } else if let relaxed = Self.relaxedScore(words: words, fields: fields) {
                 // ✅ Modo relajado: si la búsqueda estricta no encuentra nada
                 // en TODA la búsqueda, aceptar coincidencias parciales (alguna
                 // palabra) en una segunda pasada, en vez de devolver vacío.
@@ -235,7 +235,7 @@ final class LibrarySearchIndex {
             fields.append(contentsOf: e.songTitles)
             if let score = Self.matchScore(words: words, fields: fields) {
                 scored.append((album, score))
-            } else if words.count > 1, let relaxed = Self.relaxedScore(words: words, fields: fields) {
+            } else if let relaxed = Self.relaxedScore(words: words, fields: fields) {
                 scored.append((album, relaxed / 2))
             }
         }
@@ -256,7 +256,7 @@ final class LibrarySearchIndex {
             let fields = [e.name]
             if let score = Self.matchScore(words: words, fields: fields) {
                 scored.append((artist, score))
-            } else if words.count > 1, let relaxed = Self.relaxedScore(words: words, fields: fields) {
+            } else if let relaxed = Self.relaxedScore(words: words, fields: fields) {
                 scored.append((artist, relaxed / 2))
             }
         }

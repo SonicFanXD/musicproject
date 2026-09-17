@@ -57,7 +57,9 @@ class FileAccessService: ObservableObject {
     private let defaultsKey = "com.aurora.musicFolders"
     private let filesDefaultsKey = "com.aurora.musicFiles"
     private let playlistsDefaultsKey = "com.aurora.playlists"
-    private let libraryCacheFileName = "library-metadata-v13.json"
+    // ✅ v14: re-indexado forzado para corregir bitDepth = 0 guardado en v13
+    // (FLAC/ALAC sin inferencia de profundidad → "-" en AudioQualityDetail).
+    private let libraryCacheFileName = "library-metadata-v14.json"
     private let likedSongsKey = "com.aurora.likedSongs"
     private let likedPlaylistName = "Me Gusta"
     private var activeURLs: [UUID: URL] = [:]
@@ -69,6 +71,14 @@ class FileAccessService: ObservableObject {
     // `/var/...`, u otra codificación) → las 722 canciones "ya tenidas" se
     // consideraban nuevas y se reindexaban completas en cada escaneo.
     private var indexedSongKeys = Set<String>()
+    // ✅ DEDUPE DE REGISTRO: evita que la misma URL se registre DOS veces en
+    // el mismo escaneo (bookmarks de carpetas solapadas, o carpeta + archivo
+    // suelto apuntando al mismo disco). Antes el filtro usaba solo
+    // indexedSongKeys, que se actualiza cuando el lote TERMINA → el segundo
+    // registro de la misma canción pasaba el filtro y scanTotal se inflaba
+    // (2000 para 1312 canciones). La clave incluye la generación para que un
+    // escaneo nuevo pueda re-registrar lo que el anterior descartó.
+    private var registrationClaims = Set<String>()
     /// Ruta canonica para comparar canciones entre disco y cache.
     static func libraryKey(for url: URL) -> String {
         var path = url.standardizedFileURL.path
@@ -82,6 +92,15 @@ class FileAccessService: ObservableObject {
     private var seenOnDiskKeys = Set<String>()
     private var pruneMissingOnFinish = false
     private var activeDiscoveries = 0
+    // ✅ Detección silenciosa al abrir la app: enumera el disco en background
+    // SIN tocar isScanning/scanTotal (sin tarjeta compacta ni re-renders).
+    // Solo si aparecen canciones NUEVAS se indexan e incorporan al final.
+    private var isBackgroundDetecting = false
+    private var activeSilentDiscoveries = 0
+    private var silentTotal = 0
+    private var silentProcessed = 0
+    private var silentBatches: [(urls: [URL], generation: Int)] = []
+    private var silentInFlight = 0
     private var cacheSaveWorkItem: DispatchWorkItem?
     private var sortWorkItem: DispatchWorkItem?
 
@@ -102,11 +121,18 @@ class FileAccessService: ObservableObject {
     private var inFlightBatches: Int {
         inFlightByGeneration.values.reduce(0, +)
     }
-    // ✅ CONCURRENCIA OPTIMIZADA: 4 lotes en paralelo × 75 URLs = máx 300
-    // AVAsset.load simultáneos. Aumentamos la velocidad sin saturar memoria.
-    private let maxInFlightBatches = 4
-    // ✅ Lotes optimizados: mayor tamaño = menos overhead de scheduling
-    private let metadataBatchSize = 75
+    // ✅ CONCURRENCIA SEGURA: ventana acotada de lecturas AVAsset en vuelo.
+    // Cada lote de 50 URLs lanzaba 50 makeSong() concurrentes (cada uno con
+    // varios asset.load en paralelo) × 3 lotes = ~150+ lecturas AVFoundation
+    // simultáneas → picos de CPU/RAM y tirones en el scroll. Con la ventana
+    // de 4, el throughput se mantiene (4 canciones en paralelo) pero sin
+    // saturar el sistema: indexa igual de rápido en la práctica y la UI va
+    // fluida. Los índices preservan el orden original (determinista).
+    private let maxConcurrentMetadataReads = 4
+    // ✅ Lotes de 3 en vuelo × 50 URLs: suficiente paralelismo para indexar
+    // rápido sin los picos de memoria de lotes gigantes.
+    private let maxInFlightBatches = 3
+    private let metadataBatchSize = 50
 
     // Colecciones derivadas cacheadas: se recalculan solo cuando cambia `songs`,
     // no en cada render de la UI.
@@ -122,6 +148,31 @@ class FileAccessService: ObservableObject {
         // AVAudioFile no decodifica estos codecs (audio envolvente).
         "ac3", "ec3", "eac3", "ddp"
     ]
+
+    /// ✅ FIX bit depth FLAC/ALAC (replica del fix fd5cddf que se perdió con
+    /// el restore): AVFoundation reporta mBitsPerChannel = 0 vía ASBD para
+    /// FLAC/ALAC → sin esto TODAS las canciones mostraban "-" en la UI.
+    /// Se infiere la profundidad del bitrate del track (rango típico:
+    /// <1000 kbps → 16, <2000 → 24, resto → 32). SOLO aplica a codecs
+    /// lossless (formatID 'flac'/'alac' o extensión); los lossy (MP3/AAC)
+    /// quedan en 0 y la UI muestra "—" (los kbps tienen su propia fila).
+    /// Inferir profundidad de bits cuando el ASBD (mBitsPerChannel) la reporta 0 para
+    /// FLAC/ALAC. Usa sample rate como señal (más robusto que bitrate, que es inherentemente
+    /// impreciso: FLAC 16-bit y 24-bit comprimidos pueden tener bitrate similar).
+    /// Ver comentario de usabilidad en la vista AudioQualityDetailView.
+    static func inferBitDepth(fileBits: Int, formatID: UInt32, ext: String, sampleRate: Double) -> Int {
+        if fileBits > 0, fileBits <= 32 { return fileBits }
+        let e = ext.lowercased()
+        let isLosslessCodec = formatID == 0x666C6163 /* 'flac' */
+            || formatID == 0x616C6163 /* 'alac' */
+            || e == "flac" || e == "alac"
+        guard isLosslessCodec, sampleRate > 0 else { return 0 }
+        // Sample rate como señal de profundidad (no bitrate, que cruza frecuentemente
+        // umbrales de 16 vs 24 bits en archivos reales comprimidos):
+        if sampleRate >= 96000 { return 24 }        // Hi-Res → 24-bit casi seguro
+        if sampleRate <= 48000 { return 16 }        // CD/estándar → 16-bit por defecto
+        return 0                                     // zona gris (48001–95999 Hz): no inferimos
+    }
 
     /// Etiqueta legible del formato según la extensión (DD+/Dolby Digital).
     private static func formatLabel(for ext: String) -> String {
@@ -273,7 +324,7 @@ class FileAccessService: ObservableObject {
         }
     }
 
-    private func resolveAndScan(_ file: MusicFile) {
+    private func resolveAndScan(_ file: MusicFile, silent: Bool = false) {
         var stale = false
         do {
             let url = try URL(resolvingBookmarkData: file.bookmarkData, bookmarkDataIsStale: &stale)
@@ -284,7 +335,7 @@ class FileAccessService: ObservableObject {
                 previous.stopAccessingSecurityScopedResource()
             }
             activeFileURLs[file.id] = url
-            scanSingleFile(url)
+            scanSingleFile(url, silent: silent)
         } catch { AppLog.error(.library, "No se pudo restaurar \(file.displayName): \(error.localizedDescription)") }
     }
 
@@ -301,6 +352,15 @@ class FileAccessService: ObservableObject {
         queuedBatches.removeAll(keepingCapacity: true)
         pendingSongs = []
         isSortScheduled = false
+        // ✅ Cancelar cualquier detección silenciosa en curso: su generación
+        // queda obsoleta y no debe bloquear futuras detecciones ni mezclar
+        // resultados con este rescan.
+        isBackgroundDetecting = false
+        activeSilentDiscoveries = 0
+        silentBatches.removeAll(keepingCapacity: true)
+        // ✅ Claims de la generación vieja ya no aplican (la clave incluye la
+        // generación, pero se limpian para acotar memoria).
+        registrationClaims.removeAll(keepingCapacity: true)
         indexedSongKeys = Set(songs.map { Self.libraryKey(for: $0.url) })
         seenOnDiskKeys = []
         pruneMissingOnFinish = true
@@ -350,6 +410,11 @@ class FileAccessService: ObservableObject {
         guard !isScanning, !folders.isEmpty || !files.isEmpty else { return }
         beginIncrementalProgressIfNeeded()
         scanGeneration += 1
+        // ✅ Cancelar detección silenciosa pendiente (generación obsoleta).
+        isBackgroundDetecting = false
+        activeSilentDiscoveries = 0
+        silentBatches.removeAll(keepingCapacity: true)
+        registrationClaims.removeAll(keepingCapacity: true)
         // ✅ Guardar las claves ya indexadas para no duplicar
         indexedSongKeys = Set(songs.map { Self.libraryKey(for: $0.url) })
         seenOnDiskKeys = []
@@ -364,24 +429,35 @@ class FileAccessService: ObservableObject {
     }
     
     // ✅ Escaneo en segundo plano al inicio (verificar si hay canciones nuevas)
+    // SILENT: no toca `isScanning` ni `scanTotal/scanProcessed` → la UI no
+    // muestra tarjeta/indicador compacto ni re-renderiza la lista, y el
+    // arranque es instantáneo. Solo indexa lo NUEVO (diferencial por
+    // libraryKey); si no hay nada nuevo, no publica nada.
     func backgroundScanForNewSongs() {
-        guard !isScanning, hasEverLoadedSongs, !folders.isEmpty || !files.isEmpty else { return }
-        // ✅ Guardar las claves ya indexadas para no duplicar
-        indexedSongKeys = Set(songs.map { Self.libraryKey(for: $0.url) })
+        // ✅ FIX CONGELAMIENTO: si un rescan NORMAL está en vuelo, NO arrancar
+        // la detección silenciosa. `scanGeneration += 1` huerfanaba los lotes
+        // del rescan en curso (se descartaban sin contar en scanProcessed) →
+        // isScanning atascado y la animación congelada. El rescan activo ya
+        // incorporará las canciones nuevas por sí mismo.
+        guard !isBackgroundDetecting, !isScanning, hasEverLoadedSongs, !folders.isEmpty || !files.isEmpty else { return }
+        // ✅ La caché ya pobló `songs` + `indexedSongKeys` en init: NO se
+        // reconstruyen aquí (antes se hacía `Set(songs.map...)` en el main
+        // con miles de canciones → tirón al abrir).
+        registrationClaims.removeAll(keepingCapacity: true)
         seenOnDiskKeys = []
         pruneMissingOnFinish = false
-        beginIncrementalProgressIfNeeded()
+        isBackgroundDetecting = true
         scanGeneration += 1
-        AppLog.info(.library, "Escaneo en segundo plano iniciado: \(folders.count) carpetas")
+        AppLog.info(.library, "Detección silenciosa en segundo plano: \(folders.count) carpetas")
         for folder in folders {
-            resolveAndScan(folder)
+            resolveAndScan(folder, silent: true)
         }
         for file in files {
-            resolveAndScan(file)
+            resolveAndScan(file, silent: true)
         }
     }
 
-    private func resolveAndScan(_ folder: MusicFolder) {
+    private func resolveAndScan(_ folder: MusicFolder, silent: Bool = false) {
         if let previousURL = activeURLs[folder.id] {
             previousURL.stopAccessingSecurityScopedResource()
             activeURLs.removeValue(forKey: folder.id)
@@ -424,20 +500,28 @@ class FileAccessService: ObservableObject {
                 }
             }
 
-            scanFolder(url)
+            scanFolder(url, silent: silent)
         } catch {
             AppLog.error(.library, "Error al resolver bookmark de \(folder.displayName): \(error.localizedDescription)")
         }
     }
 
-    private func scanFolder(_ url: URL) {
+    private func scanFolder(_ url: URL, silent: Bool = false) {
         let generation = scanGeneration
         // ✅ Snapshot en el MAIN (scanFolder siempre se llama desde el main):
         // leer indexedSongKeys dentro del bloque background sería una carrera
         // con las inserciones de los lotes que terminan en el main.
         let knownKeys = Set(indexedSongKeys)
-        activeDiscoveries += 1
-        isScanning = true
+        if silent {
+            // ✅ Detección silenciosa: NO toca isScanning/scanTotal → sin
+            // tarjeta compacta, sin indicador, sin re-renders. Los contadores
+            // de descubrimiento sí se llevan para saber cuándo terminó y
+            // apagar el flag `isBackgroundDetecting`.
+            activeSilentDiscoveries += 1
+        } else {
+            activeDiscoveries += 1
+            isScanning = true
+        }
         DispatchQueue.global(qos: .utility).async { [weak self, knownKeys] in
             guard let self = self else { return }
 
@@ -446,7 +530,7 @@ class FileAccessService: ObservableObject {
                 // enumerator falla → evita que isScanning se quede atascado en
                 // true para siempre (bug de "tirones" al dejar de responder
                 // la barra de progreso).
-                DispatchQueue.main.async { self.finishDiscovery(generation: generation) }
+                DispatchQueue.main.async { self.finishDiscovery(generation: generation, silent: silent) }
             }
 
             // ✅ SIN NSFileCoordinator: `coordinate(readingItemAt:...)` exige
@@ -484,11 +568,15 @@ class FileAccessService: ObservableObject {
                 guard !knownKeys.contains(key) else { continue }
                 batch.append(fileURL)
                 if batch.count == self.metadataBatchSize {
-                    self.registerMetadataBatch(batch, generation: generation)
+                    // ✅ FIX: propagar `silent` — sin esto, los lotes de la
+                    // detección silenciosa entraban por la vía NORMAL
+                    // (scanTotal += n → isScanning = true a mitad de la
+                    // detección, aparecía la tarjeta compacta al abrir la app).
+                    self.registerMetadataBatch(batch, generation: generation, silent: silent)
                     batch.removeAll(keepingCapacity: true)
                 }
             }
-            if !batch.isEmpty { self.registerMetadataBatch(batch, generation: generation) }
+            if !batch.isEmpty { self.registerMetadataBatch(batch, generation: generation, silent: silent) }
             AppLog.debug(.library, "Carpeta \(url.lastPathComponent): \(fileCount) archivos encontrados")
             // ✅ Registrar TODAS las URLs vistas (indexadas o no) para poder
             // podar al final las canciones borradas del disco. Un solo envío
@@ -504,36 +592,131 @@ class FileAccessService: ObservableObject {
         }
     }
 
-    private func scanSingleFile(_ url: URL) {
+    private func scanSingleFile(_ url: URL, silent: Bool = false) {
         let generation = scanGeneration
-        isScanning = true
+        if !silent { isScanning = true }
         // ✅ La URL suelta también cuenta como "vista en disco" para la poda.
         let key = Self.libraryKey(for: url)
         DispatchQueue.main.async { [weak self] in
             guard let self, generation == self.scanGeneration else { return }
             self.seenOnDiskKeys.insert(key)
         }
-        registerMetadataBatch([url], generation: generation)
+        registerMetadataBatch([url], generation: generation, silent: silent)
     }
 
-    private func registerMetadataBatch(_ urls: [URL], generation: Int) {
+    private func registerMetadataBatch(_ urls: [URL], generation: Int, silent: Bool = false) {
         DispatchQueue.main.async { [weak self] in
             guard let self, generation == self.scanGeneration else { return }
-            // ✅ ESCANEO INCREMENTAL: filtrar claves ya indexadas para no contarlas
-            // Esto asegura que scanTotal refleje solo las canciones nuevas.
-            // Comparar por RUTA NORMALIZADA (libraryKey), no por URL exacta —
-            // la misma canción puede llegar con otra normalización y parecer
-            // "nueva" aunque ya esté en la biblioteca.
-            let newUrls = urls.filter { !self.indexedSongKeys.contains(Self.libraryKey(for: $0)) }
+            // ✅ ESCANEO INCREMENTAL + DEDUPE: filtrar claves ya indexadas Y
+            // claves ya reclamadas en ESTA generación. Antes solo se miraba
+            // indexedSongKeys (que se actualiza cuando el lote TERMINA), así
+            // que la misma canción registrada dos veces (carpetas solapadas,
+            // carpeta + archivo suelto) pasaba dos veces el filtro → scanTotal
+            // inflado (2000 para 1312). Comparar por RUTA NORMALIZADA.
+            let newUrls = urls.filter { url in
+                let key = Self.libraryKey(for: url)
+                guard !self.indexedSongKeys.contains(key) else { return false }
+                return self.registrationClaims.insert("\(generation)|\(key)").inserted
+            }
             guard !newUrls.isEmpty else { return }
-            self.scanTotal += newUrls.count
-            self.enqueueMetadataBatch(newUrls, generation: generation)
+            if silent {
+                // ✅ Silencioso: las nuevas van a una cola aparte con sus
+                // propios contadores (no tocan scanTotal/isScanning → la UI
+                // ni se entera hasta que haya canciones listas).
+                self.silentTotal += newUrls.count
+                self.enqueueSilentBatch(newUrls, generation: generation)
+            } else {
+                self.scanTotal += newUrls.count
+                self.enqueueMetadataBatch(newUrls, generation: generation)
+            }
         }
     }
 
     private func enqueueMetadataBatch(_ urls: [URL], generation: Int) {
         queuedBatches.append((urls, generation))
         processNextMetadataBatchIfNeeded()
+    }
+
+    // ✅ Cola silenciosa: misma ventana acotada que la normal, pero con sus
+    // propios contadores y SIN tocar @Published (sin re-renders ni tarjeta).
+    // Prioridad .background para no competir con el scroll/animaciones.
+    private func enqueueSilentBatch(_ urls: [URL], generation: Int) {
+        silentBatches.append((urls, generation))
+        processNextSilentBatchIfNeeded()
+    }
+
+    private func processNextSilentBatchIfNeeded() {
+        guard silentInFlight < 1, !silentBatches.isEmpty else { return }
+        let batch = silentBatches.removeFirst()
+        let generation = batch.generation
+        silentInFlight += 1
+
+        Task.detached(priority: .background) { [weak self] in
+            guard let self else { return }
+            defer {
+                Task { @MainActor in
+                    self.silentInFlight = max(0, self.silentInFlight - 1)
+                    self.processNextSilentBatchIfNeeded()
+                    self.finishSilentBatchIfDone(generation: generation)
+                }
+            }
+
+            let foundSongs: [Song] = await withTaskGroup(of: (Int, Song?).self) { group in
+                let initialCount = min(self.maxConcurrentMetadataReads, batch.urls.count)
+                for index in 0..<initialCount {
+                    group.addTask {
+                        (index, await self.makeSong(from: batch.urls[index]))
+                    }
+                }
+                var nextIndex = initialCount
+                var results = Array<Song?>(repeating: nil, count: batch.urls.count)
+                for await (index, song) in group {
+                    results[index] = song
+                    if nextIndex < batch.urls.count {
+                        let queuedIndex = nextIndex
+                        nextIndex += 1
+                        group.addTask {
+                            (queuedIndex, await self.makeSong(from: batch.urls[queuedIndex]))
+                        }
+                    }
+                }
+                return results.compactMap { $0 }
+            }
+
+            await MainActor.run {
+                guard self.scanGeneration == generation else { return }
+                self.silentProcessed += batch.urls.count
+                let uniqueSongs = foundSongs.filter { self.indexedSongKeys.insert(Self.libraryKey(for: $0.url)).inserted }
+                if !uniqueSongs.isEmpty {
+                    self.pendingSongs.append(contentsOf: uniqueSongs)
+                }
+            }
+        }
+    }
+
+    // ✅ Al terminar la detección silenciosa: si hubo canciones NUEVAS se hace
+    // UN solo sort + UNA sola publicación (sin tarjeta compacta). Si no hubo
+    // nada nuevo, no se publica nada: la lista ni parpadea y el arranque es
+    // instantáneo.
+    private func finishSilentBatchIfDone(generation: Int) {
+        guard generation == scanGeneration,
+              activeSilentDiscoveries == 0,
+              silentBatches.isEmpty,
+              silentInFlight == 0 else { return }
+        isBackgroundDetecting = false
+        let found = silentProcessed
+        silentTotal = 0
+        silentProcessed = 0
+        // ✅ Las claves vistas por la detección silenciosa no se usan (sin
+        // poda: pruneMissingOnFinish = false). Liberarlas para no retener
+        // memoria del enumerado completo.
+        seenOnDiskKeys = []
+        guard !pendingSongs.isEmpty else {
+            AppLog.info(.library, "Detección silenciosa: sin canciones nuevas")
+            return
+        }
+        AppLog.info(.library, "Detección silenciosa: \(found) nuevas, incorporando")
+        scheduleSortAndCache()
     }
 
     // ✅ Descarga un cupo de lote para una generación concreta. Nunca deja el
@@ -584,19 +767,29 @@ class FileAccessService: ObservableObject {
                 }
             }
 
-            // INDEXACIÓN PARALELA: procesar las URLs del lote CONCURRENTEMENTE.
-            // Los índices preservan el orden original para resultados deterministas.
+            // INDEXACIÓN PARALELA CON VENTANA ACOTADA: procesar las URLs del
+            // lote con máx `maxConcurrentMetadataReads` lecturas en vuelo.
+            // Sin ventana (una tarea por URL del lote) se saturaba CPU/RAM y
+            // la UI pegaba tirones. Los índices preservan el orden original
+            // para resultados deterministas.
             let foundSongs: [Song] = await withTaskGroup(of: (Int, Song?).self) { group in
-                for (index, url) in batch.urls.enumerated() {
-                    group.addTask { [weak self] in
-                        guard let self else { return (index, nil) }
-                        let song = await self.makeSong(from: url)
-                        return (index, song)
+                let initialCount = min(self.maxConcurrentMetadataReads, batch.urls.count)
+                for index in 0..<initialCount {
+                    group.addTask {
+                        (index, await self.makeSong(from: batch.urls[index]))
                     }
                 }
+                var nextIndex = initialCount
                 var results = Array<Song?>(repeating: nil, count: batch.urls.count)
                 for await (index, song) in group {
                     results[index] = song
+                    if nextIndex < batch.urls.count {
+                        let queuedIndex = nextIndex
+                        nextIndex += 1
+                        group.addTask {
+                            (queuedIndex, await self.makeSong(from: batch.urls[queuedIndex]))
+                        }
+                    }
                 }
                 return results.compactMap { $0 }
             }
@@ -673,13 +866,22 @@ class FileAccessService: ObservableObject {
             }
         }
 
-        // ✅ OPTIMIZACIÓN: Delay reducido de 200ms a 100ms para mayor velocidad
-        // sin bloquear el thread principal
-        DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 0.1, execute: sortWorkItem!)
+        // ✅ OPTIMIZACIÓN: Delay de 0.35s para agrupar lotes (publicación
+        // acotada). Publicar `songs` en cada lote re-renderizaba la lista
+        // completa + reconstruía álbumes/artistas a 10Hz → tirones. Con el
+        // delay, los lotes que llegan en la misma ventana se fusionan en UN
+        // solo sort + UNA sola publicación. Más rápido en la práctica y sin
+        // tirones (mismo patrón que el debounce del buscador).
+        DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 0.35, execute: sortWorkItem!)
     }
 
-    private func finishDiscovery(generation: Int) {
+    private func finishDiscovery(generation: Int, silent: Bool = false) {
         guard generation == scanGeneration else { return }
+        if silent {
+            activeSilentDiscoveries = max(0, activeSilentDiscoveries - 1)
+            finishSilentBatchIfDone(generation: generation)
+            return
+        }
         activeDiscoveries = max(0, activeDiscoveries - 1)
         updateScanningState()
     }
@@ -691,7 +893,14 @@ class FileAccessService: ObservableObject {
         // quedaban lotes en la cola, isScanning pasaba a false prematuramente y
         // el sort final tomaba `songs + pendingSongs` INCOMPLETO.
         let hasPendingWork = !queuedBatches.isEmpty || inFlightBatches > 0
-        isScanning = activeDiscoveries > 0 || scanProcessed < scanTotal || hasPendingWork
+        // ✅ FIX CONGELAMIENTO: si no queda trabajo pendiente NI descubrimientos
+        // activos, cerrar AUNQUE scanProcessed < scanTotal. Los lotes huérfanos
+        // de una generación obsoleta (un backgroundScan o rescan que llegó
+        // mientras este escaneaba) se descartan SIN contar en scanProcessed →
+        // el contador nunca cuadraba → isScanning atascado en true y la barra
+        // de progreso congelada para siempre. Con esta condición, al no quedar
+        // nada por hacer el estado cierra limpio.
+        isScanning = activeDiscoveries > 0 || hasPendingWork
 
         // ✅ Al finalizar: verificar si hay sort pendiente que ejecutar.
         // El rescan DIFERENCIAL también debe cerrar aunque NO haya canciones
@@ -992,7 +1201,14 @@ class FileAccessService: ObservableObject {
             sampleRate = Double(asbd.pointee.mSampleRate)
             channelCount = Int(asbd.pointee.mChannelsPerFrame)
             let fileBits = Int(asbd.pointee.mBitsPerChannel)
-            bitDepth = (fileBits > 0 && fileBits <= 32) ? fileBits : 0
+            // ✅ FIX bit depth FLAC/ALAC: inferir del bitrate cuando el ASBD
+            // reporta 0 (ver inferBitDepth).
+            bitDepth = Self.inferBitDepth(
+                fileBits: fileBits,
+                formatID: asbd.pointee.mFormatID,
+                ext: url.pathExtension,
+                sampleRate: sampleRate
+            )
             // ✅ DEBUG: Log para verificar extracción de bitDepth
             AppLog.debug(.metadata, "Archivo: \(url.lastPathComponent) - bitDepth extraído: \(bitDepth) (raw: \(fileBits))")
         }
@@ -1120,7 +1336,12 @@ class FileAccessService: ObservableObject {
             fileBits = 0
             channels = 0
         }
-        let bits = (fileBits > 0 && fileBits <= 32) ? Int(fileBits) : 0
+        let bits = Self.inferBitDepth(
+            fileBits: fileBits,
+            formatID: 0, // fallback: decisión por extensión
+            ext: url.pathExtension,
+            sampleRate: sampleRate
+        )
         // ✅ LOSSLESS → bits reales; LOSSY (bitDepth 0) → bitrate medio kbps.
         var lastFormatBitrate: Int?
         if bits == 0, let track = audioTrack {
