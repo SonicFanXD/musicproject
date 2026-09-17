@@ -156,17 +156,22 @@ class FileAccessService: ObservableObject {
     /// <1000 kbps → 16, <2000 → 24, resto → 32). SOLO aplica a codecs
     /// lossless (formatID 'flac'/'alac' o extensión); los lossy (MP3/AAC)
     /// quedan en 0 y la UI muestra "—" (los kbps tienen su propia fila).
-    static func inferBitDepth(fileBits: Int, formatID: UInt32, ext: String, estimatedDataRate: Double?) -> Int {
+    /// Inferir profundidad de bits cuando el ASBD (mBitsPerChannel) la reporta 0 para
+    /// FLAC/ALAC. Usa sample rate como señal (más robusto que bitrate, que es inherentemente
+    /// impreciso: FLAC 16-bit y 24-bit comprimidos pueden tener bitrate similar).
+    /// Ver comentario de usabilidad en la vista AudioQualityDetailView.
+    static func inferBitDepth(fileBits: Int, formatID: UInt32, ext: String, sampleRate: Double) -> Int {
         if fileBits > 0, fileBits <= 32 { return fileBits }
         let e = ext.lowercased()
         let isLosslessCodec = formatID == 0x666C6163 /* 'flac' */
             || formatID == 0x616C6163 /* 'alac' */
             || e == "flac" || e == "alac"
-        guard isLosslessCodec, let rate = estimatedDataRate, rate.isFinite, rate > 0 else { return 0 }
-        let kbps = rate / 1000
-        if kbps < 1000 { return 16 }
-        if kbps < 2000 { return 24 }
-        return 32
+        guard isLosslessCodec, sampleRate > 0 else { return 0 }
+        // Sample rate como señal de profundidad (no bitrate, que cruza frecuentemente
+        // umbrales de 16 vs 24 bits en archivos reales comprimidos):
+        if sampleRate >= 96000 { return 24 }        // Hi-Res → 24-bit casi seguro
+        if sampleRate <= 48000 { return 16 }        // CD/estándar → 16-bit por defecto
+        return 0                                     // zona gris (48001–95999 Hz): no inferimos
     }
 
     /// Etiqueta legible del formato según la extensión (DD+/Dolby Digital).
@@ -1202,7 +1207,7 @@ class FileAccessService: ObservableObject {
                 fileBits: fileBits,
                 formatID: asbd.pointee.mFormatID,
                 ext: url.pathExtension,
-                estimatedDataRate: Double(track.estimatedDataRate)
+                sampleRate: sampleRate
             )
             // ✅ DEBUG: Log para verificar extracción de bitDepth
             AppLog.debug(.metadata, "Archivo: \(url.lastPathComponent) - bitDepth extraído: \(bitDepth) (raw: \(fileBits))")
@@ -1335,7 +1340,7 @@ class FileAccessService: ObservableObject {
             fileBits: fileBits,
             formatID: 0, // fallback: decisión por extensión
             ext: url.pathExtension,
-            estimatedDataRate: Double(audioTrack?.estimatedDataRate ?? 0)
+            sampleRate: sampleRate
         )
         // ✅ LOSSLESS → bits reales; LOSSY (bitDepth 0) → bitrate medio kbps.
         var lastFormatBitrate: Int?
