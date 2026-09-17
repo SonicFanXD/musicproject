@@ -16,12 +16,6 @@ struct ContentView: View {
         LibraryCategory(rawValue: selectedCategoryRaw) ?? .songs
     }
     @State private var searchText = ""
-    // ✅ DEBOUNCE de búsqueda: el campo escribe en `searchText` (fluido),
-    // pero el filtrado usa `debouncedSearchText`, que se actualiza 250ms
-    // después de la última tecla. Antes cada carácter re-filtraba y
-    // re-ordenaba toda la librería → lag al escribir.
-    @State private var debouncedSearchText = ""
-    @State private var searchDebounceTask: Task<Void, Never>?
     // ✅ Manejo de ciclo de vida para detectar cambios en segundo plano
     @Environment(\.scenePhase) private var scenePhase
     
