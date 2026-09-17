@@ -138,7 +138,6 @@ struct ContentView: View {
                     }
                 }
                 .navigationBarTitleDisplayMode(.inline)
-                .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
                 .toolbarBackground(.visible, for: .navigationBar)
                 .toolbar {
                     ToolbarItem(placement: .principal) {
@@ -379,6 +378,7 @@ struct ContentView: View {
                 .font(.system(size: 15, weight: .medium))
                 .foregroundStyle(.secondary)
             TextField(Localization.localized("search.prompt"), text: $searchText)
+                .textFieldStyle(.plain)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
             if !searchText.isEmpty {
@@ -1076,7 +1076,7 @@ struct ContentView: View {
             return albums.enumerated().sorted { i, j in
                 let ya = years[i.offset], yb = years[j.offset]
                 switch (ya, yb) {
-                case (nil, nil): return false
+                case (nil, nil): return i.offset < j.offset  // mantener orden estable (ya alfabetico)
                 case (nil, _): return false   // nil siempre al final
                 case (_, nil): return true    // nil siempre al final
                 case let (yay?, yby?):
