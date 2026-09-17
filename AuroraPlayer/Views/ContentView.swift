@@ -20,8 +20,8 @@ struct ContentView: View {
     // pero el filtrado usa `debouncedSearchText`, que se actualiza 250ms
     // después de la última tecla. Antes cada carácter re-filtraba y
     // re-ordenaba toda la librería → lag al escribir.
-    @State private var debouncedSearchText = ""
-    @State private var searchDebounceTask: Task<Void, Never>?
+    // debouncedSearchText eliminado: búsqueda instantánea
+    // (el debounce de 250ms causaba que una palabra no mostrara resultados)
     // ✅ Manejo de ciclo de vida para detectar cambios en segundo plano
     @Environment(\.scenePhase) private var scenePhase
     
@@ -108,21 +108,14 @@ struct ContentView: View {
                 .onChange(of: albumSortAscending) { albumSortAscendingStorage = $0 }
                 .onChange(of: artistSortRaw) { artistSortRawStorage = $0 }
                 .onChange(of: artistSortAscending) { artistSortAscendingStorage = $0 }
-                // ✅ DEBOUNCE: filtrar 250ms después de la última tecla.
+                // ✅ BÚSQUEDA INSTANTÁNEA: filtrar al instante al escribir.
+                // Sin debounce para que una palabra muestre resultados de inmediato.
                 .onChange(of: searchText) { newValue in
-                    // ✅ Resincronizar el índice al empezar a buscar
-                    // (barato: se salta si nada cambió desde la última vez).
                     LibrarySearchIndex.shared.update(
                         songs: fileAccessService.songs,
                         albums: fileAccessService.albums,
                         artists: fileAccessService.artists
                     )
-                    searchDebounceTask?.cancel()
-                    searchDebounceTask = Task {
-                        try? await Task.sleep(nanoseconds: 250_000_000)
-                        guard !Task.isCancelled else { return }
-                        debouncedSearchText = newValue
-                    }
                 }
                 // ✅ Sincronizar el índice también al cambiar de categoría
                 // (álbumes/artistas pueden haberse reconstruido).
@@ -464,7 +457,7 @@ struct ContentView: View {
                 indexingProgressCard
                     .listRowSeparator(.hidden)
                     .listRowBackground(Color.clear)
-            } else if debouncedSearchText.isEmpty {
+            } else if searchText.isEmpty {
                 emptyLibraryView(
                     icon: "music.note.list",
                     title: Localization.localized("library.empty.title"),
@@ -684,7 +677,7 @@ struct ContentView: View {
                 ContentUnavailableLibraryView(
                     icon: "square.stack",
                     title: Localization.localized("library.noAlbums.title"),
-                    message: debouncedSearchText.isEmpty
+                    message: searchText.isEmpty
                         ? Localization.localized("library.noAlbums.empty")
                         : Localization.localized("library.noAlbums.search")
                 )
@@ -728,7 +721,7 @@ struct ContentView: View {
                 ContentUnavailableLibraryView(
                     icon: "person.2",
                     title: Localization.localized("library.noArtists.title"),
-                    message: debouncedSearchText.isEmpty
+                    message: searchText.isEmpty
                         ? Localization.localized("library.noArtists.empty")
                         : Localization.localized("library.noArtists.search")
                 )
@@ -971,7 +964,7 @@ struct ContentView: View {
     }
 
     private var normalizedQuery: String {
-        debouncedSearchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
 
     // ✅ BÚSQUEDA optimizada: el índice ya tiene las cadenas normalizadas
@@ -1051,22 +1044,22 @@ struct ContentView: View {
             return ascending ? albums.sorted { $0.songs.count < $1.songs.count }
                              : albums.sorted { $0.songs.count > $1.songs.count }
         case .year:
-            let year = { (album: Album) -> Int? in
+            // Extraer el año una sola vez por álbum (más barato que recalcular
+            // album.releaseDate —que agrupa canciones— en cada comparación del sort).
+            let years = albums.map { album -> Int? in
                 album.releaseDate.map { Calendar(identifier: .gregorian).component(.year, from: $0) }
             }
-            // Sin fecha → siempre al final, en AMBAS direcciones.
-            // (El comparador anterior devolvía `true` con año nil y los
-            // ponía PRIMEROS, tapando al álbum realmente más reciente.)
-            return albums.sorted { a, b in
-                switch (year(a), year(b)) {
+            return albums.enumerated().sorted { i, j in
+                let ya = years[i.offset], yb = years[j.offset]
+                switch (ya, yb) {
                 case (nil, nil): return false
-                case (nil, _): return false   // a sin año va después
-                case (_, nil): return true    // b sin año → a va primero
-                case let (ya?, yb?):
-                    if ya == yb { return false }
-                    return ascending ? ya < yb : ya > yb
+                case (nil, _): return false   // nil siempre al final
+                case (_, nil): return true    // nil siempre al final
+                case let (yay?, yby?):
+                    if yay == yby { return i.offset < j.offset }
+                    return ascending ? yay < yby : yay > yby
                 }
-            }
+            }.map { albums[$0.offset] }
         }
     }
 
