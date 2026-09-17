@@ -57,7 +57,9 @@ class FileAccessService: ObservableObject {
     private let defaultsKey = "com.aurora.musicFolders"
     private let filesDefaultsKey = "com.aurora.musicFiles"
     private let playlistsDefaultsKey = "com.aurora.playlists"
-    private let libraryCacheFileName = "library-metadata-v13.json"
+    // ✅ v14: re-indexado forzado para corregir bitDepth = 0 guardado en v13
+    // (FLAC/ALAC sin inferencia de profundidad → "-" en AudioQualityDetail).
+    private let libraryCacheFileName = "library-metadata-v14.json"
     private let likedSongsKey = "com.aurora.likedSongs"
     private let likedPlaylistName = "Me Gusta"
     private var activeURLs: [UUID: URL] = [:]
@@ -138,6 +140,26 @@ class FileAccessService: ObservableObject {
         // AVAudioFile no decodifica estos codecs (audio envolvente).
         "ac3", "ec3", "eac3", "ddp"
     ]
+
+    /// ✅ FIX bit depth FLAC/ALAC (replica del fix fd5cddf que se perdió con
+    /// el restore): AVFoundation reporta mBitsPerChannel = 0 vía ASBD para
+    /// FLAC/ALAC → sin esto TODAS las canciones mostraban "-" en la UI.
+    /// Se infiere la profundidad del bitrate del track (rango típico:
+    /// <1000 kbps → 16, <2000 → 24, resto → 32). SOLO aplica a codecs
+    /// lossless (formatID 'flac'/'alac' o extensión); los lossy (MP3/AAC)
+    /// quedan en 0 y la UI muestra "—" (los kbps tienen su propia fila).
+    static func inferBitDepth(fileBits: Int, formatID: UInt32, ext: String, estimatedDataRate: Double?) -> Int {
+        if fileBits > 0, fileBits <= 32 { return fileBits }
+        let e = ext.lowercased()
+        let isLosslessCodec = formatID == 0x666C6163 /* 'flac' */
+            || formatID == 0x616C6163 /* 'alac' */
+            || e == "flac" || e == "alac"
+        guard isLosslessCodec, let rate = estimatedDataRate, rate.isFinite, rate > 0 else { return 0 }
+        let kbps = rate / 1000
+        if kbps < 1000 { return 16 }
+        if kbps < 2000 { return 24 }
+        return 32
+    }
 
     /// Etiqueta legible del formato según la extensión (DD+/Dolby Digital).
     private static func formatLabel(for ext: String) -> String {
@@ -523,11 +545,15 @@ class FileAccessService: ObservableObject {
                 guard !knownKeys.contains(key) else { continue }
                 batch.append(fileURL)
                 if batch.count == self.metadataBatchSize {
-                    self.registerMetadataBatch(batch, generation: generation)
+                    // ✅ FIX: propagar `silent` — sin esto, los lotes de la
+                    // detección silenciosa entraban por la vía NORMAL
+                    // (scanTotal += n → isScanning = true a mitad de la
+                    // detección, aparecía la tarjeta compacta al abrir la app).
+                    self.registerMetadataBatch(batch, generation: generation, silent: silent)
                     batch.removeAll(keepingCapacity: true)
                 }
             }
-            if !batch.isEmpty { self.registerMetadataBatch(batch, generation: generation) }
+            if !batch.isEmpty { self.registerMetadataBatch(batch, generation: generation, silent: silent) }
             AppLog.debug(.library, "Carpeta \(url.lastPathComponent): \(fileCount) archivos encontrados")
             // ✅ Registrar TODAS las URLs vistas (indexadas o no) para poder
             // podar al final las canciones borradas del disco. Un solo envío
@@ -1140,7 +1166,14 @@ class FileAccessService: ObservableObject {
             sampleRate = Double(asbd.pointee.mSampleRate)
             channelCount = Int(asbd.pointee.mChannelsPerFrame)
             let fileBits = Int(asbd.pointee.mBitsPerChannel)
-            bitDepth = (fileBits > 0 && fileBits <= 32) ? fileBits : 0
+            // ✅ FIX bit depth FLAC/ALAC: inferir del bitrate cuando el ASBD
+            // reporta 0 (ver inferBitDepth).
+            bitDepth = Self.inferBitDepth(
+                fileBits: fileBits,
+                formatID: asbd.pointee.mFormatID,
+                ext: url.pathExtension,
+                estimatedDataRate: track.estimatedDataRate
+            )
             // ✅ DEBUG: Log para verificar extracción de bitDepth
             AppLog.debug(.metadata, "Archivo: \(url.lastPathComponent) - bitDepth extraído: \(bitDepth) (raw: \(fileBits))")
         }
@@ -1268,7 +1301,12 @@ class FileAccessService: ObservableObject {
             fileBits = 0
             channels = 0
         }
-        let bits = (fileBits > 0 && fileBits <= 32) ? Int(fileBits) : 0
+        let bits = Self.inferBitDepth(
+            fileBits: fileBits,
+            formatID: 0, // fallback: decisión por extensión
+            ext: url.pathExtension,
+            estimatedDataRate: audioTrack?.estimatedDataRate
+        )
         // ✅ LOSSLESS → bits reales; LOSSY (bitDepth 0) → bitrate medio kbps.
         var lastFormatBitrate: Int?
         if bits == 0, let track = audioTrack {
