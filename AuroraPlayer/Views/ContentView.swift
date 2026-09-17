@@ -63,18 +63,16 @@ struct ContentView: View {
                 }
             NavigationStack {
                 VStack(spacing: 0) {
-                    categoryPicker
-
-                    // ✅ FIX barra de búsqueda: campo INLINE debajo del picker,
-                    // NO .searchable del NavigationStack. .searchable + List +
-                    // toolbar ultraThinMaterial dejaba la barra cortada/fantasma
-                    // y un rectángulo negro debajo (fondo del search scope sin
-                    // contenido). Este TextField nativo tiene el mismo look,
-                    // siempre visible, sin pelear con la navigationBar.
+                    // ✅ FIX orden: buscador PRIMERO, luego los chips de
+                    // categorías. Antes los chips quedaban arriba del buscador
+                    // y se veía invertido (los filtros encima del campo de
+                    // búsqueda).
                     searchFieldInline
                         .padding(.horizontal, 12)
                         .padding(.top, 8)
                         .padding(.bottom, 4)
+
+                    categoryPicker
 
                     // ✅ Transición animada entre categorías: el contenido
                     // entra con fade + slide suave, sale con fade + micro-escala.
