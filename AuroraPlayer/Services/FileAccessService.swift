@@ -1202,7 +1202,7 @@ class FileAccessService: ObservableObject {
                 fileBits: fileBits,
                 formatID: asbd.pointee.mFormatID,
                 ext: url.pathExtension,
-                estimatedDataRate: track.estimatedDataRate
+                estimatedDataRate: Double(track.estimatedDataRate)
             )
             // ✅ DEBUG: Log para verificar extracción de bitDepth
             AppLog.debug(.metadata, "Archivo: \(url.lastPathComponent) - bitDepth extraído: \(bitDepth) (raw: \(fileBits))")
@@ -1335,7 +1335,7 @@ class FileAccessService: ObservableObject {
             fileBits: fileBits,
             formatID: 0, // fallback: decisión por extensión
             ext: url.pathExtension,
-            estimatedDataRate: audioTrack?.estimatedDataRate
+            estimatedDataRate: Double(audioTrack?.estimatedDataRate ?? 0)
         )
         // ✅ LOSSLESS → bits reales; LOSSY (bitDepth 0) → bitrate medio kbps.
         var lastFormatBitrate: Int?
