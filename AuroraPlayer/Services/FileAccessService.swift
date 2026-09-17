@@ -71,6 +71,14 @@ class FileAccessService: ObservableObject {
     // `/var/...`, u otra codificación) → las 722 canciones "ya tenidas" se
     // consideraban nuevas y se reindexaban completas en cada escaneo.
     private var indexedSongKeys = Set<String>()
+    // ✅ DEDUPE DE REGISTRO: evita que la misma URL se registre DOS veces en
+    // el mismo escaneo (bookmarks de carpetas solapadas, o carpeta + archivo
+    // suelto apuntando al mismo disco). Antes el filtro usaba solo
+    // indexedSongKeys, que se actualiza cuando el lote TERMINA → el segundo
+    // registro de la misma canción pasaba el filtro y scanTotal se inflaba
+    // (2000 para 1312 canciones). La clave incluye la generación para que un
+    // escaneo nuevo pueda re-registrar lo que el anterior descartó.
+    private var registrationClaims = Set<String>()
     /// Ruta canonica para comparar canciones entre disco y cache.
     static func libraryKey(for url: URL) -> String {
         var path = url.standardizedFileURL.path
@@ -345,6 +353,9 @@ class FileAccessService: ObservableObject {
         isBackgroundDetecting = false
         activeSilentDiscoveries = 0
         silentBatches.removeAll(keepingCapacity: true)
+        // ✅ Claims de la generación vieja ya no aplican (la clave incluye la
+        // generación, pero se limpian para acotar memoria).
+        registrationClaims.removeAll(keepingCapacity: true)
         indexedSongKeys = Set(songs.map { Self.libraryKey(for: $0.url) })
         seenOnDiskKeys = []
         pruneMissingOnFinish = true
@@ -398,6 +409,7 @@ class FileAccessService: ObservableObject {
         isBackgroundDetecting = false
         activeSilentDiscoveries = 0
         silentBatches.removeAll(keepingCapacity: true)
+        registrationClaims.removeAll(keepingCapacity: true)
         // ✅ Guardar las claves ya indexadas para no duplicar
         indexedSongKeys = Set(songs.map { Self.libraryKey(for: $0.url) })
         seenOnDiskKeys = []
@@ -417,10 +429,16 @@ class FileAccessService: ObservableObject {
     // arranque es instantáneo. Solo indexa lo NUEVO (diferencial por
     // libraryKey); si no hay nada nuevo, no publica nada.
     func backgroundScanForNewSongs() {
-        guard !isBackgroundDetecting, hasEverLoadedSongs, !folders.isEmpty || !files.isEmpty else { return }
+        // ✅ FIX CONGELAMIENTO: si un rescan NORMAL está en vuelo, NO arrancar
+        // la detección silenciosa. `scanGeneration += 1` huerfanaba los lotes
+        // del rescan en curso (se descartaban sin contar en scanProcessed) →
+        // isScanning atascado y la animación congelada. El rescan activo ya
+        // incorporará las canciones nuevas por sí mismo.
+        guard !isBackgroundDetecting, !isScanning, hasEverLoadedSongs, !folders.isEmpty || !files.isEmpty else { return }
         // ✅ La caché ya pobló `songs` + `indexedSongKeys` en init: NO se
         // reconstruyen aquí (antes se hacía `Set(songs.map...)` en el main
         // con miles de canciones → tirón al abrir).
+        registrationClaims.removeAll(keepingCapacity: true)
         seenOnDiskKeys = []
         pruneMissingOnFinish = false
         isBackgroundDetecting = true
@@ -584,12 +602,17 @@ class FileAccessService: ObservableObject {
     private func registerMetadataBatch(_ urls: [URL], generation: Int, silent: Bool = false) {
         DispatchQueue.main.async { [weak self] in
             guard let self, generation == self.scanGeneration else { return }
-            // ✅ ESCANEO INCREMENTAL: filtrar claves ya indexadas para no contarlas
-            // Esto asegura que scanTotal refleje solo las canciones nuevas.
-            // Comparar por RUTA NORMALIZADA (libraryKey), no por URL exacta —
-            // la misma canción puede llegar con otra normalización y parecer
-            // "nueva" aunque ya esté en la biblioteca.
-            let newUrls = urls.filter { !self.indexedSongKeys.contains(Self.libraryKey(for: $0)) }
+            // ✅ ESCANEO INCREMENTAL + DEDUPE: filtrar claves ya indexadas Y
+            // claves ya reclamadas en ESTA generación. Antes solo se miraba
+            // indexedSongKeys (que se actualiza cuando el lote TERMINA), así
+            // que la misma canción registrada dos veces (carpetas solapadas,
+            // carpeta + archivo suelto) pasaba dos veces el filtro → scanTotal
+            // inflado (2000 para 1312). Comparar por RUTA NORMALIZADA.
+            let newUrls = urls.filter { url in
+                let key = Self.libraryKey(for: url)
+                guard !self.indexedSongKeys.contains(key) else { return false }
+                return self.registrationClaims.insert("\(generation)|\(key)").inserted
+            }
             guard !newUrls.isEmpty else { return }
             if silent {
                 // ✅ Silencioso: las nuevas van a una cola aparte con sus
@@ -865,7 +888,14 @@ class FileAccessService: ObservableObject {
         // quedaban lotes en la cola, isScanning pasaba a false prematuramente y
         // el sort final tomaba `songs + pendingSongs` INCOMPLETO.
         let hasPendingWork = !queuedBatches.isEmpty || inFlightBatches > 0
-        isScanning = activeDiscoveries > 0 || scanProcessed < scanTotal || hasPendingWork
+        // ✅ FIX CONGELAMIENTO: si no queda trabajo pendiente NI descubrimientos
+        // activos, cerrar AUNQUE scanProcessed < scanTotal. Los lotes huérfanos
+        // de una generación obsoleta (un backgroundScan o rescan que llegó
+        // mientras este escaneaba) se descartan SIN contar en scanProcessed →
+        // el contador nunca cuadraba → isScanning atascado en true y la barra
+        // de progreso congelada para siempre. Con esta condición, al no quedar
+        // nada por hacer el estado cierra limpio.
+        isScanning = activeDiscoveries > 0 || hasPendingWork
 
         // ✅ Al finalizar: verificar si hay sort pendiente que ejecutar.
         // El rescan DIFERENCIAL también debe cerrar aunque NO haya canciones
