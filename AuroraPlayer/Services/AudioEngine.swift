@@ -573,14 +573,10 @@ class AudioEngine: NSObject, ObservableObject {
 
         let session = AVAudioSession.sharedInstance()
         do {
-            // ✅ OPTIMIZACIÓN: solo reactivar si la sesión no está ya activa
-            // Evita llamadas innecesarias que pueden causar cortes breves
-            if !session.isActive {
-                // ✅ Reactivar la sesión con notifyOthersOnDeactivation para que
-                // otras apps (if any) se enteren y no se pisen. Mantener activa
-                // la sesión es imprescindible para audio en background continuo.
-                try session.setActive(true, options: .notifyOthersOnDeactivation)
-            }
+            // ✅ setActive(true) es idempotente: si la sesión ya está activa
+            // es un no-op. (AVAudioSession no expone `isActive`, por eso no
+            // se puede consultar antes; el chequeo anterior no compilaba.)
+            try session.setActive(true, options: .notifyOthersOnDeactivation)
         } catch {
             AppLog.error(.playback, error, context: "background: reactivar sesión")
         }
@@ -1038,8 +1034,12 @@ class AudioEngine: NSObject, ObservableObject {
         let hasAudio = audioFile != nil
         
         if wasRunning && hasAudio { engine.stop() }
-        // ✅ Mono: implementación simplificada - conectar directamente al mainMixer
-        engine.connect(playerNode, to: engine.mainMixerNode, format: currentFileFormat)
+        // ✅ Mono a nivel de sesión (applySystemMonoOutput): aquí solo hay que
+        // reconectar el grafo con el formato del archivo actual para que el
+        // cambio tome efecto. `currentFileFormat` ya no existe (se eliminó con
+        // el monoMixerNode): se deriva de `audioFile` o del output del engine.
+        let currentFormat = audioFile?.processingFormat ?? engine.mainMixerNode.outputFormat(forBus: 0)
+        reconnectPlayerNode(format: currentFormat)
         if wasRunning && hasAudio {
             do { try engine.start() } catch {
                 AppLog.error(.playback, error, context: "applyMonoAudio: relanzar engine")
