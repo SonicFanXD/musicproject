@@ -30,7 +30,7 @@ struct PlaylistsView: View {
                 .scrollIndicators(.hidden)
             }
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbarBackground(.hidden, for: .navigationBar)
             .toolbar {
                 // Título personalizado consistente con la app
                 ToolbarItem(placement: .principal) {

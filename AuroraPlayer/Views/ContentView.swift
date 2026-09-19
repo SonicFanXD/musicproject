@@ -16,6 +16,7 @@ struct ContentView: View {
         LibraryCategory(rawValue: selectedCategoryRaw) ?? .songs
     }
     @State private var searchText = ""
+    @FocusState private var searchFieldFocused: Bool
     // ✅ Manejo de ciclo de vida para detectar cambios en segundo plano
     @Environment(\.scenePhase) private var scenePhase
     
@@ -138,7 +139,7 @@ struct ContentView: View {
                     }
                 }
                 .navigationBarTitleDisplayMode(.inline)
-                .toolbarBackground(.visible, for: .navigationBar)
+                .toolbarBackground(.hidden, for: .navigationBar)
                 .toolbar {
                     ToolbarItem(placement: .principal) {
                         Text(Localization.localized("app.name"))
@@ -381,6 +382,7 @@ struct ContentView: View {
                 .textFieldStyle(.plain)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
+                .focused($searchFieldFocused)
             if !searchText.isEmpty {
                 Button {
                     searchText = ""
@@ -397,6 +399,9 @@ struct ContentView: View {
         .background {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(Color(UIColor.secondarySystemBackground))
+        }
+        .onTapGesture {
+            searchFieldFocused = true
         }
     }
 
@@ -1068,22 +1073,16 @@ struct ContentView: View {
             return ascending ? albums.sorted { $0.songs.count < $1.songs.count }
                              : albums.sorted { $0.songs.count > $1.songs.count }
         case .year:
-            // Extraer el año una sola vez por álbum (más barato que recalcular
-            // album.releaseDate —que agrupa canciones— en cada comparación del sort).
-            let years = albums.map { album -> Int? in
-                album.releaseDate.map { Calendar(identifier: .gregorian).component(.year, from: $0) }
-            }
-            return albums.enumerated().sorted { i, j in
-                let ya = years[i.offset], yb = years[j.offset]
-                switch (ya, yb) {
-                case (nil, nil): return i.offset < j.offset  // mantener orden estable (ya alfabetico)
+            return albums.sorted { a, b in
+                switch (a.releaseDate, b.releaseDate) {
+                case (nil, nil): return false
                 case (nil, _): return false   // nil siempre al final
                 case (_, nil): return true    // nil siempre al final
-                case let (yay?, yby?):
-                    if yay == yby { return i.offset < j.offset }
-                    return ascending ? yay < yby : yay > yby
+                case let (da?, db?):
+                    if da == db { return false }
+                    return ascending ? da < db : da > db
                 }
-            }.map { albums[$0.offset] }
+            }
         }
     }
 
