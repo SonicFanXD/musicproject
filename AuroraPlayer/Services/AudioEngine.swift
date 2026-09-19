@@ -2116,8 +2116,6 @@ class AudioEngine: NSObject, ObservableObject {
                 self.audioSessionMode = "Default"
             case .measurement:
                 self.audioSessionMode = "Measurement (bit-perfect)"
-            case .musicHaptic:
-                self.audioSessionMode = "Music Haptic"
             case .spatialAudio:
                 self.audioSessionMode = "Spatial Audio"
             case .voicePrompt:

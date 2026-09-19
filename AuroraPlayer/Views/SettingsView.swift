@@ -232,7 +232,10 @@ struct SettingsView: View {
                                             AppLog.info(.settings, "Modo de audio: \(newValue == 1 ? "Measurement" : "Default")")
                                         }
                                     }
-                                )
+                                ),
+                                onChange: { newValue in
+                                    // El cambio ya se maneja en el Binding, pero el callback es requerido
+                                }
                             )
                             settingsDivider
                             settingsToggleRow(
