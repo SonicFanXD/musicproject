@@ -1,0 +1,81 @@
+﻿diff --git a/AuroraPlayer/Resources/Models.swift b/AuroraPlayer/Resources/Models.swift
+index f2121b8..a4ac0fe 100644
+--- a/AuroraPlayer/Resources/Models.swift
++++ b/AuroraPlayer/Resources/Models.swift
+@@ -91,6 +91,15 @@ struct Song: Identifiable, Equatable, Codable {
+     let bitDepth: Int
+     let channelCount: Int
+     let bitrate: Int?  // Ô£à Bitrate para formatos con p├®rdida (MP3/AAC)
++    // Ô£à FIX metadata editada que no se refleja: fecha de modificaci├│n del
++    // ARCHIVO en disco al momento de leer sus metadatos. FileAccessService
++    // la compara contra la fecha actual del archivo en cada escaneo ÔÇö si
++    // difieren, el archivo se re-lee aunque su ruta ya estuviera indexada
++    // (antes el escaneo diferencial solo miraba si la RUTA era conocida,
++    // nunca si el CONTENIDO hab├¡a cambiado, as├¡ que una edici├│n de tags
++    // externa nunca se detectaba). Optional para que el cach├® viejo (sin
++    // este campo) siga decodificando bien: Codable lo trata como ausente ÔåÆ nil.
++    let fileModificationDate: Date?
+ 
+     init(
+         id: UUID = UUID(),
+@@ -109,7 +118,8 @@ struct Song: Identifiable, Equatable, Codable {
+         sampleRate: Double = 0,
+         bitDepth: Int = 0,
+         channelCount: Int = 0,
+-        bitrate: Int? = nil
++        bitrate: Int? = nil,
++        fileModificationDate: Date? = nil
+     ) {
+         self.id = id
+         self.url = url
+@@ -128,12 +138,43 @@ struct Song: Identifiable, Equatable, Codable {
+         self.bitDepth = bitDepth
+         self.channelCount = channelCount
+         self.bitrate = bitrate
++        self.fileModificationDate = fileModificationDate
+     }
+ 
+     static func == (lhs: Song, rhs: Song) -> Bool {
+         lhs.id == rhs.id
+     }
+ 
++    /// Ô£à FIX metadata editada: copia con el MISMO contenido pero conservando la
++    /// identidad (`id`) ya indexada. Obligatorio al re-leer la metadata de un
++    /// archivo conocido: "Me Gusta" y las playlists guardan `songIDs` (UUID),
++    /// `isLiked` compara por `id`, y el resaltado de "sonando ahora" + el
++    /// restaurado de reproducci├│n buscan por `id`. Si la re-lectura generara un
++    /// UUID nuevo, la canci├│n desaparecer├¡a de las playlists y el estado
++    /// guardado quedar├¡a apuntando a un id hu├®rfano para siempre.
++    func preservingID(_ id: UUID) -> Song {
++        Song(
++            id: id,
++            url: url,
++            title: title,
++            artist: artist,
++            albumArtist: albumArtist,
++            album: album,
++            artworkData: artworkData,
++            duration: duration,
++            lyrics: lyrics,
++            formatDescription: formatDescription,
++            discNumber: discNumber,
++            trackNumber: trackNumber,
++            releaseDate: releaseDate,
++            sampleRate: sampleRate,
++            bitDepth: bitDepth,
++            channelCount: channelCount,
++            bitrate: bitrate,
++            fileModificationDate: fileModificationDate
++        )
++    }
++
+     /// Ô£à FIX multi-disco: orden can├│nico (disco 1 antes que disco 2, luego pista).
+     /// Antes solo se ordenaba por trackNumber ÔåÆ en ├ílbumes con Disc 1 y Disc 2
+     /// (ambos arrancan en pista 1) el sort inestable pod├¡a poner primero el Disc 2.
+@@ -389,4 +430,4 @@ struct Playlist: Identifiable, Codable {
+         guard let data = coverArtworkData else { return nil }
+         return UIImage(data: data)
+     }
+-}
++}
+\ No newline at end of file

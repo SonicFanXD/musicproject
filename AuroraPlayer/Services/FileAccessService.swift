@@ -59,7 +59,12 @@ class FileAccessService: ObservableObject {
     private let playlistsDefaultsKey = "com.aurora.playlists"
     // ✅ v14: re-indexado forzado para corregir bitDepth = 0 guardado en v13
     // (FLAC/ALAC sin inferencia de profundidad → "-" en AudioQualityDetail).
-    private let libraryCacheFileName = "library-metadata-v14.json"
+    // ✅ v15: re-indexado forzado para poblar `fileModificationDate` (nuevo
+    // campo) en TODA la librería existente. Sin este re-indexado único, las
+    // canciones ya cacheadas quedarían con fileModificationDate = nil para
+    // siempre y el detector de metadata editada (ver scanFolder) nunca
+    // tendría con qué comparar la fecha en disco.
+    private let libraryCacheFileName = "library-metadata-v15.json"
     private let likedSongsKey = "com.aurora.likedSongs"
     private let likedPlaylistName = "Me Gusta"
     private var activeURLs: [UUID: URL] = [:]
@@ -99,7 +104,7 @@ class FileAccessService: ObservableObject {
     private var activeSilentDiscoveries = 0
     private var silentTotal = 0
     private var silentProcessed = 0
-    private var silentBatches: [(urls: [URL], generation: Int)] = []
+    private var silentBatches: [(urls: [URL], generation: Int, modifiedKeys: Set<String>)] = []
     private var silentInFlight = 0
     private var cacheSaveWorkItem: DispatchWorkItem?
     private var sortWorkItem: DispatchWorkItem?
@@ -107,7 +112,10 @@ class FileAccessService: ObservableObject {
     // Cola de lotes con concurrencia limitada: antes se lanzaba un Task sin
     // límite por lote, saturando memoria/CPU con bibliotecas grandes
     // (causa principal del crash durante la indexación).
-    private var queuedBatches: [(urls: [URL], generation: Int)] = []
+    // ✅ FIX metadata editada: modifiedKeys viaja junto con el lote para que,
+    // al fusionar resultados, se sepa cuáles de las URLs de este lote son
+    // ACTUALIZACIONES (archivo ya indexado, tag editado) en vez de altas.
+    private var queuedBatches: [(urls: [URL], generation: Int, modifiedKeys: Set<String>)] = []
     // ✅ Nº de lotes en vuelo POR generación de escaneo. Un contador único por
     // generación evita que un lote OBSOLETO (de un rescan anterior que todavía
     // se estaba procesando) corrompa el contador global: antes, un rescan hacía
@@ -445,6 +453,8 @@ class FileAccessService: ObservableObject {
         // con miles de canciones → tirón al abrir).
         registrationClaims.removeAll(keepingCapacity: true)
         seenOnDiskKeys = []
+        // ✅ FIX metadata editada: forzar verificación de fechas de modificación
+        // incluso en modo silencioso para detectar cambios de metadata externos
         pruneMissingOnFinish = false
         isBackgroundDetecting = true
         scanGeneration += 1
@@ -512,6 +522,16 @@ class FileAccessService: ObservableObject {
         // leer indexedSongKeys dentro del bloque background sería una carrera
         // con las inserciones de los lotes que terminan en el main.
         let knownKeys = Set(indexedSongKeys)
+        // ✅ FIX metadata editada: snapshot de la fecha de modificación con la
+        // que se indexó cada canción conocida. Se compara contra la fecha
+        // ACTUAL del archivo en disco para saber si sus tags cambiaron desde
+        // la última lectura (edición externa de metadata).
+        var knownModDates: [String: Date] = [:]
+        knownModDates.reserveCapacity(songs.count)
+        for song in songs {
+            guard let modDate = song.fileModificationDate else { continue }
+            knownModDates[Self.libraryKey(for: song.url)] = modDate
+        }
         if silent {
             // ✅ Detección silenciosa: NO toca isScanning/scanTotal → sin
             // tarjeta compacta, sin indicador, sin re-renders. Los contadores
@@ -539,7 +559,9 @@ class FileAccessService: ObservableObject {
             // FileManager.default.enumerator lee directo sin coordinador:
             // para una app de solo lectura de música es suficiente y elimina
             // el problema de raíz (sin boxes, sin capture lists frágiles).
-            let keys: [URLResourceKey] = [.isDirectoryKey]
+            // ✅ FIX metadata editada: se agrega .contentModificationDateKey
+            // para poder comparar la fecha en disco contra knownModDates.
+            let keys: [URLResourceKey] = [.isDirectoryKey, .contentModificationDateKey]
             guard let enumerator = FileManager.default.enumerator(
                 at: url,
                 includingPropertiesForKeys: keys,
@@ -550,7 +572,15 @@ class FileAccessService: ObservableObject {
             }
 
             var batch: [URL] = []
-            // URLs ya indexadas NO entran a la cola de metadatos.
+            // ✅ FIX metadata editada: acompaña a `batch` con las claves de
+            // ESE lote que son actualizaciones (archivo ya indexado, pero con
+            // fecha de modificación más nueva), no altas nuevas. Va pegado al
+            // lote (no a una variable compartida) para que no exista ninguna
+            // ventana de tiempo entre "se detecta la modificación" y "se
+            // aplica el filtro" en el main.
+            var batchModifiedKeys = Set<String>()
+            // URLs ya indexadas NO entran a la cola de metadatos, SALVO que
+            // su fecha de modificación en disco haya cambiado (ver abajo).
             // (registerMetadataBatch también filtra como segunda barrera.)
             var seenKeys = Set<String>()
             seenKeys.reserveCapacity(1024)
@@ -565,18 +595,38 @@ class FileAccessService: ObservableObject {
                 fileCount += 1
                 let key = Self.libraryKey(for: fileURL)
                 seenKeys.insert(key)
-                guard !knownKeys.contains(key) else { continue }
+                if knownKeys.contains(key) {
+                    // ✅ FIX metadata editada: si el archivo ya estaba
+                    // indexado, solo se re-lee cuando su fecha de
+                    // modificación en disco es MÁS RECIENTE que la que se
+                    // guardó la última vez (edición externa de tags). Antes
+                    // esta rama simplemente hacía `continue` siempre, sin
+                    // importar si el contenido había cambiado.
+                    if let diskDate = values?.contentModificationDate,
+                       let savedDate = knownModDates[key],
+                       diskDate > savedDate {
+                        batchModifiedKeys.insert(key)
+                        batch.append(fileURL)
+                        if batch.count == self.metadataBatchSize {
+                            self.registerMetadataBatch(batch, generation: generation, silent: silent, modifiedKeys: batchModifiedKeys)
+                            batch.removeAll(keepingCapacity: true)
+                            batchModifiedKeys.removeAll(keepingCapacity: true)
+                        }
+                    }
+                    continue
+                }
                 batch.append(fileURL)
                 if batch.count == self.metadataBatchSize {
                     // ✅ FIX: propagar `silent` — sin esto, los lotes de la
                     // detección silenciosa entraban por la vía NORMAL
                     // (scanTotal += n → isScanning = true a mitad de la
                     // detección, aparecía la tarjeta compacta al abrir la app).
-                    self.registerMetadataBatch(batch, generation: generation, silent: silent)
+                    self.registerMetadataBatch(batch, generation: generation, silent: silent, modifiedKeys: batchModifiedKeys)
                     batch.removeAll(keepingCapacity: true)
+                    batchModifiedKeys.removeAll(keepingCapacity: true)
                 }
             }
-            if !batch.isEmpty { self.registerMetadataBatch(batch, generation: generation, silent: silent) }
+            if !batch.isEmpty { self.registerMetadataBatch(batch, generation: generation, silent: silent, modifiedKeys: batchModifiedKeys) }
             AppLog.debug(.library, "Carpeta \(url.lastPathComponent): \(fileCount) archivos encontrados")
             // ✅ Registrar TODAS las URLs vistas (indexadas o no) para poder
             // podar al final las canciones borradas del disco. Un solo envío
@@ -601,10 +651,21 @@ class FileAccessService: ObservableObject {
             guard let self, generation == self.scanGeneration else { return }
             self.seenOnDiskKeys.insert(key)
         }
+        // ✅ FIX metadata editada: un archivo suelto (fuera de una carpeta)
+        // también debe re-leerse si ya estaba indexado pero cambió su fecha
+        // de modificación en disco (antes nunca se refrescaba una vez
+        // indexado, igual que las carpetas).
+        if indexedSongKeys.contains(key) {
+            let knownDate = songs.first(where: { Self.libraryKey(for: $0.url) == key })?.fileModificationDate
+            let diskDate = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+            guard let knownDate, let diskDate, diskDate > knownDate else { return }
+            registerMetadataBatch([url], generation: generation, silent: silent, modifiedKeys: [key])
+            return
+        }
         registerMetadataBatch([url], generation: generation, silent: silent)
     }
 
-    private func registerMetadataBatch(_ urls: [URL], generation: Int, silent: Bool = false) {
+    private func registerMetadataBatch(_ urls: [URL], generation: Int, silent: Bool = false, modifiedKeys: Set<String> = []) {
         DispatchQueue.main.async { [weak self] in
             guard let self, generation == self.scanGeneration else { return }
             // ✅ ESCANEO INCREMENTAL + DEDUPE: filtrar claves ya indexadas Y
@@ -613,9 +674,14 @@ class FileAccessService: ObservableObject {
             // que la misma canción registrada dos veces (carpetas solapadas,
             // carpeta + archivo suelto) pasaba dos veces el filtro → scanTotal
             // inflado (2000 para 1312). Comparar por RUTA NORMALIZADA.
+            // ✅ FIX metadata editada: si la clave viene marcada en
+            // `modifiedKeys` (archivo ya indexado pero modificado en disco),
+            // SÍ se deja pasar aunque ya esté en indexedSongKeys — antes se
+            // descartaba siempre, por eso una edición de tags nunca llegaba
+            // a re-leerse.
             let newUrls = urls.filter { url in
                 let key = Self.libraryKey(for: url)
-                guard !self.indexedSongKeys.contains(key) else { return false }
+                if self.indexedSongKeys.contains(key) && !modifiedKeys.contains(key) { return false }
                 return self.registrationClaims.insert("\(generation)|\(key)").inserted
             }
             guard !newUrls.isEmpty else { return }
@@ -624,24 +690,24 @@ class FileAccessService: ObservableObject {
                 // propios contadores (no tocan scanTotal/isScanning → la UI
                 // ni se entera hasta que haya canciones listas).
                 self.silentTotal += newUrls.count
-                self.enqueueSilentBatch(newUrls, generation: generation)
+                self.enqueueSilentBatch(newUrls, generation: generation, modifiedKeys: modifiedKeys)
             } else {
                 self.scanTotal += newUrls.count
-                self.enqueueMetadataBatch(newUrls, generation: generation)
+                self.enqueueMetadataBatch(newUrls, generation: generation, modifiedKeys: modifiedKeys)
             }
         }
     }
 
-    private func enqueueMetadataBatch(_ urls: [URL], generation: Int) {
-        queuedBatches.append((urls, generation))
+    private func enqueueMetadataBatch(_ urls: [URL], generation: Int, modifiedKeys: Set<String> = []) {
+        queuedBatches.append((urls, generation, modifiedKeys))
         processNextMetadataBatchIfNeeded()
     }
 
     // ✅ Cola silenciosa: misma ventana acotada que la normal, pero con sus
     // propios contadores y SIN tocar @Published (sin re-renders ni tarjeta).
     // Prioridad .background para no competir con el scroll/animaciones.
-    private func enqueueSilentBatch(_ urls: [URL], generation: Int) {
-        silentBatches.append((urls, generation))
+    private func enqueueSilentBatch(_ urls: [URL], generation: Int, modifiedKeys: Set<String> = []) {
+        silentBatches.append((urls, generation, modifiedKeys))
         processNextSilentBatchIfNeeded()
     }
 
@@ -686,7 +752,11 @@ class FileAccessService: ObservableObject {
             await MainActor.run {
                 guard self.scanGeneration == generation else { return }
                 self.silentProcessed += batch.urls.count
-                let uniqueSongs = foundSongs.filter { self.indexedSongKeys.insert(Self.libraryKey(for: $0.url)).inserted }
+                // ✅ FIX metadata editada: las claves de batch.modifiedKeys son
+                // ACTUALIZACIONES (canción ya indexada, tag editado): se aceptan
+                // y CONSERVAN su `id` original — si cambiara, la canción saldría
+                // de "Me Gusta" y de las playlists (guardan songIDs).
+                let uniqueSongs = self.mergeFreshlyReadSongs(foundSongs, modifiedKeys: batch.modifiedKeys)
                 if !uniqueSongs.isEmpty {
                     self.pendingSongs.append(contentsOf: uniqueSongs)
                 }
@@ -804,7 +874,11 @@ class FileAccessService: ObservableObject {
                 // ✅ Segunda barrera anti-duplicados (misma clave normalizada que
                 // registerMetadataBatch): dos lotes en vuelo pueden traer la
                 // misma canción antes de que el otro la registre.
-                let uniqueSongs = foundSongs.filter { self.indexedSongKeys.insert(Self.libraryKey(for: $0.url)).inserted }
+                // ✅ FIX metadata editada: las claves de batch.modifiedKeys son
+                // ACTUALIZACIONES (canción ya indexada, tag editado): se aceptan
+                // y CONSERVAN su `id` original — si cambiara, la canción saldría
+                // de "Me Gusta" y de las playlists (guardan songIDs).
+                let uniqueSongs = self.mergeFreshlyReadSongs(foundSongs, modifiedKeys: batch.modifiedKeys)
                 if !uniqueSongs.isEmpty {
                     self.pendingSongs.append(contentsOf: uniqueSongs)
                     self.scheduleSortAndCache()
@@ -830,7 +904,13 @@ class FileAccessService: ObservableObject {
         // grandes). Las canciones que lleguen durante los 100ms de delay
         // permanecen en pendingSongs y las incorpora el siguiente sort o el
         // final (mismas garantías que había, sin la carrera).
-        let snapshot = songs + pendingSongs
+        // ✅ FIX metadata editada: pendingSongs VA PRIMERO. dedupeSongsByUrl
+        // conserva la PRIMERA aparición de cada URL — si una canción en
+        // pendingSongs es una actualización (mismo URL que una ya presente
+        // en `songs`, pero con metadata re-leída), tiene que ganarle a la
+        // versión vieja del caché. Con el orden anterior (songs + pendingSongs)
+        // la versión vieja siempre ganaba y la edición nunca se reflejaba.
+        let snapshot = pendingSongs + songs
 
         // ✅ Usar DispatchWorkItem para poder cancelar si llega otro lote
         sortWorkItem?.cancel()
@@ -912,7 +992,10 @@ class FileAccessService: ObservableObject {
             let shouldPrune = pruneMissingOnFinish
             let seenKeys = seenOnDiskKeys
             // ✅ Deduplicar al fusionar (mismos duplicados que en el sort de arriba).
-            var allSongs = dedupeSongsByUrl(songs + pendingSongs)
+            // ✅ FIX metadata editada: mismo motivo que en scheduleSortAndCache
+            // — pendingSongs primero para que una actualización le gane a la
+            // versión vieja cacheada en el dedupe por URL.
+            var allSongs = dedupeSongsByUrl(pendingSongs + songs)
             if shouldPrune, !seenKeys.isEmpty {
                 // ✅ Podar borrados: conserva las que se vieron en disco. Con
                 // Set vacío NO se poda (carpeta ilegible ≠ canciones borradas).
@@ -960,9 +1043,51 @@ class FileAccessService: ObservableObject {
         scanProcessed = 0
     }
 
+    /// ✅ FIX metadata editada: IDs de las canciones YA indexadas por ruta
+    /// normalizada. Se usa como lookup para que una re-lectura conserve la
+    /// identidad (`id`) de la versión en caché — ver `mergeFreshlyReadSongs`.
+    /// `songs` (publicada) manda; `pendingSongs` solo cubre las que todavía no
+    /// entraron al sort.
+    private func existingSongIDsByKey() -> [String: UUID] {
+        var lookup: [String: UUID] = [:]
+        lookup.reserveCapacity(songs.count + pendingSongs.count)
+        for song in songs {
+            lookup[Self.libraryKey(for: song.url)] = song.id
+        }
+        for song in pendingSongs where lookup[Self.libraryKey(for: song.url)] == nil {
+            lookup[Self.libraryKey(for: song.url)] = song.id
+        }
+        return lookup
+    }
+
+    /// ✅ FIX metadata editada: fusiona las canciones recién leídas de un lote
+    /// aplicando la barrera anti-duplicados de siempre, pero tratando las
+    /// claves de `modifiedKeys` (archivo ya indexado cuyo tag cambió) como
+    /// ACTUALIZACIONES: se aceptan y CONSERVAN el `id` original.
+    /// Debe llamarse en el main actor (mutar `indexedSongKeys`).
+    private func mergeFreshlyReadSongs(_ foundSongs: [Song], modifiedKeys: Set<String>) -> [Song] {
+        guard !modifiedKeys.isEmpty else {
+            return foundSongs.filter { self.indexedSongKeys.insert(Self.libraryKey(for: $0.url)).inserted }
+        }
+        let idLookup = existingSongIDsByKey()
+        return foundSongs.compactMap { song -> Song? in
+            let key = Self.libraryKey(for: song.url)
+            if modifiedKeys.contains(key) {
+                guard let existingID = idLookup[key], existingID != song.id else { return song }
+                return song.preservingID(existingID)
+            }
+            return self.indexedSongKeys.insert(key).inserted ? song : nil
+        }
+    }
+
     private func makeSong(from url: URL) async -> Song {
         let metadata = await readMetadata(from: url)
-        return Song(url: url, title: metadata.title, artist: metadata.artist, albumArtist: metadata.albumArtist, album: metadata.album, artworkData: metadata.artworkData, duration: metadata.duration, lyrics: metadata.lyrics, formatDescription: metadata.formatDescription, discNumber: metadata.discNumber, trackNumber: metadata.trackNumber, releaseDate: metadata.releaseDate, sampleRate: metadata.sampleRate, bitDepth: metadata.bitDepth, channelCount: metadata.channelCount, bitrate: metadata.bitrate)
+        // ✅ FIX metadata editada: guardar la fecha de modificación del
+        // archivo tal como estaba AL MOMENTO de esta lectura. scanFolder
+        // compara este valor contra la fecha actual en disco en el próximo
+        // escaneo para decidir si hace falta re-leer metadata.
+        let modDate: Date? = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+        return Song(url: url, title: metadata.title, artist: metadata.artist, albumArtist: metadata.albumArtist, album: metadata.album, artworkData: metadata.artworkData, duration: metadata.duration, lyrics: metadata.lyrics, formatDescription: metadata.formatDescription, discNumber: metadata.discNumber, trackNumber: metadata.trackNumber, releaseDate: metadata.releaseDate, sampleRate: metadata.sampleRate, bitDepth: metadata.bitDepth, channelCount: metadata.channelCount, bitrate: metadata.bitrate, fileModificationDate: modDate)
     }
 
     private struct SongMetadata {
@@ -2172,4 +2297,3 @@ class FileAccessService: ObservableObject {
         for (_, url) in activeFileURLs { url.stopAccessingSecurityScopedResource() }
     }
 }
-

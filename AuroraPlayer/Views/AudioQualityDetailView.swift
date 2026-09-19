@@ -53,6 +53,7 @@ struct AudioQualityDetailView: View {
                 signalChainSection
                 fileDetailsSection
                 outputDetailsSection
+                audiophileInfoSection
                 deviceSection
             }
             .padding(.horizontal, 14).padding(.top, 10).padding(.bottom, 14)
@@ -74,6 +75,7 @@ struct AudioQualityDetailView: View {
                         signalChainSection
                         fileDetailsSection
                         outputDetailsSection
+                        audiophileInfoSection
                         deviceSection
                     }
                     .padding(.horizontal, 16).padding(.top, 10).padding(.bottom, 40)
@@ -365,6 +367,34 @@ struct AudioQualityDetailView: View {
         }
     }
 
+    // MARK: - Información Audiófila
+    private var audiophileInfoSection: some View {
+        settingsSection(title: "Audiófilo", icon: "waveform.circle") {
+            // ✅ AUDIÓFILO: Indicador Bit-Perfect
+            detailRow(Localization.localized("quality.bitPerfect"), 
+                      audioEngine.isBitPerfect ? Localization.localized("quality.bitPerfectYes") : Localization.localized("quality.bitPerfectNo"),
+                      isHighlighted: audioEngine.isBitPerfect)
+            
+            // ✅ AUDIÓFILO: Codec Bluetooth (si aplica)
+            if !audioEngine.bluetoothCodec.isEmpty {
+                detailRow(Localization.localized("quality.bluetoothCodec"), audioEngine.bluetoothCodec)
+                detailRow("ℹ️", Localization.localized("quality.iosBluetoothLimit"))
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
+            
+            // ✅ AUDIÓFILO: DAC USB (si aplica)
+            if !audioEngine.usbDACInfo.isEmpty {
+                detailRow(Localization.localized("quality.usbDAC"), audioEngine.usbDACInfo)
+            }
+            
+            // ✅ AUDIÓFILO: Modo de sesión
+            if !audioEngine.audioSessionMode.isEmpty {
+                detailRow(Localization.localized("quality.sessionMode"), audioEngine.audioSessionMode)
+            }
+        }
+    }
+
     // MARK: - Dispositivo
     private var deviceSection: some View {
         settingsSection(title: Localization.localized("quality.device"), icon: "iphone") {
@@ -493,7 +523,7 @@ struct AudioQualityDetailView: View {
     }
 
     @ViewBuilder
-    private func detailRow(_ title: String, _ value: String) -> some View {
+    private func detailRow(_ title: String, _ value: String, isHighlighted: Bool = false) -> some View {
         HStack(alignment: .firstTextBaseline) {
             Text(title)
                 .font(.system(size: 13, weight: .medium))
@@ -501,14 +531,18 @@ struct AudioQualityDetailView: View {
             Spacer()
             Text(value)
                 .font(.system(size: 13, weight: .semibold).monospacedDigit())
-                .foregroundStyle(.primary)
+                .foregroundStyle(isHighlighted ? AppTheme.accent : .primary)
                 .multilineTextAlignment(.trailing)
                 .lineLimit(2)
         }
         .padding(.horizontal, 18).padding(.vertical, 14)
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color(UIColor.tertiarySystemBackground).opacity(0.4))
+                .fill(isHighlighted ? AppTheme.accent.opacity(0.1) : Color(UIColor.tertiarySystemBackground).opacity(0.4))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(isHighlighted ? AppTheme.accent.opacity(0.3) : Color.clear, lineWidth: 1)
         )
     }
 

@@ -48,6 +48,11 @@ final class LibrarySearchIndex {
     private var songSignature: [UUID] = []
     private var albumSignature: [String] = []
     private var artistSignature: [String] = []
+    /// ✅ FIX metadata editada: firma de CONTENIDO (hash de los campos
+    /// indexados). Los ids no cambian cuando FileAccessService re-lee un
+    /// archivo ya indexado (conserva el id a propósito: ver Song.preservingID),
+    /// así que sin esta firma una edición de tags no invalidaba el índice.
+    private var contentSignature = 0
 
     /// Normalización compartida: minúsculas, sin diacríticos ni diferencias
     /// de anchura (CJK/fullwidth). Una sola llamada por campo, cacheada.
@@ -59,16 +64,51 @@ final class LibrarySearchIndex {
         )
     }
 
+    /// Firma de CONTENIDO de los campos que indexa el buscador (título,
+    /// artista, albumArtist y álbum de cada canción; nombre/artista de cada
+    /// álbum; nombre de cada artista). Detecta ediciones de tags que conservan
+    /// el `id` (Song.preservingID) — el caso que la firma por ids no ve.
+    private static func contentSignature(songs: [Song], albums: [Album], artists: [Artist]) -> Int {
+        var hasher = Hasher()
+        hasher.combine(songs.count)
+        for song in songs {
+            hasher.combine(song.title)
+            hasher.combine(song.artist)
+            hasher.combine(song.albumArtist)
+            hasher.combine(song.album)
+        }
+        hasher.combine(albums.count)
+        for album in albums {
+            hasher.combine(album.name)
+            hasher.combine(album.artist)
+            hasher.combine(album.songs.count)
+        }
+        hasher.combine(artists.count)
+        for artist in artists {
+            hasher.combine(artist.name)
+            hasher.combine(artist.songs.count)
+        }
+        return hasher.finalize()
+    }
+
     /// Reconstruye el índice solo si las colecciones realmente cambiaron
-    /// (comparación por ids — O(n) barata, sin tocar strings).
+    /// (comparación por ids + firma de contenido — O(n) barata, sin tocar
+    /// strings de búsqueda).
     func update(songs: [Song], albums: [Album], artists: [Artist]) {
         let sSig = songs.map(\.id)
         let aSig = albums.map(\.id)
         let arSig = artists.map(\.id)
-        guard sSig != songSignature || aSig != albumSignature || arSig != artistSignature else { return }
+        // ✅ FIX metadata editada: la firma por ids NO basta — al re-leer un
+        // archivo ya indexado se CONSERVA su `id` (Song.preservingID, para no
+        // romper "Me Gusta"/playlists), así que un título/artista/álbum editado
+        // fuera de la app dejaba el índice con los strings viejos: el valor
+        // nuevo no se encontraba y el viejo seguía apareciendo.
+        let contentSig = Self.contentSignature(songs: songs, albums: albums, artists: artists)
+        guard sSig != songSignature || aSig != albumSignature || arSig != artistSignature || contentSig != contentSignature else { return }
         songSignature = sSig
         albumSignature = aSig
         artistSignature = arSig
+        contentSignature = contentSig
 
         var newSongs: [UUID: SongEntry] = [:]
         newSongs.reserveCapacity(songs.count)

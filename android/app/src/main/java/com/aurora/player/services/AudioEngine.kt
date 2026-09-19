@@ -80,6 +80,22 @@ class AudioEngine(private val context: Context) {
     val outputChannelCount: LiveData<Int> = _outputChannelCount
     private val _audioQualityInfo = MutableLiveData("")
     val audioQualityInfo: LiveData<String> = _audioQualityInfo
+    
+    // ✅ AUDIÓFILO: indicador de salida bit-perfect (sin remuestreo)
+    private val _isBitPerfect = MutableLiveData(false)
+    val isBitPerfect: LiveData<Boolean> = _isBitPerfect
+    
+    // ✅ AUDIÓFILO: información del codec Bluetooth (Android permite más control que iOS)
+    private val _bluetoothCodec = MutableLiveData("")
+    val bluetoothCodec: LiveData<String> = _bluetoothCodec
+    
+    // ✅ AUDIÓFILO: información del DAC USB conectado
+    private val _usbDACInfo = MutableLiveData("")
+    val usbDACInfo: LiveData<String> = _usbDACInfo
+    
+    // ✅ AUDIÓFILO: información del tipo de conexión
+    private val _connectionType = MutableLiveData("")
+    val connectionType: LiveData<String> = _connectionType
 
     private val progressRunnable = object : Runnable {
         override fun run() {
@@ -214,6 +230,47 @@ class AudioEngine(private val context: Context) {
         if (_outputSampleRate.value == rate && _outputChannelCount.value == channels) return
         _outputSampleRate.value = rate
         _outputChannelCount.value = channels
+        
+        // ✅ AUDIÓFILO: determinar si la salida es bit-perfect
+        val sourceRate = _currentSong.value?.sampleRate ?: 0.0
+        val bitPerfect = sourceRate > 0 && Math.abs(rate - sourceRate) < 1
+        _isBitPerfect.value = bitPerfect
+        
+        // ✅ AUDIÓFILO: detectar tipo de conexión y codec Bluetooth
+        // Android permite más control sobre Bluetooth que iOS
+        val devices = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
+        var bluetoothDeviceFound = false
+        var usbDeviceFound = false
+        var codecInfo = ""
+        
+        for (device in devices) {
+            when (device.type) {
+                AudioDeviceInfo.TYPE_BLUETOOTH_A2DP -> {
+                    bluetoothDeviceFound = true
+                    // Android puede proporcionar información del codec
+                    // Esto depende del dispositivo y del Android version
+                    codecInfo = "A2DP (Android controla codec)"
+                }
+                AudioDeviceInfo.TYPE_BLUETOOTH_SCO -> {
+                    bluetoothDeviceFound = true
+                    codecInfo = "SCO (llamadas, baja calidad)"
+                }
+                AudioDeviceInfo.TYPE_USB_DEVICE, 
+                AudioDeviceInfo.TYPE_USB_HEADSET -> {
+                    usbDeviceFound = true
+                    val deviceName = device.productName ?: "USB DAC"
+                    _usbDACInfo.value = deviceName
+                }
+            }
+        }
+        
+        _bluetoothCodec.value = if (bluetoothDeviceFound) codecInfo else ""
+        _connectionType.value = when {
+            bluetoothDeviceFound -> "Bluetooth"
+            usbDeviceFound -> "USB"
+            else -> "Interno"
+        }
+        
         val rateInfo = if (rate >= 48000) "Hi-Res" else "Estándar"
         val channelInfo = if (channels >= 2) "Estéreo" else "Mono"
         _audioQualityInfo.value = "$rateInfo • ${rate}Hz • $channelInfo"
@@ -243,11 +300,14 @@ class AudioEngine(private val context: Context) {
         val mediaItem = MediaItem.fromUri(song.audioUrl)
         // ✅ Hi-Res: NO forzamos sample rate de salida. ExoPlayer decodifica a la
         // tasa/bit nativos del archivo y el PCM llega bit-perfect al sistema.
+        // ✅ AUDIÓFILO: Android permite más control sobre codecs Bluetooth que iOS
         exoPlayer?.apply {
             setMediaItem(mediaItem)
             prepare()
             play()
         }
+        // Actualizar información de calidad inmediatamente
+        refreshOutputQuality()
     }
 
     fun togglePlayPause() {

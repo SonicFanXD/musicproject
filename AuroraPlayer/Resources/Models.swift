@@ -91,6 +91,15 @@ struct Song: Identifiable, Equatable, Codable {
     let bitDepth: Int
     let channelCount: Int
     let bitrate: Int?  // ✅ Bitrate para formatos con pérdida (MP3/AAC)
+    // ✅ FIX metadata editada que no se refleja: fecha de modificación del
+    // ARCHIVO en disco al momento de leer sus metadatos. FileAccessService
+    // la compara contra la fecha actual del archivo en cada escaneo — si
+    // difieren, el archivo se re-lee aunque su ruta ya estuviera indexada
+    // (antes el escaneo diferencial solo miraba si la RUTA era conocida,
+    // nunca si el CONTENIDO había cambiado, así que una edición de tags
+    // externa nunca se detectaba). Optional para que el caché viejo (sin
+    // este campo) siga decodificando bien: Codable lo trata como ausente → nil.
+    let fileModificationDate: Date?
 
     init(
         id: UUID = UUID(),
@@ -109,7 +118,8 @@ struct Song: Identifiable, Equatable, Codable {
         sampleRate: Double = 0,
         bitDepth: Int = 0,
         channelCount: Int = 0,
-        bitrate: Int? = nil
+        bitrate: Int? = nil,
+        fileModificationDate: Date? = nil
     ) {
         self.id = id
         self.url = url
@@ -128,10 +138,41 @@ struct Song: Identifiable, Equatable, Codable {
         self.bitDepth = bitDepth
         self.channelCount = channelCount
         self.bitrate = bitrate
+        self.fileModificationDate = fileModificationDate
     }
 
     static func == (lhs: Song, rhs: Song) -> Bool {
         lhs.id == rhs.id
+    }
+
+    /// ✅ FIX metadata editada: copia con el MISMO contenido pero conservando la
+    /// identidad (`id`) ya indexada. Obligatorio al re-leer la metadata de un
+    /// archivo conocido: "Me Gusta" y las playlists guardan `songIDs` (UUID),
+    /// `isLiked` compara por `id`, y el resaltado de "sonando ahora" + el
+    /// restaurado de reproducción buscan por `id`. Si la re-lectura generara un
+    /// UUID nuevo, la canción desaparecería de las playlists y el estado
+    /// guardado quedaría apuntando a un id huérfano para siempre.
+    func preservingID(_ id: UUID) -> Song {
+        Song(
+            id: id,
+            url: url,
+            title: title,
+            artist: artist,
+            albumArtist: albumArtist,
+            album: album,
+            artworkData: artworkData,
+            duration: duration,
+            lyrics: lyrics,
+            formatDescription: formatDescription,
+            discNumber: discNumber,
+            trackNumber: trackNumber,
+            releaseDate: releaseDate,
+            sampleRate: sampleRate,
+            bitDepth: bitDepth,
+            channelCount: channelCount,
+            bitrate: bitrate,
+            fileModificationDate: fileModificationDate
+        )
     }
 
     /// ✅ FIX multi-disco: orden canónico (disco 1 antes que disco 2, luego pista).

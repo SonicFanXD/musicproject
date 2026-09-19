@@ -34,6 +34,8 @@ struct SettingsView: View {
     @AppStorage("com.aurora.language") private var selectedLanguage = 0 // 0 = español, 1 = inglés
     @AppStorage("com.aurora.showFPS") private var showFPS = false
     @AppStorage("com.aurora.scanOnlyNewSongs") private var scanOnlyNewSongs = true
+    // ✅ AUDIÓFILO: configuración del modo de audio
+    @AppStorage("com.aurora.audioSessionMode") private var audioSessionMode = 0 // 0 = default, 1 = measurement
 
     // ✅ LOCALIZADOS: computados para reaccionar al cambio de idioma al
     // instante (antes eran `let` hardcodeados en español → el inglés no
@@ -212,6 +214,25 @@ struct SettingsView: View {
                             settingsButton(title: Localization.localized("settings.equalizer"), subtitle: audioEngine.isEQEnabled ? "\(Localization.localized("equalizer.active")) (\(audioEngine.eqPreset.displayName))" : Localization.localized("equalizer.disabled"), icon: "slider.horizontal.3", color: AppTheme.accent) {
                                 showEqualizerSheet = true
                             }
+                            settingsDivider
+                            // ✅ AUDIÓFILO: modo de audio (Default vs Measurement)
+                            settingsMenuButton(
+                                title: Localization.localized("settings.audioMode"),
+                                subtitle: audioSessionMode > 0 ? "Measurement (bit-perfect)" : "Default",
+                                icon: "waveform.badge.micrometer",
+                                color: .orange,
+                                options: ["Default", "Measurement (bit-perfect)"],
+                                selection: Binding(
+                                    get: { self.audioSessionMode },
+                                    set: { newValue in
+                                        if newValue != self.audioSessionMode {
+                                            Haptics.light()
+                                            self.audioSessionMode = newValue
+                                            audioEngine.setAudioSessionMode(newValue)
+                                            AppLog.info(.settings, "Modo de audio: \(newValue == 1 ? "Measurement" : "Default")")
+                                        }
+                                    }
+                                )
                             settingsDivider
                             settingsToggleRow(
                                 title: Localization.localized("settings.monoAudio"),

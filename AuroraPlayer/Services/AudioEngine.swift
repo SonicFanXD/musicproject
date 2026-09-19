@@ -75,6 +75,14 @@ class AudioEngine: NSObject, ObservableObject {
     @Published var outputSampleRate: Double = 0
     @Published var outputChannelCount: Int = 0
     @Published var audioQualityInfo: String = ""
+    // ✅ AUDIÓFILO: indicador de salida bit-perfect (sin remuestreo)
+    @Published var isBitPerfect: Bool = false
+    // ✅ AUDIÓFILO: información del codec Bluetooth (si aplica)
+    @Published var bluetoothCodec: String = ""
+    // ✅ AUDIÓFILO: información del DAC USB conectado
+    @Published var usbDACInfo: String = ""
+    // ✅ AUDIÓFILO: modo actual de AVAudioSession
+    @Published var audioSessionMode: String = ""
 
     // MARK: - Propiedades para la cola y controles
     @Published var isShuffleEnabled: Bool = UserDefaults.standard.bool(forKey: "com.aurora.shuffleEnabled") {
@@ -671,6 +679,14 @@ class AudioEngine: NSObject, ObservableObject {
     private func setupSession() {
         configureSession(allowAirPlay: true, didRetryDegraded: false)
     }
+    
+    // ✅ AUDIÓFILO: método público para cambiar el modo de audio dinámicamente
+    func setAudioSessionMode(_ modeIndex: Int) {
+        UserDefaults.standard.set(modeIndex, forKey: "com.aurora.audioSessionMode")
+        UserDefaults.standard.synchronize()
+        // Reconfigurar la sesión con el nuevo modo
+        configureSession(allowAirPlay: true, didRetryDegraded: false)
+    }
 
     /// Configura la sesión de audio. Si el arranque ocurre antes de que el
     /// audio server esté listo (cold start en A11), setCategory/setActive
@@ -679,12 +695,17 @@ class AudioEngine: NSObject, ObservableObject {
     /// canción. Ahora se reintenta UNA vez degradado (sin AirPlay).
     private func configureSession(allowAirPlay: Bool, didRetryDegraded: Bool) {
         let session = AVAudioSession.sharedInstance()
+        
+        // ✅ AUDIÓFILO: obtener el modo preferido de configuración
+        let modeIndex = UserDefaults.standard.integer(forKey: "com.aurora.audioSessionMode")
+        let sessionMode: AVAudioSession.Mode = modeIndex == 1 ? .measurement : .default
+        
         do {
             var options: AVAudioSession.CategoryOptions = [.allowBluetoothA2DP]
             if allowAirPlay { options.insert(.allowAirPlay) }
             try session.setCategory(
                 .playback,
-                mode: .default,
+                mode: sessionMode,
                 // ✅ MÁXIMA CALIDAD BT: SOLO perfiles de música (A2DP/AirPlay).
                 // Quitado .allowBluetoothHFP: HFP es el perfil de llamadas (SCO,
                 // mono 8/16kHz, mSBC/CVSD) — si lo permitimos y el A2DP falla o
@@ -1134,7 +1155,11 @@ class AudioEngine: NSObject, ObservableObject {
             // última canción al abrir la app), se arranca DESDE AHÍ, no de 0.
             let startTime: TimeInterval
             if let position {
-                startTime = min(max(position, 0), max(song.duration - 0.05, 0))
+                // ✅ FIX GAPLESS: clamp más robusto para evitar problemas con canciones cortas
+                // o posiciones guardadas cercanas al final. El margen de 0.05s evita
+                // iniciar exactamente al final (podría causar skip inmediato).
+                let safeEnd = max(song.duration - 0.05, 0.1) // Mínimo 0.1s para canciones muy cortas
+                startTime = min(max(position, 0), safeEnd)
             } else {
                 startTime = 0
             }
@@ -1142,11 +1167,12 @@ class AudioEngine: NSObject, ObservableObject {
             anchorPlaybackPosition(startTime)
             currentTime = startTime
             clock.time = startTime
-            // FIX punto aleatorio: tras engine.stop(), el reloj interno del nodo
+            // ✅ FIX punto aleatorio: tras engine.stop(), el reloj interno del nodo
             // (sampleTime) no se resetea hasta el proximo render. Programar + play
             // inmediato arranca desde un punto residual al azar por milisegundos.
+            // ✅ OPTIMIZACIÓN: delay reducido a 0.1s para respuesta más rápida en iPhone 8
             // Este retraso da tiempo al render thread a resetear el timeline antes.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
                 guard let self = self,
                       self.scheduleGeneration == currentGeneration,
                       !self.isStopping else { return }
@@ -1175,12 +1201,11 @@ class AudioEngine: NSObject, ObservableObject {
             addToHistory(song)
             updateNextUpQueue()
             saveState()
-            // PRECARGA de la siguiente cancion mientras suena la actual,
-            // para que la transicion al final sea casi instantanea.
+            // ✅ PRECARGA de la siguiente canción mientras suena la actual,
+            // para que la transición al final sea casi instantánea cuando el
+            // formato difiere (donde no se puede usar encadenado gapless).
 
             preloadNextSong()
-            // ✅ Pre-carga eliminada: era parte del sistema de encadenamiento
-            // frágil. Toda transición ahora pasa por playCurrentSong() atómico.
         } catch {
             // 🔍 LOG: registrar la causa exacta por la que el AVAudioEngine falló
             // (formato no soportado, archivo corrupto, engine no arrancable, etc.)
@@ -2045,6 +2070,62 @@ class AudioEngine: NSObject, ObservableObject {
         DispatchQueue.main.async {
             self.outputSampleRate = newRate
             self.outputChannelCount = newChannels
+            
+            // ✅ AUDIÓFILO: determinar si la salida es bit-perfect
+            // Bit-perfect = sample rate de salida coincide con el del archivo
+            let sourceRate = self.currentSong?.sampleRate ?? 0
+            let bitPerfect = sourceRate > 0 && abs(newRate - sourceRate) < 1
+            self.isBitPerfect = bitPerfect
+            
+            // ✅ AUDIÓFILO: detectar codec Bluetooth (iOS no expone el codec directamente,
+            // pero podemos inferir información por el tipo de puerto y nombre del dispositivo)
+            let portType = self.outputPortType
+            if portType == AVAudioSession.Port.bluetoothA2DP.rawValue ||
+               portType == AVAudioSession.Port.bluetoothLE.rawValue ||
+               portType == AVAudioSession.Port.bluetoothHFP.rawValue {
+                // iOS no expone el codec (AAC/aptX/LDAC) directamente a las apps
+                // es una limitación del sistema. Documentamos esto en la UI.
+                if portType == AVAudioSession.Port.bluetoothLE.rawValue {
+                    self.bluetoothCodec = "BLE (iOS maneja codec)"
+                } else if portType == AVAudioSession.Port.bluetoothHFP.rawValue {
+                    self.bluetoothCodec = "HFP (llamadas, baja calidad)"
+                } else {
+                    self.bluetoothCodec = "A2DP (iOS maneja codec)"
+                }
+            } else {
+                self.bluetoothCodec = ""
+            }
+            
+            // ✅ AUDIÓFILO: información del DAC USB conectado
+            if portType == AVAudioSession.Port.usbAudio.rawValue {
+                let route = session.currentRoute
+                if let output = route.outputs.first {
+                    let deviceName = output.portName
+                    // Intentar obtener información adicional del dispositivo USB
+                    self.usbDACInfo = deviceName.isEmpty ? "USB DAC" : deviceName
+                } else {
+                    self.usbDACInfo = "USB DAC"
+                }
+            } else {
+                self.usbDACInfo = ""
+            }
+            
+            // ✅ AUDIÓFILO: modo actual de AVAudioSession
+            switch session.mode {
+            case .default:
+                self.audioSessionMode = "Default"
+            case .measurement:
+                self.audioSessionMode = "Measurement (bit-perfect)"
+            case .musicHaptic:
+                self.audioSessionMode = "Music Haptic"
+            case .spatialAudio:
+                self.audioSessionMode = "Spatial Audio"
+            case .voicePrompt:
+                self.audioSessionMode = "Voice Prompt"
+            default:
+                self.audioSessionMode = session.mode.rawValue
+            }
+            
             // ✅ Localizado: antes "Estándar"/"Estéreo" quedaban fijos en español
             // aunque la app estuviera en inglés.
             let rateInfo = newRate > 48000 ? "Hi-Res" : Localization.localized("quality.standard")
@@ -2081,8 +2162,9 @@ class AudioEngine: NSObject, ObservableObject {
                 let wasPlaying = self.isPlaying || self.wasPlayingBeforeRouteChange
                 self.wasPlayingBeforeRouteChange = self.isPlaying
 
-                // Pequeño delay para que el sistema termine de estabilizar la ruta
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+                // ✅ OPTIMIZACIÓN: delay reducido para reanudación más rápida (0.15s en vez de 0.25s)
+                // Suficiente para estabilización de ruta en iOS 16 en iPhone 8
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
                     guard let self = self else { return }
                     let route = AVAudioSession.sharedInstance().currentRoute.outputs.first
                     let isHeadphoneRoute = route.map { output in
@@ -2166,10 +2248,9 @@ class AudioEngine: NSObject, ObservableObject {
 
             self.updateRouteName()
             self.updateAudioQuality()
-            // ✅ FIX: algunas rutas (Bluetooth sobre todo) reportan el cambio
-            // con retraso o en dos pasos; re-verificar tras un breve delay
-            // para no quedarnos con la ruta/salida anterior en la UI.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+            // ✅ OPTIMIZACIÓN: delay reducido para verificación de ruta (0.2s en vez de 0.4s)
+            // Suficiente para estabilización en iOS 16, más rápido para el usuario
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
                 self?.updateRouteName()
                 self?.updateAudioQuality()
             }
@@ -2187,21 +2268,25 @@ class AudioEngine: NSObject, ObservableObject {
                   let typeVal = info[AVAudioSessionInterruptionTypeKey] as? UInt,
                   let type = AVAudioSession.InterruptionType(rawValue: typeVal) else { return }
             if type == .began && self.isPlaying {
+                // ✅ GUARDAR estado antes de pausar para reanudación automática
+                self.wasPlayingBeforeRouteChange = true
                 self.pause()
             } else if type == .ended {
                 let shouldResume = (info[AVAudioSessionInterruptionOptionKey] as? UInt)
                     .flatMap { AVAudioSession.InterruptionOptions(rawValue: $0) }
                     .map { $0.contains(.shouldResume) } ?? false
-                // ✅ Resistente a pausas no otorgadas: si la interrupción terminó
-                // (ej. llamada finalizada, video pausado por el usuario) y NO
-                // venía con shouldResume pero la app estaba reproduciendo antes,
-                // reanudamos manualmente para no quedar colgados en pausa.
+                // ✅ FIX: Solo reanudar si iOS explícitamente lo indica (shouldResume)
+                // No reanudar automáticamente basado solo en wasPlayingBeforeRouteChange
+                // para evitar reanudaciones no deseadas al navegar por la app
                 if shouldResume {
-                    self.resume()
-                } else if self.wasPlayingBeforeRouteChange {
-                    // La interrupción fue por el sistema (llamada/video):
-                    // reanudar solo si fue un interruptor temporal que terminó.
-                    self.resume()
+                    // ✅ Pequeño delay para asegurar que el sistema esté listo
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+                        self?.resume()
+                        self?.wasPlayingBeforeRouteChange = false
+                    }
+                } else {
+                    // ✅ Limpiar el flag si no hay shouldResume para evitar reanudaciones futuras
+                    self.wasPlayingBeforeRouteChange = false
                 }
             }
         }
@@ -2217,7 +2302,9 @@ class AudioEngine: NSObject, ObservableObject {
     }
 
     @objc private func appDidBecomeActive() {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+        // ✅ OPTIMIZACIÓN: delay reducido para actualización más rápida al volver a la app
+        // 0.1s es suficiente para que iOS estabilice la sesión de audio tras segundo plano
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
             self.updateNowPlayingInfo()
         }
     }

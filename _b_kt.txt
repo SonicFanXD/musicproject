@@ -1,0 +1,90 @@
+﻿diff --git a/android/app/src/main/java/com/aurora/player/services/AudioEngine.kt b/android/app/src/main/java/com/aurora/player/services/AudioEngine.kt
+index e6d3440..dd4139a 100644
+--- a/android/app/src/main/java/com/aurora/player/services/AudioEngine.kt
++++ b/android/app/src/main/java/com/aurora/player/services/AudioEngine.kt
+@@ -80,6 +80,22 @@ class AudioEngine(private val context: Context) {
+     val outputChannelCount: LiveData<Int> = _outputChannelCount
+     private val _audioQualityInfo = MutableLiveData("")
+     val audioQualityInfo: LiveData<String> = _audioQualityInfo
++    
++    // Ô£à AUDI├ôFILO: indicador de salida bit-perfect (sin remuestreo)
++    private val _isBitPerfect = MutableLiveData(false)
++    val isBitPerfect: LiveData<Boolean> = _isBitPerfect
++    
++    // Ô£à AUDI├ôFILO: informaci├│n del codec Bluetooth (Android permite m├ís control que iOS)
++    private val _bluetoothCodec = MutableLiveData("")
++    val bluetoothCodec: LiveData<String> = _bluetoothCodec
++    
++    // Ô£à AUDI├ôFILO: informaci├│n del DAC USB conectado
++    private val _usbDACInfo = MutableLiveData("")
++    val usbDACInfo: LiveData<String> = _usbDACInfo
++    
++    // Ô£à AUDI├ôFILO: informaci├│n del tipo de conexi├│n
++    private val _connectionType = MutableLiveData("")
++    val connectionType: LiveData<String> = _connectionType
+ 
+     private val progressRunnable = object : Runnable {
+         override fun run() {
+@@ -214,6 +230,47 @@ class AudioEngine(private val context: Context) {
+         if (_outputSampleRate.value == rate && _outputChannelCount.value == channels) return
+         _outputSampleRate.value = rate
+         _outputChannelCount.value = channels
++        
++        // Ô£à AUDI├ôFILO: determinar si la salida es bit-perfect
++        val sourceRate = _currentSong.value?.sampleRate ?: 0.0
++        val bitPerfect = sourceRate > 0 && Math.abs(rate - sourceRate) < 1
++        _isBitPerfect.value = bitPerfect
++        
++        // Ô£à AUDI├ôFILO: detectar tipo de conexi├│n y codec Bluetooth
++        // Android permite m├ís control sobre Bluetooth que iOS
++        val devices = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
++        var bluetoothDeviceFound = false
++        var usbDeviceFound = false
++        var codecInfo = ""
++        
++        for (device in devices) {
++            when (device.type) {
++                AudioDeviceInfo.TYPE_BLUETOOTH_A2DP -> {
++                    bluetoothDeviceFound = true
++                    // Android puede proporcionar informaci├│n del codec
++                    // Esto depende del dispositivo y del Android version
++                    codecInfo = "A2DP (Android controla codec)"
++                }
++                AudioDeviceInfo.TYPE_BLUETOOTH_SCO -> {
++                    bluetoothDeviceFound = true
++                    codecInfo = "SCO (llamadas, baja calidad)"
++                }
++                AudioDeviceInfo.TYPE_USB_DEVICE, 
++                AudioDeviceInfo.TYPE_USB_HEADSET -> {
++                    usbDeviceFound = true
++                    val deviceName = device.productName ?: "USB DAC"
++                    _usbDACInfo.value = deviceName
++                }
++            }
++        }
++        
++        _bluetoothCodec.value = if (bluetoothDeviceFound) codecInfo else ""
++        _connectionType.value = when {
++            bluetoothDeviceFound -> "Bluetooth"
++            usbDeviceFound -> "USB"
++            else -> "Interno"
++        }
++        
+         val rateInfo = if (rate >= 48000) "Hi-Res" else "Est├índar"
+         val channelInfo = if (channels >= 2) "Est├®reo" else "Mono"
+         _audioQualityInfo.value = "$rateInfo ÔÇó ${rate}Hz ÔÇó $channelInfo"
+@@ -243,11 +300,14 @@ class AudioEngine(private val context: Context) {
+         val mediaItem = MediaItem.fromUri(song.audioUrl)
+         // Ô£à Hi-Res: NO forzamos sample rate de salida. ExoPlayer decodifica a la
+         // tasa/bit nativos del archivo y el PCM llega bit-perfect al sistema.
++        // Ô£à AUDI├ôFILO: Android permite m├ís control sobre codecs Bluetooth que iOS
+         exoPlayer?.apply {
+             setMediaItem(mediaItem)
+             prepare()
+             play()
+         }
++        // Actualizar informaci├│n de calidad inmediatamente
++        refreshOutputQuality()
+     }
+ 
+     fun togglePlayPause() {

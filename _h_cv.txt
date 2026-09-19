@@ -1,9 +1,10 @@
-import SwiftUI
+﻿import SwiftUI
 
-// ✅ FIX header: ContentView ya no usa NavigationStack. El header float
-// con el nombre de la app se renderiza como parte del layout. La navegación
-// (songs → artista/detalle) se maneja con sheets, eliminando la barra
-// de navegación y su división visual con el fondo.
+// Ô£à FIX header: el header (nombre + botones) se renderiza como parte del
+// layout y el NavigationBar del root queda oculto con .toolbar(.hidden, ÔÇª):
+// sin barra ni divisi├│n contra el AppBackground. El NavigationStack se
+// conserva ÔÇö ├ílbumes/artistas/playlists navegan con NavigationLink a sus
+// vistas de detalle (que s├¡ muestran su barra con bot├│n "atr├ís").
 struct ContentView: View {
     @StateObject private var audioEngine = AudioEngine()
     @StateObject private var fileAccessService = FileAccessService()
@@ -21,17 +22,17 @@ struct ContentView: View {
     }
     @State private var searchText = ""
     @FocusState private var searchFieldFocused: Bool
-    // ✅ Manejo de ciclo de vida para detectar cambios en segundo plano
+    // Ô£à Manejo de ciclo de vida para detectar cambios en segundo plano
     @Environment(\.scenePhase) private var scenePhase
     
-    // ✅ FIX ordenamiento: @AppStorage leído vía computed property no siempre
-    // invalida la vista al cambiar la opción. Se usa @State (reactivo) sincronizado
+    // Ô£à FIX ordenamiento: @AppStorage le├¡do v├¡a computed property no siempre
+    // invalida la vista al cambiar la opci├│n. Se usa @State (reactivo) sincronizado
     // bidireccionalmente con @AppStorage (persistente) para garantizar el re-render.
     @AppStorage("com.aurora.songSort") private var songSortRawStorage = SortOption.title.rawValue
     @AppStorage("com.aurora.songSortAscending") private var songSortAscendingStorage = true
     @AppStorage("com.aurora.albumSort") private var albumSortRawStorage = AlbumSortOption.title.rawValue
     @AppStorage("com.aurora.albumSortAscending") private var albumSortAscendingStorage = true
-    // ✅ Orden propio de la categoría Artistas (independiente de canciones/álbumes).
+    // Ô£à Orden propio de la categor├¡a Artistas (independiente de canciones/├ílbumes).
     @AppStorage("com.aurora.artistSort") private var artistSortRawStorage = ArtistSortOption.name.rawValue
     @AppStorage("com.aurora.artistSortAscending") private var artistSortAscendingStorage = true
 
@@ -51,7 +52,7 @@ struct ContentView: View {
         ZStack {
             AppBackground()
                 .onAppear {
-                    // ✅ Sincronizar @State con @AppStorage al aparecer para garantizar
+                    // Ô£à Sincronizar @State con @AppStorage al aparecer para garantizar
                     // que los valores persistidos se carguen correctamente
                     sortOptionRaw = songSortRawStorage
                     songSortAscending = songSortAscendingStorage
@@ -62,13 +63,13 @@ struct ContentView: View {
                 }
             NavigationStack {
                 VStack(spacing: 0) {
-                    // ✅ Header flotante con nombre de app integrado al fondo (sin NavigationBar separada)
+                    // Header: nombre de la app integrado al fondo del layout.
                     headerView
 
-                    // ✅ FIX orden: buscador PRIMERO, luego los chips de
-                    // categorías. Antes los chips quedaban arriba del buscador
-                    // y se veía invertido (los filtros encima del campo de
-                    // búsqueda).
+                    // Ô£à FIX orden: buscador PRIMERO, luego los chips de
+                    // categor├¡as. Antes los chips quedaban arriba del buscador
+                    // y se ve├¡a invertido (los filtros encima del campo de
+                    // b├║squeda).
                     searchFieldInline
                         .padding(.horizontal, 12)
                         .padding(.top, 8)
@@ -76,9 +77,9 @@ struct ContentView: View {
 
                     categoryPicker
 
-                    // ✅ Transición animada entre categorías: el contenido
+                    // Ô£à Transici├│n animada entre categor├¡as: el contenido
                     // entra con fade + slide suave, sale con fade + micro-escala.
-                    // Solo transform/opacity → renderizado por GPU, 60fps estables.
+                    // Solo transform/opacity ÔåÆ renderizado por GPU, 60fps estables.
                     ZStack {
                         switch selectedCategory {
                         case .songs:
@@ -97,9 +98,9 @@ struct ContentView: View {
                         try? await Task.sleep(nanoseconds: 600_000_000)
                     }
                 }
-                // ✅ BÚSQUEDA: mantener el índice sincronizado con la
-                // librería (solo se reconstruye cuando cambian las
-                // canciones/álbumes/artistas, nunca por tecla).
+                // Ô£à B├ÜSQUEDA: mantener el ├¡ndice sincronizado con la
+                // librer├¡a (solo se reconstruye cuando cambian las
+                // canciones/├ílbumes/artistas, nunca por tecla).
                 .onReceive(fileAccessService.$songs) { songs in
                     LibrarySearchIndex.shared.update(
                         songs: songs,
@@ -107,7 +108,7 @@ struct ContentView: View {
                         artists: fileAccessService.artists
                     )
                 }
-                // ✅ Sincronización bidireccional: mantener @AppStorage actualizado
+                // Ô£à Sincronizaci├│n bidireccional: mantener @AppStorage actualizado
                 // cuando cambian las variables @State de ordenamiento
                 .onChange(of: sortOptionRaw) { songSortRawStorage = $0 }
                 .onChange(of: songSortAscending) { songSortAscendingStorage = $0 }
@@ -115,19 +116,17 @@ struct ContentView: View {
                 .onChange(of: albumSortAscending) { albumSortAscendingStorage = $0 }
                 .onChange(of: artistSortRaw) { artistSortRawStorage = $0 }
                 .onChange(of: artistSortAscending) { artistSortAscendingStorage = $0 }
-                // ✅ FIX LAG DE TECLADO: antes había aquí un .onChange(of: searchText)
-                // que llamaba a LibrarySearchIndex.shared.update(...) en CADA tecla.
-                // update() ignora por completo `searchText` (solo sincroniza el índice
-                // con la librería), así que ese bloque no aportaba nada a la búsqueda:
-                // solo recorría toda la biblioteca (map de IDs de canciones/álbumes/
-                // artistas) en cada pulsación, de forma síncrona en el hilo principal,
-                // congelando el teclado en bibliotecas grandes. El índice ya se
-                // mantiene sincronizado por sí solo vía .onReceive(fileAccessService.$songs)
-                // y por el .onChange(of: selectedCategoryRaw) de abajo — filtrar por
-                // `searchText` ya lo hacen filteredSongs/filteredAlbums/filteredArtists
-                // al recomputarse en cada render, sin necesidad de este bloque.
-                // Sincronizar el índice también al cambiar de categoría
-                // (álbumes/artistas pueden haberse reconstruido).
+                // Ô£à B├ÜSQUEDA INSTANT├üNEA: filtrar al instante al escribir.
+                // Sin debounce para que una palabra muestre resultados de inmediato.
+                .onChange(of: searchText) { newValue in
+                    LibrarySearchIndex.shared.update(
+                        songs: fileAccessService.songs,
+                        albums: fileAccessService.albums,
+                        artists: fileAccessService.artists
+                    )
+                }
+                // Ô£à Sincronizar el ├¡ndice tambi├®n al cambiar de categor├¡a
+                // (├ílbumes/artistas pueden haberse reconstruido).
                 .onChange(of: selectedCategoryRaw) { _ in
                     LibrarySearchIndex.shared.update(
                         songs: fileAccessService.songs,
@@ -135,43 +134,16 @@ struct ContentView: View {
                         artists: fileAccessService.artists
                     )
                 }
-                // ✅ DETECCIÓN EN SEGUNDO PLANO: cuando la app vuelve a activa,
+                // Ô£à DETECCI├ôN EN SEGUNDO PLANO: cuando la app vuelve a activa,
                 // verificar si hay canciones nuevas SILENCIOSAMENTE (sin tarjeta
-                // compacta ni re-indexado visible). Antes aquí se lanzaba un
-                // rescan completo (refreshAllFolders) en CADA activación,
-                // incluida la primera apertura → era la causa de que al abrir
-                // la app arrancara "a indexar todo" con la animación compacta.
+                // compacta ni re-indexado visible). Antes aqu├¡ se lanzaba un
+                // rescan completo (refreshAllFolders) en CADA activaci├│n,
+                // incluida la primera apertura ÔåÆ era la causa de que al abrir
+                // la app arrancara "a indexar todo" con la animaci├│n compacta.
                 .onChange(of: scenePhase) { newPhase in
                     if newPhase == .active {
-                        AppLog.info(.lifecycle, "App volvió a activo, detección silenciosa de canciones nuevas...")
+                        AppLog.info(.lifecycle, "App volvi├│ a activo, detecci├│n silenciosa de canciones nuevas...")
                         fileAccessService.backgroundScanForNewSongs()
-                    }
-                }
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbarBackground(.hidden, for: .navigationBar)
-                .toolbar {
-                    ToolbarItem(placement: .navigationBarTrailing) {
-                        HStack(spacing: 6) {
-                            Button {
-                                showPlaylists = true
-                            } label: {
-                                Image(systemName: "music.note.list")
-                                    .foregroundStyle(AppTheme.accent)
-                                    .font(.system(size: 16, weight: .medium))
-                                    .frame(width: 44, height: 44)
-                                    .contentShape(Rectangle())
-                            }
-
-                            Button {
-                                showSettings = true
-                            } label: {
-                                Image(systemName: "gearshape.fill")
-                                    .foregroundStyle(AppTheme.accent)
-                                    .font(.system(size: 16, weight: .medium))
-                                    .frame(width: 44, height: 44)
-                                    .contentShape(Rectangle())
-                            }
-                        }
                     }
                 }
                 .sheet(isPresented: $showSettings) {
@@ -184,7 +156,7 @@ struct ContentView: View {
                     restoreLibraryIfNeeded()
                     audioEngine.isKeepScreenOnEnabled = keepScreenOnUserDefaults
                     fileAccessService.ensureLikedPlaylistExists()
-                    // ✅ INDEXACIÓN: decidir tarjeta grande vs indicador compacto.
+                    // Ô£à INDEXACI├ôN: decidir tarjeta grande vs indicador compacto.
                     syncFirstTimeIndexing()
                     maybeAutoResume()
                     if fileAccessService.isInitialLibraryLoaded {
@@ -204,9 +176,9 @@ struct ContentView: View {
                     if loaded {
                         hasRestored = false
                         restoreLibraryIfNeeded()
-                        // ✅ FIX "Reproducir al iniciar" con escaneo lento: si la
-                        // biblioteca terminó de cargar DESPUÉS del onAppear, el
-                        // restore recién ocurrió aquí — reintentar el auto-resume.
+                        // Ô£à FIX "Reproducir al iniciar" con escaneo lento: si la
+                        // biblioteca termin├│ de cargar DESPU├ëS del onAppear, el
+                        // restore reci├®n ocurri├│ aqu├¡ ÔÇö reintentar el auto-resume.
                         maybeAutoResume()
                         withAnimation(.easeOut(duration: 0.3)) {
                             isInitialLoad = false
@@ -214,15 +186,15 @@ struct ContentView: View {
                     }
                 }
                 .onChange(of: audioEngine.currentSong?.id) { _ in
-                    // ✅ FIX "Reproducir al iniciar": el restore puede completarse
-                    // en cualquier momento (escaneo asíncrono) — cuando la canción
+                    // Ô£à FIX "Reproducir al iniciar": el restore puede completarse
+                    // en cualquier momento (escaneo as├¡ncrono) ÔÇö cuando la canci├│n
                     // aparezca, re-evaluar el auto-resume una vez.
                     maybeAutoResume()
                 }
                 .overlay {
-                    // ✅ Indicador compacto flotante: SOLO en re-escaneos con
-                    // biblioteca ya cargada (no en la primera indexación, donde
-                    // ya está la tarjeta grande en la lista).
+                    // Ô£à Indicador compacto flotante: SOLO en re-escaneos con
+                    // biblioteca ya cargada (no en la primera indexaci├│n, donde
+                    // ya est├í la tarjeta grande en la lista).
                     if fileAccessService.isScanning && !fileAccessService.songs.isEmpty && !firstTimeIndexing {
                         VStack {
                             Spacer()
@@ -246,6 +218,10 @@ struct ContentView: View {
                         .transition(.opacity)
                     }
                 }
+                // Ô£à FIX header: NavigationBar del root oculto con la API oficial
+                // (iOS 16+). El estado es por-vista: al empujar un ├ílbum/artista/
+                // playlist su barra vuelve con el bot├│n "atr├ís" autom├íticamente.
+                .toolbar(.hidden, for: .navigationBar)
             }
 
             if isInitialLoad {
@@ -264,38 +240,38 @@ struct ContentView: View {
             withAnimation(.easeInOut(duration: 0.3)) {
                 compactIndexingVisible = scanning
             }
-            // ✅ INDEXACIÓN: sincronizar tarjeta grande / indicador compacto.
+            // Ô£à INDEXACI├ôN: sincronizar tarjeta grande / indicador compacto.
             syncFirstTimeIndexing()
         }
     }
 
     @AppStorage("com.aurora.keepScreenOn") private var keepScreenOnUserDefaults = false
     @AppStorage("com.aurora.autoPlayOnStart") private var autoPlayOnStart = false
-    // ✅ Visibilidad de la fila compacta de indexación, animada por opacidad.
-    // La fila se mantiene SIEMPRE en la lista (colapsada a ~0px cuando está
+    // Ô£à Visibilidad de la fila compacta de indexaci├│n, animada por opacidad.
+    // La fila se mantiene SIEMPRE en la lista (colapsada a ~0px cuando est├í
     // oculta) para que aparezca/desaparezca con un fade suave en vez de
     // insertarse/eliminarse como fila (lo que desplazaba la lista bruscamente).
     @State private var compactIndexingVisible = false
 
-    // ✅ TARJETA GRANDE solo en la PRIMERA indexación (biblioteca aún vacía):
-    // - Primera vez: tarjeta grande en TODAS las categorías mientras escanea,
+    // Ô£à TARJETA GRANDE solo en la PRIMERA indexaci├│n (biblioteca a├║n vac├¡a):
+    // - Primera vez: tarjeta grande en TODAS las categor├¡as mientras escanea,
     //   con el contenido apareciendo debajo a medida que se indexa; al
     //   terminar, la tarjeta se desvanece (opacidad, sin blur = barato).
     // - Aperturas siguientes: el escaneo corre en segundo plano buscando
     //   canciones nuevas y SOLO se muestra el indicador compacto mientras
     //   dura; desaparece al terminar.
     @State private var firstTimeIndexing = false
-    // ✅ FLAG PERSISTENTE: la tarjeta grande SOLO se muestra en la PRIMERA
-    // indexación real de la instalación (sin caché previo). Cualquier
-    // re-escaneo posterior (manual o detección en segundo plano) usa la fila
-    // compacta, tal como decidió el usuario.
+    // Ô£à FLAG PERSISTENTE: la tarjeta grande SOLO se muestra en la PRIMERA
+    // indexaci├│n real de la instalaci├│n (sin cach├® previo). Cualquier
+    // re-escaneo posterior (manual o detecci├│n en segundo plano) usa la fila
+    // compacta, tal como decidi├│ el usuario.
     @AppStorage("com.aurora.firstIndexingDone") private var firstIndexingDone = false
 
     private func syncFirstTimeIndexing() {
         let scanning = fileAccessService.isScanning
         if firstTimeIndexing {
-            // ✅ FIX "tarjeta inservible": el modo tarjeta grande SE MANTIENE
-            // aunque `songs` ya no esté vacío (antes, en cuanto llegaba el
+            // Ô£à FIX "tarjeta inservible": el modo tarjeta grande SE MANTIENE
+            // aunque `songs` ya no est├® vac├¡o (antes, en cuanto llegaba el
             // primer lote el criterio `libraryEmpty` pasaba a false y saltaba
             // a la compacta). Solo se apaga al FINALIZAR el escaneo.
             if !scanning {
@@ -304,8 +280,8 @@ struct ContentView: View {
             }
             return
         }
-        // ✅ Solo se ACTIVA la primera vez de la instalación: escaneando,
-        // sin flag guardado y sin biblioteca (caché vacío → primera indexación).
+        // Ô£à Solo se ACTIVA la primera vez de la instalaci├│n: escaneando,
+        // sin flag guardado y sin biblioteca (cach├® vac├¡o ÔåÆ primera indexaci├│n).
         let isFirstScanOfInstall = scanning
             && !firstIndexingDone
             && fileAccessService.songs.isEmpty
@@ -343,13 +319,13 @@ struct ContentView: View {
         }
     }
 
-    // ✅ Contenedor de biblioteca con ScrollView + LazyVStack (NO List).
-    // List + .searchable + toolbar ultraThinMaterial = barra de búsqueda
-    // cortada/fantasma y rectángulo negro debajo (celda de scope bar vacía).
+    // Ô£à Contenedor de biblioteca con ScrollView + LazyVStack (NO List).
+    // List + .searchable + toolbar ultraThinMaterial = barra de b├║squeda
+    // cortada/fantasma y rect├íngulo negro debajo (celda de scope bar vac├¡a).
     // ScrollView + LazyVStack no toca la navigationBar: el buscador inline
     // de arriba siempre se ve bien y el scroll rinde igual (lazy).
-    // Se conserva el inset inferior para la PlayerBar flotante (sin él, la
-    // última fila quedaba oculta detrás de la barra).
+    // Se conserva el inset inferior para la PlayerBar flotante (sin ├®l, la
+    // ├║ltima fila quedaba oculta detr├ís de la barra).
     private func libraryScroll<Content: View>(
         id: String,
         @ViewBuilder content: () -> Content
@@ -359,15 +335,15 @@ struct ContentView: View {
                 content()
             }
             .id(id)
-            // ✅ Espacio al pie para la PlayerBar flotante (96pt solo con
-            // canción activa; 24pt de respiro base sin canción).
+            // Ô£à Espacio al pie para la PlayerBar flotante (96pt solo con
+            // canci├│n activa; 24pt de respiro base sin canci├│n).
             .padding(.bottom, audioEngine.currentSong != nil ? 96 : 24)
         }
         .id(id)
         .scrollIndicators(.hidden)
     }
 
-    // ✅ Buscador INLINE con look nativo (lupa + fondo secondarySystemBackground).
+    // Ô£à Buscador INLINE con look nativo (lupa + fondo secondarySystemBackground).
     // Sustituye a .searchable del NavigationStack sin pelear con la navBar.
     private var searchFieldInline: some View {
         HStack(spacing: 8) {
@@ -396,6 +372,8 @@ struct ContentView: View {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(Color(UIColor.secondarySystemBackground))
         }
+        // Ô£à FIX buscador: contentShape + onTapGesture ÔåÆ tocar cualquier zona
+        // del campo (incluido el padding) enfoca el TextField.
         .contentShape(Rectangle())
         .onTapGesture {
             searchFieldFocused = true
@@ -438,7 +416,7 @@ struct ContentView: View {
                                 }
                                 .shadow(color: AppTheme.accent.opacity(0.35), radius: 8, x: 0, y: 4)
                             } else {
-                                // ✅ 60fps: color OPACO (sin blur) para los chips
+                                // Ô£à 60fps: color OPACO (sin blur) para los chips
                                 // no seleccionados (se re-renderizan al scrollear)
                                 Capsule().fill(Color(UIColor.secondarySystemBackground))
                                 Capsule().strokeBorder(Color.secondary.opacity(0.1), lineWidth: 0.5)
@@ -453,9 +431,10 @@ struct ContentView: View {
         .padding(.vertical, 10)
     }
 
-    // ✅ Header flotante con nombre de la app integrado al fondo del contenido.
-    // No usa NavigationBar ni toolbar → el nombre se ve como parte del layout,
-    // sin división visual contra el AppBackground ni el buscador.
+    // Ô£à Header flotante: nombre de la app + botones de acci├│n (playlists/ajustes).
+    // Integrado al layout (no es NavigationBar/toolbar) ÔåÆ el AppBackground fluye
+    // por detr├ís sin banda ni divisi├│n. Queda 12pt bajo el status bar, as├¡ que
+    // NO usa ignoresSafeArea (el t├¡tulo no debe pisar la hora/notch).
     private var headerView: some View {
         HStack {
             Text(Localization.localized("app.name"))
@@ -468,7 +447,30 @@ struct ContentView: View {
                     )
                 )
                 .accessibilityLabel(Localization.localized("app.name"))
+
             Spacer()
+
+            HStack(spacing: 6) {
+                Button {
+                    showPlaylists = true
+                } label: {
+                    Image(systemName: "music.note.list")
+                        .foregroundStyle(AppTheme.accent)
+                        .font(.system(size: 16, weight: .medium))
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+
+                Button {
+                    showSettings = true
+                } label: {
+                    Image(systemName: "gearshape.fill")
+                        .foregroundStyle(AppTheme.accent)
+                        .font(.system(size: 16, weight: .medium))
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+            }
         }
         .padding(.horizontal, 20)
         .padding(.top, 12)
@@ -487,7 +489,7 @@ struct ContentView: View {
     private var songsSection: some View {
         let currentFilteredSongs = filteredSongs
 
-        // ✅ PRIMERA INDEXACIÓN: tarjeta grande arriba y el contenido
+        // Ô£à PRIMERA INDEXACI├ôN: tarjeta grande arriba y el contenido
         // apareciendo debajo a medida que se indexa.
         if firstTimeIndexing {
             indexingProgressCard
@@ -525,9 +527,9 @@ struct ContentView: View {
                 .padding(.horizontal, 12)
             }
         } else {
-            // ✅ ESCANEO CON CANCIONES EXISTENTES: indicador compacto SOLO en
+            // Ô£à ESCANEO CON CANCIONES EXISTENTES: indicador compacto SOLO en
             // re-escaneos (manual o canciones nuevas en segundo plano); la
-            // primera indexación usa la tarjeta grande.
+            // primera indexaci├│n usa la tarjeta grande.
             if fileAccessService.isScanning && fileAccessService.scanTotal > 0 && !firstTimeIndexing {
                 compactIndexingRow
                     .padding(.top, 8)
@@ -582,7 +584,7 @@ struct ContentView: View {
     private var indexingProgressCard: some View {
         VStack(spacing: 18) {
             ZStack {
-                // ✅ SIN BLUR: durante la indexación esta vista se re-renderiza en
+                // Ô£à SIN BLUR: durante la indexaci├│n esta vista se re-renderiza en
                 // cada lote (scanProcessed cambia constantemente). Un material blur
                 // re-computado decenas de veces por segundo es la principal fuente
                 // de calor/BCM del dispositivo. Fondo opaco = mismo look, cero
@@ -653,8 +655,8 @@ struct ContentView: View {
         .frame(maxWidth: .infinity)
         .padding(.vertical, 32)
         .padding(.horizontal, 18)
-        // ✅ SIN BLUR (era enhancedGlass/.ultraThinMaterial): esta tarjeta se
-        // re-renderiza en cada lote de indexación → blur re-computado constante
+        // Ô£à SIN BLUR (era enhancedGlass/.ultraThinMaterial): esta tarjeta se
+        // re-renderiza en cada lote de indexaci├│n ÔåÆ blur re-computado constante
         // = calor. Fondo opaco + borde sutil = mismo look premium, cero costo.
         .background {
             RoundedRectangle(cornerRadius: 28, style: .continuous)
@@ -701,8 +703,8 @@ struct ContentView: View {
         }
         .padding(.horizontal, 12)
         .opacity(compactIndexingVisible ? 1 : 0)
-        // ✅ Colapsar la altura cuando está oculta (con fade animado) para no
-        // dejar una fila vacía persistente ni desplazar la lista al aparecer.
+        // Ô£à Colapsar la altura cuando est├í oculta (con fade animado) para no
+        // dejar una fila vac├¡a persistente ni desplazar la lista al aparecer.
         .frame(height: compactIndexingVisible ? nil : CGFloat(1))
         .clipped()
     }
@@ -715,7 +717,7 @@ struct ContentView: View {
     @ViewBuilder
     private var albumsSection: some View {
         let albums = filteredAlbums
-        // ✅ PRIMERA INDEXACIÓN: tarjeta grande también en álbumes.
+        // Ô£à PRIMERA INDEXACI├ôN: tarjeta grande tambi├®n en ├ílbumes.
         if firstTimeIndexing {
             indexingProgressCard
                 .transition(.opacity)
@@ -734,8 +736,8 @@ struct ContentView: View {
                 .padding(.horizontal, 12)
             }
         } else {
-            // ✅ ESCANEO CON ÁLBUMES EXISTENTES: indicador compacto SOLO en
-            // re-escaneos (la primera indexación usa la tarjeta grande).
+            // Ô£à ESCANEO CON ├üLBUMES EXISTENTES: indicador compacto SOLO en
+            // re-escaneos (la primera indexaci├│n usa la tarjeta grande).
             if fileAccessService.isScanning && fileAccessService.scanTotal > 0 && !firstTimeIndexing {
                 compactIndexingRow
                     .padding(.top, 8)
@@ -759,7 +761,7 @@ struct ContentView: View {
     @ViewBuilder
     private var artistsSection: some View {
         let artists = filteredArtists
-        // ✅ PRIMERA INDEXACIÓN: tarjeta grande también en artistas.
+        // Ô£à PRIMERA INDEXACI├ôN: tarjeta grande tambi├®n en artistas.
         if firstTimeIndexing {
             indexingProgressCard
                 .transition(.opacity)
@@ -778,8 +780,8 @@ struct ContentView: View {
                 .padding(.horizontal, 12)
             }
         } else {
-            // ✅ ESCANEO CON ARTISTAS EXISTENTES: indicador compacto SOLO en
-            // re-escaneos (la primera indexación usa la tarjeta grande).
+            // Ô£à ESCANEO CON ARTISTAS EXISTENTES: indicador compacto SOLO en
+            // re-escaneos (la primera indexaci├│n usa la tarjeta grande).
             if fileAccessService.isScanning && fileAccessService.scanTotal > 0 && !firstTimeIndexing {
                 compactIndexingRow
                     .padding(.top, 8)
@@ -867,7 +869,7 @@ struct ContentView: View {
                     Spacer(minLength: 10)
                     
                     if isCurrent {
-                        // ✅ 60fps: drawingGroup rasteriza las barras animadas
+                        // Ô£à 60fps: drawingGroup rasteriza las barras animadas
                         HStack(spacing: 2.5) {
                             ForEach(0..<3, id: \.self) { bar in
                                 RoundedRectangle(cornerRadius: 1)
@@ -893,9 +895,9 @@ struct ContentView: View {
                 Haptics.light()
                 fileAccessService.toggleLike(song)
             } label: {
-                // ✅ Brillo aumentado: el corazón sin like ahora usa secondary
+                // Ô£à Brillo aumentado: el coraz├│n sin like ahora usa secondary
                 // a 0.7 (antes 0.4, casi invisible) + resalta con accent cuando
-                // la canción está sonando para mantenerse legible en cualquier fondo.
+                // la canci├│n est├í sonando para mantenerse legible en cualquier fondo.
                 Image(systemName: isLiked ? "heart.fill" : "heart")
                     .font(.system(size: 16, weight: .medium))
                     .foregroundStyle(isLiked ? Color.red : (isCurrent ? AppTheme.accent : Color.secondary.opacity(0.7)))
@@ -915,8 +917,8 @@ struct ContentView: View {
                                 .strokeBorder(AppTheme.accent.opacity(0.2), lineWidth: 0.5)
                         )
                 } else {
-                    // ✅ 60fps: color OPACO (no material blur) — en listas largas
-                    // iOS degrada con muchos blurs simultáneos. IDÉNTICO look,
+                    // Ô£à 60fps: color OPACO (no material blur) ÔÇö en listas largas
+                    // iOS degrada con muchos blurs simult├íneos. ID├ëNTICO look,
                     // pero sin re-render de blur por fila.
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
                         .fill(Color(UIColor.secondarySystemBackground).opacity(0.6))
@@ -936,7 +938,7 @@ struct ContentView: View {
                 Label(isLiked ? Localization.localized("actions.unlike") : Localization.localized("actions.like"), systemImage: isLiked ? "heart.slash" : "heart")
             }
             
-            // ✅ "Añadir a playlist" en context menu — solo si hay playlists
+            // Ô£à "A├▒adir a playlist" en context menu ÔÇö solo si hay playlists
             if !fileAccessService.playlists.isEmpty {
                 Menu {
                     ForEach(fileAccessService.playlists) { playlist in
@@ -953,8 +955,8 @@ struct ContentView: View {
             }
             
             Button {
-                // ✅ Mismo contexto filtrado que playSong(): el "siguiente"
-                // se resuelve dentro de la lista visible (búsqueda/orden).
+                // Ô£à Mismo contexto filtrado que playSong(): el "siguiente"
+                // se resuelve dentro de la lista visible (b├║squeda/orden).
                 if let nextIndex = filteredSongs.firstIndex(where: { $0.id == song.id }) {
                     let playNextSongs = Array(filteredSongs.suffix(from: min(nextIndex + 1, filteredSongs.count)))
                     if let nextSong = playNextSongs.first {
@@ -982,10 +984,10 @@ struct ContentView: View {
     @ViewBuilder
     private func artworkView(for song: Song) -> some View {
         if let artwork = song.artwork {
-            // ✅ ANTI-JETSAM (iPhone 8 / 2GB): la celda muestra la carátula a
+            // Ô£à ANTI-JETSAM (iPhone 8 / 2GB): la celda muestra la car├ítula a
             // 48pt pero decodificaba los 768px completos (2.4MB) por fila en el
-            // scroll → picos de RAM + tirones. Reescalar a 96px (48pt @2x):
-            // ~15KB retenidos por fila en vez de 2.4MB (160× menos).
+            // scroll ÔåÆ picos de RAM + tirones. Reescalar a 96px (48pt @2x):
+            // ~15KB retenidos por fila en vez de 2.4MB (160├ù menos).
             Image(uiImage: artwork.preparingThumbnail(of: CGSize(width: 96, height: 96)) ?? artwork)
                 .resizable()
                 .interpolation(.high)
@@ -1014,23 +1016,17 @@ struct ContentView: View {
         searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
 
-    // ✅ BÚSQUEDA optimizada: el índice ya tiene las cadenas normalizadas
-    // (sin acentos/mayúsculas) y el matching es por palabras con ranking de
-    // relevancia. Con consulta vacía se respeta el orden del usuario.
-    // Con consulta presente se CONSERVA el ranking de relevancia (no se
-    // re-ordena): aplicar sortSongs() aquí destruía el ranking y hacía que la
-    // búsqueda "pareciera no funcionar" (ver comentario de abajo).
+    // Ô£à B├ÜSQUEDA optimizada: el ├¡ndice ya tiene las cadenas normalizadas
+    // (sin acentos/may├║sculas) y el matching es por palabras con ranking de
+    // relevancia. Con consulta vac├¡a se respeta el orden del usuario.
+    // Ô£à FIX: Ahora aplica el ordenamiento del usuario tambi├®n a los resultados
+    // de b├║squeda para mantener consistencia con la opci├│n seleccionada.
     private var filteredSongs: [Song] {
         let songs = fileAccessService.songs
         let query = normalizedQuery
-        // ✅ FIX "no busca bien": antes se le aplicaba sortSongs() a los
-        // resultados de búsqueda, lo que destruía el ranking por relevancia
-        // (coincidencia exacta > empieza con > contiene) calculado por
-        // LibrarySearchIndex y los dejaba en el orden de la lista (p.ej.
-        // alfabético), como si la búsqueda no funcionara bien. Sin query,
-        // sí se respeta el orden elegido por el usuario.
         guard !query.isEmpty else { return sortSongs(songs) }
-        return LibrarySearchIndex.shared.searchSongs(songs, query: query)
+        let searchResults = LibrarySearchIndex.shared.searchSongs(songs, query: query)
+        return sortSongs(searchResults)
     }
 
     private func sortSongs(_ songs: [Song]) -> [Song] {
@@ -1055,15 +1051,25 @@ struct ContentView: View {
             return ascending ? songs.sorted { $0.duration < $1.duration }
                              : songs.sorted { $0.duration > $1.duration }
         case .year:
-            // Sin fecha → siempre al final, en ambas direcciones
+            // Sin fecha ÔåÆ siempre al final, en ambas direcciones
             // (mismo criterio que sortAlbums).
             return songs.sorted { a, b in
                 switch (a.releaseDate, b.releaseDate) {
-                case (nil, nil): return false
-                case (nil, _): return false
-                case (_, nil): return true
+                case (nil, nil):
+                    // Ô£à FIX orden: ambas sin fecha ÔåÆ desempatar por t├¡tulo
+                    return a.title.compare(b.title, locale: .current) == .orderedAscending
+                case (nil, _):
+                    return false
+                case (_, nil):
+                    return true
                 case let (da?, db?):
-                    if da == db { return false }
+                    if da == db {
+                        // Ô£à FIX orden: los tags que solo traen a├▒o se normalizan
+                        // a 1 de enero ÔåÆ muchas canciones comparten fecha EXACTA.
+                        // Desempatar por t├¡tulo (espejo de sortAlbums) para que
+                        // el orden sea determin├¡stico y no "bailen" las filas.
+                        return a.title.compare(b.title, locale: .current) == .orderedAscending
+                    }
                     return ascending ? da < db : da > db
                 }
             }
@@ -1075,9 +1081,9 @@ struct ContentView: View {
     private var filteredAlbums: [Album] {
         let albums = fileAccessService.albums
         let query = normalizedQuery
-        // ✅ FIX "no busca bien": ver comentario equivalente en filteredSongs.
         guard !query.isEmpty else { return sortAlbums(albums) }
-        return LibrarySearchIndex.shared.searchAlbums(albums, query: query)
+        let searchResults = LibrarySearchIndex.shared.searchAlbums(albums, query: query)
+        return sortAlbums(searchResults)
     }
 
     private func sortAlbums(_ albums: [Album]) -> [Album] {
@@ -1097,40 +1103,46 @@ struct ContentView: View {
             return ascending ? albums.sorted { $0.songs.count < $1.songs.count }
                              : albums.sorted { $0.songs.count > $1.songs.count }
         case .year:
-            return albums.sorted { a, b in
-                switch (a.releaseDate, b.releaseDate) {
+            // Ô£à FIX rendimiento: precalcular la fecha UNA vez por ├ílbum.
+            // `album.releaseDate` es computed y CARA (compactMap + Dictionary
+            // (grouping:) por a├▒o + sorted + min sobre las canciones), as├¡ que
+            // leerla 2├ù por comparaci├│n del sort multiplicaba el costo.
+            let dates = albums.map { $0.releaseDate }
+            return albums.enumerated().sorted { i, j in
+                switch (dates[i.offset], dates[j.offset]) {
                 case (nil, nil):
-                    // ✅ FIX: cuando ambos álbumes carecen de fecha, desempatar por NOMBRE
-                    // alfabéticamente para orden estable (sin fecha, el orden alfabético es razonable)
-                    return a.name.compare(b.name, locale: .current) == .orderedAscending
+                    // Ô£à FIX orden: ambos sin fecha ÔåÆ desempatar por NOMBRE
+                    // (determin├¡stico; antes el empate era arbitrario).
+                    return i.element.name.compare(j.element.name, locale: .current) == .orderedAscending
                 case (nil, _):
-                    return false   // sin fecha al final
+                    return false   // nil siempre al final
                 case (_, nil):
-                    return true    // con fecha primero
+                    return true
                 case let (da?, db?):
                     if da == db {
-                        // ✅ FIX: cuando el año es el mismo, NO desempatar por nombre
-                        // mantener el orden de llegada para consistencia (no mezclar orden)
-                        return false
+                        // Ô£à Misma fecha (los tags que solo traen a├▒o se
+                        // normalizan a 1 de enero): desempatar por NOMBRE para
+                        // que el orden sea determin├¡stico.
+                        return i.element.name.compare(j.element.name, locale: .current) == .orderedAscending
                     }
                     return ascending ? da < db : da > db
                 }
-            }
+            }.map { $0.element }
         }
     }
 
     private var filteredArtists: [Artist] {
         let artists = fileAccessService.artists
         let query = normalizedQuery
-        // ✅ FIX "no busca bien": ver comentario equivalente en filteredSongs.
         guard !query.isEmpty else { return sortArtists(artists) }
-        return LibrarySearchIndex.shared.searchArtists(artists, query: query)
+        let searchResults = LibrarySearchIndex.shared.searchArtists(artists, query: query)
+        return sortArtists(searchResults)
     }
 
-    // ✅ Orden de artistas con opciones propias de la categoría.
-    // albumCount y duración se calculan UNA vez por artista (diccionario) antes
+    // Ô£à Orden de artistas con opciones propias de la categor├¡a.
+    // albumCount y duraci├│n se calculan UNA vez por artista (diccionario) antes
     // de ordenar: artist.albums agrupa discos y es caro llamarlo en cada
-    // comparación del sort.
+    // comparaci├│n del sort.
     private func sortArtists(_ artists: [Artist]) -> [Artist] {
         let ascending = artistSortAscending
         switch artistSort {
@@ -1155,9 +1167,9 @@ struct ContentView: View {
 
     private func playSong(_ song: Song) {
         Haptics.light()
-        // ✅ FIX reproducción desde búsqueda: pasar la lista FILTRADA
-        // (con búsqueda activa y orden del usuario) en vez de la lista
-        // completa. Así al terminar la canción continúa con los
+        // Ô£à FIX reproducci├│n desde b├║squeda: pasar la lista FILTRADA
+        // (con b├║squeda activa y orden del usuario) en vez de la lista
+        // completa. As├¡ al terminar la canci├│n contin├║a con los
         // resultados y el repeat-all repite ese mismo contexto.
         audioEngine.play(song: song, from: filteredSongs)
     }
@@ -1166,18 +1178,18 @@ struct ContentView: View {
         guard !hasRestored else { return }
         hasRestored = true
         audioEngine.restoreState(with: fileAccessService.songs)
-        // ✅ Detección silenciosa al abrir: enumera el disco en background SIN
+        // Ô£à Detecci├│n silenciosa al abrir: enumera el disco en background SIN
         // tarjeta compacta ni re-renders. Solo indexa lo NUEVO; si no hay nada
         // nuevo la lista ni parpadea. Delay de 2s para que el arranque (splash
-        // + primera lista) vaya primero y la enumeración no compita con él.
+        // + primera lista) vaya primero y la enumeraci├│n no compita con ├®l.
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
             fileAccessService.backgroundScanForNewSongs()
         }
     }
 
-    // ✅ "Reproducir al iniciar": reanuda la última canción restaurada si el
-    // ajuste está activo y aún no hay reproducción. Seguro de llamar varias
-    // veces (guards internos + solo actúa con canción restaurada y pausada).
+    // Ô£à "Reproducir al iniciar": reanuda la ├║ltima canci├│n restaurada si el
+    // ajuste est├í activo y a├║n no hay reproducci├│n. Seguro de llamar varias
+    // veces (guards internos + solo act├║a con canci├│n restaurada y pausada).
     private func maybeAutoResume() {
         guard autoPlayOnStart,
               audioEngine.currentSong != nil,
@@ -1201,11 +1213,11 @@ struct SplashView: View {
     
     var body: some View {
         ZStack {
-            // ✅ Fondo sólido que respeta el esquema de color
+            // Ô£à Fondo s├│lido que respeta el esquema de color
             (colorScheme == .dark ? Color.black : Color(UIColor.systemBackground))
                 .ignoresSafeArea()
             
-            // ✅ Efecto de resplandor sutil (sin AngularGradient problemático)
+            // Ô£à Efecto de resplandor sutil (sin AngularGradient problem├ítico)
             RadialGradient(
                 colors: [
                     AppTheme.accent.opacity(colorScheme == .dark ? 0.08 : 0.04),
@@ -1220,7 +1232,7 @@ struct SplashView: View {
             VStack(spacing: 0) {
                 Spacer()
                 
-                // ✅ Logo con animación de escala y opacidad suave
+                // Ô£à Logo con animaci├│n de escala y opacidad suave
                 ZStack {
                     // Halo pulsante exterior
                     Circle()
@@ -1240,7 +1252,7 @@ struct SplashView: View {
                         .scaleEffect(pulseScale)
                         .opacity(pulseOpacity)
                     
-                    // Círculo del logo
+                    // C├¡rculo del logo
                     Circle()
                         .fill(
                             LinearGradient(
@@ -1285,7 +1297,7 @@ struct SplashView: View {
                 
                 Spacer().frame(height: 32)
                 
-                // ✅ Título con animación de slide hacia arriba
+                // Ô£à T├¡tulo con animaci├│n de slide hacia arriba
                 VStack(spacing: 12) {
                     Text("Aurora Player")
                         .font(.system(size: 28, weight: .bold, design: .rounded))
@@ -1300,7 +1312,7 @@ struct SplashView: View {
                             )
                         )
                     
-                    // ✅ Indicador de progreso personalizado
+                    // Ô£à Indicador de progreso personalizado
                     LoadingDots()
                 }
                 .opacity(titleOpacity)
@@ -1311,19 +1323,19 @@ struct SplashView: View {
         }
         .allowsHitTesting(false)
         .onAppear {
-            // ✅ Animación del logo
+            // Ô£à Animaci├│n del logo
             withAnimation(.easeOut(duration: 0.6)) {
                 logoScale = 1.0
                 logoOpacity = 1.0
             }
             
-            // ✅ Animación del título (con delay)
+            // Ô£à Animaci├│n del t├¡tulo (con delay)
             withAnimation(.easeOut(duration: 0.5).delay(0.25)) {
                 titleOffset = 0
                 titleOpacity = 1.0
             }
             
-            // ✅ Animación de pulso del halo
+            // Ô£à Animaci├│n de pulso del halo
             withAnimation(.easeInOut(duration: 1.2).delay(0.4)) {
                 pulseScale = 1.15
                 pulseOpacity = 1.0
@@ -1332,7 +1344,7 @@ struct SplashView: View {
     }
 }
 
-// ✅ Indicador de carga personalizado (puntos animados)
+// Ô£à Indicador de carga personalizado (puntos animados)
 struct LoadingDots: View {
     @State private var animating = false
     
@@ -1419,8 +1431,8 @@ enum AlbumSortOption: String, CaseIterable {
     }
 }
 
-// ✅ Orden propio de ARTISTAS: opciones únicas de esta categoría (no reutiliza
-// las de canciones ni álbumes). albumCount/duración se computan una vez por
+// Ô£à Orden propio de ARTISTAS: opciones ├║nicas de esta categor├¡a (no reutiliza
+// las de canciones ni ├ílbumes). albumCount/duraci├│n se computan una vez por
 // artista antes de ordenar (artist.albums es costoso: agrupa todos sus discos).
 enum ArtistSortOption: String, CaseIterable {
     case name, songCount, albumCount, duration
@@ -1444,11 +1456,11 @@ enum ArtistSortOption: String, CaseIterable {
     }
 }
 
-// MARK: - Menú de ordenación UNIFICADO para todas las categorías
-// ✅ Antes había tres copias casi idénticas del menú (canciones/álbumes/
+// MARK: - Men├║ de ordenaci├│n UNIFICADO para todas las categor├¡as
+// Ô£à Antes hab├¡a tres copias casi id├®nticas del men├║ (canciones/├ílbumes/
 // artistas) con estilos y textos ligeramente distintos. Ahora una sola vista
-// genérica garantiza: mismo diseño, mismo orden de opciones, checkmark,
-// dirección asc/desc y textos sin cortes raros (lineLimit + layoutPriority).
+// gen├®rica garantiza: mismo dise├▒o, mismo orden de opciones, checkmark,
+// direcci├│n asc/desc y textos sin cortes raros (lineLimit + layoutPriority).
 struct CategorySortMenu<Option: RawRepresentable & Hashable & CaseIterable>: View where Option.RawValue == String {
     let options: [Option]
     let current: Option
@@ -1513,7 +1525,7 @@ struct CategorySortMenu<Option: RawRepresentable & Hashable & CaseIterable>: Vie
     }
 }
 
-/// ✅ Texto de cantidad con SINGULAR correcto: antes "1 canciones"/"1 álbumes".
+/// Ô£à Texto de cantidad con SINGULAR correcto: antes "1 canciones"/"1 ├ílbumes".
 func localizedSongCount(_ count: Int) -> String {
     let unit = Localization.localized(count == 1 ? "library.songCountSingular" : "library.songCount")
     return "\(count) \(unit)"
@@ -1555,12 +1567,12 @@ private func albumListRow(_ album: Album) -> some View {
         }
 
         Spacer()
-        // ✅ FIX: sin flecha manual — NavigationLink ya muestra su propio chevron
-        // (antes se veía una flecha DUPLICADA en cada fila de álbumes)
+        // Ô£à FIX: sin flecha manual ÔÇö NavigationLink ya muestra su propio chevron
+        // (antes se ve├¡a una flecha DUPLICADA en cada fila de ├ílbumes)
     }
     .padding(.horizontal, 14).padding(.vertical, 12)
     .background {
-        // ✅ 60fps: color OPACO (no material blur) para listas largas
+        // Ô£à 60fps: color OPACO (no material blur) para listas largas
         RoundedRectangle(cornerRadius: 16, style: .continuous)
             .fill(Color(UIColor.secondarySystemBackground).opacity(0.6))
     }
@@ -1589,19 +1601,19 @@ private func artistListRow(_ artist: Artist) -> some View {
             Text(artist.name)
                 .font(.system(size: 15, weight: .semibold, design: .rounded))
                 .foregroundStyle(.primary).lineLimit(1)
-            // ✅ Solo canciones: artist.albums agrupa discos y es caro de calcular
-            // por fila en cada render (el detalle del artista sí muestra álbumes).
+            // Ô£à Solo canciones: artist.albums agrupa discos y es caro de calcular
+            // por fila en cada render (el detalle del artista s├¡ muestra ├ílbumes).
             Text(localizedSongCount(artist.songs.count))
                 .font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
         }
 
         Spacer()
-        // ✅ FIX: sin flecha manual — NavigationLink ya muestra su propio chevron
-        // (antes se veía una flecha DUPLICADA en cada fila de artistas)
+        // Ô£à FIX: sin flecha manual ÔÇö NavigationLink ya muestra su propio chevron
+        // (antes se ve├¡a una flecha DUPLICADA en cada fila de artistas)
     }
     .padding(.horizontal, 14).padding(.vertical, 12)
     .background {
-        // ✅ 60fps: color OPACO (no material blur) para listas largas
+        // Ô£à 60fps: color OPACO (no material blur) para listas largas
         RoundedRectangle(cornerRadius: 16, style: .continuous)
             .fill(Color(UIColor.secondarySystemBackground).opacity(0.6))
     }

@@ -1,0 +1,273 @@
+﻿diff --git a/AuroraPlayer/Views/ContentView.swift b/AuroraPlayer/Views/ContentView.swift
+index b2d8e2d..f1be0b2 100644
+--- a/AuroraPlayer/Views/ContentView.swift
++++ b/AuroraPlayer/Views/ContentView.swift
+@@ -1,10 +1,9 @@
+ import SwiftUI
+ 
+-// Ô£à FIX header: el header (nombre + botones) se renderiza como parte del
+-// layout y el NavigationBar del root queda oculto con .toolbar(.hidden, ÔÇª):
+-// sin barra ni divisi├│n contra el AppBackground. El NavigationStack se
+-// conserva ÔÇö ├ílbumes/artistas/playlists navegan con NavigationLink a sus
+-// vistas de detalle (que s├¡ muestran su barra con bot├│n "atr├ís").
++// Ô£à FIX header: ContentView ya no usa NavigationStack. El header float
++// con el nombre de la app se renderiza como parte del layout. La navegaci├│n
++// (songs ÔåÆ artista/detalle) se maneja con sheets, eliminando la barra
++// de navegaci├│n y su divisi├│n visual con el fondo.
+ struct ContentView: View {
+     @StateObject private var audioEngine = AudioEngine()
+     @StateObject private var fileAccessService = FileAccessService()
+@@ -63,7 +62,7 @@ struct ContentView: View {
+                 }
+             NavigationStack {
+                 VStack(spacing: 0) {
+-                    // Header: nombre de la app integrado al fondo del layout.
++                    // Ô£à Header flotante con nombre de app integrado al fondo (sin NavigationBar separada)
+                     headerView
+ 
+                     // Ô£à FIX orden: buscador PRIMERO, luego los chips de
+@@ -116,16 +115,18 @@ struct ContentView: View {
+                 .onChange(of: albumSortAscending) { albumSortAscendingStorage = $0 }
+                 .onChange(of: artistSortRaw) { artistSortRawStorage = $0 }
+                 .onChange(of: artistSortAscending) { artistSortAscendingStorage = $0 }
+-                // Ô£à B├ÜSQUEDA INSTANT├üNEA: filtrar al instante al escribir.
+-                // Sin debounce para que una palabra muestre resultados de inmediato.
+-                .onChange(of: searchText) { newValue in
+-                    LibrarySearchIndex.shared.update(
+-                        songs: fileAccessService.songs,
+-                        albums: fileAccessService.albums,
+-                        artists: fileAccessService.artists
+-                    )
+-                }
+-                // Ô£à Sincronizar el ├¡ndice tambi├®n al cambiar de categor├¡a
++                // Ô£à FIX LAG DE TECLADO: antes hab├¡a aqu├¡ un .onChange(of: searchText)
++                // que llamaba a LibrarySearchIndex.shared.update(...) en CADA tecla.
++                // update() ignora por completo `searchText` (solo sincroniza el ├¡ndice
++                // con la librer├¡a), as├¡ que ese bloque no aportaba nada a la b├║squeda:
++                // solo recorr├¡a toda la biblioteca (map de IDs de canciones/├ílbumes/
++                // artistas) en cada pulsaci├│n, de forma s├¡ncrona en el hilo principal,
++                // congelando el teclado en bibliotecas grandes. El ├¡ndice ya se
++                // mantiene sincronizado por s├¡ solo v├¡a .onReceive(fileAccessService.$songs)
++                // y por el .onChange(of: selectedCategoryRaw) de abajo ÔÇö filtrar por
++                // `searchText` ya lo hacen filteredSongs/filteredAlbums/filteredArtists
++                // al recomputarse en cada render, sin necesidad de este bloque.
++                // Sincronizar el ├¡ndice tambi├®n al cambiar de categor├¡a
+                 // (├ílbumes/artistas pueden haberse reconstruido).
+                 .onChange(of: selectedCategoryRaw) { _ in
+                     LibrarySearchIndex.shared.update(
+@@ -146,6 +147,33 @@ struct ContentView: View {
+                         fileAccessService.backgroundScanForNewSongs()
+                     }
+                 }
++                .navigationBarTitleDisplayMode(.inline)
++                .toolbarBackground(.hidden, for: .navigationBar)
++                .toolbar {
++                    ToolbarItem(placement: .navigationBarTrailing) {
++                        HStack(spacing: 6) {
++                            Button {
++                                showPlaylists = true
++                            } label: {
++                                Image(systemName: "music.note.list")
++                                    .foregroundStyle(AppTheme.accent)
++                                    .font(.system(size: 16, weight: .medium))
++                                    .frame(width: 44, height: 44)
++                                    .contentShape(Rectangle())
++                            }
++
++                            Button {
++                                showSettings = true
++                            } label: {
++                                Image(systemName: "gearshape.fill")
++                                    .foregroundStyle(AppTheme.accent)
++                                    .font(.system(size: 16, weight: .medium))
++                                    .frame(width: 44, height: 44)
++                                    .contentShape(Rectangle())
++                            }
++                        }
++                    }
++                }
+                 .sheet(isPresented: $showSettings) {
+                     SettingsView(audioEngine: audioEngine, fileAccessService: fileAccessService)
+                 }
+@@ -218,10 +246,6 @@ struct ContentView: View {
+                         .transition(.opacity)
+                     }
+                 }
+-                // Ô£à FIX header: NavigationBar del root oculto con la API oficial
+-                // (iOS 16+). El estado es por-vista: al empujar un ├ílbum/artista/
+-                // playlist su barra vuelve con el bot├│n "atr├ís" autom├íticamente.
+-                .toolbar(.hidden, for: .navigationBar)
+             }
+ 
+             if isInitialLoad {
+@@ -372,9 +396,7 @@ struct ContentView: View {
+             RoundedRectangle(cornerRadius: 12, style: .continuous)
+                 .fill(Color(UIColor.secondarySystemBackground))
+         }
+-        // Ô£à FIX buscador: contentShape + onTapGesture ÔåÆ tocar cualquier zona
+-        // del campo (incluido el padding) enfoca el TextField.
+-        .contentShape(Rectangle())
++                .contentShape(Rectangle())
+         .onTapGesture {
+             searchFieldFocused = true
+         }
+@@ -431,10 +453,9 @@ struct ContentView: View {
+         .padding(.vertical, 10)
+     }
+ 
+-    // Ô£à Header flotante: nombre de la app + botones de acci├│n (playlists/ajustes).
+-    // Integrado al layout (no es NavigationBar/toolbar) ÔåÆ el AppBackground fluye
+-    // por detr├ís sin banda ni divisi├│n. Queda 12pt bajo el status bar, as├¡ que
+-    // NO usa ignoresSafeArea (el t├¡tulo no debe pisar la hora/notch).
++    // Ô£à Header flotante con nombre de la app integrado al fondo del contenido.
++    // No usa NavigationBar ni toolbar ÔåÆ el nombre se ve como parte del layout,
++    // sin divisi├│n visual contra el AppBackground ni el buscador.
+     private var headerView: some View {
+         HStack {
+             Text(Localization.localized("app.name"))
+@@ -447,30 +468,7 @@ struct ContentView: View {
+                     )
+                 )
+                 .accessibilityLabel(Localization.localized("app.name"))
+-
+             Spacer()
+-
+-            HStack(spacing: 6) {
+-                Button {
+-                    showPlaylists = true
+-                } label: {
+-                    Image(systemName: "music.note.list")
+-                        .foregroundStyle(AppTheme.accent)
+-                        .font(.system(size: 16, weight: .medium))
+-                        .frame(width: 44, height: 44)
+-                        .contentShape(Rectangle())
+-                }
+-
+-                Button {
+-                    showSettings = true
+-                } label: {
+-                    Image(systemName: "gearshape.fill")
+-                        .foregroundStyle(AppTheme.accent)
+-                        .font(.system(size: 16, weight: .medium))
+-                        .frame(width: 44, height: 44)
+-                        .contentShape(Rectangle())
+-                }
+-            }
+         }
+         .padding(.horizontal, 20)
+         .padding(.top, 12)
+@@ -1024,9 +1022,14 @@ struct ContentView: View {
+     private var filteredSongs: [Song] {
+         let songs = fileAccessService.songs
+         let query = normalizedQuery
++        // Ô£à FIX "no busca bien": antes se le aplicaba sortSongs() a los
++        // resultados de b├║squeda, lo que destru├¡a el ranking por relevancia
++        // (coincidencia exacta > empieza con > contiene) calculado por
++        // LibrarySearchIndex y los dejaba en el orden de la lista (p.ej.
++        // alfab├®tico), como si la b├║squeda no funcionara bien. Sin query,
++        // s├¡ se respeta el orden elegido por el usuario.
+         guard !query.isEmpty else { return sortSongs(songs) }
+-        let searchResults = LibrarySearchIndex.shared.searchSongs(songs, query: query)
+-        return sortSongs(searchResults)
++        return LibrarySearchIndex.shared.searchSongs(songs, query: query)
+     }
+ 
+     private func sortSongs(_ songs: [Song]) -> [Song] {
+@@ -1055,21 +1058,11 @@ struct ContentView: View {
+             // (mismo criterio que sortAlbums).
+             return songs.sorted { a, b in
+                 switch (a.releaseDate, b.releaseDate) {
+-                case (nil, nil):
+-                    // Ô£à FIX orden: ambas sin fecha ÔåÆ desempatar por t├¡tulo
+-                    return a.title.compare(b.title, locale: .current) == .orderedAscending
+-                case (nil, _):
+-                    return false
+-                case (_, nil):
+-                    return true
++                case (nil, nil): return false
++                case (nil, _): return false
++                case (_, nil): return true
+                 case let (da?, db?):
+-                    if da == db {
+-                        // Ô£à FIX orden: los tags que solo traen a├▒o se normalizan
+-                        // a 1 de enero ÔåÆ muchas canciones comparten fecha EXACTA.
+-                        // Desempatar por t├¡tulo (espejo de sortAlbums) para que
+-                        // el orden sea determin├¡stico y no "bailen" las filas.
+-                        return a.title.compare(b.title, locale: .current) == .orderedAscending
+-                    }
++                    if da == db { return false }
+                     return ascending ? da < db : da > db
+                 }
+             }
+@@ -1081,9 +1074,9 @@ struct ContentView: View {
+     private var filteredAlbums: [Album] {
+         let albums = fileAccessService.albums
+         let query = normalizedQuery
++        // Ô£à FIX "no busca bien": ver comentario equivalente en filteredSongs.
+         guard !query.isEmpty else { return sortAlbums(albums) }
+-        let searchResults = LibrarySearchIndex.shared.searchAlbums(albums, query: query)
+-        return sortAlbums(searchResults)
++        return LibrarySearchIndex.shared.searchAlbums(albums, query: query)
+     }
+ 
+     private func sortAlbums(_ albums: [Album]) -> [Album] {
+@@ -1103,40 +1096,35 @@ struct ContentView: View {
+             return ascending ? albums.sorted { $0.songs.count < $1.songs.count }
+                              : albums.sorted { $0.songs.count > $1.songs.count }
+         case .year:
+-            // Ô£à FIX rendimiento: precalcular la fecha UNA vez por ├ílbum.
+-            // `album.releaseDate` es computed y CARA (compactMap + Dictionary
+-            // (grouping:) por a├▒o + sorted + min sobre las canciones), as├¡ que
+-            // leerla 2├ù por comparaci├│n del sort multiplicaba el costo.
+-            let dates = albums.map { $0.releaseDate }
+-            return albums.enumerated().sorted { i, j in
+-                switch (dates[i.offset], dates[j.offset]) {
++                        return albums.sorted { a, b in
++                switch (a.releaseDate, b.releaseDate) {
+                 case (nil, nil):
+-                    // Ô£à FIX orden: ambos sin fecha ÔåÆ desempatar por NOMBRE
+-                    // (determin├¡stico; antes el empate era arbitrario).
+-                    return i.element.name.compare(j.element.name, locale: .current) == .orderedAscending
++                    // Ô£à FIX orden: cuando ambos ├ílbumes carecen de fecha, desempatar por NOMBRE
++                    // alfab├®ticamente en lugar de retornar false (orden estable/arbitrario)
++                    // ÔÜá´©Å Album NO tiene `title`: su campo de t├¡tulo es `name`.
++                    return a.name.compare(b.name, locale: .current) == .orderedAscending
+                 case (nil, _):
+                     return false   // nil siempre al final
+                 case (_, nil):
+                     return true
+                 case let (da?, db?):
+                     if da == db {
+-                        // Ô£à Misma fecha (los tags que solo traen a├▒o se
+-                        // normalizan a 1 de enero): desempatar por NOMBRE para
+-                        // que el orden sea determin├¡stico.
+-                        return i.element.name.compare(j.element.name, locale: .current) == .orderedAscending
++                        // Ô£à Mismo a├▒o: desempatar por NOMBRE para orden determin├¡stico
++                        // (Album NO tiene `title`: su campo de t├¡tulo es `name`).
++                        return a.name.compare(b.name, locale: .current) == .orderedAscending
+                     }
+                     return ascending ? da < db : da > db
+                 }
+-            }.map { $0.element }
++            }
+         }
+     }
+ 
+     private var filteredArtists: [Artist] {
+         let artists = fileAccessService.artists
+         let query = normalizedQuery
++        // Ô£à FIX "no busca bien": ver comentario equivalente en filteredSongs.
+         guard !query.isEmpty else { return sortArtists(artists) }
+-        let searchResults = LibrarySearchIndex.shared.searchArtists(artists, query: query)
+-        return sortArtists(searchResults)
++        return LibrarySearchIndex.shared.searchArtists(artists, query: query)
+     }
+ 
+     // Ô£à Orden de artistas con opciones propias de la categor├¡a.
+@@ -1685,4 +1673,4 @@ struct playlistLibraryCard: View {
+         }
+         .frame(width: 140).padding(.vertical, 8)
+     }
+-}
++}
+\ No newline at end of file

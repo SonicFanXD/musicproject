@@ -1,0 +1,151 @@
+﻿diff --git a/AuroraPlayer/Resources/Models.swift b/AuroraPlayer/Resources/Models.swift
+index f2121b8..a4ac0fe 100644
+--- a/AuroraPlayer/Resources/Models.swift
++++ b/AuroraPlayer/Resources/Models.swift
+@@ -91,6 +91,15 @@ struct Song: Identifiable, Equatable, Codable {
+     let bitDepth: Int
+     let channelCount: Int
+     let bitrate: Int?  // Ô£à Bitrate para formatos con p├®rdida (MP3/AAC)
++    // Ô£à FIX metadata editada que no se refleja: fecha de modificaci├│n del
++    // ARCHIVO en disco al momento de leer sus metadatos. FileAccessService
++    // la compara contra la fecha actual del archivo en cada escaneo ÔÇö si
++    // difieren, el archivo se re-lee aunque su ruta ya estuviera indexada
++    // (antes el escaneo diferencial solo miraba si la RUTA era conocida,
++    // nunca si el CONTENIDO hab├¡a cambiado, as├¡ que una edici├│n de tags
++    // externa nunca se detectaba). Optional para que el cach├® viejo (sin
++    // este campo) siga decodificando bien: Codable lo trata como ausente ÔåÆ nil.
++    let fileModificationDate: Date?
+ 
+     init(
+         id: UUID = UUID(),
+@@ -109,7 +118,8 @@ struct Song: Identifiable, Equatable, Codable {
+         sampleRate: Double = 0,
+         bitDepth: Int = 0,
+         channelCount: Int = 0,
+-        bitrate: Int? = nil
++        bitrate: Int? = nil,
++        fileModificationDate: Date? = nil
+     ) {
+         self.id = id
+         self.url = url
+@@ -128,12 +138,43 @@ struct Song: Identifiable, Equatable, Codable {
+         self.bitDepth = bitDepth
+         self.channelCount = channelCount
+         self.bitrate = bitrate
++        self.fileModificationDate = fileModificationDate
+     }
+ 
+     static func == (lhs: Song, rhs: Song) -> Bool {
+         lhs.id == rhs.id
+     }
+ 
++    /// Ô£à FIX metadata editada: copia con el MISMO contenido pero conservando la
++    /// identidad (`id`) ya indexada. Obligatorio al re-leer la metadata de un
++    /// archivo conocido: "Me Gusta" y las playlists guardan `songIDs` (UUID),
++    /// `isLiked` compara por `id`, y el resaltado de "sonando ahora" + el
++    /// restaurado de reproducci├│n buscan por `id`. Si la re-lectura generara un
++    /// UUID nuevo, la canci├│n desaparecer├¡a de las playlists y el estado
++    /// guardado quedar├¡a apuntando a un id hu├®rfano para siempre.
++    func preservingID(_ id: UUID) -> Song {
++        Song(
++            id: id,
++            url: url,
++            title: title,
++            artist: artist,
++            albumArtist: albumArtist,
++            album: album,
++            artworkData: artworkData,
++            duration: duration,
++            lyrics: lyrics,
++            formatDescription: formatDescription,
++            discNumber: discNumber,
++            trackNumber: trackNumber,
++            releaseDate: releaseDate,
++            sampleRate: sampleRate,
++            bitDepth: bitDepth,
++            channelCount: channelCount,
++            bitrate: bitrate,
++            fileModificationDate: fileModificationDate
++        )
++    }
++
+     /// Ô£à FIX multi-disco: orden can├│nico (disco 1 antes que disco 2, luego pista).
+     /// Antes solo se ordenaba por trackNumber ÔåÆ en ├ílbumes con Disc 1 y Disc 2
+     /// (ambos arrancan en pista 1) el sort inestable pod├¡a poner primero el Disc 2.
+@@ -389,4 +430,4 @@ struct Playlist: Identifiable, Codable {
+         guard let data = coverArtworkData else { return nil }
+         return UIImage(data: data)
+     }
+-}
++}
+\ No newline at end of file
+diff --git a/AuroraPlayer/Services/LibrarySearch.swift b/AuroraPlayer/Services/LibrarySearch.swift
+index 0a85063..a98b2da 100644
+--- a/AuroraPlayer/Services/LibrarySearch.swift
++++ b/AuroraPlayer/Services/LibrarySearch.swift
+@@ -48,6 +48,11 @@ final class LibrarySearchIndex {
+     private var songSignature: [UUID] = []
+     private var albumSignature: [String] = []
+     private var artistSignature: [String] = []
++    /// Ô£à FIX metadata editada: firma de CONTENIDO (hash de los campos
++    /// indexados). Los ids no cambian cuando FileAccessService re-lee un
++    /// archivo ya indexado (conserva el id a prop├│sito: ver Song.preservingID),
++    /// as├¡ que sin esta firma una edici├│n de tags no invalidaba el ├¡ndice.
++    private var contentSignature = 0
+ 
+     /// Normalizaci├│n compartida: min├║sculas, sin diacr├¡ticos ni diferencias
+     /// de anchura (CJK/fullwidth). Una sola llamada por campo, cacheada.
+@@ -59,16 +64,51 @@ final class LibrarySearchIndex {
+         )
+     }
+ 
++    /// Firma de CONTENIDO de los campos que indexa el buscador (t├¡tulo,
++    /// artista, albumArtist y ├ílbum de cada canci├│n; nombre/artista de cada
++    /// ├ílbum; nombre de cada artista). Detecta ediciones de tags que conservan
++    /// el `id` (Song.preservingID) ÔÇö el caso que la firma por ids no ve.
++    private static func contentSignature(songs: [Song], albums: [Album], artists: [Artist]) -> Int {
++        var hasher = Hasher()
++        hasher.combine(songs.count)
++        for song in songs {
++            hasher.combine(song.title)
++            hasher.combine(song.artist)
++            hasher.combine(song.albumArtist)
++            hasher.combine(song.album)
++        }
++        hasher.combine(albums.count)
++        for album in albums {
++            hasher.combine(album.name)
++            hasher.combine(album.artist)
++            hasher.combine(album.songs.count)
++        }
++        hasher.combine(artists.count)
++        for artist in artists {
++            hasher.combine(artist.name)
++            hasher.combine(artist.songs.count)
++        }
++        return hasher.finalize()
++    }
++
+     /// Reconstruye el ├¡ndice solo si las colecciones realmente cambiaron
+-    /// (comparaci├│n por ids ÔÇö O(n) barata, sin tocar strings).
++    /// (comparaci├│n por ids + firma de contenido ÔÇö O(n) barata, sin tocar
++    /// strings de b├║squeda).
+     func update(songs: [Song], albums: [Album], artists: [Artist]) {
+         let sSig = songs.map(\.id)
+         let aSig = albums.map(\.id)
+         let arSig = artists.map(\.id)
+-        guard sSig != songSignature || aSig != albumSignature || arSig != artistSignature else { return }
++        // Ô£à FIX metadata editada: la firma por ids NO basta ÔÇö al re-leer un
++        // archivo ya indexado se CONSERVA su `id` (Song.preservingID, para no
++        // romper "Me Gusta"/playlists), as├¡ que un t├¡tulo/artista/├ílbum editado
++        // fuera de la app dejaba el ├¡ndice con los strings viejos: el valor
++        // nuevo no se encontraba y el viejo segu├¡a apareciendo.
++        let contentSig = Self.contentSignature(songs: songs, albums: albums, artists: artists)
++        guard sSig != songSignature || aSig != albumSignature || arSig != artistSignature || contentSig != contentSignature else { return }
+         songSignature = sSig
+         albumSignature = aSig
+         artistSignature = arSig
++        contentSignature = contentSig
+ 
+         var newSongs: [UUID: SongEntry] = [:]
+         newSongs.reserveCapacity(songs.count)
