@@ -233,6 +233,7 @@ struct SettingsView: View {
                                         }
                                     }
                                 )
+                            )
                             settingsDivider
                             settingsToggleRow(
                                 title: Localization.localized("settings.monoAudio"),
