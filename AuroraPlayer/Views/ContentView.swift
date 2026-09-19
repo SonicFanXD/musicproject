@@ -1,5 +1,10 @@
 import SwiftUI
 
+// ✅ FIX header: el header (nombre + botones) se renderiza como parte del
+// layout y el NavigationBar del root queda oculto con .toolbar(.hidden, …):
+// sin barra ni división contra el AppBackground. El NavigationStack se
+// conserva — álbumes/artistas/playlists navegan con NavigationLink a sus
+// vistas de detalle (que sí muestran su barra con botón "atrás").
 struct ContentView: View {
     @StateObject private var audioEngine = AudioEngine()
     @StateObject private var fileAccessService = FileAccessService()
@@ -58,6 +63,9 @@ struct ContentView: View {
                 }
             NavigationStack {
                 VStack(spacing: 0) {
+                    // Header: nombre de la app integrado al fondo del layout.
+                    headerView
+
                     // ✅ FIX orden: buscador PRIMERO, luego los chips de
                     // categorías. Antes los chips quedaban arriba del buscador
                     // y se veía invertido (los filtros encima del campo de
@@ -138,46 +146,6 @@ struct ContentView: View {
                         fileAccessService.backgroundScanForNewSongs()
                     }
                 }
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbarBackground(.hidden, for: .navigationBar)
-                .toolbar {
-                    ToolbarItem(placement: .principal) {
-                        Text(Localization.localized("app.name"))
-                            .font(.system(size: 22, weight: .bold, design: .rounded))
-                            .foregroundStyle(
-                                LinearGradient(
-                                    colors: [AppTheme.accent, AppTheme.accent.opacity(0.75)],
-                                    startPoint: .leading,
-                                    endPoint: .trailing
-                                )
-                            )
-                            .accessibilityLabel(Localization.localized("app.name"))
-                    }
-
-                    ToolbarItem(placement: .navigationBarTrailing) {
-                        HStack(spacing: 6) {
-                            Button {
-                                showPlaylists = true
-                            } label: {
-                                Image(systemName: "music.note.list")
-                                    .foregroundStyle(AppTheme.accent)
-                                    .font(.system(size: 16, weight: .medium))
-                                    .frame(width: 44, height: 44)
-                                    .contentShape(Rectangle())
-                            }
-
-                            Button {
-                                showSettings = true
-                            } label: {
-                                Image(systemName: "gearshape.fill")
-                                    .foregroundStyle(AppTheme.accent)
-                                    .font(.system(size: 16, weight: .medium))
-                                    .frame(width: 44, height: 44)
-                                    .contentShape(Rectangle())
-                            }
-                        }
-                    }
-                }
                 .sheet(isPresented: $showSettings) {
                     SettingsView(audioEngine: audioEngine, fileAccessService: fileAccessService)
                 }
@@ -250,6 +218,10 @@ struct ContentView: View {
                         .transition(.opacity)
                     }
                 }
+                // ✅ FIX header: NavigationBar del root oculto con la API oficial
+                // (iOS 16+). El estado es por-vista: al empujar un álbum/artista/
+                // playlist su barra vuelve con el botón "atrás" automáticamente.
+                .toolbar(.hidden, for: .navigationBar)
             }
 
             if isInitialLoad {
@@ -400,6 +372,9 @@ struct ContentView: View {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(Color(UIColor.secondarySystemBackground))
         }
+        // ✅ FIX buscador: contentShape + onTapGesture → tocar cualquier zona
+        // del campo (incluido el padding) enfoca el TextField.
+        .contentShape(Rectangle())
         .onTapGesture {
             searchFieldFocused = true
         }
@@ -454,6 +429,51 @@ struct ContentView: View {
             .padding(.horizontal, 16)
         }
         .padding(.vertical, 10)
+    }
+
+    // ✅ Header flotante: nombre de la app + botones de acción (playlists/ajustes).
+    // Integrado al layout (no es NavigationBar/toolbar) → el AppBackground fluye
+    // por detrás sin banda ni división. Queda 12pt bajo el status bar, así que
+    // NO usa ignoresSafeArea (el título no debe pisar la hora/notch).
+    private var headerView: some View {
+        HStack {
+            Text(Localization.localized("app.name"))
+                .font(.system(size: 26, weight: .bold, design: .rounded))
+                .foregroundStyle(
+                    LinearGradient(
+                        colors: [AppTheme.accent, AppTheme.accent.opacity(0.8)],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
+                .accessibilityLabel(Localization.localized("app.name"))
+
+            Spacer()
+
+            HStack(spacing: 6) {
+                Button {
+                    showPlaylists = true
+                } label: {
+                    Image(systemName: "music.note.list")
+                        .foregroundStyle(AppTheme.accent)
+                        .font(.system(size: 16, weight: .medium))
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+
+                Button {
+                    showSettings = true
+                } label: {
+                    Image(systemName: "gearshape.fill")
+                        .foregroundStyle(AppTheme.accent)
+                        .font(.system(size: 16, weight: .medium))
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+            }
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 12)
     }
 
     private func categoryIcon(for category: LibraryCategory) -> String {
@@ -1035,11 +1055,21 @@ struct ContentView: View {
             // (mismo criterio que sortAlbums).
             return songs.sorted { a, b in
                 switch (a.releaseDate, b.releaseDate) {
-                case (nil, nil): return false
-                case (nil, _): return false
-                case (_, nil): return true
+                case (nil, nil):
+                    // ✅ FIX orden: ambas sin fecha → desempatar por título
+                    return a.title.compare(b.title, locale: .current) == .orderedAscending
+                case (nil, _):
+                    return false
+                case (_, nil):
+                    return true
                 case let (da?, db?):
-                    if da == db { return false }
+                    if da == db {
+                        // ✅ FIX orden: los tags que solo traen año se normalizan
+                        // a 1 de enero → muchas canciones comparten fecha EXACTA.
+                        // Desempatar por título (espejo de sortAlbums) para que
+                        // el orden sea determinístico y no "bailen" las filas.
+                        return a.title.compare(b.title, locale: .current) == .orderedAscending
+                    }
                     return ascending ? da < db : da > db
                 }
             }
@@ -1073,16 +1103,31 @@ struct ContentView: View {
             return ascending ? albums.sorted { $0.songs.count < $1.songs.count }
                              : albums.sorted { $0.songs.count > $1.songs.count }
         case .year:
-            return albums.sorted { a, b in
-                switch (a.releaseDate, b.releaseDate) {
-                case (nil, nil): return false
-                case (nil, _): return false   // nil siempre al final
-                case (_, nil): return true    // nil siempre al final
+            // ✅ FIX rendimiento: precalcular la fecha UNA vez por álbum.
+            // `album.releaseDate` es computed y CARA (compactMap + Dictionary
+            // (grouping:) por año + sorted + min sobre las canciones), así que
+            // leerla 2× por comparación del sort multiplicaba el costo.
+            let dates = albums.map { $0.releaseDate }
+            return albums.enumerated().sorted { i, j in
+                switch (dates[i.offset], dates[j.offset]) {
+                case (nil, nil):
+                    // ✅ FIX orden: ambos sin fecha → desempatar por NOMBRE
+                    // (determinístico; antes el empate era arbitrario).
+                    return i.element.name.compare(j.element.name, locale: .current) == .orderedAscending
+                case (nil, _):
+                    return false   // nil siempre al final
+                case (_, nil):
+                    return true
                 case let (da?, db?):
-                    if da == db { return false }
+                    if da == db {
+                        // ✅ Misma fecha (los tags que solo traen año se
+                        // normalizan a 1 de enero): desempatar por NOMBRE para
+                        // que el orden sea determinístico.
+                        return i.element.name.compare(j.element.name, locale: .current) == .orderedAscending
+                    }
                     return ascending ? da < db : da > db
                 }
-            }
+            }.map { $0.element }
         }
     }
 
