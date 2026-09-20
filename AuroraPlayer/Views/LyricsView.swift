@@ -285,86 +285,63 @@ private struct LyricLineView: View, Equatable {
     }
     
     var body: some View {
-        if isActive {
-            // ✅ Línea activa con animación de relleno progresivo interpolado a 60 fps
-            animatedLyricLine(line: line, progress: progress, clockTime: clockTime, clockUpdateDate: clockUpdateDate)
-        } else {
-            // ✅ Línea inactiva estática (sin animación a 60 fps)
-            staticLyricLine(line: line)
-        }
+        // ✅ Simplificación: una sola capa con opacidad según isActive
+        // ✅ Transición suave entre estados con animation
+        lyricText(line: line, isActive: isActive, progress: progress, clockTime: clockTime, clockUpdateDate: clockUpdateDate)
+            .animation(.easeInOut(duration: 0.25), value: isActive)
     }
     
-    // MARK: - Línea animada con relleno progresivo (SpotiFLAC-style premium)
-    private func animatedLyricLine(line: LyricsLine, progress: Double, clockTime: TimeInterval, clockUpdateDate: TimeInterval) -> some View {
-        ZStack(alignment: .leading) {
-            // ✅ Capa base: texto atenuado (siempre visible)
-            Text(line.cleanText)
-                .font(.system(size: 24, weight: .bold))
-                .foregroundStyle(Color.white.opacity(0.35))
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.vertical, 12)
-            
-            // ✅ Capa superior: texto brillante con máscara de relleno interpolado
-            Text(line.cleanText)
-                .font(.system(size: 24, weight: .bold))
-                .foregroundStyle(Color.white.opacity(brightnessOpacity))
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.vertical, 12)
-                .mask(alignment: .leading) {
-                    GeometryReader { geo in
-                        // ✅ TimelineView para interpolación a 60 fps del relleno (iOS 15+, compatible con iOS 16)
-                        TimelineView(.animation) { context in
-                            let now = context.date.timeIntervalSinceReferenceDate
-                            let elapsed = now - clockUpdateDate
-                            let interpolatedTime = clockTime + elapsed
-                            let start = Double(line.startMs) / 1000.0
-                            let end = Double(line.endMs) / 1000.0
-                            let rawProgress = end > start ? (interpolatedTime - start) / (end - start) : 1.0
-                            let clampedProgress = max(0, min(1, rawProgress))
-                            
-                            // ✅ Smoothstep easing para movimiento más natural
-                            let eased = clampedProgress * clampedProgress * (3 - 2 * clampedProgress)
-                            
-                            Rectangle()
-                                .frame(width: geo.size.width * CGFloat(eased))
+    // MARK: - Texto de línea con distinción activa/inactiva y relleno progresivo
+    private func lyricText(line: LyricsLine, isActive: Bool, progress: Double, clockTime: TimeInterval, clockUpdateDate: TimeInterval) -> some View {
+        let opacity: Double = isActive ? 1.0 : 0.35
+        let fontWeight: Font.Weight = isActive ? .bold : .regular
+        let fontSize: CGFloat = isActive ? 24 : 18
+        
+        if isActive {
+            // ✅ Línea activa: blanco con relleno progresivo
+            ZStack(alignment: .leading) {
+                // Capa base: texto atenuado (siempre visible debajo)
+                Text(line.cleanText)
+                    .font(.system(size: fontSize, weight: fontWeight))
+                    .foregroundStyle(Color.white.opacity(0.35))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 12)
+                
+                // Capa superior: texto brillante con máscara de relleno
+                Text(line.cleanText)
+                    .font(.system(size: fontSize, weight: fontWeight))
+                    .foregroundStyle(Color.white)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 12)
+                    .mask(alignment: .leading) {
+                        GeometryReader { geo in
+                            // ✅ TimelineView para interpolación a 60 fps del relleno
+                            TimelineView(.animation) { context in
+                                let now = context.date.timeIntervalSinceReferenceDate
+                                let elapsed = now - clockUpdateDate
+                                let interpolatedTime = clockTime + elapsed
+                                let start = Double(line.startMs) / 1000.0
+                                let end = Double(line.endMs) / 1000.0
+                                let rawProgress = end > start ? (interpolatedTime - start) / (end - start) : 1.0
+                                let clampedProgress = max(0, min(1, rawProgress))
+                                
+                                // ✅ Smoothstep easing para movimiento más natural
+                                let eased = clampedProgress * clampedProgress * (3 - 2 * clampedProgress)
+                                
+                                Rectangle()
+                                    .frame(width: geo.size.width * CGFloat(eased))
+                            }
                         }
                     }
-                }
-        }
-        // ✅ Transición suave de opacidad cuando deja de ser activa
-        .animation(.easeInOut(duration: 0.3), value: brightnessOpacity)
-        .onChange(of: isActive) { newValue in
-            if !newValue {
-                // ✅ Al dejar de ser activa: iniciar atenuación en dos fases
-                withAnimation(.easeInOut(duration: 0.15)) {
-                    brightnessOpacity = 0.7
-                }
-                withAnimation(.easeInOut(duration: 0.15).delay(0.15)) {
-                    brightnessOpacity = 0.35
-                }
-                // ✅ Congelar el progress para retención visual
-                frozenProgress = progress
-            } else {
-                // ✅ Al volverse activa: restaurar opacidad completa inmediatamente
-                brightnessOpacity = 1.0
-                frozenProgress = 0
             }
+        } else {
+            // ✅ Línea inactiva: texto atenuado simple
+            Text(line.cleanText)
+                .font(.system(size: fontSize, weight: fontWeight))
+                .foregroundStyle(Color.white.opacity(opacity))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, 12)
         }
-        .onChange(of: progress) { newProgress in
-            // ✅ Actualizar frozenProgress solo cuando está activo
-            if isActive {
-                frozenProgress = newProgress
-            }
-        }
-    }
-    
-    // MARK: - Línea estática (inactiva)
-    private func staticLyricLine(line: LyricsLine) -> some View {
-        Text(line.cleanText)
-            .font(.system(size: 18, weight: .regular))
-            .foregroundStyle(Color.white.opacity(0.35))
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.vertical, 12)
     }
 }
 
