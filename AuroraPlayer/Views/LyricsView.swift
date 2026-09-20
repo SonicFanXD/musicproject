@@ -313,47 +313,21 @@ struct LyricsView: View {
     }
 
     // MARK: - Word by Word Line View
-    // ✅ KARAOKE SUTIL: animación delicada y elegante
+    // ✅ MODELO APPLE MUSIC: resaltar palabra activa, atenuar anterior y futura
     private func wordByWordLineView(line: LyricLine, words: [LyricWord], isActive: Bool, progress: Double) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            ZStack(alignment: .leading) {
-                // Texto base (gris suave)
-                Text(words.map(\.text).joined(separator: " "))
+        HStack(spacing: 0) {
+            ForEach(Array(words.enumerated()), id: \.element.id) { index, word in
+                let wordProgressValue = wordProgress[word.id] ?? 0.0
+                Text(word.text)
                     .font(.system(size: isActive ? 18 : 15, weight: isActive ? .medium : .regular))
-                    .foregroundStyle(Color.gray.opacity(0.6))
-                    .blur(radius: progress > 0 ? progress * 0.3 : 0)
-                    .opacity(progress > 0.7 ? 0.25 : 1.0)
-
-                // Texto iluminado (con máscara)
-                Text(words.map(\.text).joined(separator: " "))
-                    .font(.system(size: isActive ? 18 : 15, weight: isActive ? .medium : .regular))
-                    .foregroundStyle(.white)
-                    .mask(alignment: .leading) {
-                        GeometryReader { geo in
-                            Rectangle()
-                                .frame(width: geo.size.width * CGFloat(min(max(progress, 0), 1)))
-                        }
-                    }
-                    .shadow(color: .white.opacity(0.25), radius: progress > 0.5 ? 5 : 0, x: 0, y: 0)
-            }
-            // Barra de progreso muy sutil
-            if isActive && progress > 0 {
-                GeometryReader { geo in
-                    ZStack(alignment: .leading) {
-                        RoundedRectangle(cornerRadius: 1.5)
-                            .fill(Color.gray.opacity(0.1))
-                            .frame(height: 2)
-
-                        RoundedRectangle(cornerRadius: 1.5)
-                            .fill(AppTheme.accent)
-                            .frame(width: geo.size.width * CGFloat(progress), height: 2)
-                    }
-                }
-                .frame(height: 2)
+                    .foregroundStyle(wordProgressValue > 0.5 ? .white : Color.gray.opacity(0.5))
+                    .opacity(wordProgressValue > 0.9 ? 1.0 : wordProgressValue > 0.1 ? 0.7 : 0.4)
+                    .scaleEffect(wordProgressValue > 0.8 ? 1.05 : 1.0)
+                    .animation(.easeOut(duration: 0.15), value: wordProgressValue)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, 5)
+        .padding(.vertical, 6)
     }
 
     // Progreso de la línea activa: suma de progresos de sus palabras / nº de palabras.
@@ -380,38 +354,46 @@ struct LyricsView: View {
 
         var newProgress: [UUID: Double] = [:]
 
-        // ✅ FIX: ventana amplia hacia atrás para que las palabras ya cantadas
-        // mantengan progreso 1.0 (antes con 0.3s el karaoke "retrocedía").
-        let windowStart = time - 15.0
-        let windowEnd = time + 2.0
-
-        var startIndex = 0
-        var endIndex = words.count - 1
-        while startIndex < endIndex {
-            let mid = (startIndex + endIndex) / 2
-            if words[mid].time < windowStart {
-                startIndex = mid + 1
+        // ✅ MODELO APPLE MUSIC: línea de tiempo global con búsqueda binaria
+        // Buscar el índice de la palabra activa en tiempo actual
+        var activeIndex = words.count - 1
+        var lo = 0, hi = words.count - 1
+        while lo <= hi {
+            let mid = (lo + hi) / 2
+            if words[mid].time <= time {
+                activeIndex = mid
+                lo = mid + 1
             } else {
-                endIndex = mid
+                hi = mid - 1
             }
         }
 
-        guard startIndex < words.count else {
-            wordProgress = [:]
-            return
-        }
-
-        for (index, word) in words[startIndex...].enumerated() {
-            guard word.time <= windowEnd else { break }
-
+        // ✅ Calcular progreso de palabras alrededor de la activa
+        // Palabra anterior: ya cantada (progreso 1.0)
+        // Palabra actual: interpolación basada en duration
+        // Palabra siguiente: futura (progreso 0.0)
+        for i in max(0, activeIndex - 2)...min(words.count - 1, activeIndex + 2) {
+            let word = words[i]
             let timeDiff = time - word.time
-            if let duration = word.duration, duration > 0 {
-                if timeDiff >= 0 && timeDiff <= duration {
+
+            if i < activeIndex {
+                // Palabra ya cantada
+                newProgress[word.id] = 1.0
+            } else if i == activeIndex {
+                // Palabra activa: interpolación suave
+                if let duration = word.duration, duration > 0 {
                     newProgress[word.id] = min(1.0, max(0.0, timeDiff / duration))
-                } else if timeDiff > duration {
-                    newProgress[word.id] = 1.0
+                } else {
+                    // Sin duration: progreso simple basado en tiempo
+                    newProgress[word.id] = timeDiff > 0 ? 1.0 : 0.0
                 }
             } else {
+                // Palabra futura
+                newProgress[word.id] = 0.0
+            }
+        }
+
+        wordProgress = newProgress
                 if timeDiff >= 0 {
                     let nextWordTime = startIndex + index + 1 < words.count ? words[startIndex + index + 1].time : word.time + 0.5
                     let estimatedDuration = nextWordTime - word.time
