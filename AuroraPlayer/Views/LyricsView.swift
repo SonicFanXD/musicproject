@@ -115,22 +115,34 @@ struct LyricsView: View {
         .padding(.horizontal, 24)
     }
 
-    /// ✅ Scroll centrado y suave (0.3s easeInOut) al cambiar de línea activa.
+    /// ✅ Scroll centrado y suave (0.25s easeInOut, el estándar de Apple Music)
+    /// al cambiar de línea activa. Cuanto más corto es el solape entre la
+    /// animación del scroll y el wipe a 60 fps de la línea entrante, menos
+    /// tirones se ven en la transición.
     private func scrollToActiveLine(_ target: Int?, proxy: ScrollViewProxy) {
         guard let target = target else { return }
 
-        withAnimation(.easeInOut(duration: 0.3)) {
+        withAnimation(.easeInOut(duration: 0.25)) {
             proxy.scrollTo(target, anchor: .center)
         }
     }
 
     // MARK: - Línea individual
+    /// ✅ El scroll se hace en DOS fases (activeID → scrollTarget → scrollTo) a
+    /// propósito: así la primera línea se centra también cuando el ScrollView
+    /// nace en el mismo ciclo en que el parser publica `activeID` (con un solo
+    /// onChange dentro del ScrollViewReader ese primer centrado se perdería).
     private func lyricLineView(line: LyricsLine) -> some View {
         LyricLineView(
             line: line,
             isActive: viewModel.activeID == line.id,
+            isPlaying: viewModel.isPlaying,
             viewModel: viewModel
         )
+        // ✅ Solo las filas cuyo contenido ha cambiado vuelven a evaluar su body:
+        // al cambiar de línea activa (o al hacer scroll) se evita re-evaluar todo
+        // el LazyVStack visible.
+        .equatable()
     }
 
     // MARK: - Seek a línea
@@ -201,14 +213,32 @@ struct LyricsView: View {
 // ✅ Struct (no clase) y sin envoltorios de tipo borrado: el cuerpo solo se
 //    re-evalúa cuando cambia el estado de activación; el TimelineView
 //    recalcula únicamente su contenido.
-private struct LyricLineView: View {
+private struct LyricLineView: View, Equatable {
     let line: LyricsLine
     let isActive: Bool
+    /// ✅ Valor explícito (en lugar de leer `viewModel.isPlaying` dentro): forma
+    /// parte de la comparación, así la vista se entera de play/pause sin
+    /// depender de que el padre se re-evalúe.
+    let isPlaying: Bool
     let viewModel: LyricsViewModel
 
     /// ✅ Separación entre filas visuales de una misma línea lógica (también en
     /// la capa atenuada, para que el texto no salte al activarse la línea).
     private static let rowSpacing: CGFloat = 2
+
+    /// ✅ Igualdad = "¿está igual lo que esta fila PINTA?". Del viewModel solo se
+    /// compara la IDENTIDAD (misma instancia), nunca su estado mutable: el estado
+    /// vivo (reloj, línea activa) solo se lee DENTRO del TimelineView, que se
+    /// actualiza por frame por su cuenta y sin depender de este diff.
+    /// ✅ Sin `.drawingGroup()`: rasterizaría el texto antes del "pop" de escala
+    /// y la animación de entrada se vería borrosa (la máscara ya compone fuera
+    /// de pantalla, así que tampoco ahorraría una pasada).
+    static func == (lhs: LyricLineView, rhs: LyricLineView) -> Bool {
+        lhs.isActive == rhs.isActive
+            && lhs.isPlaying == rhs.isPlaying
+            && lhs.viewModel === rhs.viewModel
+            && lhs.line == rhs.line
+    }
 
     private var fontSize: CGFloat {
         isActive ? 24 : 18
@@ -238,7 +268,7 @@ private struct LyricLineView: View {
     /// estado congelado una sola vez (sin gastar GPU/batería).
     @ViewBuilder
     private var activeLine: some View {
-        if viewModel.isPlaying {
+        if isPlaying {
             TimelineView(.animation) { _ in
                 activeRows
             }
@@ -259,6 +289,10 @@ private struct LyricLineView: View {
                     fontWeight: fontWeight,
                     progress: easedProgress(forRowIndex: index)
                 )
+                // ✅ Las filas ya completadas (o aún sin empezar) tienen el mismo
+                // progreso frame a frame → no se redibujan; solo la fila que se
+                // está rellenando recalcula su máscara.
+                .equatable()
             }
         }
     }
@@ -292,7 +326,7 @@ private struct LyricLineView: View {
 
 // MARK: - Texto con relleno progresivo (dos capas + máscara)
 // ✅ Sin blur ni capas extra: dos Text y una máscara rectangular por frame.
-private struct LyricFillText: View {
+private struct LyricFillText: View, Equatable {
     let text: String
     let fontSize: CGFloat
     let fontWeight: Font.Weight
