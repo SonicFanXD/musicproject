@@ -93,20 +93,20 @@ final class ThemeManager: ObservableObject {
         }
     }
 
-    /// Color final efectivo del acento: mezcla de dos colores de la carátula
+    /// Color final efectivo del acento: mezcla más visible de dos colores
     /// si el modo está activo y hay colores disponibles; si no, el acento manual.
     var resolvedAccent: Color {
         if accentFromArtwork, let primary = artworkAccentColor, let secondary = artworkSecondaryColor {
-            // ✅ MEZCLA DE DOS COLORES: promedio de los dos colores
+            // ✅ MEZCLA MÁS VISIBLE: 60% primario, 40% secundario
             let uiPrimary = UIColor(primary)
             let uiSecondary = UIColor(secondary)
             var r1: CGFloat = 0, g1: CGFloat = 0, b1: CGFloat = 0, a1: CGFloat = 0
             var r2: CGFloat = 0, g2: CGFloat = 0, b2: CGFloat = 0, a2: CGFloat = 0
             uiPrimary.getRed(&r1, green: &g1, blue: &b1, alpha: &a1)
             uiSecondary.getRed(&r2, green: &g2, blue: &b2, alpha: &a2)
-            let mixedR = (r1 + r2) / 2
-            let mixedG = (g1 + g2) / 2
-            let mixedB = (b1 + b2) / 2
+            let mixedR = r1 * 0.6 + r2 * 0.4
+            let mixedG = g1 * 0.6 + g2 * 0.4
+            let mixedB = b1 * 0.6 + b2 * 0.4
             return Color(UIColor(red: mixedR, green: mixedG, blue: mixedB, alpha: 1.0))
         } else if accentFromArtwork, let c = artworkAccentColor {
             return c
@@ -300,12 +300,11 @@ enum AppTheme {
         return color
     }
 
-    /// Extrae el color más REPRESENTATIVO y vibrante de una portada:
-    /// en vez del promedio (que era apagado/grisáceo), usa un histograma
-    /// HSB y elige el bucket con mayor saturación×peso y brillo moderado.
-    /// ✅ MEJORA PRECISIÓN: penaliza elementos pequeños para evitar falsos positivos
+    /// Extrae el color más REPRESENTATIVO de una portada:
+    /// ✅ SIMPLIFICACIÓN: cuantización RGB simple, elegir el color más común
+    /// Sin filtros complejos de saturación/brillo que causan detecciones incorrectas
     static func dominantColor(from artwork: UIImage) -> UIColor? {
-        let size = CGSize(width: 64, height: 64)
+        let size = CGSize(width: 80, height: 80)
         UIGraphicsBeginImageContextWithOptions(size, false, 1.0)
         artwork.draw(in: CGRect(origin: .zero, size: size))
         guard let cgImage = UIGraphicsGetImageFromCurrentImageContext()?.cgImage else {
@@ -326,21 +325,11 @@ enum AppTheme {
         ) else { return nil }
         ctx.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
 
-        // Histograma HSB FINO: hue 0..35, sat 0..5, bright 0..5 (36*6*6 buckets)
-        // ✅ PERF: HSV calculado inline (antes: 1 alloc de UIColor + getHue por
-        // píxel = ~2300 allocs por carátula durante la indexación).
-        // ✅ PRECISIÓN: además del peso por bucket, se acumula el hue como
-        // vector (cos/sin) y sat/br ponderados → el color final es el PROMEDIO
-        // EXACTO del cluster ganador, no el centro tosco del bucket.
-        let hueBins = 36, satBins = 6, brBins = 6
-        let bucketCount = hueBins * satBins * brBins
-        var buckets = [Float](repeating: 0, count: bucketCount)
-        var bucketCounts = [Int](repeating: 0, count: bucketCount)
-        var hueX = [Float](repeating: 0, count: bucketCount)
-        var hueY = [Float](repeating: 0, count: bucketCount)
-        var satSum = [Float](repeating: 0, count: bucketCount)
-        var brSum = [Float](repeating: 0, count: bucketCount)
+        // ✅ SISTEMA SIMPLE: cuantización RGB en 16 niveles por canal
+        let levels = 16
+        var colorBuckets = [Int](repeating: 0, count: levels * levels * levels)
         var totalR: Float = 0, totalG: Float = 0, totalB: Float = 0, totalCount: Float = 0
+
         for y in 0..<height {
             for x in 0..<width {
                 let off = y * bytesPerRow + x * 4
@@ -348,126 +337,46 @@ enum AppTheme {
                 let g = Float(data[off + 1]) / 255
                 let b = Float(data[off + 2]) / 255
                 let a = Float(data[off + 3]) / 255
-                guard a > 0.5 else { continue }
+                guard a > 0.6 else { continue }
 
                 totalR += r; totalG += g; totalB += b; totalCount += 1
 
-                // HSV inline (equivalente a getHue, sin allocs)
-                let maxC = max(r, g, b)
-                let minC = min(r, g, b)
-                let delta = maxC - minC
-                let br = maxC
-                let s: Float = maxC == 0 ? 0 : delta / maxC
-                // ✅ FILTROS MÁS ESTRICTOS: evitar elementos pequeños
-                // Solo píxeles con saturación y brillo moderados
-                guard s >= 0.20, br >= 0.15, br <= 0.90 else { continue }
-                var h: Float = 0
-                if delta > 0 {
-                    if maxC == r { h = ((g - b) / delta).truncatingRemainder(dividingBy: 6) }
-                    else if maxC == g { h = (b - r) / delta + 2 }
-                    else { h = (r - g) / delta + 4 }
-                    h /= 6
-                    if h < 0 { h += 1 }
-                }
-                let hi = min(hueBins - 1, Int(h * Float(hueBins)))
-                let si = min(satBins - 1, Int(s * Float(satBins)))
-                let bi = min(brBins - 1, Int(br * Float(brBins)))
-                let idx = (bi * satBins + si) * hueBins + hi
-                // ✅ PESOS CORREGIDOS: penalizar más elementos pequeños
-                // - Factor de área: sqrt(count) para dar peso a áreas grandes
-                // - Factor de saturación: s^1.3 para colores muy vivos
-                // - Factor de brillo: campana centrada en 0.5
-                let areaWeight: Float = sqrt(Float(bucketCounts[idx] + 1))
-                let satWeight = pow(s, 1.3)
-                let brightWeight = max(0.3, 1.0 - abs(br - 0.5) * 2.0)
-                let weight = areaWeight * satWeight * brightWeight
-                let w = max(weight, 0.0001)
-                buckets[idx] += w
-                bucketCounts[idx] += 1
-                let angle = Float(h * 2 * .pi)
-                hueX[idx] += cos(angle) * w
-                hueY[idx] += sin(angle) * w
-                satSum[idx] += s * w
-                brSum[idx] += br * w
+                // Cuantizar RGB sin filtros
+                let ri = min(levels - 1, Int(r * Float(levels)))
+                let gi = min(levels - 1, Int(g * Float(levels)))
+                let bi = min(levels - 1, Int(b * Float(levels)))
+                let idx = (bi * levels + gi) * levels + ri
+                colorBuckets[idx] += 1
             }
         }
 
-        if let best = buckets.enumerated().max(by: { $0.element < $1.element }), best.element > 0 {
-            var chosen = best.offset
-            let acceptedPixels = bucketCounts.reduce(0, +)
-            let bestW = max(buckets[chosen], 0.0001)
-            let avgSatBest = satSum[chosen] / bestW
-            let bestCount = bucketCounts[chosen]
-            
-            // ✅ MEJORA: Filtro de área mínima para evitar colores microscópicos
-            // Si el cluster ganador tiene menos del 5% de los píxeles válidos,
-            // buscar un cluster con más área que tenga saturación decente.
-            let minAreaRatio: Float = 0.05
-            if acceptedPixels > 0 && Float(bestCount) / Float(acceptedPixels) < minAreaRatio {
-                let minPixels = Int(Float(acceptedPixels) * minAreaRatio)
-                var bestAreaIdx: Int?
-                var bestAreaScore: Float = 0
-                
-                for (i, count) in bucketCounts.enumerated() where count >= minPixels && buckets[i] > 0 {
-                    let s = satSum[i] / max(buckets[i], 0.0001)
-                    let br = brSum[i] / max(buckets[i], 0.0001)
-                    // Score que equilibra área y saturación
-                    let areaScore = Float(count) / Float(acceptedPixels)
-                    let satScore = s
-                    let brScore = max(0.2, 1.0 - abs(br - 0.55) * 1.5)
-                    let combinedScore = areaScore * 0.6 + satScore * 0.3 + brScore * 0.1
-                    
-                    if combinedScore > bestAreaScore {
-                        bestAreaScore = combinedScore
-                        bestAreaIdx = i
-                    }
-                }
-                
-                if let areaIdx = bestAreaIdx {
-                    chosen = areaIdx
-                }
-            }
-            
-            // ✅ MEJORA: Rescate de colores vivos en portadas monocromáticas
-            // Si el cluster ganador es muy desaturado pero hay un cluster más saturado
-            // con área suficiente, usarlo en su lugar.
-            if avgSatBest < 0.15, acceptedPixels > 0 {
-                let minPixels = Int(Float(acceptedPixels) * 0.03)
-                var vividIdx: Int?
-                var vividSat: Float = 0.15
-                for (i, w) in buckets.enumerated() where w > 0 && bucketCounts[i] >= minPixels {
-                    let s = satSum[i] / max(w, 0.0001)
-                    if s > vividSat {
-                        vividSat = s
-                        vividIdx = i
-                    }
-                }
-                if let v = vividIdx { chosen = v }
-            }
-
-            let w = buckets[chosen]
-            var hue = CGFloat(atan2f(hueY[chosen], hueX[chosen]) / (2 * .pi))
-            if hue < 0 { hue += 1 }
-            // ✅ MEJORA: Rangos más conservadores para mantener el color original
-            let saturation = CGFloat(min(0.98, max(0.05, satSum[chosen] / w)))
-            let brightness = CGFloat(min(0.95, max(0.08, brSum[chosen] / w)))
-            return UIColor(hue: hue, saturation: saturation, brightness: brightness, alpha: 1)
-        }
-        // ✅ Fallback: promedio real de la carátula (p. ej. portada monocromática
-        // sin matiz). `readableColor` lo normaliza para legibilidad.
         guard totalCount > 0 else { return nil }
-        return UIColor(
-            red: CGFloat(totalR / totalCount),
-            green: CGFloat(totalG / totalCount),
-            blue: CGFloat(totalB / totalCount),
-            alpha: 1
-        )
+
+        // ✅ Encontrar el bucket con más píxeles (color más común)
+        var maxCount = 0
+        var bestIdx = 0
+        for i in 0..<colorBuckets.count {
+            if colorBuckets[i] > maxCount {
+                maxCount = colorBuckets[i]
+                bestIdx = i
+            }
+        }
+
+        // ✅ Reconstruir el color del bucket ganador
+        let ri = bestIdx % levels
+        let gi = (bestIdx / levels) % levels
+        let bi = bestIdx / (levels * levels)
+        let r = Float(ri) / Float(levels) + 0.5 / Float(levels)
+        let g = Float(gi) / Float(levels) + 0.5 / Float(levels)
+        let b = Float(bi) / Float(levels) + 0.5 / Float(levels)
+
+        return UIColor(red: CGFloat(r), green: CGFloat(g), blue: CGFloat(b), alpha: 1)
     }
 
     /// ✅ SISTEMA DOS COLORES: extrae el segundo color dominante
-    /// Busca el color con mayor peso que sea suficientemente diferente del primario
+    /// Busca el segundo color más común que sea diferente del primario
     static func secondaryDominantColor(from artwork: UIImage, primary: UIColor) -> UIColor? {
-        let size = CGSize(width: 64, height: 64)
+        let size = CGSize(width: 80, height: 80)
         UIGraphicsBeginImageContextWithOptions(size, false, 1.0)
         artwork.draw(in: CGRect(origin: .zero, size: size))
         guard let cgImage = UIGraphicsGetImageFromCurrentImageContext()?.cgImage else {
@@ -488,9 +397,9 @@ enum AppTheme {
         ) else { return nil }
         ctx.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
 
-        let hueBins = 36, satBins = 6, brBins = 6
-        var buckets = [Float](repeating: 0, count: hueBins * satBins * brBins)
-        var bucketCounts = [Int](repeating: 0, count: hueBins * satBins * brBins)
+        // ✅ Sistema simple RGB igual que dominantColor
+        let levels = 16
+        var colorBuckets = [Int](repeating: 0, count: levels * levels * levels)
 
         for y in 0..<height {
             for x in 0..<width {
@@ -499,60 +408,38 @@ enum AppTheme {
                 let g = Float(data[off + 1]) / 255
                 let b = Float(data[off + 2]) / 255
                 let a = Float(data[off + 3]) / 255
-                guard a > 0.5 else { continue }
+                guard a > 0.6 else { continue }
 
-                let maxC = max(r, g, b)
-                let minC = min(r, g, b)
-                let delta = maxC - minC
-                let br = maxC
-                let s: Float = maxC == 0 ? 0 : delta / maxC
-                guard s >= 0.20, br >= 0.15, br <= 0.90 else { continue }
-
-                var h: Float = 0
-                if delta > 0 {
-                    if maxC == r { h = ((g - b) / delta).truncatingRemainder(dividingBy: 6) }
-                    else if maxC == g { h = (b - r) / delta + 2 }
-                    else { h = (r - g) / delta + 4 }
-                    h /= 6
-                    if h < 0 { h += 1 }
-                }
-                let hi = min(hueBins - 1, Int(h * Float(hueBins)))
-                let si = min(satBins - 1, Int(s * Float(satBins)))
-                let bi = min(brBins - 1, Int(br * Float(brBins)))
-                let idx = (bi * satBins + si) * hueBins + hi
-                buckets[idx] += 1.0
-                bucketCounts[idx] += 1
+                let ri = min(levels - 1, Int(r * Float(levels)))
+                let gi = min(levels - 1, Int(g * Float(levels)))
+                let bi = min(levels - 1, Int(b * Float(levels)))
+                let idx = (bi * levels + gi) * levels + ri
+                colorBuckets[idx] += 1
             }
         }
 
-        // ✅ Obtener hue del primario para evitar colores similares
-        var primaryHue: CGFloat = 0
-        primary.getHue(&primaryHue, saturation: nil, brightness: nil, alpha: nil)
+        // ✅ Obtener RGB del primario para evitar colores similares
+        var primaryR: CGFloat = 0, primaryG: CGFloat = 0, primaryB: CGFloat = 0
+        primary.getRed(&primaryR, green: &primaryG, blue: &primaryB, alpha: nil)
 
-        // Encontrar el bucket con mayor peso que sea diferente del primario
-        var maxWeight: Float = 0
-        var bestIdx = 0
-        for i in 0..<buckets.count {
-            if buckets[i] > maxWeight {
-                let bucketHue = CGFloat(Float(i % hueBins) / Float(hueBins))
-                let hueDiff = abs(bucketHue - primaryHue)
-                // ✅ Solo elegir si es suficientemente diferente (al menos 1/12 del círculo = 30 grados)
-                if hueDiff > 0.08 || hueDiff < 0.92 {
-                    maxWeight = buckets[i]
-                    bestIdx = i
-                }
+        // ✅ Encontrar los buckets con más píxeles, excluyendo el primario
+        var sortedBuckets = colorBuckets.enumerated().sorted { $0.element > $1.element }
+        for (idx, count) in sortedBuckets where count > 10 {
+            let ri = idx % levels
+            let gi = (idx / levels) % levels
+            let bi = idx / (levels * levels)
+            let r = Float(ri) / Float(levels) + 0.5 / Float(levels)
+            let g = Float(gi) / Float(levels) + 0.5 / Float(levels)
+            let b = Float(bi) / Float(levels) + 0.5 / Float(levels)
+
+            // ✅ Verificar si es suficientemente diferente del primario
+            let diff = abs(r - Float(primaryR)) + abs(g - Float(primaryG)) + abs(b - Float(primaryB))
+            if diff > 0.3 { // Diferencia mínima de 0.3 en RGB
+                return UIColor(red: CGFloat(r), green: CGFloat(g), blue: CGFloat(b), alpha: 1)
             }
         }
 
-        guard maxWeight > 0 else { return nil }
-
-        let hue = CGFloat(Float(bestIdx % hueBins) / Float(hueBins))
-        let si = (bestIdx / hueBins) % satBins
-        let bi = bestIdx / (hueBins * satBins)
-        let saturation = CGFloat(min(0.95, max(0.1, Float(si) / Float(satBins))))
-        let brightness = CGFloat(min(0.92, max(0.1, Float(bi) / Float(brBins))))
-
-        return UIColor(hue: hue, saturation: saturation, brightness: brightness, alpha: 1)
+        return nil
     }
 
     static func dominantColor(from uiColor: UIColor?) -> UIColor? {
