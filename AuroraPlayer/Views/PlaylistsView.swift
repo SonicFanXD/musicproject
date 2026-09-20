@@ -148,8 +148,11 @@ struct PlaylistsView: View {
             // Playlist artwork
             ZStack {
                 if let artwork = playlist.artwork {
-                    // ✅ ANTI-JETSAM: card de 150pt → basta thumbnail de 300px.
-                    Image(uiImage: artwork.preparingThumbnail(of: CGSize(width: 300, height: 300)) ?? artwork)
+                    // ✅ OPT: Usar caché de thumbnails para evitar decodificaciones repetidas
+                    // Para playlists sin songID, usamos data-based cache
+                    let imageData = artwork.pngData() ?? Data()
+                    let thumbnail = ArtworkThumbnailCache.shared.thumbnail(for: imageData, from: artwork, size: CGSize(width: 300, height: 300))
+                    Image(uiImage: thumbnail)
                         .resizable()
                         .scaledToFill()
                         .frame(width: 150, height: 150)
