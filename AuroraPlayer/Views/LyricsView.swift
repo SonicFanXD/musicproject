@@ -313,21 +313,20 @@ struct LyricsView: View {
     }
 
     // MARK: - Word by Word Line View
-    // ✅ KARAOKE SIMPLE Y VISIBLE: animación side-by-side ultra visible
-    // Estilo Apple Music simplificado con efectos MUY agresivos
+    // ✅ KARAOKE ESTABLE: animación simple sin bugs visuales
     private func wordByWordLineView(line: LyricLine, words: [LyricWord], isActive: Bool, progress: Double) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 6) {
             ZStack(alignment: .leading) {
-                // Texto base (gris muy oscuro) - siempre visible
+                // Texto base (gris)
                 Text(words.map(\.text).joined(separator: " "))
-                    .font(.system(size: isActive ? 26 : 22, weight: isActive ? .bold : .medium))
-                    .foregroundStyle(Color.gray.opacity(0.3))
-                    .blur(radius: progress > 0 ? progress * 2.0 : 0)
-                    .opacity(progress > 0.5 ? 0.15 : 1.0)
+                    .font(.system(size: isActive ? 22 : 18, weight: isActive ? .bold : .medium))
+                    .foregroundStyle(Color.gray.opacity(0.4))
+                    .blur(radius: progress > 0 ? progress * 1.0 : 0)
+                    .opacity(progress > 0.6 ? 0.2 : 1.0)
 
-                // Texto iluminado (con máscara de progreso) - BLANCO PURO
+                // Texto iluminado (con máscara)
                 Text(words.map(\.text).joined(separator: " "))
-                    .font(.system(size: isActive ? 26 : 22, weight: isActive ? .bold : .medium))
+                    .font(.system(size: isActive ? 22 : 18, weight: isActive ? .bold : .medium))
                     .foregroundStyle(.white)
                     .mask(alignment: .leading) {
                         GeometryReader { geo in
@@ -335,30 +334,26 @@ struct LyricsView: View {
                                 .frame(width: geo.size.width * CGFloat(min(max(progress, 0), 1)))
                         }
                     }
-                    // ✅ Efectos ultra visibles
-                    .shadow(color: .white.opacity(1.0), radius: progress > 0.1 ? 20 : 0, x: 0, y: 0)
-                    .shadow(color: AppTheme.accent.opacity(1.0), radius: progress > 0.3 ? 30 : 0, x: 0, y: 0)
-                    .scaleEffect(progress > 0.7 ? 1.08 : 1.0)
+                    .shadow(color: .white.opacity(0.6), radius: progress > 0.3 ? 10 : 0, x: 0, y: 0)
             }
-            // ✅ Barra de progreso muy visible
+            // Barra de progreso simple
             if isActive && progress > 0 {
                 GeometryReader { geo in
                     ZStack(alignment: .leading) {
-                        RoundedRectangle(cornerRadius: 4)
+                        RoundedRectangle(cornerRadius: 2)
                             .fill(Color.gray.opacity(0.2))
-                            .frame(height: 6)
+                            .frame(height: 4)
 
-                        RoundedRectangle(cornerRadius: 4)
+                        RoundedRectangle(cornerRadius: 2)
                             .fill(AppTheme.accent)
-                            .frame(width: geo.size.width * CGFloat(progress), height: 6)
-                            .shadow(color: AppTheme.accent.opacity(1.0), radius: 8, x: 0, y: 0)
+                            .frame(width: geo.size.width * CGFloat(progress), height: 4)
                     }
                 }
-                .frame(height: 6)
+                .frame(height: 4)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, 12)
+        .padding(.vertical, 8)
     }
 
     // Progreso de la línea activa: suma de progresos de sus palabras / nº de palabras.
