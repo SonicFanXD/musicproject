@@ -225,16 +225,17 @@ struct SettingsView: View {
                                 selection: Binding(
                                     get: { self.audioSessionMode },
                                     set: { newValue in
-                                        if newValue != self.audioSessionMode {
-                                            Haptics.light()
-                                            self.audioSessionMode = newValue
-                                            audioEngine.setAudioSessionMode(newValue)
-                                            AppLog.info(.settings, "Modo de audio: \(newValue == 1 ? "Measurement" : "Default")")
-                                        }
+                                        Haptics.light()
+                                        self.audioSessionMode = newValue
+                                        audioEngine.setAudioSessionMode(newValue)
+                                        AppLog.info(.settings, "Modo de audio: \(newValue == 1 ? "Measurement" : "Default")")
                                     }
                                 ),
                                 onChange: { newValue in
-                                    // El cambio ya se maneja en el Binding, pero el callback es requerido
+                                    // Actualizar directamente sin verificación de cambio
+                                    Haptics.light()
+                                    self.audioSessionMode = newValue
+                                    audioEngine.setAudioSessionMode(newValue)
                                 }
                             )
                             settingsDivider
