@@ -1,6 +1,13 @@
 import SwiftUI
 import UIKit
 
+// MARK: - Extension para Optional
+extension Optional {
+    var isNil: Bool {
+        self == nil
+    }
+}
+
 // MARK: - Letra con máscara de progreso (estilo Apple Music mejorado)
 // ✅ MEJORA KARAOKE: animación side-by-side más visible con efectos
 // El problema anterior: el GeometryReader de la máscara no tenía tamaño
@@ -118,11 +125,9 @@ struct LyricsView: View {
         .onAppear {
             parseLyrics()
         }
-        .onChange(of: clock.time) { newTime in
+        .onReceive(clock.$time.throttle(for: .milliseconds(16), scheduler: RunLoop.main, latest: true)) { newTime in
+            // ✅ OPTIMIZACIÓN 60fps: throttle a 16ms (~60fps) para iPhone 8 Plus
             updateCurrentLine(for: newTime)
-            // ✅ OPTIMIZACIÓN 60fps: solo recalcular wordProgress si estamos
-            // en modo karaoke palabra-por-palabra (evita crear dicts nuevos
-            // en cada tick de reloj para letras sincronizadas normales).
             if case .synchronized(let syncLyrics) = parsedLyrics, syncLyrics.isWordByWord {
                 updateWordProgress(for: newTime)
             }
@@ -354,10 +359,15 @@ private class LyricsEngine {
         tokens = converted.sorted { $0.startMs < $1.startMs }
     }
     
-    /// ✅ MOTOR PURO: estado determinista en un momento dado
+    /// ✅ MOTOR PURO: estado determinista en un momento dado (optimizado 60fps)
     func state(at timeMs: Int) -> LyricsState {
         guard !tokens.isEmpty else {
             return LyricsState(activeTokenID: nil, progress: 0, activeLineIndex: 0, previousTokenID: nil, nextTokenID: nil)
+        }
+        
+        // ✅ OPTIMIZACIÓN: cache de última búsqueda para evitar búsqueda binaria duplicada
+        if timeMs == lastQueriedTimeMs, !lastState.activeTokenID.isNil {
+            return lastState
         }
         
         // Búsqueda binaria para encontrar token activo
@@ -384,14 +394,23 @@ private class LyricsEngine {
         let previousTokenID = activeIndex > 0 ? tokens[activeIndex - 1].id : nil
         let nextTokenID = activeIndex < tokens.count - 1 ? tokens[activeIndex + 1].id : nil
         
-        return LyricsState(
+        let newState = LyricsState(
             activeTokenID: activeToken.id,
             progress: progress,
             activeLineIndex: activeToken.lineIndex,
             previousTokenID: previousTokenID,
             nextTokenID: nextTokenID
         )
+        
+        // ✅ Cache para evitar búsqueda duplicada
+        lastQueriedTimeMs = timeMs
+        lastState = newState
+        
+        return newState
     }
+    
+    private var lastQueriedTimeMs: Int = -1
+    private var lastState: LyricsState = LyricsState(activeTokenID: nil, progress: 0, activeLineIndex: 0, previousTokenID: nil, nextTokenID: nil)
     
     /// Agrupa tokens en líneas para renderizado
     func getTokensByLine() -> [[LyricsToken]] {
@@ -430,16 +449,17 @@ private class LyricsEngine {
         return min(1.0, total / Double(lineWords.count))
     }
 
-    // MARK: - Update Word Progress (motor Apple Music)
+    // MARK: - Update Word Progress (motor Apple Music optimizado 60fps)
     private func updateWordProgress(for time: TimeInterval) {
         guard let engine = lyricsEngine else { return }
         
         let timeMs = Int(time * 1000)
         let newState = engine.state(at: timeMs)
         
-        // ✅ Solo actualizar si el estado cambió significativamente
+        // ✅ OPTIMIZACIÓN 60fps: solo actualizar si el estado cambió significativamente
+        // Evita actualizaciones innecesarias en cada tick
         if newState.activeTokenID != lyricsState.activeTokenID ||
-           abs(newState.progress - lyricsState.progress) > 0.01 {
+           abs(newState.progress - lyricsState.progress) > 0.02 {
             lyricsState = newState
         }
     }
@@ -486,19 +506,21 @@ private class LyricsEngine {
         }
     }
 
-    // MARK: - Word by Word Line View (Apple Music model)
+    // MARK: - Word by Word Line View (Apple Music model optimizado 60fps)
     private func wordByWordLineView(line: LyricLine, words: [LyricWord], isActive: Bool, progress: Double) -> some View {
         HStack(spacing: 2) {
             ForEach(Array(words.enumerated()), id: \.element.id) { index, word in
                 let isActiveToken = lyricsState.activeTokenID == word.id.uuidString
                 let tokenProgress = isActiveToken ? lyricsState.progress : 0.0
                 
+                // ✅ OPTIMIZACIÓN 60fps: usar drawingGroup para renderizado eficiente
                 Text(word.text)
                     .font(.system(size: isActive ? 18 : 15, weight: isActive ? .medium : .regular))
                     .foregroundStyle(tokenProgress > 0.5 ? .white : Color.gray.opacity(0.5))
                     .opacity(tokenProgress > 0.9 ? 1.0 : tokenProgress > 0.1 ? 0.7 : 0.4)
-                    .scaleEffect(tokenProgress > 0.8 ? 1.05 : 1.0)
-                    .animation(.easeOut(duration: 0.15), value: tokenProgress)
+                    .scaleEffect(tokenProgress > 0.8 ? 1.03 : 1.0)
+                    // ✅ Eliminar animación costosa, usar interpolación directa
+                    .drawingGroup(opaque: false, colorMode: .nonLinear)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
