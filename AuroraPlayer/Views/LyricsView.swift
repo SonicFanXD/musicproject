@@ -255,7 +255,7 @@ struct LyricsView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 22) {
-                    ForEach(Array(tokensByLine.enumerated()), id: \.self) { index, tokens in
+                    ForEach(Array(tokensByLine.enumerated()), id: \.offset) { index, tokens in
                         if let line = index < lyrics.lines.count ? lyrics.lines[index] : nil {
                             wordByWordLineViewTokens(tokens: tokens, line: line, isActive: currentLineIndex == index)
                                 .id(index)

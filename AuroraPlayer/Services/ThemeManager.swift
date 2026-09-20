@@ -94,7 +94,7 @@ final class ThemeManager: ObservableObject {
     }
 
     /// ✅ Gradiente de dos colores universal para todos los elementos
-    /// Si hay dos colores de carátula, usa gradiente; si no, usa color sólido
+    /// Si hay dos colores de carátula, usa gradiente con más contraste
     var resolvedAccentGradient: LinearGradient {
         if accentFromArtwork, let primary = artworkAccentColor, let secondary = artworkSecondaryColor {
             return LinearGradient(
@@ -104,13 +104,13 @@ final class ThemeManager: ObservableObject {
             )
         } else if accentFromArtwork, let c = artworkAccentColor {
             return LinearGradient(
-                colors: [c, c.opacity(0.8)],
+                colors: [c, c.opacity(0.4)],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
         }
         return LinearGradient(
-            colors: [accent, accent.opacity(0.8)],
+            colors: [accent, accent.opacity(0.4)],
             startPoint: .topLeading,
             endPoint: .bottomTrailing
         )
@@ -438,7 +438,7 @@ enum AppTheme {
 
             // ✅ Verificar si es suficientemente diferente del primario
             let diff = abs(r - Float(primaryR)) + abs(g - Float(primaryG)) + abs(b - Float(primaryB))
-            if diff > 0.4 { // Diferencia mínima de 0.4 en RGB
+            if diff > 0.3 { // Diferencia mínima de 0.3 en RGB (reducido de 0.4 para más opciones)
                 return UIColor(red: CGFloat(r), green: CGFloat(g), blue: CGFloat(b), alpha: 1)
             }
         }
