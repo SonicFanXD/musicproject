@@ -303,10 +303,10 @@ enum AppTheme {
     }
 
     /// Extrae el color más REPRESENTATIVO de una portada:
-    /// ✅ SIMPLIFICACIÓN: promedio RGB directo, sin cuantización
-    /// El color promedio real de la portada, sin filtros
+    /// ✅ SISTEMA DE MAYORÍA: cuantización RGB para encontrar el color más frecuente
+    /// No usa promedio (puede ser sesgado), usa frecuencia de colores
     static func dominantColor(from artwork: UIImage) -> UIColor? {
-        let size = CGSize(width: 64, height: 64)
+        let size = CGSize(width: 80, height: 80)
         UIGraphicsBeginImageContextWithOptions(size, false, 1.0)
         artwork.draw(in: CGRect(origin: .zero, size: size))
         guard let cgImage = UIGraphicsGetImageFromCurrentImageContext()?.cgImage else {
@@ -327,7 +327,10 @@ enum AppTheme {
         ) else { return nil }
         ctx.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
 
-        var totalR: Float = 0, totalG: Float = 0, totalB: Float = 0, totalCount: Float = 0
+        // ✅ Sistema de cuantización para encontrar el color más frecuente
+        let levels = 8 // 8 niveles por canal = 512 buckets
+        var colorBuckets = [Int](repeating: 0, count: levels * levels * levels)
+        var bucketSums: [[Float]] = Array(repeating: Array(repeating: 0, count: 3), count: levels * levels * levels)
 
         for y in 0..<height {
             for x in 0..<width {
@@ -336,27 +339,46 @@ enum AppTheme {
                 let g = Float(data[off + 1]) / 255
                 let b = Float(data[off + 2]) / 255
                 let a = Float(data[off + 3]) / 255
-                guard a > 0.5 else { continue }
+                guard a > 0.6 else { continue }
 
-                totalR += r; totalG += g; totalB += b; totalCount += 1
+                // Cuantizar RGB
+                let ri = min(levels - 1, Int(r * Float(levels)))
+                let gi = min(levels - 1, Int(g * Float(levels)))
+                let bi = min(levels - 1, Int(b * Float(levels)))
+                let idx = (bi * levels + gi) * levels + ri
+
+                colorBuckets[idx] += 1
+                bucketSums[idx][0] += r
+                bucketSums[idx][1] += g
+                bucketSums[idx][2] += b
             }
         }
 
-        guard totalCount > 0 else { return nil }
+        // ✅ Encontrar el bucket con más píxeles (color de mayoría)
+        var maxCount = 0
+        var bestIdx = 0
+        for i in 0..<colorBuckets.count {
+            if colorBuckets[i] > maxCount {
+                maxCount = colorBuckets[i]
+                bestIdx = i
+            }
+        }
 
-        // ✅ Promedio directo: el color promedio real de la portada
-        return UIColor(
-            red: CGFloat(totalR / totalCount),
-            green: CGFloat(totalG / totalCount),
-            blue: CGFloat(totalB / totalCount),
-            alpha: 1
-        )
+        guard maxCount > 0 else { return nil }
+
+        // ✅ Promedio del bucket ganador para precisión
+        let count = Float(colorBuckets[bestIdx])
+        let r = bucketSums[bestIdx][0] / count
+        let g = bucketSums[bestIdx][1] / count
+        let b = bucketSums[bestIdx][2] / count
+
+        return UIColor(red: CGFloat(r), green: CGFloat(g), blue: CGFloat(b), alpha: 1)
     }
 
     /// ✅ SISTEMA DOS COLORES: extrae el segundo color dominante
-    /// Usa el promedio de píxeles con un offset del primario
+    /// Usa el mismo sistema de frecuencia para encontrar el segundo más común
     static func secondaryDominantColor(from artwork: UIImage, primary: UIColor) -> UIColor? {
-        let size = CGSize(width: 64, height: 64)
+        let size = CGSize(width: 80, height: 80)
         UIGraphicsBeginImageContextWithOptions(size, false, 1.0)
         artwork.draw(in: CGRect(origin: .zero, size: size))
         guard let cgImage = UIGraphicsGetImageFromCurrentImageContext()?.cgImage else {
@@ -377,7 +399,10 @@ enum AppTheme {
         ) else { return nil }
         ctx.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
 
-        var totalR: Float = 0, totalG: Float = 0, totalB: Float = 0, totalCount: Float = 0
+        // ✅ Sistema de cuantización igual que dominantColor
+        let levels = 8
+        var colorBuckets = [Int](repeating: 0, count: levels * levels * levels)
+        var bucketSums: [[Float]] = Array(repeating: Array(repeating: 0, count: 3), count: levels * levels * levels)
 
         for y in 0..<height {
             for x in 0..<width {
@@ -386,30 +411,42 @@ enum AppTheme {
                 let g = Float(data[off + 1]) / 255
                 let b = Float(data[off + 2]) / 255
                 let a = Float(data[off + 3]) / 255
-                guard a > 0.5 else { continue }
+                guard a > 0.6 else { continue }
 
-                totalR += r; totalG += g; totalB += b; totalCount += 1
+                let ri = min(levels - 1, Int(r * Float(levels)))
+                let gi = min(levels - 1, Int(g * Float(levels)))
+                let bi = min(levels - 1, Int(b * Float(levels)))
+                let idx = (bi * levels + gi) * levels + ri
+
+                colorBuckets[idx] += 1
+                bucketSums[idx][0] += r
+                bucketSums[idx][1] += g
+                bucketSums[idx][2] += b
             }
         }
 
-        guard totalCount > 0 else { return nil }
-
-        // ✅ Promedio simple del secundario
-        let avgR = totalR / totalCount
-        let avgG = totalG / totalCount
-        let avgB = totalB / totalCount
-
-        // ✅ Obtener RGB del primario y crear variación
+        // ✅ Obtener RGB del primario para evitar colores similares
         var primaryR: CGFloat = 0, primaryG: CGFloat = 0, primaryB: CGFloat = 0
         primary.getRed(&primaryR, green: &primaryG, blue: &primaryB, alpha: nil)
 
-        // ✅ Crear secundario como variación del primario (±20%)
-        let variation: CGFloat = 0.2
-        let secondaryR = min(1.0, max(0.0, primaryR + (Float.random(in: -variation...variation))))
-        let secondaryG = min(1.0, max(0.0, primaryG + (Float.random(in: -variation...variation))))
-        let secondaryB = min(1.0, max(0.0, primaryB + (Float.random(in: -variation...variation))))
+        // ✅ Encontrar el segundo bucket más frecuente que sea diferente del primario
+        var sortedBuckets = colorBuckets.enumerated().sorted { $0.element > $1.element }
+        for (idx, count) in sortedBuckets where count > 10 {
+            let ri = idx % levels
+            let gi = (idx / levels) % levels
+            let bi = idx / (levels * levels)
+            let r = bucketSums[idx][0] / Float(count)
+            let g = bucketSums[idx][1] / Float(count)
+            let b = bucketSums[idx][2] / Float(count)
 
-        return UIColor(red: CGFloat(secondaryR), green: CGFloat(secondaryG), blue: CGFloat(secondaryB), alpha: 1)
+            // ✅ Verificar si es suficientemente diferente del primario
+            let diff = abs(r - Float(primaryR)) + abs(g - Float(primaryG)) + abs(b - Float(primaryB))
+            if diff > 0.4 { // Diferencia mínima de 0.4 en RGB
+                return UIColor(red: CGFloat(r), green: CGFloat(g), blue: CGFloat(b), alpha: 1)
+            }
+        }
+
+        return nil
     }
 
     static func dominantColor(from uiColor: UIColor?) -> UIColor? {
