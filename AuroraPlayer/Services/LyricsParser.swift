@@ -11,6 +11,11 @@ class LyricsParser {
             return .none
         }
 
+        // ✅ DIAGNÓSTICO - VER FORMATO REAL: loggear los primeros 200 caracteres
+        // para ver qué formato real tienen las letras de los archivos de audio
+        let preview = String(trimmedLyrics.prefix(200))
+        AppLog.info(.playback, "🔍 LYRICS RAW (primeros 200 chars): \(preview)")
+
         // ✅ DETECCIÓN MEJORADA: Priorizar formatos word-by-word
         if hasWordByWordFormat(trimmedLyrics) {
             let result = parseWordByWord(trimmedLyrics)
@@ -35,6 +40,13 @@ class LyricsParser {
             return .synchronized(parseEnhancedLines(trimmedLyrics))
         }
 
+        // ✅ DETECCIÓN TTML: verificar si tiene formato <span begin/end>
+        if hasTTMLFormat(trimmedLyrics) {
+            AppLog.info(.playback, "Lyrics: formato TTML Apple Music detectado")
+            // TODO: Implementar parser TTML si se confirma este formato
+            return .plain(trimmedLyrics)
+        }
+
         AppLog.info(.playback, "Lyrics: formato plano detectado")
         return .plain(trimmedLyrics)
     }
@@ -45,7 +57,10 @@ class LyricsParser {
         let pattern = "\\[\\d{1,2}:\\d{2}(\\.\\d{1,3})?\\]"
         let regex = try? NSRegularExpression(pattern: pattern, options: [])
         let range = NSRange(location: 0, length: text.utf16.count)
-        return (regex?.numberOfMatches(in: text, options: [], range: range) ?? 0) > 2
+        // ✅ CRÍTICO - FIX LYRICS: reducido de >2 a >1 para detectar formatos con pocas líneas
+        // Muchas canciones tienen letras sincronizadas con solo 1-2 líneas, y el umbral
+        // anterior de >2 causaba que se detectaran como "no lyrics"
+        return (regex?.numberOfMatches(in: text, options: [], range: range) ?? 0) > 1
     }
 
     private static func hasWordByWordFormat(_ text: String) -> Bool {
@@ -54,7 +69,8 @@ class LyricsParser {
         let pattern1 = "<\\d{1,2}:\\d{2}(\\.\\d{1,3})?>"
         let regex1 = try? NSRegularExpression(pattern: pattern1, options: [])
         let range1 = NSRange(location: 0, length: text.utf16.count)
-        if (regex1?.numberOfMatches(in: text, options: [], range: range1) ?? 0) > 5 {
+        // ✅ CRÍTICO - FIX LYRICS: reducido de >5 a >3 para detectar más formatos
+        if (regex1?.numberOfMatches(in: text, options: [], range: range1) ?? 0) > 3 {
             return true
         }
 
@@ -64,8 +80,8 @@ class LyricsParser {
         let range2 = NSRange(location: 0, length: text.utf16.count)
         let lineCount = text.components(separatedBy: .newlines).count
         let matchCount = regex2?.numberOfMatches(in: text, options: [], range: range2) ?? 0
-        // Si hay más matches que líneas, probablemente es word-by-word
-        if matchCount > lineCount * 2 {
+        // ✅ CRÍTICO - FIX LYRICS: reducido de *2 a *1.5 para detectar más formatos
+        if matchCount > Int(Double(lineCount) * 1.5) {
             return true
         }
 
@@ -77,6 +93,15 @@ class LyricsParser {
         let regex = try? NSRegularExpression(pattern: pattern, options: [.anchorsMatchLines])
         let range = NSRange(location: 0, length: text.utf16.count)
         return (regex?.numberOfMatches(in: text, options: [], range: range) ?? 0) > 2
+    }
+
+    // ✅ DETECCIÓN TTML: formato Apple Music con <span begin="X" end="Y">
+    private static func hasTTMLFormat(_ text: String) -> Bool {
+        // Buscar patrón <span begin="..." end="...">
+        let pattern = "<span\\s+begin=\"[^\"]+\"\\s+end=\"[^\"]+\""
+        let regex = try? NSRegularExpression(pattern: pattern, options: [])
+        let range = NSRange(location: 0, length: text.utf16.count)
+        return (regex?.numberOfMatches(in: text, options: [], range: range) ?? 0) > 1
     }
 
     // MARK: - Parse LRC (line-by-line and word-by-word)

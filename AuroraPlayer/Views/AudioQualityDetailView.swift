@@ -141,7 +141,11 @@ struct AudioQualityDetailView: View {
                 .padding(.horizontal, 18)
                 .padding(.vertical, 7)
                 .background {
-                    Capsule().fill(AppTheme.accent)
+                    Capsule().fill(LinearGradient(
+                        colors: [AppTheme.accent, AppTheme.accent.opacity(0.7)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ))
                 }
                 .drawingGroup()
 
@@ -296,7 +300,11 @@ struct AudioQualityDetailView: View {
 
             // ✅ 60fps: punto de flujo estático
             Circle()
-                .fill(AppTheme.accent)
+                .fill(LinearGradient(
+                    colors: [AppTheme.accent, AppTheme.accent.opacity(0.5)],
+                    startPoint: .top,
+                    endPoint: .bottom
+                ))
                 .frame(width: 4, height: 4)
                 .offset(y: 9)
                 .opacity(1)
@@ -557,7 +565,11 @@ struct AudioQualityDetailView: View {
                     .frame(width: 32, height: 32)
                     .background {
                         RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .fill(AppTheme.accent)
+                            .fill(LinearGradient(
+                                colors: [AppTheme.accent, AppTheme.accent.opacity(0.6)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ))
                     }
                     .drawingGroup()
 

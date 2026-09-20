@@ -64,34 +64,3 @@ enum LyricsType {
     case synchronized(SynchronizedLyrics) // lyrics sincronizadas
 }
 
-// MARK: - MODELO APPLE MUSIC: Token de palabra con línea de tiempo absoluta en ms
-struct LyricsToken: Identifiable, Equatable {
-    let id: String
-    let text: String
-    let startMs: Int
-    let endMs: Int
-    let lineIndex: Int
-    let wordIndex: Int
-    
-    init(id: String, text: String, startMs: Int, endMs: Int, lineIndex: Int, wordIndex: Int) {
-        self.id = id
-        self.text = text
-        self.startMs = startMs
-        self.endMs = endMs
-        self.lineIndex = lineIndex
-        self.wordIndex = wordIndex
-    }
-    
-    static func == (lhs: LyricsToken, rhs: LyricsToken) -> Bool {
-        lhs.id == rhs.id
-    }
-}
-
-// MARK: - Estado del motor de lyrics en un momento dado
-struct LyricsState {
-    let activeTokenID: String?
-    let progress: Double
-    let activeLineIndex: Int
-    let previousTokenID: String?
-    let nextTokenID: String?
-}

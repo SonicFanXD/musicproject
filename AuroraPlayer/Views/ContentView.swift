@@ -360,7 +360,11 @@ struct ContentView: View {
                     .padding(.horizontal, 24)
                     .padding(.vertical, 14)
                     .background {
-                        Capsule().fill(AppTheme.accent)
+                        Capsule().fill(LinearGradient(
+                            colors: [AppTheme.accent, AppTheme.accent.opacity(0.7)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ))
                     }
                     .shadow(color: AppTheme.accent.opacity(0.35), radius: 10, x: 0, y: 5)
                 }
@@ -897,7 +901,11 @@ struct ContentView: View {
                         HStack(spacing: 2.5) {
                             ForEach(0..<3, id: \.self) { bar in
                                 RoundedRectangle(cornerRadius: 1)
-                                    .fill(AppTheme.accent)
+                                    .fill(LinearGradient(
+                                        colors: [AppTheme.accent, AppTheme.accent.opacity(0.5)],
+                                        startPoint: .top,
+                                        endPoint: .bottom
+                                    ))
                                     .frame(width: 2.5, height: bar % 2 == 0 ? 12 : 7)
                                     .animation(
                                         .easeInOut(duration: 0.4 + Double(bar) * 0.1).repeatForever(autoreverses: true),

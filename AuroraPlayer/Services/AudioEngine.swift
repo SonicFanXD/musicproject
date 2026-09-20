@@ -2,7 +2,6 @@ import Foundation
 import AVFoundation
 import MediaPlayer
 import UIKit
-import AudioToolbox
 
 // ✅ Reloj de reproducción aislado: publica el tiempo SOLO a las vistas que
 // lo necesitan (PlayerBar, NowPlaying, Lyrics). Antes `currentTime` era
@@ -352,14 +351,6 @@ class AudioEngine: NSObject, ObservableObject {
         return duration > 0 ? min(max(t, 0), duration) : max(t, 0)
     }
 
-    /// ✅ Acceso de solo lectura al reloj de pared para consumidores externos
-    /// (Canvas de lyrics a 60fps). A diferencia de `clock.time` (@Published,
-    /// solo se actualiza cada 0.4s/3s), esto se puede leer en CADA frame de
-    /// TimelineView(.animation) sin esperar al throttle del display timer.
-    var preciseElapsedTimeMs: Int {
-        Int((wallClockTime * 1000).rounded())
-    }
-
     // ✅ FIX "corte feo" entre canciones: recordar el formato ya conectado al
     // graph. Si la siguiente canción tiene el mismo formato, NO se detiene ni
     // reinicia el engine (solo se reprograma el nodo) → transición sin hueco.
@@ -414,10 +405,10 @@ class AudioEngine: NSObject, ObservableObject {
     private var equalizerNode: AVAudioUnitEQ?
     @Published var isEQEnabled: Bool = false
     @Published var eqPreset: EQPreset = .flat
-    // ✅ LIMITER: prevenir distorsión a volumen alto universalmente
+    // ✅ LIMITER: atenuación fija anti-distorsión (comportamiento de la versión
+    // previa a la iteración de lyrics: SIN Audio Unit en la cadena, para que la
+    // señal no pase por ningún procesador dinámico).
     @Published var isLimiterEnabled: Bool = true
-    // ✅ LIMITER REAL: AUPeakLimiter de Apple (disponible en iOS 16).
-    private var limiterNode: AVAudioUnitEffect?
     // ✅ BLUETOOTH OPTIMIZATION: ajustes para mejorar calidad en BT
     @Published var isBluetoothOptimizationEnabled: Bool = false
     // ✅ Audio Mono: mezcla ambos canales en uno para usuarios con audífono único
@@ -592,9 +583,12 @@ class AudioEngine: NSObject, ObservableObject {
             }
         }
 
-        // ✅ Reducir la frecuencia de actualización del display timer en
+        // ✅ REDUCIR la frecuencia de actualización del display timer en
         // segundo plano para ahorrar batería (el UI no necesita updates
-        // tan frecuentes cuando no se ve la pantalla).
+        // tan frecuentes cuando no se ve la pantalla), pero NO detenerlo
+        // completamente porque el sistema de lyrics depende de clock.time
+        // que se actualiza vía este timer. Si se detiene, las lyrics dejan
+        // de sincronizarse al volver a primer plano.
         startDisplayTimer(isBackground: true)
     }
 
@@ -777,17 +771,11 @@ class AudioEngine: NSObject, ObservableObject {
             // orden descendente con fallback robusto. iOS 16 en A11 (iPhone 8)
             // devuelve error -50 (paramErr) con 0.02, así que vamos bajando
             // hasta encontrar el menor soportado por el hardware/DAC actual.
-            // ✅ OPTIMIZACIÓN DE BATERÍA: un buffer levemente más largo (0.04s
-            // en vez de 0.02s) reduce el número de interrupciones del render
-            // thread sin degradar la calidad audible (el sample rate y la
-            // precisión se mantienen idénticos; solo cambia la latencia).
-            // ✅ BATERÍA (A11 / iPhone 8 Plus): en reproducción musical la latencia
-            // no importa. Un buffer LARGO = menos despertares del render thread
-            // por segundo = menos CPU y mucha más duración en segundo plano con
-            // la pantalla apagada (con 85ms despierta ~12 veces/s en vez de ~25).
-            // La calidad NO cambia: el sample rate y la precisión son idénticos.
-            // Se prueba de mayor a menor y se usa el primero que acepte el HW.
-            let bufferDurations: [TimeInterval] = [0.085, 0.064, 0.046, 0.04, 0.03]
+            // ✅ RESTAURADO: buffer de 40ms (idéntico a la versión previa a la
+            // iteración de lyrics). El buffer de 85ms agrandaba la granularidad
+            // con la que el render thread ve los fades/volumen de play/pause/skip
+            // y hacía menos reactiva la respuesta a los toques.
+            let bufferDurations: [TimeInterval] = [0.04, 0.03, 0.02, 0.05]
             for duration in bufferDurations {
                 do {
                     try session.setPreferredIOBufferDuration(duration)
@@ -845,29 +833,6 @@ class AudioEngine: NSObject, ObservableObject {
         equalizerNode = AVAudioUnitEQ(numberOfBands: 10)
         guard let eq = equalizerNode else { return }
 
-        // ✅ LIMITER REAL: AUPeakLimiter de Apple. SÍ está disponible en iOS 16
-        // (el comentario anterior era incorrecto). Antes el "limiter" era un EQ
-        // de 1 banda en bypass + una bajada fija de volumen: no limitaba nada.
-        // En bypass, una Audio Unit de Apple solo copia el buffer → coste ~0.
-        if let existingLimiter = limiterNode {
-            engine.detach(existingLimiter)
-        }
-        var limiterDesc = AudioComponentDescription()
-        limiterDesc.componentType = kAudioUnitType_Effect
-        limiterDesc.componentSubType = kAudioUnitSubType_PeakLimiter
-        limiterDesc.componentManufacturer = kAudioUnitManufacturer_Apple
-        let limiter = AVAudioUnitEffect(audioComponentDescription: limiterDesc)
-        // Attack rápido + release medio: transparente en música, sin bombeo.
-        AudioUnitSetParameter(limiter.audioUnit, kLimiterParam_AttackTime,
-                              kAudioUnitScope_Global, 0, 0.002, 0)
-        AudioUnitSetParameter(limiter.audioUnit, kLimiterParam_DecayTime,
-                              kAudioUnitScope_Global, 0, 0.060, 0)
-        AudioUnitSetParameter(limiter.audioUnit, kLimiterParam_PreGain,
-                              kAudioUnitScope_Global, 0, 0, 0)
-        limiter.bypass = !isLimiterEnabled
-        limiterNode = limiter
-        engine.attach(limiter)
-
         let frequencies: [Float] = [32, 64, 125, 250, 500, 1000, 2000, 4000, 8000, 16000]
         for (index, freq) in frequencies.enumerated() {
             let band = eq.bands[index]
@@ -906,9 +871,6 @@ class AudioEngine: NSObject, ObservableObject {
         if let eq = equalizerNode, !engine.outputConnectionPoints(for: eq, outputBus: 0).isEmpty {
             engine.disconnectNodeOutput(eq)
         }
-        if let lim = limiterNode, !engine.outputConnectionPoints(for: lim, outputBus: 0).isEmpty {
-            engine.disconnectNodeOutput(lim)
-        }
         if !engine.outputConnectionPoints(for: monoMixerNode, outputBus: 0).isEmpty {
             engine.disconnectNodeOutput(monoMixerNode)
         }
@@ -920,10 +882,6 @@ class AudioEngine: NSObject, ObservableObject {
         if let eq = equalizerNode {
             engine.connect(last, to: eq, format: format)
             last = eq
-        }
-        if let lim = limiterNode {
-            engine.connect(last, to: lim, format: format)
-            last = lim
         }
         if isMonoAudioEnabled {
             engine.connect(last, to: monoMixerNode, format: format)
@@ -992,10 +950,9 @@ class AudioEngine: NSObject, ObservableObject {
     /// ✅ MÁXIMA CALIDAD: el nodo EQ solo procesa cuando hace falta. "Flat"
     /// (ganancias a 0) → bypass total del AVAudioUnitEQ → la señal pasa por la
     /// ruta limpia sin 10 biquads en cascada (cero redondeo acumulado y cero
-    /// CPU extra por buffer). El limiter sigue el mismo criterio.
+    /// CPU extra por buffer).
     private func updateEQBypassState() {
         equalizerNode?.bypass = !(isEQEnabled && eqPreset != .flat)
-        limiterNode?.bypass = !isLimiterEnabled
         applyOutputGain()
     }
 
@@ -1023,20 +980,25 @@ class AudioEngine: NSObject, ObservableObject {
         let session = AVAudioSession.sharedInstance()
         do {
             try session.setPreferredSampleRate(44100)
-            // Buffer largo: el enlace BT ya arrastra ~150ms de latencia propia,
-            // un buffer corto solo gastaría batería sin ganar nada audible.
-            try session.setPreferredIOBufferDuration(0.085)
-            AppLog.info(.playback, "Sesión optimizada para BT: 44.1kHz, buffer 85ms")
+            // ✅ RESTAURADO: buffer de 40ms (igual que la ruta general).
+            try session.setPreferredIOBufferDuration(0.04)
+            AppLog.info(.playback, "Sesión optimizada para BT: 44.1kHz, buffer 40ms")
         } catch {
             AppLog.error(.playback, error, context: "configureSessionWithBluetoothOptimization")
         }
     }
 
-    /// ✅ GANANCIA DE SALIDA ÚNICA (anti-clipping). Antes había DOS funciones
-    /// escribiendo mainMixerNode.outputVolume: applyEQHeadroom ponía el headroom
-    /// del EQ y tres líneas después el limiter lo sobrescribía con 0.95 → con el
-    /// preset "Bajos" (+8 dB) el realce recortaba en el DAC, justo donde el
-    /// usuario pedía más graves. Ahora se calcula todo junto y se escribe UNA vez.
+    /// ✅ GANANCIA DE SALIDA (anti-clipping). Mantiene el nivel base de la
+    /// versión previa a la iteración de lyrics (0.95 con el ajuste activo,
+    /// 1.0 sin él) y conserva el headroom del EQ cuando el EQ procesa: si el
+    /// realce (p. ej. preset "Bajos" +8 dB) no se atenúa, recorta en el DAC.
+    /// Antes había DOS funciones escribiendo mainMixerNode.outputVolume y el
+    /// headroom se perdía; ahora se calcula todo junto y se escribe UNA vez.
+    /// ✅ CRÍTICO - CALIDAD BIT-PERFECT: el limiter SOLO se aplica cuando
+    // está explícitamente activado. Cuando está desactivado, la ganancia base
+    // es 1.0 (sin atenuación) para garantizar que la señal pase sin degradación.
+    // El headroom del EQ se aplica siempre que el EQ esté procesando para
+    // prevenir clipping real, independientemente del estado del limiter.
     private func applyOutputGain() {
         let processing = isEQEnabled && eqPreset != .flat
         var maxGain: Float = 0
@@ -1051,25 +1013,15 @@ class AudioEngine: NSObject, ObservableObject {
             }
             maxGain = max(single, pair)
         }
-        // Margen anti-clipping: el encoder AAC del enlace Bluetooth puede
-        // sobrepasar 1-2 dB los picos intersample de un máster moderno y
-        // recortar YA DENTRO del auricular, donde no hay nada que hacer.
-        let safety: Float = (isLimiterEnabled || isBluetoothRoute) ? 1.0 : 0.0
-        let total = min(maxGain + safety, 12)
-        engine.mainMixerNode.outputVolume = total > 0 ? pow(10, -total / 20) : 1.0
-    }
-
-    /// ✅ Calidad del remuestreador interno del mainMixer (0-127). Solo actúa
-    /// cuando hay conversión de tasa; si el reloj del DAC coincide con el del
-    /// archivo no cuesta absolutamente nada.
-    /// En Bluetooth se usa "alta" (96) en vez de "máxima": el códec AAC del
-    /// enlace ya es el cuello de botella y en un A11 la diferencia de CPU sí
-    /// se nota en la batería.
-    private func applyMixerRenderQuality() {
-        // ✅ FIX iOS 16: AVAudioMixerNode no expone audioUnit directamente
-        // La calidad de renderizado se configura a nivel de engine o session
-        // En iOS 16, esto no es accesible directamente desde AVAudioMixerNode
-        // Se deja como placeholder para futuras implementaciones
+        // ✅ NIVEL BASE: 1.0 cuando el limiter está desactivado (bit-perfect),
+        // 0.95 cuando está activo (anti-clipping preventivo).
+        let base: Float = isLimiterEnabled ? 0.95 : 1.0
+        // ✅ HEADROOM DEL EQ: atenuación equivalente al realce máximo del EQ
+        // (misma fórmula que la versión previa, ahora sin doble escritura).
+        // El headroom del EQ se aplica SIEMPRE que el EQ esté procesando para
+        // prevenir clipping real, independientemente del estado del limiter.
+        let eqAttenuation: Float = maxGain > 0 ? pow(10, -min(maxGain, 9) / 20) : 1
+        engine.mainMixerNode.outputVolume = base * eqAttenuation
     }
 
     func setEQGain(for band: Int, gain: Float) {
@@ -1289,7 +1241,6 @@ class AudioEngine: NSObject, ObservableObject {
             // ✅ Reconectar el graph y relanzar el engine desde estado limpio.
             reconnectPlayerNode(format: file.processingFormat)
             try startEngineSafely()
-            applyMixerRenderQuality()
 
             currentSong = song
             isPlaying = true
@@ -1321,8 +1272,10 @@ class AudioEngine: NSObject, ObservableObject {
             // ✅ FIX punto aleatorio: tras engine.stop(), el reloj interno del nodo
             // (sampleTime) no se resetea hasta el proximo render. Programar + play
             // inmediato arranca desde un punto residual al azar por milisegundos.
-            // ✅ FIX DELAY: reducido a 0.02s para respuesta casi inmediata
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.02) { [weak self] in
+            // ✅ RESTAURADO: 0.1s. Ese margen da tiempo al render thread a
+            // resetear el timeline del nodo antes de programar + play; con 0.02s
+            // se podía arrancar desde un punto residual (glitch al iniciar).
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
                 guard let self = self,
                       self.scheduleGeneration == currentGeneration,
                       !self.isStopping else { return }
@@ -1474,9 +1427,10 @@ class AudioEngine: NSObject, ObservableObject {
             wallAnchor = CACurrentMediaTime()
         }
         clock.time = currentTime
-        // ✅ FIX DELAY: reducir fade anti-pop de 30ms a 10ms para respuesta más inmediata
-        rampMixerVolume(to: 0, duration: 0.01)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.01) { [weak self] in
+        // ✅ RESTAURADO: fade anti-pop de 30ms (versión previa). Con 10ms el
+        // fade podía caer dentro de un mismo buffer y volver el "pop" al pausar.
+        rampMixerVolume(to: 0, duration: 0.03)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) { [weak self] in
             guard let self, !self.isPlaying else { return }
             if self.playerNode.isPlaying {
                 self.playerNode.pause()
@@ -1541,10 +1495,9 @@ class AudioEngine: NSObject, ObservableObject {
     }
 
     func resume() {
-        // ✅ ANTI-DOBLE-RESUME: ya reproduciendo + llamada duplicada en 50ms
-        // (reducido de 100ms para respuesta más inmediata).
+        // ✅ ANTI-DOBLE-RESUME: ya reproduciendo + llamada duplicada en 100ms.
         let now = CACurrentMediaTime()
-        if isPlaying, now - lastResumeCallTime < 0.05 {
+        if isPlaying, now - lastResumeCallTime < 0.1 {
             return
         }
         lastResumeCallTime = now
@@ -1574,6 +1527,15 @@ class AudioEngine: NSObject, ObservableObject {
                         // desde la posición guardada.
                         playCurrentSong(resumingAt: min(max(currentTime, 0), max(song.duration - 0.05, 0)))
                     } else if let file = audioFile {
+                        // ✅ CRÍTICO - ESTABILIDAD: verificar que el archivo existe antes
+                        // de intentar reactivar el engine. Si el archivo fue borrado o
+                        // movido mientras la app estaba en segundo plano, esto previene
+                        // un crash al intentar reconectar el grafo con un archivo inválido.
+                        guard FileManager.default.fileExists(atPath: file.url.path) else {
+                            AppLog.warning(.playback, "resume(): archivo ya no existe en disco: \(file.url.lastPathComponent)")
+                            self.stop()
+                            return
+                        }
                         try startEngineSafely()
                         let position = min(max(currentTime, 0), duration)
                         anchorPlaybackPosition(position)
@@ -1671,12 +1633,23 @@ class AudioEngine: NSObject, ObservableObject {
                 // Regenerar lista mezclada cuando se agota
                 shuffledPlaylist = playlist.shuffled()
                 shuffleIndex = 0
+                // ✅ CRÍTICO - ESTABILIDAD: verificar que la lista mezclada no quede vacía
+                // después de remover la canción actual. Si la playlist tiene solo 1 canción
+                // o todas las canciones son la misma, la mezcla podría dejar la lista vacía.
+                guard !shuffledPlaylist.isEmpty else {
+                    // Fallback: reproducir la misma canción (repeat-one behavior)
+                    return currentIndex
+                }
                 // Asegurar que la primera no sea la actual
                 if let currentIdx = shuffledPlaylist.firstIndex(where: { $0.id == playlist[currentIndex].id }) {
                     shuffledPlaylist.remove(at: currentIdx)
                     if shuffleIndex >= shuffledPlaylist.count {
                         shuffleIndex = 0
                     }
+                }
+                // ✅ Verificar nuevamente después de remover la canción actual
+                guard !shuffledPlaylist.isEmpty else {
+                    return currentIndex
                 }
             }
             // Obtener siguiente de la lista mezclada
@@ -2314,12 +2287,11 @@ class AudioEngine: NSObject, ObservableObject {
             let bitPerfect = sourceRate > 0 && abs(newRate - sourceRate) < 1
             self.isBitPerfect = bitPerfect
 
-            // ✅ La ganancia de salida y la calidad del remuestreo dependen de
-            // la ruta (BT vs cable): recalcular al cambiar de salida. Va aquí
-            // porque la función tiene un guard que la corta si no hubo cambios
-            // reales, así que no se ejecuta en bucle ni gasta batería.
+            // ✅ La ganancia de salida se recalcula al cambiar de salida porque
+            // el headroom anti-clipping se combina con el ajuste de limiter.
+            // Va aquí porque la función tiene un guard que la corta si no hubo
+            // cambios reales, así que no se ejecuta en bucle ni gasta batería.
             self.applyOutputGain()
-            self.applyMixerRenderQuality()
             
             // ✅ AUDIÓFILO: detectar codec Bluetooth (iOS no expone el codec directamente,
             // pero podemos inferir información por el tipo de puerto y nombre del dispositivo)

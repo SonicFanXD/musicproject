@@ -306,7 +306,11 @@ struct PlaylistsView: View {
                             .background {
                                 ZStack {
                                     RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                        .fill(AppTheme.accent)
+                                        .fill(LinearGradient(
+                                            colors: [AppTheme.accent, AppTheme.accent.opacity(0.7)],
+                                            startPoint: .topLeading,
+                                            endPoint: .bottomTrailing
+                                        ))
 
                                     RoundedRectangle(cornerRadius: 16, style: .continuous)
                                         .fill(
@@ -535,7 +539,11 @@ struct PlaylistDetailView: View {
                         .padding(.vertical, 18) // Expanded touch target (15→18)
                         .background {
                             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                .fill(AppTheme.accent)
+                                .fill(LinearGradient(
+                                    colors: [AppTheme.accent, AppTheme.accent.opacity(0.7)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                ))
                         }
                         .contentShape(Rectangle())
                         .shadow(color: AppTheme.accent.opacity(0.35), radius: 10, x: 0, y: 5)
@@ -631,7 +639,11 @@ struct PlaylistDetailView: View {
                         HStack(spacing: 3) {
                             ForEach(0..<3, id: \.self) { bar in
                                 RoundedRectangle(cornerRadius: 1.5)
-                                    .fill(AppTheme.accent)
+                                    .fill(LinearGradient(
+                                        colors: [AppTheme.accent, AppTheme.accent.opacity(0.5)],
+                                        startPoint: .top,
+                                        endPoint: .bottom
+                                    ))
                                     .frame(width: 3, height: bar % 2 == 0 ? 14 : 9)
                                     .animation(
                                         .easeInOut(duration: 0.45 + Double(bar) * 0.12)
@@ -743,7 +755,11 @@ struct PlaylistDetailView: View {
                             .background {
                                 ZStack {
                                     RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                        .fill(AppTheme.accent)
+                                        .fill(LinearGradient(
+                                            colors: [AppTheme.accent, AppTheme.accent.opacity(0.7)],
+                                            startPoint: .topLeading,
+                                            endPoint: .bottomTrailing
+                                        ))
 
                                     RoundedRectangle(cornerRadius: 16, style: .continuous)
                                         .fill(

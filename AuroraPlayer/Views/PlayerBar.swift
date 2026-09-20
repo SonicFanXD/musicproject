@@ -25,6 +25,8 @@ struct PlayerBar: View {
     // ✅ Observar ThemeManager para que los cambios de acento (manual o desde carátula)
     // se apliquen instantáneamente sin necesidad de cambiar de canción.
     @ObservedObject private var theme = ThemeManager.shared
+    // ✅ CRÍTICO - BATERÍA: observar scenePhase para detener animaciones en segundo plano
+    @Environment(\.scenePhase) private var scenePhase
 
     // ✅ Color dominante del artwork para indicadores dinámicos
     // Observa ThemeManager: si "Acento desde portada" está activo, usa el color
@@ -146,6 +148,15 @@ struct PlayerBar: View {
                                             value: audioEngine.isPlaying
                                         )
                                         .drawingGroup()
+                                        // ✅ CRÍTICO - BATERÍA: detener la animación cuando la app pasa a
+                                        // segundo plano para ahorrar CPU/GPU. La animación repeatForever
+                                        // consume recursos incluso cuando no es visible.
+                                        .onChange(of: scenePhase) { newPhase in
+                                            if newPhase == .background {
+                                                // Detener animación explícitamente
+                                                animation(nil)
+                                            }
+                                        }
 
                                     Image(systemName: audioEngine.isPlaying ? "pause.fill" : "play.fill")
                                         .font(.system(size: 16, weight: .bold))

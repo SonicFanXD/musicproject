@@ -71,6 +71,9 @@ final class ThemeManager: ObservableObject {
             if let secondary = AppTheme.secondaryDominantColor(from: artwork, primary: cached) {
                 artworkSecondaryUIColor = secondary
                 artworkSecondaryColor = Self.normalizeArtworkAccent(secondary)
+                AppLog.info(.playback, "✅ PALETA DOS COLORES: secundario encontrado (cache)")
+            } else {
+                AppLog.info(.playback, "⚠️ PALETA DOS COLORES: sin secundario (cache)")
             }
             applyGlobalUIKitTint()
             return
@@ -87,6 +90,9 @@ final class ThemeManager: ObservableObject {
                 if let secondary = secondary {
                     self.artworkSecondaryUIColor = secondary
                     self.artworkSecondaryColor = Self.normalizeArtworkAccent(secondary)
+                    AppLog.info(.playback, "✅ PALETA DOS COLORES: secundario encontrado (nuevo)")
+                } else {
+                    AppLog.info(.playback, "⚠️ PALETA DOS COLORES: sin secundario (nuevo)")
                 }
                 self.applyGlobalUIKitTint()
             }
@@ -438,7 +444,10 @@ enum AppTheme {
 
             // ✅ Verificar si es suficientemente diferente del primario
             let diff = abs(r - Float(primaryR)) + abs(g - Float(primaryG)) + abs(b - Float(primaryB))
-            if diff > 0.3 { // Diferencia mínima de 0.3 en RGB (reducido de 0.4 para más opciones)
+            if diff > 0.15 { // ✅ CRÍTICO - PALETA DOS COLORES: reducido de 0.3 a 0.15
+                // para permitir más secundarios. El umbral anterior era muy estricto
+                // y muchas carátulas no tenían un secundario lo suficientemente diferente,
+                // causando que el gradiente de dos colores nunca se aplicara.
                 return UIColor(red: CGFloat(r), green: CGFloat(g), blue: CGFloat(b), alpha: 1)
             }
         }

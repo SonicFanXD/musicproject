@@ -59,6 +59,10 @@ struct AudioVisualizer: View {
     @State private var phase: Double = 0
     @State private var isVisible = false
     @State private var smoothedAmplitudes: [CGFloat] = Array(repeating: 0.08, count: 24)
+    // ✅ CRÍTICO - BATERÍA: observar scenePhase para detener el visualizador
+    // cuando la app pasa a segundo plano, incluso si la vista sigue visible
+    // (ej. NowPlaying abierto antes de bloquear la pantalla).
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         GeometryReader { geometry in
@@ -120,6 +124,17 @@ struct AudioVisualizer: View {
         // de bajo consumo/térmico, sin reiniciar el CADisplayLink.
         .onReceive(frameRate.$fps) { fps in
             displayLink?.preferredFramesPerSecond = fps
+        }
+        // ✅ CRÍTICO - BATERÍA: detener el visualizador cuando la app pasa a
+        // segundo plano para ahorrar CPU/GPU. Reanudar al volver a primer plano.
+        .onChange(of: scenePhase) { newPhase in
+            if newPhase == .background {
+                stopVisualization()
+                isVisible = false
+            } else if newPhase == .active && audioEngine.isPlaying {
+                isVisible = true
+                startVisualization()
+            }
         }
     }
 
@@ -221,6 +236,17 @@ struct CircularAudioVisualizer: View {
         // de bajo consumo/térmico, sin reiniciar el CADisplayLink.
         .onReceive(frameRate.$fps) { fps in
             displayLink?.preferredFramesPerSecond = fps
+        }
+        // ✅ CRÍTICO - BATERÍA: detener el visualizador cuando la app pasa a
+        // segundo plano para ahorrar CPU/GPU. Reanudar al volver a primer plano.
+        .onChange(of: scenePhase) { newPhase in
+            if newPhase == .background {
+                stopVisualization()
+                isVisible = false
+            } else if newPhase == .active && audioEngine.isPlaying {
+                isVisible = true
+                startVisualization()
+            }
         }
     }
 

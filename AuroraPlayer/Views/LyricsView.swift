@@ -345,7 +345,11 @@ struct LyricsView: View {
                             .frame(height: 2)
 
                         RoundedRectangle(cornerRadius: 1.5)
-                            .fill(AppTheme.accent)
+                            .fill(LinearGradient(
+                                colors: [AppTheme.accent, AppTheme.accent.opacity(0.6)],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            ))
                             .frame(width: geo.size.width * CGFloat(progress), height: 2)
                     }
                 }
@@ -415,8 +419,16 @@ struct LyricsView: View {
                 if timeDiff >= 0 {
                     let nextWordTime = startIndex + index + 1 < words.count ? words[startIndex + index + 1].time : word.time + 0.5
                     let estimatedDuration = nextWordTime - word.time
-                    if estimatedDuration > 0 {
-                        newProgress[word.id] = min(1.0, max(0.0, timeDiff / estimatedDuration))
+                    // ✅ CRÍTICO - WORD-BY-WORD: usar un valor dinámico basado en el tempo
+                    // de la canción en lugar de un fijo de 0.5s. Para canciones rápidas,
+                    // 0.5s puede ser demasiado largo y causar que el progreso se quede
+                    // "atascado" en 1.0 antes de la siguiente palabra. Usamos la distancia
+                    // promedio entre palabras como referencia para el tempo.
+                    let avgWordSpacing = words.count > 1 ? (words.last!.time - words.first!.time) / Double(words.count - 1) : 0.3
+                    let fallbackDuration = max(0.2, min(0.5, avgWordSpacing))
+                    let finalDuration = estimatedDuration > 0 ? estimatedDuration : fallbackDuration
+                    if finalDuration > 0 {
+                        newProgress[word.id] = min(1.0, max(0.0, timeDiff / finalDuration))
                     } else {
                         newProgress[word.id] = min(1.0, timeDiff * 2.0)
                     }
@@ -430,6 +442,10 @@ struct LyricsView: View {
     // MARK: - Parse Lyrics (con precomputo de palabras por línea)
     private func parseLyrics() {
         guard let lyrics = song?.lyrics, !lyrics.isEmpty else {
+            // ✅ DIAGNÓSTICO: permite distinguir en Logs entre "la canción no
+            // trae letras en la metadata" y "las letras se detectaron pero con
+            // otro formato". Ambos casos pintaban la misma pantalla vacía.
+            AppLog.info(.playback, "Lyrics: sin letras en metadata para '\(song?.displayName ?? "?")'")
             parsedLyrics = .none
             wordsByLine = []
             return
