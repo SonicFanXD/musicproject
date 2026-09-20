@@ -95,9 +95,10 @@ class LyricsParser {
 
             guard !timestamps.isEmpty, !textContent.isEmpty else { continue }
 
-            // Word-by-word: multiple timestamps with single words
-            if timestamps.count > 1 && timestamps.count <= textContent.components(separatedBy: " ").count + 2 {
-                let words = textContent.components(separatedBy: " ")
+            // Word-by-word: multiple timestamps con palabras individuales
+            // ✅ MEJORA: separación más robusta de palabras
+            let words = textContent.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
+            if timestamps.count > 1 && timestamps.count == words.count {
                 for (index, timestamp) in timestamps.enumerated() {
                     if index < words.count {
                         let word = cleanText(words[index])
