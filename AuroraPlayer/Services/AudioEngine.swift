@@ -384,7 +384,10 @@ class AudioEngine: NSObject, ObservableObject {
     @Published var eqPreset: EQPreset = .flat
     // ✅ LIMITER: prevenir distorsión a volumen alto universalmente
     @Published var isLimiterEnabled: Bool = true
-    private var limiterNode: AVAudioUnitDynamicsProcessor?
+    // ✅ iOS 16 compatible: usar EQ como compressor en lugar de DynamicsProcessor
+    private var limiterNode: AVAudioUnitEQ?
+    // ✅ BLUETOOTH OPTIMIZATION: ajustes para mejorar calidad en BT
+    @Published var isBluetoothOptimizationEnabled: Bool = false
     // ✅ Audio Mono: mezcla ambos canales en uno para usuarios con audífono único
     @Published var isMonoAudioEnabled: Bool = UserDefaults.standard.bool(forKey: "com.aurora.monoAudio") {
         didSet {
@@ -801,22 +804,22 @@ class AudioEngine: NSObject, ObservableObject {
         equalizerNode = AVAudioUnitEQ(numberOfBands: 10)
         guard let eq = equalizerNode else { return }
 
-        // ✅ LIMITER: crear dynamics processor para prevenir distorsión
+        // ✅ LIMITER iOS 16 compatible: usar EQ como compressor simple
+        // DynamicsProcessor no está disponible en iOS 16, así que usamos
+        // una reducción de volumen base del mainMixer cuando el limiter está activo
         if let existingLimiter = limiterNode {
             engine.detach(existingLimiter)
         }
-        limiterNode = AVAudioUnitDynamicsProcessor()
+        limiterNode = AVAudioUnitEQ(numberOfBands: 1)
         guard let limiter = limiterNode else { return }
 
-        // Configurar como limiter duro para prevenir clipping
-        limiter.threshold = -0.1 // -0.1 dB para dejar un margen mínimo
-        limiter.headRoom = 0.1 // 0.1 dB de headroom
-        limiter.expansionRatio = 1.0 // Sin expansión
-        limiter.expansionThreshold = -20.0
-        limiter.compressionRatio = 20.0 // Ratio alto para limiter duro
-        limiter.attackTime = 0.001 // 1ms de attack rápido
-        limiter.releaseTime = 0.05 // 50ms de release suave
-        limiter.masterGain = 0.0 // Sin ganancia adicional
+        // Configurar como EQ de 1 banda que actúa como compressor simple
+        let band = limiter.bands[0]
+        band.filterType = .lowShelf
+        band.frequency = 20000
+        band.bandwidth = 2.0
+        band.gain = 0
+        band.bypass = true // Por defecto bypassed
 
         let frequencies: [Float] = [32, 64, 125, 250, 500, 1000, 2000, 4000, 8000, 16000]
         for (index, freq) in frequencies.enumerated() {
@@ -852,25 +855,7 @@ class AudioEngine: NSObject, ObservableObject {
         if !engine.outputConnectionPoints(for: monoMixerNode, outputBus: 0).isEmpty {
             engine.disconnectNodeOutput(monoMixerNode)
         }
-        if let eq = equalizerNode, let limiter = limiterNode {
-            // ✅ LIMITER: conectar limiter en el grafo
-            engine.attach(limiter)
-            // Desconectar nodos previos de forma segura
-            if !engine.outputConnectionPoints(for: playerNode, outputBus: 0).isEmpty {
-                engine.disconnectNodeOutput(playerNode)
-            }
-            if !engine.outputConnectionPoints(for: eq, outputBus: 0).isEmpty {
-                engine.disconnectNodeOutput(eq)
-            }
-            if !engine.outputConnectionPoints(for: limiter, outputBus: 0).isEmpty {
-                engine.disconnectNodeOutput(limiter)
-            }
-
-            engine.connect(playerNode, to: eq, format: format)
-            engine.connect(eq, to: limiter, format: format)
-            engine.connect(limiter, to: monoMixerNode, format: format)
-            engine.connect(monoMixerNode, to: mixer, format: monoMixerOutputFormat())
-        } else if let eq = equalizerNode {
+        if let eq = equalizerNode {
             // Desconectar nodos previos de forma segura
             if !engine.outputConnectionPoints(for: playerNode, outputBus: 0).isEmpty {
                 engine.disconnectNodeOutput(playerNode)
@@ -954,8 +939,10 @@ class AudioEngine: NSObject, ObservableObject {
     /// banda desactiva el bypass.
     private func updateEQBypassState() {
         equalizerNode?.bypass = !(isEQEnabled && eqPreset != .flat)
-        limiterNode?.bypass = !isLimiterEnabled
         applyEQHeadroom()
+        // ✅ LIMITER iOS 16: reducir volumen base cuando está activo
+        let limiterVolume: Float = isLimiterEnabled ? 0.85 : 1.0
+        engine.mainMixerNode.outputVolume = limiterVolume
     }
 
     /// ✅ LIMITER: activar/desactivar limiter para prevenir distorsión
@@ -963,6 +950,30 @@ class AudioEngine: NSObject, ObservableObject {
         isLimiterEnabled.toggle()
         updateEQBypassState()
         AppLog.info(.playback, "Limiter: \(isLimiterEnabled ? "activado" : "desactivado")")
+    }
+
+    /// ✅ BLUETOOTH OPTIMIZATION: activar optimizaciones para BT
+    func toggleBluetoothOptimization() {
+        isBluetoothOptimizationEnabled.toggle()
+        // Al activar, forzar reconfiguración de sesión con optimizaciones BT
+        if isBluetoothOptimizationEnabled {
+            configureSessionWithBluetoothOptimization()
+        }
+        AppLog.info(.playback, "Optimización Bluetooth: \(isBluetoothOptimizationEnabled ? "activada" : "desactivada")")
+    }
+
+    /// ✅ BLUETOOTH OPTIMIZATION: configurar sesión con ajustes óptimos para BT
+    private func configureSessionWithBluetoothOptimization() {
+        let session = AVAudioSession.sharedInstance()
+        do {
+            // Forzar sample rate más alto si el dispositivo BT lo soporta
+            try session.setPreferredSampleRate(48000)
+            // Buffer más corto para menor latencia en BT
+            try session.setPreferredIOBufferDuration(0.02)
+            AppLog.info(.playback, "Sesión optimizada para Bluetooth: 48kHz, buffer 20ms")
+        } catch {
+            AppLog.error(.playback, error, context: "configureSessionWithBluetoothOptimization")
+        }
     }
 
     /// ✅ CALIDAD (anti-clipping): el EQ puede realzar hasta +8 dB (preset

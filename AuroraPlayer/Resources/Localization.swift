@@ -196,6 +196,8 @@ final class Localization: ObservableObject {
             "settings.audioModeSubtitle": [.spanish: "Measurement desactiva procesamiento del sistema", .english: "Measurement disables system processing"],
             "settings.limiter": [.spanish: "Anti-distorsión", .english: "Anti-distortion"],
             "settings.limiterSubtitle": [.spanish: "Evita distorsión a volumen alto en cualquier dispositivo", .english: "Prevents distortion at high volume on any device"],
+            "settings.bluetoothOptimization": [.spanish: "Optimización Bluetooth", .english: "Bluetooth Optimization"],
+            "settings.bluetoothOptimizationSubtitle": [.spanish: "Mejora calidad en dispositivos Bluetooth (48kHz, buffer corto)", .english: "Improves quality on Bluetooth devices (48kHz, short buffer)"],
             "audio.quality.title": [.spanish: "Calidad de audio", .english: "Audio Quality"],
             "audio.quality.close": [.spanish: "Cerrar", .english: "Close"],
             "audio.quality.stereo": [.spanish: "Estéreo", .english: "Stereo"],
