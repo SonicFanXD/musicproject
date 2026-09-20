@@ -2,6 +2,7 @@ import Foundation
 import AVFoundation
 import MediaPlayer
 import UIKit
+import AudioToolbox
 
 // ✅ Reloj de reproducción aislado: publica el tiempo SOLO a las vistas que
 // lo necesitan (PlayerBar, NowPlaying, Lyrics). Antes `currentTime` era
@@ -350,6 +351,15 @@ class AudioEngine: NSObject, ObservableObject {
         // ✅ Clampear para la UI (barra de progreso no debe pasar 100%).
         return duration > 0 ? min(max(t, 0), duration) : max(t, 0)
     }
+
+    /// ✅ Acceso de solo lectura al reloj de pared para consumidores externos
+    /// (Canvas de lyrics a 60fps). A diferencia de `clock.time` (@Published,
+    /// solo se actualiza cada 0.4s/3s), esto se puede leer en CADA frame de
+    /// TimelineView(.animation) sin esperar al throttle del display timer.
+    var preciseElapsedTimeMs: Int {
+        Int((wallClockTime * 1000).rounded())
+    }
+
     // ✅ FIX "corte feo" entre canciones: recordar el formato ya conectado al
     // graph. Si la siguiente canción tiene el mismo formato, NO se detiene ni
     // reinicia el engine (solo se reprograma el nodo) → transición sin hueco.
@@ -378,14 +388,36 @@ class AudioEngine: NSObject, ObservableObject {
         didSet { updateIdleTimer() }
     }
 
+    // ✅ Ruta de salida actual SIN consultar AVAudioSession en cada llamada:
+    // outputPortType ya se actualiza en cada cambio de ruta (coste ~0 y no
+    // despierta el servidor de audio, importante para la batería en A11).
+    private var currentPortType: String {
+        outputPortType.isEmpty
+            ? (AVAudioSession.sharedInstance().currentRoute.outputs.first?.portType.rawValue ?? "")
+            : outputPortType
+    }
+
+    private var isBluetoothRoute: Bool {
+        let t = currentPortType
+        return t == AVAudioSession.Port.bluetoothA2DP.rawValue ||
+               t == AVAudioSession.Port.bluetoothLE.rawValue ||
+               t == AVAudioSession.Port.bluetoothHFP.rawValue
+    }
+
+    private var isWiredRoute: Bool {
+        let t = currentPortType
+        return t == AVAudioSession.Port.headphones.rawValue ||
+               t == AVAudioSession.Port.usbAudio.rawValue
+    }
+
     // MARK: - Equalizador
     private var equalizerNode: AVAudioUnitEQ?
     @Published var isEQEnabled: Bool = false
     @Published var eqPreset: EQPreset = .flat
     // ✅ LIMITER: prevenir distorsión a volumen alto universalmente
     @Published var isLimiterEnabled: Bool = true
-    // ✅ iOS 16 compatible: usar EQ como compressor en lugar de DynamicsProcessor
-    private var limiterNode: AVAudioUnitEQ?
+    // ✅ LIMITER REAL: AUPeakLimiter de Apple (disponible en iOS 16).
+    private var limiterNode: AVAudioUnitEffect?
     // ✅ BLUETOOTH OPTIMIZATION: ajustes para mejorar calidad en BT
     @Published var isBluetoothOptimizationEnabled: Bool = false
     // ✅ Audio Mono: mezcla ambos canales en uno para usuarios con audífono único
@@ -721,7 +753,10 @@ class AudioEngine: NSObject, ObservableObject {
         
         // ✅ AUDIÓFILO: obtener el modo preferido de configuración
         let modeIndex = UserDefaults.standard.integer(forKey: "com.aurora.audioSessionMode")
-        let sessionMode: AVAudioSession.Mode = modeIndex == 1 ? .measurement : .default
+        // ✅ .measurement desactiva el procesamiento del sistema (ideal por cable),
+        // pero en Bluetooth y altavoz interno puede forzar tasas bajas y rutas
+        // inestables. Se aplica SOLO en salidas cableadas (jack / USB DAC).
+        let sessionMode: AVAudioSession.Mode = (modeIndex == 1 && isWiredRoute) ? .measurement : .default
         
         do {
             var options: AVAudioSession.CategoryOptions = [.allowBluetoothA2DP]
@@ -746,7 +781,13 @@ class AudioEngine: NSObject, ObservableObject {
             // en vez de 0.02s) reduce el número de interrupciones del render
             // thread sin degradar la calidad audible (el sample rate y la
             // precisión se mantienen idénticos; solo cambia la latencia).
-            let bufferDurations: [TimeInterval] = [0.04, 0.03, 0.02, 0.05]
+            // ✅ BATERÍA (A11 / iPhone 8 Plus): en reproducción musical la latencia
+            // no importa. Un buffer LARGO = menos despertares del render thread
+            // por segundo = menos CPU y mucha más duración en segundo plano con
+            // la pantalla apagada (con 85ms despierta ~12 veces/s en vez de ~25).
+            // La calidad NO cambia: el sample rate y la precisión son idénticos.
+            // Se prueba de mayor a menor y se usa el primero que acepte el HW.
+            let bufferDurations: [TimeInterval] = [0.085, 0.064, 0.046, 0.04, 0.03]
             for duration in bufferDurations {
                 do {
                     try session.setPreferredIOBufferDuration(duration)
@@ -804,22 +845,28 @@ class AudioEngine: NSObject, ObservableObject {
         equalizerNode = AVAudioUnitEQ(numberOfBands: 10)
         guard let eq = equalizerNode else { return }
 
-        // ✅ LIMITER iOS 16 compatible: usar EQ como compressor simple
-        // DynamicsProcessor no está disponible en iOS 16, así que usamos
-        // una reducción de volumen base del mainMixer cuando el limiter está activo
+        // ✅ LIMITER REAL: AUPeakLimiter de Apple. SÍ está disponible en iOS 16
+        // (el comentario anterior era incorrecto). Antes el "limiter" era un EQ
+        // de 1 banda en bypass + una bajada fija de volumen: no limitaba nada.
+        // En bypass, una Audio Unit de Apple solo copia el buffer → coste ~0.
         if let existingLimiter = limiterNode {
             engine.detach(existingLimiter)
         }
-        limiterNode = AVAudioUnitEQ(numberOfBands: 1)
-        guard let limiter = limiterNode else { return }
-
-        // Configurar como EQ de 1 banda que actúa como compressor simple
-        let band = limiter.bands[0]
-        band.filterType = .lowShelf
-        band.frequency = 20000
-        band.bandwidth = 2.0
-        band.gain = 0
-        band.bypass = true // Por defecto bypassed
+        var limiterDesc = AudioComponentDescription()
+        limiterDesc.componentType = kAudioUnitType_Effect
+        limiterDesc.componentSubType = kAudioUnitSubType_PeakLimiter
+        limiterDesc.componentManufacturer = kAudioUnitManufacturer_Apple
+        let limiter = AVAudioUnitEffect(audioComponentDescription: limiterDesc)
+        // Attack rápido + release medio: transparente en música, sin bombeo.
+        AudioUnitSetParameter(limiter.audioUnit, kLimiterParam_AttackTime,
+                              kAudioUnitScope_Global, 0, 0.002, 0)
+        AudioUnitSetParameter(limiter.audioUnit, kLimiterParam_DecayTime,
+                              kAudioUnitScope_Global, 0, 0.060, 0)
+        AudioUnitSetParameter(limiter.audioUnit, kLimiterParam_PreGain,
+                              kAudioUnitScope_Global, 0, 0, 0)
+        limiter.bypass = !isLimiterEnabled
+        limiterNode = limiter
+        engine.attach(limiter)
 
         let frequencies: [Float] = [32, 64, 125, 250, 500, 1000, 2000, 4000, 8000, 16000]
         for (index, freq) in frequencies.enumerated() {
@@ -851,37 +898,47 @@ class AudioEngine: NSObject, ObservableObject {
         connectedFormatKey = formatKey(format)
 
         let mixer = engine.mainMixerNode
-        // ✅ Mono: desconectar también la salida previa del mezclador downmix
+
+        // Desconectar cualquier cadena previa de forma segura.
+        if !engine.outputConnectionPoints(for: playerNode, outputBus: 0).isEmpty {
+            engine.disconnectNodeOutput(playerNode)
+        }
+        if let eq = equalizerNode, !engine.outputConnectionPoints(for: eq, outputBus: 0).isEmpty {
+            engine.disconnectNodeOutput(eq)
+        }
+        if let lim = limiterNode, !engine.outputConnectionPoints(for: lim, outputBus: 0).isEmpty {
+            engine.disconnectNodeOutput(lim)
+        }
         if !engine.outputConnectionPoints(for: monoMixerNode, outputBus: 0).isEmpty {
             engine.disconnectNodeOutput(monoMixerNode)
         }
-        if let eq = equalizerNode {
-            // Desconectar nodos previos de forma segura
-            if !engine.outputConnectionPoints(for: playerNode, outputBus: 0).isEmpty {
-                engine.disconnectNodeOutput(playerNode)
-            }
-            if !engine.outputConnectionPoints(for: eq, outputBus: 0).isEmpty {
-                engine.disconnectNodeOutput(eq)
-            }
 
-            engine.connect(playerNode, to: eq, format: format)
-            engine.connect(eq, to: monoMixerNode, format: format)
+        // ✅ CALIDAD + BATERÍA: cada nodo del grafo es una etapa de conversión
+        // y CPU por buffer. El mezclador mono SOLO se inserta si el mono está
+        // activo (antes estaba SIEMPRE, incluso en estéreo, sin aportar nada).
+        var last: AVAudioNode = playerNode
+        if let eq = equalizerNode {
+            engine.connect(last, to: eq, format: format)
+            last = eq
+        }
+        if let lim = limiterNode {
+            engine.connect(last, to: lim, format: format)
+            last = lim
+        }
+        if isMonoAudioEnabled {
+            engine.connect(last, to: monoMixerNode, format: format)
             engine.connect(monoMixerNode, to: mixer, format: monoMixerOutputFormat())
         } else {
-            if !engine.outputConnectionPoints(for: playerNode, outputBus: 0).isEmpty {
-                engine.disconnectNodeOutput(playerNode)
-            }
-            engine.connect(playerNode, to: monoMixerNode, format: format)
-            engine.connect(monoMixerNode, to: mixer, format: monoMixerOutputFormat())
+            engine.connect(last, to: mixer, format: format)
         }
     }
 
-    /// ✅ Mono: formato de salida del mezclador downmix — 1 canal si el mono
-    /// está activo (downmix real), 2 canales (estéreo transparente) si no.
+    /// ✅ Mono: salida de 1 canal del mezclador de downmix. Esta función ya
+    /// solo se usa cuando el mono está activo (en estéreo el nodo ni siquiera
+    /// entra en el grafo).
     private func monoMixerOutputFormat() -> AVAudioFormat {
-        let channels: AVAudioChannelCount = isMonoAudioEnabled ? 1 : 2
         let rate = sampleRate > 0 ? sampleRate : 44100
-        return AVAudioFormat(standardFormatWithSampleRate: rate, channels: channels)
+        return AVAudioFormat(standardFormatWithSampleRate: rate, channels: 1)
             ?? engine.mainMixerNode.outputFormat(forBus: 0)
     }
 
@@ -934,31 +991,12 @@ class AudioEngine: NSObject, ObservableObject {
 
     /// ✅ MÁXIMA CALIDAD: el nodo EQ solo procesa cuando hace falta. "Flat"
     /// (ganancias a 0) → bypass total del AVAudioUnitEQ → la señal pasa por la
-    /// ruta limpia sin pasar por 10 biquads en cascada (cero ruido/redondeo
-    /// acumulado). Cualquier preset con ganancias ≠ 0 o edición manual de una
-    /// banda desactiva el bypass.
+    /// ruta limpia sin 10 biquads en cascada (cero redondeo acumulado y cero
+    /// CPU extra por buffer). El limiter sigue el mismo criterio.
     private func updateEQBypassState() {
         equalizerNode?.bypass = !(isEQEnabled && eqPreset != .flat)
-        applyEQHeadroom()
-        
-        // ✅ LIMITER iOS 16: ajuste basado en la ruta de audio
-        // Altavoces built-in necesitan más volumen, externos necesitan protección
-        let session = AVAudioSession.sharedInstance()
-        let currentRoute = session.currentRoute
-        let isBuiltInSpeaker = currentRoute.outputs.contains { $0.portType == .builtInSpeaker }
-        let limiterVolume: Float
-        if isLimiterEnabled {
-            if isBuiltInSpeaker {
-                // Altavoz built-in: casi sin reducción para volumen aceptable
-                limiterVolume = 0.98
-            } else {
-                // Externo (Bluetooth, DAC, auriculares): más protección
-                limiterVolume = 0.95
-            }
-        } else {
-            limiterVolume = 1.0
-        }
-        engine.mainMixerNode.outputVolume = limiterVolume
+        limiterNode?.bypass = !isLimiterEnabled
+        applyOutputGain()
     }
 
     /// ✅ LIMITER: activar/desactivar limiter para prevenir distorsión
@@ -978,35 +1016,61 @@ class AudioEngine: NSObject, ObservableObject {
         AppLog.info(.playback, "Optimización Bluetooth: \(isBluetoothOptimizationEnabled ? "activada" : "desactivada")")
     }
 
-    /// ✅ BLUETOOTH OPTIMIZATION: configurar sesión con ajustes óptimos para BT
+    /// ✅ BLUETOOTH: el enlace A2DP recodifica a AAC/SBC y el encoder de iOS
+    /// trabaja a 44.1 kHz. Pedir 48 kHz (como hacía antes) provocaba un doble
+    /// remuestreo 44.1→48→44.1: solo CPU y pérdida, nunca calidad.
     private func configureSessionWithBluetoothOptimization() {
         let session = AVAudioSession.sharedInstance()
         do {
-            // Forzar sample rate más alto si el dispositivo BT lo soporta
-            try session.setPreferredSampleRate(48000)
-            // Buffer más corto para menor latencia en BT
-            try session.setPreferredIOBufferDuration(0.02)
-            AppLog.info(.playback, "Sesión optimizada para Bluetooth: 48kHz, buffer 20ms")
+            try session.setPreferredSampleRate(44100)
+            // Buffer largo: el enlace BT ya arrastra ~150ms de latencia propia,
+            // un buffer corto solo gastaría batería sin ganar nada audible.
+            try session.setPreferredIOBufferDuration(0.085)
+            AppLog.info(.playback, "Sesión optimizada para BT: 44.1kHz, buffer 85ms")
         } catch {
             AppLog.error(.playback, error, context: "configureSessionWithBluetoothOptimization")
         }
     }
 
-    /// ✅ CALIDAD (anti-clipping): el EQ puede realzar hasta +8 dB (preset
-    /// Bajos). Sobre másteres modernos que ya rozan 0 dBFS, ese realce hace
-    /// CLIP digital en el DAC (distorsión audible exactamente donde el
-    /// usuario pidió más). Se aplica un preamp automático en la salida
-    /// (mainMixer — nodo DISTINTO del que usa el fade anti-pop) igual a la
-    /// ganancia máxima positiva del EQ: EQ off → 1.0 (bit-transparente);
-    /// EQ on → atenuación justa para que el realce no recorte.
-    private func applyEQHeadroom() {
+    /// ✅ GANANCIA DE SALIDA ÚNICA (anti-clipping). Antes había DOS funciones
+    /// escribiendo mainMixerNode.outputVolume: applyEQHeadroom ponía el headroom
+    /// del EQ y tres líneas después el limiter lo sobrescribía con 0.95 → con el
+    /// preset "Bajos" (+8 dB) el realce recortaba en el DAC, justo donde el
+    /// usuario pedía más graves. Ahora se calcula todo junto y se escribe UNA vez.
+    private func applyOutputGain() {
         let processing = isEQEnabled && eqPreset != .flat
         var maxGain: Float = 0
         if processing, let eq = equalizerNode {
-            maxGain = eq.bands.map(\.gain).max() ?? 0
+            // Las bandas contiguas se SUMAN: dos de +6 dB juntas dan más de
+            // +6 dB reales, así que se mide el par más alto, no una banda sola.
+            let gains = eq.bands.map(\.gain)
+            let single = gains.max() ?? 0
+            var pair: Float = 0
+            for i in 0..<max(gains.count - 1, 0) {
+                pair = max(pair, (gains[i] + gains[i + 1]) * 0.6)
+            }
+            maxGain = max(single, pair)
         }
-        let attenuation: Float = maxGain > 0 ? pow(10, -min(maxGain, 9) / 20) : 1
-        engine.mainMixerNode.outputVolume = attenuation
+        // Margen anti-clipping: el encoder AAC del enlace Bluetooth puede
+        // sobrepasar 1-2 dB los picos intersample de un máster moderno y
+        // recortar YA DENTRO del auricular, donde no hay nada que hacer.
+        let safety: Float = (isLimiterEnabled || isBluetoothRoute) ? 1.0 : 0.0
+        let total = min(maxGain + safety, 12)
+        engine.mainMixerNode.outputVolume = total > 0 ? pow(10, -total / 20) : 1.0
+    }
+
+    /// ✅ Calidad del remuestreador interno del mainMixer (0-127). Solo actúa
+    /// cuando hay conversión de tasa; si el reloj del DAC coincide con el del
+    /// archivo no cuesta absolutamente nada.
+    /// En Bluetooth se usa "alta" (96) en vez de "máxima": el códec AAC del
+    /// enlace ya es el cuello de botella y en un A11 la diferencia de CPU sí
+    /// se nota en la batería.
+    private func applyMixerRenderQuality() {
+        guard let au = engine.mainMixerNode.audioUnit else { return }
+        var quality: UInt32 = isBluetoothRoute ? 96 : 127
+        AudioUnitSetProperty(au, kAudioUnitProperty_RenderQuality,
+                             kAudioUnitScope_Global, 0,
+                             &quality, UInt32(MemoryLayout<UInt32>.size))
     }
 
     func setEQGain(for band: Int, gain: Float) {
@@ -1027,26 +1091,19 @@ class AudioEngine: NSObject, ObservableObject {
     }
 
     private func applyMonoAudio() {
-        // ✅ Mono REAL (downmix de salida): reconectar la salida del mezclador
-        // intermedio con formato de 1 canal. AVAudioMixerNode hace el downmix
-        // estéreo→mono por DSP, y iOS reproduce la señal monofónica por ambos
-        // altavoces/auriculares.
-        if !engine.outputConnectionPoints(for: monoMixerNode, outputBus: 0).isEmpty {
-            engine.disconnectNodeOutput(monoMixerNode)
-        }
-        
-        // ✅ FIX mono: cambiar el formato de salida de un nodo MIENTRAS el
-        // engine renderiza no siempre se aplica. Detener y relanzar el engine
-        // garantiza que la nueva conexión mono/estéreo tome efecto de inmediato.
-        // ✅ OPTIMIZACIÓN: solo detener/reiniciar si hay reproducción activa.
-        // Si no hay audio cargado, solo reconectar (sin detener el engine).
+        // ✅ Mono REAL (downmix de salida): el mezclador intermedio emite con
+        // formato de 1 canal y AVAudioMixerNode hace el downmix estéreo→mono
+        // por DSP; iOS lo reproduce por ambos auriculares/altavoces.
+        // ✅ Ahora el mezclador mono ENTRA y SALE del grafo según el ajuste,
+        // así que hay que reconstruir la cadena completa en vez de reconectar
+        // solo su salida.
         let wasRunning = engine.isRunning
-        let hasAudio = audioFile != nil
-        
-        if wasRunning && hasAudio { engine.stop() }
-        engine.connect(monoMixerNode, to: engine.mainMixerNode, format: monoMixerOutputFormat())
-        if wasRunning && hasAudio {
-            do { try engine.start() } catch {
+        let graphFormat = audioFile?.processingFormat
+            ?? AVAudioFormat(standardFormatWithSampleRate: sampleRate > 0 ? sampleRate : 44100, channels: 2)
+            ?? engine.mainMixerNode.outputFormat(forBus: 0)
+        reconnectPlayerNode(format: graphFormat)   // ya detiene el engine si hace falta
+        if wasRunning {
+            do { try startEngineSafely() } catch {
                 AppLog.error(.playback, error, context: "applyMonoAudio: relanzar engine")
             }
         }
@@ -1213,22 +1270,27 @@ class AudioEngine: NSObject, ObservableObject {
                 return
             }
 
-            // ✅ Fidelidad máxima: intentar que el hardware corra a la tasa nativa
-            // del archivo (evita remuestreo del mainMixer). Si el DAC/ruta no
-            // soporta la tasa, iOS la ignora sin error audible; el remuestreo
-            // final sigue siendo de alta calidad en el mixer.
             do {
                 let session = AVAudioSession.sharedInstance()
-                if abs(session.sampleRate - sampleRate) > 1 {
-                    try session.setPreferredSampleRate(sampleRate)
+                // ✅ BT: 44.1 kHz FIJO. Cambiar el reloj por canción con un
+                // auricular conectado fuerza una reconfiguración de ruta (click,
+                // microcorte, pico de CPU) y no sirve de nada: el códec A2DP
+                // devuelve todo a 44.1 igualmente.
+                // Cable / DAC USB / altavoz: tasa NATIVA del archivo (bit-clean);
+                // si el hardware no la soporta, iOS elige la más cercana y el
+                // mainMixer hace el remuestreo con la calidad fijada abajo.
+                let targetRate: Double = isBluetoothRoute ? 44100 : sampleRate
+                if abs(session.sampleRate - targetRate) > 1 {
+                    try session.setPreferredSampleRate(targetRate)
                 }
             } catch {
-                AppLog.debug(.playback, "setPreferredSampleRate \(Int(sampleRate))Hz no soportado: \(error.localizedDescription)")
+                AppLog.debug(.playback, "setPreferredSampleRate no soportado: \(error.localizedDescription)")
             }
 
             // ✅ Reconectar el graph y relanzar el engine desde estado limpio.
             reconnectPlayerNode(format: file.processingFormat)
             try startEngineSafely()
+            applyMixerRenderQuality()
 
             currentSong = song
             isPlaying = true
@@ -2252,6 +2314,13 @@ class AudioEngine: NSObject, ObservableObject {
             let sourceRate = self.currentSong?.sampleRate ?? 0
             let bitPerfect = sourceRate > 0 && abs(newRate - sourceRate) < 1
             self.isBitPerfect = bitPerfect
+
+            // ✅ La ganancia de salida y la calidad del remuestreo dependen de
+            // la ruta (BT vs cable): recalcular al cambiar de salida. Va aquí
+            // porque la función tiene un guard que la corta si no hubo cambios
+            // reales, así que no se ejecuta en bucle ni gasta batería.
+            self.applyOutputGain()
+            self.applyMixerRenderQuality()
             
             // ✅ AUDIÓFILO: detectar codec Bluetooth (iOS no expone el codec directamente,
             // pero podemos inferir información por el tipo de puerto y nombre del dispositivo)
