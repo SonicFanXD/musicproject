@@ -45,6 +45,11 @@ struct ContentView: View {
     @State private var artistSortRaw: String = ArtistSortOption.name.rawValue
     @State private var artistSortAscending: Bool = true
 
+    // ✅ OPT: Caché de resultados de búsqueda para evitar recalcular en cada render
+    @State private var cachedFilteredSongs: [Song] = []
+    @State private var cachedFilteredAlbums: [Album] = []
+    @State private var cachedFilteredArtists: [Artist] = []
+
     private var sortOption: SortOption { SortOption(rawValue: sortOptionRaw) ?? .title }
     private var albumSort: AlbumSortOption { AlbumSortOption(rawValue: albumSortRaw) ?? .title }
     private var artistSort: ArtistSortOption { ArtistSortOption(rawValue: artistSortRaw) ?? .name }
@@ -118,6 +123,17 @@ struct ContentView: View {
                 .onChange(of: albumSortAscending) { albumSortAscendingStorage = $0 }
                 .onChange(of: artistSortRaw) { artistSortRawStorage = $0 }
                 .onChange(of: artistSortAscending) { artistSortAscendingStorage = $0 }
+                // ✅ OPT: Recalcular caché de búsqueda cuando cambian los filtros
+                .onChange(of: searchText) { _ in recalculateSearchCache() }
+                .onChange(of: sortOptionRaw) { _ in recalculateSearchCache() }
+                .onChange(of: songSortAscending) { _ in recalculateSearchCache() }
+                .onChange(of: albumSortRaw) { _ in recalculateSearchCache() }
+                .onChange(of: albumSortAscending) { _ in recalculateSearchCache() }
+                .onChange(of: artistSortRaw) { _ in recalculateSearchCache() }
+                .onChange(of: artistSortAscending) { _ in recalculateSearchCache() }
+                .onReceive(fileAccessService.$songs) { _ in recalculateSearchCache() }
+                .onReceive(fileAccessService.$albums) { _ in recalculateSearchCache() }
+                .onReceive(fileAccessService.$artists) { _ in recalculateSearchCache() }
                 // ✅ FIX LAG DE TECLADO: antes había aquí un .onChange(of: searchText)
                 // que llamaba a LibrarySearchIndex.shared.update(...) en CADA tecla.
                 // update() ignora por completo `searchText` (solo sincroniza el índice
@@ -213,6 +229,8 @@ struct ContentView: View {
                     // ✅ INDEXACIÓN: decidir tarjeta grande vs indicador compacto.
                     syncFirstTimeIndexing()
                     maybeAutoResume()
+                    // ✅ OPT: Inicializar caché de búsqueda
+                    recalculateSearchCache()
                     if fileAccessService.isInitialLibraryLoaded {
                         withAnimation(.easeOut(duration: 0.3)) { isInitialLoad = false }
                     }
@@ -1025,6 +1043,13 @@ struct ContentView: View {
         searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
 
+    // ✅ OPT: Función para recalcular el caché de búsqueda
+    private func recalculateSearchCache() {
+        cachedFilteredSongs = calculateFilteredSongs()
+        cachedFilteredAlbums = calculateFilteredAlbums()
+        cachedFilteredArtists = calculateFilteredArtists()
+    }
+
     // ✅ BÚSQUEDA optimizada: el índice ya tiene las cadenas normalizadas
     // (sin acentos/mayúsculas) y el matching es por palabras con ranking de
     // relevancia. Con consulta vacía se respeta el orden del usuario.
@@ -1032,6 +1057,11 @@ struct ContentView: View {
     // re-ordena): aplicar sortSongs() aquí destruía el ranking y hacía que la
     // búsqueda "pareciera no funcionar" (ver comentario de abajo).
     private var filteredSongs: [Song] {
+        // ✅ OPT: Usar caché para evitar recalcular en cada render
+        return cachedFilteredSongs.isEmpty ? calculateFilteredSongs() : cachedFilteredSongs
+    }
+
+    private func calculateFilteredSongs() -> [Song] {
         let songs = fileAccessService.songs
         let query = normalizedQuery
         // ✅ FIX "no busca bien": antes se le aplicaba sortSongs() a los
@@ -1084,6 +1114,11 @@ struct ContentView: View {
     }
 
     private var filteredAlbums: [Album] {
+        // ✅ OPT: Usar caché para evitar recalcular en cada render
+        return cachedFilteredAlbums.isEmpty ? calculateFilteredAlbums() : cachedFilteredAlbums
+    }
+
+    private func calculateFilteredAlbums() -> [Album] {
         let albums = fileAccessService.albums
         let query = normalizedQuery
         // ✅ FIX "no busca bien": ver comentario equivalente en filteredSongs.
@@ -1131,6 +1166,11 @@ struct ContentView: View {
     }
 
     private var filteredArtists: [Artist] {
+        // ✅ OPT: Usar caché para evitar recalcular en cada render
+        return cachedFilteredArtists.isEmpty ? calculateFilteredArtists() : cachedFilteredArtists
+    }
+
+    private func calculateFilteredArtists() -> [Artist] {
         let artists = fileAccessService.artists
         let query = normalizedQuery
         // ✅ FIX "no busca bien": ver comentario equivalente en filteredSongs.
