@@ -979,10 +979,13 @@ class AudioEngine: NSObject, ObservableObject {
     private func configureSessionWithBluetoothOptimization() {
         let session = AVAudioSession.sharedInstance()
         do {
-            try session.setPreferredSampleRate(44100)
+            // ✅ RESTAURADO: 48 kHz para Bluetooth optimización de calidad
+            // Aunque A2DP recodifica a 44.1 kHz, pedir 48 kHz mejora la calidad
+            // del upsampling interno de iOS antes de la recodificación
+            try session.setPreferredSampleRate(48000)
             // ✅ RESTAURADO: buffer de 40ms (igual que la ruta general).
             try session.setPreferredIOBufferDuration(0.04)
-            AppLog.info(.playback, "Sesión optimizada para BT: 44.1kHz, buffer 40ms")
+            AppLog.info(.playback, "Sesión optimizada para BT: 48kHz, buffer 40ms")
         } catch {
             AppLog.error(.playback, error, context: "configureSessionWithBluetoothOptimization")
         }
@@ -1223,14 +1226,15 @@ class AudioEngine: NSObject, ObservableObject {
 
             do {
                 let session = AVAudioSession.sharedInstance()
-                // ✅ BT: 44.1 kHz FIJO. Cambiar el reloj por canción con un
-                // auricular conectado fuerza una reconfiguración de ruta (click,
-                // microcorte, pico de CPU) y no sirve de nada: el códec A2DP
-                // devuelve todo a 44.1 igualmente.
+                // ✅ BT: 48 kHz FIJO para optimización de calidad. Aunque A2DP
+                // recodifica a 44.1 kHz, pedir 48 kHz mejora el upsampling interno
+                // de iOS antes de la recodificación. Cambiar el reloj por canción con
+                // un auricular conectado fuerza una reconfiguración de ruta (click,
+                // microcorte, pico de CPU).
                 // Cable / DAC USB / altavoz: tasa NATIVA del archivo (bit-clean);
                 // si el hardware no la soporta, iOS elige la más cercana y el
                 // mainMixer hace el remuestreo con la calidad fijada abajo.
-                let targetRate: Double = isBluetoothRoute ? 44100 : sampleRate
+                let targetRate: Double = isBluetoothRoute ? 48000 : sampleRate
                 if abs(session.sampleRate - targetRate) > 1 {
                     try session.setPreferredSampleRate(targetRate)
                 }

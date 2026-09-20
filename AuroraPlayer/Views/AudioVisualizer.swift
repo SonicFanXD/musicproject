@@ -194,6 +194,8 @@ struct CircularAudioVisualizer: View {
     @State private var displayLink: CADisplayLink?
     @State private var isVisible = false
     @State private var phase: Double = 0
+    // ✅ CRÍTICO - BATERÍA: observar scenePhase para detener en segundo plano
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         ZStack {

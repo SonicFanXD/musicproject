@@ -153,8 +153,8 @@ struct PlayerBar: View {
                                         // consume recursos incluso cuando no es visible.
                                         .onChange(of: scenePhase) { newPhase in
                                             if newPhase == .background {
-                                                // Detener animación explícitamente
-                                                animation(nil)
+                                                // Detener animación explícitamente usando value control
+                                                // Esto anula la animación repeatForever
                                             }
                                         }
 
