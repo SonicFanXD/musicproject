@@ -1667,8 +1667,14 @@ class AudioEngine: NSObject, ObservableObject {
         if !manualQueue.isEmpty {
             // Añadir primera canción de cola manual a la playlist y reproducirla
             let nextSong = manualQueue.removeFirst()
-            playlist.insert(nextSong, at: currentIndex + 1)
-            currentIndex += 1
+            // ✅ FIX crash (Array index out of range): `insert(_:at:)` exige
+            // 0...playlist.count. Si la playlist está VACÍA (nada reproduciéndose)
+            // o currentIndex quedó fuera de rango, insertar en currentIndex + 1
+            // abortaba el proceso. El clamp no cambia nada cuando el índice es
+            // válido (caso normal) y sanea el caso borde.
+            let insertionIndex = min(max(currentIndex + 1, 0), playlist.count)
+            playlist.insert(nextSong, at: insertionIndex)
+            currentIndex = insertionIndex
             updateNextUpQueue()
             return currentIndex
         }
