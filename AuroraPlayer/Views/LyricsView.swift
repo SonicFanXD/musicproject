@@ -312,7 +312,96 @@ struct LyricsView: View {
             .animation(.spring(response: 0.45, dampingFraction: 0.82), value: isActive)
     }
 
-    // MARK: - Word by Word Line View
+    // MARK: - MOTOR DE LYRICS APPLE MUSIC
+// ✅ Motor puro: dado timeMs, retorna LyricsState determinista
+private class LyricsEngine {
+    private var tokens: [LyricsToken] = []
+    
+    init(from words: [LyricWord]) {
+        convertToTokens(words)
+    }
+    
+    /// Convierte LyricWord a LyricsToken con línea de tiempo en ms
+    private func convertToTokens(_ words: [LyricWord]) {
+        var converted: [LyricsToken] = []
+        var lineIndex = 0
+        var wordIndex = 0
+        
+        for (index, word) in words.enumerated() {
+            let startMs = Int(word.time * 1000)
+            let endMs: Int
+            if let duration = word.duration, duration > 0 {
+                endMs = startMs + Int(duration * 1000)
+            } else if index + 1 < words.count {
+                endMs = Int(words[index + 1].time * 1000)
+            } else {
+                endMs = startMs + 500 // 500ms por defecto
+            }
+            
+            let token = LyricsToken(
+                id: word.id.uuidString,
+                text: word.text,
+                startMs: startMs,
+                endMs: endMs,
+                lineIndex: lineIndex,
+                wordIndex: wordIndex
+            )
+            converted.append(token)
+            wordIndex += 1
+        }
+        
+        // Ordenar por startMs (ya deberían estar ordenados del parser)
+        tokens = converted.sorted { $0.startMs < $1.startMs }
+    }
+    
+    /// ✅ MOTOR PURO: estado determinista en un momento dado
+    func state(at timeMs: Int) -> LyricsState {
+        guard !tokens.isEmpty else {
+            return LyricsState(activeTokenID: nil, progress: 0, activeLineIndex: 0, previousTokenID: nil, nextTokenID: nil)
+        }
+        
+        // Búsqueda binaria para encontrar token activo
+        var lo = 0, hi = tokens.count - 1
+        var activeIndex = 0
+        while lo <= hi {
+            let mid = (lo + hi) / 2
+            if tokens[mid].startMs <= timeMs {
+                activeIndex = mid
+                lo = mid + 1
+            } else {
+                hi = mid - 1
+            }
+        }
+        
+        let activeToken = tokens[activeIndex]
+        let progress: Double
+        if activeToken.endMs > activeToken.startMs {
+            progress = Double(timeMs - activeToken.startMs) / Double(activeToken.endMs - activeToken.startMs)
+        } else {
+            progress = 0.0
+        }
+        
+        let previousTokenID = activeIndex > 0 ? tokens[activeIndex - 1].id : nil
+        let nextTokenID = activeIndex < tokens.count - 1 ? tokens[activeIndex + 1].id : nil
+        
+        return LyricsState(
+            activeTokenID: activeToken.id,
+            progress: progress,
+            activeLineIndex: activeToken.lineIndex,
+            previousTokenID: previousTokenID,
+            nextTokenID: nextTokenID
+        )
+    }
+    
+    /// Agrupa tokens en líneas para renderizado
+    func getTokensByLine() -> [[LyricsToken]] {
+        var grouped: [Int: [LyricsToken]] = [:]
+        for token in tokens {
+            grouped[token.lineIndex, default: []].append(token)
+        }
+        return grouped.sorted { $0.key < $1.key }.map { $0.value }
+    }
+}
     // ✅ MODELO APPLE MUSIC: resaltar palabra activa, atenuar anterior y futura
     private func wordByWordLineView(line: LyricLine, words: [LyricWord], isActive: Bool, progress: Double) -> some View {
         HStack(spacing: 0) {
@@ -341,36 +430,19 @@ struct LyricsView: View {
         return min(1.0, total / Double(lineWords.count))
     }
 
-    // MARK: - Update Word Progress (búsqueda binaria + ventana)
+    // MARK: - Update Word Progress (motor Apple Music)
     private func updateWordProgress(for time: TimeInterval) {
-        guard case .synchronized(let syncLyrics) = parsedLyrics,
-              syncLyrics.isWordByWord else { return }
-
-        let words = syncLyrics.words
-        guard !words.isEmpty else {
-            wordProgress = [:]
-            return
+        guard let engine = lyricsEngine else { return }
+        
+        let timeMs = Int(time * 1000)
+        let newState = engine.state(at: timeMs)
+        
+        // ✅ Solo actualizar si el estado cambió significativamente
+        if newState.activeTokenID != lyricsState.activeTokenID ||
+           abs(newState.progress - lyricsState.progress) > 0.01 {
+            lyricsState = newState
         }
-
-        var newProgress: [UUID: Double] = [:]
-
-        // ✅ MODELO APPLE MUSIC: línea de tiempo global con búsqueda binaria
-        // Buscar el índice de la palabra activa en tiempo actual
-        var activeIndex = words.count - 1
-        var lo = 0, hi = words.count - 1
-        while lo <= hi {
-            let mid = (lo + hi) / 2
-            if words[mid].time <= time {
-                activeIndex = mid
-                lo = mid + 1
-            } else {
-                hi = mid - 1
-            }
-        }
-
-        // ✅ Calcular progreso de palabras alrededor de la activa
-        // Palabra anterior: ya cantada (progreso 1.0)
-        // Palabra actual: interpolación basada en duration
+    }
         // Palabra siguiente: futura (progreso 0.0)
         for i in max(0, activeIndex - 2)...min(words.count - 1, activeIndex + 2) {
             let word = words[i]
@@ -393,63 +465,45 @@ struct LyricsView: View {
             }
         }
 
-        wordProgress = newProgress
-                if timeDiff >= 0 {
-                    let nextWordTime = startIndex + index + 1 < words.count ? words[startIndex + index + 1].time : word.time + 0.5
-                    let estimatedDuration = nextWordTime - word.time
-                    if estimatedDuration > 0 {
-                        newProgress[word.id] = min(1.0, max(0.0, timeDiff / estimatedDuration))
-                    } else {
-                        newProgress[word.id] = min(1.0, timeDiff * 2.0)
-                    }
-                }
-            }
-        }
-
-        wordProgress = newProgress
-    }
-
-    // MARK: - Parse Lyrics (con precomputo de palabras por línea)
+    // MARK: - Parse Lyrics (inicializar motor Apple Music)
     private func parseLyrics() {
         guard let lyrics = song?.lyrics, !lyrics.isEmpty else {
             parsedLyrics = .none
             wordsByLine = []
+            lyricsEngine = nil
+            lyricsState = LyricsState(activeTokenID: nil, progress: 0, activeLineIndex: 0, previousTokenID: nil, nextTokenID: nil)
             return
         }
         let parsed = LyricsParser.parse(lyrics)
         parsedLyrics = parsed
 
         if case .synchronized(let syncLyrics) = parsed, syncLyrics.isWordByWord {
-            let lines = syncLyrics.lines
-            let words = syncLyrics.words
-            DispatchQueue.global(qos: .userInitiated).async {
-                var grouped: [[LyricWord]] = []
-                var wordIndex = 0
-
-                for (lineIndex, line) in lines.enumerated() {
-                    var lineWords: [LyricWord] = []
-                    let lineEnd = lineIndex < lines.count - 1 ? lines[lineIndex + 1].time : .infinity
-
-                    while wordIndex < words.count, words[wordIndex].time < line.time {
-                        wordIndex += 1
-                    }
-                    while wordIndex < words.count, words[wordIndex].time < lineEnd {
-                        lineWords.append(words[wordIndex])
-                        wordIndex += 1
-                    }
-
-                    grouped.append(lineWords)
-                }
-
-                DispatchQueue.main.async {
-                    wordsByLine = grouped
-                }
-            }
+            lyricsEngine = LyricsEngine(from: syncLyrics.words)
+            tokensByLine = lyricsEngine?.getTokensByLine() ?? []
         } else {
-            wordsByLine = []
+            lyricsEngine = nil
+            tokensByLine = []
         }
     }
 
+    // MARK: - Word by Word Line View (Apple Music model)
+    private func wordByWordLineView(line: LyricLine, words: [LyricWord], isActive: Bool, progress: Double) -> some View {
+        HStack(spacing: 2) {
+            ForEach(Array(words.enumerated()), id: \.element.id) { index, word in
+                let isActiveToken = lyricsState.activeTokenID == word.id.uuidString
+                let tokenProgress = isActiveToken ? lyricsState.progress : 0.0
+                
+                Text(word.text)
+                    .font(.system(size: isActive ? 18 : 15, weight: isActive ? .medium : .regular))
+                    .foregroundStyle(tokenProgress > 0.5 ? .white : Color.gray.opacity(0.5))
+                    .opacity(tokenProgress > 0.9 ? 1.0 : tokenProgress > 0.1 ? 0.7 : 0.4)
+                    .scaleEffect(tokenProgress > 0.8 ? 1.05 : 1.0)
+                    .animation(.easeOut(duration: 0.15), value: tokenProgress)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 6)
+    }
     // MARK: - Update Current Line
     private func updateCurrentLine(for time: TimeInterval) {
         switch parsedLyrics {
