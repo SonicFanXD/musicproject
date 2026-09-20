@@ -187,9 +187,14 @@ class AudioEngine: NSObject, ObservableObject {
 
     /// Qué índice habría que encadenar a continuación, teniendo en cuenta
     /// repeat-one (repetir la MISMA canción) como caso particular.
+    /// ✅ MEJORA REPEAT: mejor manejo de repeat-one con gapless más suave
     private func indexToChainAhead() -> Int? {
         guard !playlist.isEmpty else { return nil }
-        if repeatMode == .one { return currentIndex }
+        if repeatMode == .one {
+            // ✅ MEJORA: en repeat-one, verificar que la canción tenga duración válida
+            guard let current = currentSong, current.duration > 0 else { return nil }
+            return currentIndex
+        }
         return computeNextIndex()
     }
 

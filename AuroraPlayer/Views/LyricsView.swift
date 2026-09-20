@@ -1,7 +1,8 @@
 import SwiftUI
 import UIKit
 
-// MARK: - Letra con máscara de progreso (estilo Apple Music)
+// MARK: - Letra con máscara de progreso (estilo Apple Music mejorado)
+// ✅ MEJORA KARAOKE: animación side-by-side más visible con efectos
 // El problema anterior: el GeometryReader de la máscara no tenía tamaño
 // definido → el ancho era 0 y el texto nunca se "iluminaba".
 // Fix: se mide el Text una sola vez y la máscara usa ese ancho.
@@ -17,23 +18,31 @@ struct MaskedLyricText: View {
         // ✅ El GeometryReader del mask solo se evalúa cuando CAMBIA EL TAMAÑO
         // del texto (no por cada tick de progress). El progress se lee como
         // input → solo re-dibuja el frame del mask, no el layout completo.
-        Text(text)
-            .font(.system(size: fontSize, weight: fontWeight))
-            .foregroundStyle(baseColor)
-            .overlay(alignment: .leading) {
-                Text(text)
-                    .font(.system(size: fontSize, weight: fontWeight))
-                    .foregroundStyle(highlightColor)
-                    .mask(alignment: .leading) {
-                        GeometryReader { geo in
-                            Rectangle()
-                                .frame(width: geo.size.width * CGFloat(min(max(progress, 0), 1)))
-                        }
+        ZStack(alignment: .leading) {
+            // Texto base (gris/oscuro)
+            Text(text)
+                .font(.system(size: fontSize, weight: fontWeight))
+                .foregroundStyle(baseColor)
+                .blur(radius: progress > 0 ? 0.5 : 0)
+                .animation(.easeOut(duration: 0.2), value: progress)
+
+            // Texto iluminado (con máscara de progreso)
+            Text(text)
+                .font(.system(size: fontSize, weight: fontWeight))
+                .foregroundStyle(highlightColor)
+                .mask(alignment: .leading) {
+                    GeometryReader { geo in
+                        Rectangle()
+                            .frame(width: geo.size.width * CGFloat(min(max(progress, 0), 1)))
                     }
-                    // ✅ 60fps: rasteriza el overlay karaoke en la GPU una sola vez
-                    .drawingGroup()
-            }
-            .lineLimit(1)
+                }
+                // ✅ MEJORA KARAOKE: efecto de brillo/glow en el texto iluminado
+                .shadow(color: highlightColor.opacity(0.6), radius: progress > 0.5 ? 8 : 0, x: 0, y: 0)
+                .animation(.easeOut(duration: 0.15), value: progress)
+                // ✅ 60fps: rasteriza el overlay karaoke en la GPU una sola vez
+                .drawingGroup()
+        }
+        .lineLimit(1)
     }
 }
 
@@ -303,22 +312,56 @@ struct LyricsView: View {
     }
 
     // MARK: - Word by Word Line View
-    // Estilo Apple Music: la línea se muestra gris y las palabras se van
-    // "cubriendo de blanco" según su progreso. Optimizado: un solo Text
-    // con máscara por línea (no re-render por palabra).
-    // Single-line "karaoke" usando máscara continua (más suave y barato)
+    // ✅ MEJORA KARAOKE: animación side-by-side más visible y distintiva
+    // Estilo Apple Music mejorado: la línea se muestra gris y las palabras se van
+    // "cubriendo de blanco" según su progreso con efectos visuales más prominentes.
+    // Optimizado: un solo Text con máscara por línea (no re-render por palabra).
     private func wordByWordLineView(line: LyricLine, words: [LyricWord], isActive: Bool, progress: Double) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            MaskedLyricText(
-                text: words.map(\.text).joined(separator: " "),
-                baseColor: isActive ? Color.secondary : Color.secondary.opacity(0.6),
-                // ✅ FIX: usa AppTheme.accent para respetar el ajuste "Color de acento"
-                highlightColor: AppTheme.accent,
-                progress: progress,
-                fontSize: isActive ? 23 : 19,
-                fontWeight: isActive ? .bold : .medium
-            )
-            .animation(.easeOut(duration: 0.15), value: progress)
+            ZStack(alignment: .leading) {
+                // Texto base (gris/oscuro) - siempre visible
+                Text(words.map(\.text).joined(separator: " "))
+                    .font(.system(size: isActive ? 23 : 19, weight: isActive ? .bold : .medium))
+                    .foregroundStyle(isActive ? Color.secondary : Color.secondary.opacity(0.6))
+                    .blur(radius: progress > 0.1 ? progress * 0.8 : 0)
+                    .opacity(progress > 0.8 ? 0.3 : 1.0)
+                    .animation(.easeOut(duration: 0.2), value: progress)
+
+                // Texto iluminado (con máscara de progreso)
+                Text(words.map(\.text).joined(separator: " "))
+                    .font(.system(size: isActive ? 23 : 19, weight: isActive ? .bold : .medium))
+                    .foregroundStyle(AppTheme.accent)
+                    .mask(alignment: .leading) {
+                        GeometryReader { geo in
+                            Rectangle()
+                                .frame(width: geo.size.width * CGFloat(min(max(progress, 0), 1)))
+                        }
+                    }
+                    // ✅ MEJORA KARAOKE: efectos visuales más prominentes
+                    .shadow(color: AppTheme.accent.opacity(0.8), radius: progress > 0.3 ? 12 : 0, x: 0, y: 0)
+                    .shadow(color: AppTheme.accent.opacity(0.4), radius: progress > 0.5 ? 20 : 0, x: 0, y: 0)
+                    .scaleEffect(progress > 0.9 ? 1.02 : 1.0)
+                    .animation(.spring(response: 0.3, dampingFraction: 0.7), value: progress)
+                    // ✅ 60fps: rasteriza el overlay karaoke en la GPU una sola vez
+                    .drawingGroup()
+            }
+            // ✅ MEJORA KARAOKE: barra de progreso debajo del texto
+            if isActive && progress > 0 {
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(Color.secondary.opacity(0.2))
+                            .frame(height: 3)
+
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(AppTheme.accent)
+                            .frame(width: geo.size.width * CGFloat(progress), height: 3)
+                            .shadow(color: AppTheme.accent.opacity(0.6), radius: 4, x: 0, y: 0)
+                    }
+                }
+                .frame(height: 3)
+                .animation(.easeOut(duration: 0.15), value: progress)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 8)
