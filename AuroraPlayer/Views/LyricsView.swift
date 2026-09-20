@@ -259,9 +259,6 @@ struct LyricsView: View {
     private func parseLyrics() {
         guard let lyrics = song?.lyrics, !lyrics.isEmpty else {
             parsedLyrics = .none
-            lyricsEngine = nil
-            lyricsLayout = nil
-            visualLines = []
             return
         }
         let parsed = LyricsParser.parse(lyrics)
