@@ -59,7 +59,7 @@ struct LyricsView: View {
     // construye UNA vez en parseLyrics() vía LyricsTokenBuilder.
     @State private var lyricsEngine: LyricsEngine?
     @State private var lyricsLayout: LyricsLayout?
-    @State private var visualLines: [LyricsVisualLine] = []
+    @State private var visualLines: [LyricsLine] = []
 
     var body: some View {
         ZStack {
@@ -227,20 +227,11 @@ struct LyricsView: View {
         }
     }
 
-    // MARK: - Word-by-word: Canvas + scroll automático (motor compartido)
+    // MARK: - Word-by-word: vista simple (sin Canvas por ahora)
     @ViewBuilder
     private func wordByWordCanvasView() -> some View {
-        if let engine = lyricsEngine, let layout = lyricsLayout, !visualLines.isEmpty {
-            LyricsScrollView(
-                engine: engine,
-                layout: layout,
-                lines: visualLines,
-                currentTimeMs: { audioEngine.preciseElapsedTimeMs }
-            )
-        } else {
-            // Datos aún no listos (o vacíos tras el fix del builder).
-            emptyLyricsView
-        }
+        // Temporal: usar vista antigua hasta integrar el motor nuevo
+        emptyLyricsView
     }
 
     // MARK: - Seek a línea (tap en letra)

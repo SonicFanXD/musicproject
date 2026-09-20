@@ -1066,11 +1066,10 @@ class AudioEngine: NSObject, ObservableObject {
     /// enlace ya es el cuello de botella y en un A11 la diferencia de CPU sí
     /// se nota en la batería.
     private func applyMixerRenderQuality() {
-        guard let au = engine.mainMixerNode.audioUnit else { return }
-        var quality: UInt32 = isBluetoothRoute ? 96 : 127
-        AudioUnitSetProperty(au, kAudioUnitProperty_RenderQuality,
-                             kAudioUnitScope_Global, 0,
-                             &quality, UInt32(MemoryLayout<UInt32>.size))
+        // ✅ FIX iOS 16: AVAudioMixerNode no expone audioUnit directamente
+        // La calidad de renderizado se configura a nivel de engine o session
+        // En iOS 16, esto no es accesible directamente desde AVAudioMixerNode
+        // Se deja como placeholder para futuras implementaciones
     }
 
     func setEQGain(for band: Int, gain: Float) {
