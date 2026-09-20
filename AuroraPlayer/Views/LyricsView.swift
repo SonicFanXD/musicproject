@@ -3,9 +3,10 @@ import SwiftUI
 // MARK: - Vista de lyrics línea por línea (optimizada para iPhone 8 Plus)
 // ✅ Diseño: ScrollView + LazyVStack para máximo rendimiento (60 fps)
 // ✅ Línea activa en blanco opaco, líneas inactivas atenuadas
-// ✅ Auto-scroll suave con ScrollViewReader
+// ✅ Auto-scroll suave con ScrollViewReader (solo cuando cambia activeID)
 // ✅ Padding vertical generoso (200 pt) para centrar primera/última línea
 // ✅ Render 100% por código, sin assets
+// ✅ PROHIBIDO: APIs de iOS 17+, TimelineView, CADisplayLink
 struct LyricsView: View {
     let song: Song?
     @ObservedObject var viewModel: LyricsViewModel
@@ -34,8 +35,8 @@ struct LyricsView: View {
         .onAppear {
             parseLyricsIfNeeded()
         }
+        // ✅ iOS 16 onChange clásico: scroll solo cuando cambia activeID
         .onChange(of: viewModel.activeID) { newID in
-            // ✅ Scroll solo cuando cambia la línea activa, no en cada frame
             if let newID = newID {
                 scrollTarget = newID
             }
@@ -76,7 +77,7 @@ struct LyricsView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 8) {
-                    // ✅ Padding vertical generoso para centrar primera/última línea
+                    // ✅ Padding vertical generoso (200 pt) para centrar primera/última línea
                     Color.clear.frame(height: 200)
                     
                     ForEach(viewModel.lyricsLines) { line in
@@ -92,6 +93,7 @@ struct LyricsView: View {
                 }
                 .padding(.horizontal, 24)
             }
+            // ✅ iOS 16 onChange clásico: scroll suave solo cuando cambia scrollTarget
             .onChange(of: scrollTarget) { target in
                 if let target = target {
                     // ✅ Animación suave solo cuando cambia la línea activa
@@ -104,14 +106,16 @@ struct LyricsView: View {
     }
     
     // MARK: - Vista de línea individual
+    // ✅ No recrea Text en cada frame: solo cambia color/opacidad
+    // ✅ Sin blur/shadow por frame para máximo rendimiento en iPhone 8 Plus
     private func lyricLineView(line: LyricsLine, isActive: Bool) -> some View {
         Text(line.cleanText)
-            .font(.system(size: isActive ? 24 : 18, weight: isActive ? .bold : .medium))
-            .foregroundStyle(isActive ? .white : .white.opacity(0.35))
+            .font(.system(size: isActive ? 24 : 18, weight: isActive ? .bold : .regular))
+            .foregroundStyle(isActive ? Color.white : Color.white.opacity(0.35))
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.vertical, 12)
-            // ✅ Animación solo cuando cambia el estado de activación
-            .animation(.easeInOut(duration: 0.2), value: isActive)
+            // ✅ Animación suave solo cuando cambia el estado de activación
+            .animation(.easeInOut(duration: 0.25), value: isActive)
     }
     
     // MARK: - Seek a línea
