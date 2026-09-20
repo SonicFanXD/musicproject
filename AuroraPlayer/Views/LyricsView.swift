@@ -67,6 +67,11 @@ struct LyricsView: View {
     // ✅ OPTIMIZACIÓN: palabras agrupadas por línea UNA sola vez (O(n) al parsear)
     @State private var wordsByLine: [[LyricWord]] = []
 
+    // ✅ MOTOR APPLE MUSIC: estado del motor de lyrics
+    @State private var lyricsEngine: LyricsEngine?
+    @State private var lyricsState: LyricsState = LyricsState(activeTokenID: nil, progress: 0, activeLineIndex: 0, previousTokenID: nil, nextTokenID: nil)
+    @State private var tokensByLine: [[LyricsToken]] = []
+
     var body: some View {
         ZStack {
             blurredArtworkBackground
@@ -421,35 +426,8 @@ private class LyricsEngine {
         return grouped.sorted { $0.key < $1.key }.map { $0.value }
     }
 }
-    // ✅ MODELO APPLE MUSIC: resaltar palabra activa, atenuar anterior y futura
-    private func wordByWordLineView(line: LyricLine, words: [LyricWord], isActive: Bool, progress: Double) -> some View {
-        HStack(spacing: 0) {
-            ForEach(Array(words.enumerated()), id: \.element.id) { index, word in
-                let wordProgressValue = wordProgress[word.id] ?? 0.0
-                Text(word.text)
-                    .font(.system(size: isActive ? 18 : 15, weight: isActive ? .medium : .regular))
-                    .foregroundStyle(wordProgressValue > 0.5 ? .white : Color.gray.opacity(0.5))
-                    .opacity(wordProgressValue > 0.9 ? 1.0 : wordProgressValue > 0.1 ? 0.7 : 0.4)
-                    .scaleEffect(wordProgressValue > 0.8 ? 1.05 : 1.0)
-                    .animation(.easeOut(duration: 0.15), value: wordProgressValue)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, 6)
-    }
 
-    // Progreso de la línea activa: suma de progresos de sus palabras / nº de palabras.
-    // wordProgress solo contiene palabras dentro de la ventana temporal cercana,
-    // así que accedemos por id a las de la línea activa.
-    private var lineProgress: Double {
-        guard let current = currentLineIndex, current >= 0, current < wordsByLine.count else { return 0 }
-        let lineWords = wordsByLine[current]
-        guard !lineWords.isEmpty else { return 0 }
-        let total = lineWords.reduce(0.0) { $0 + (wordProgress[$1.id] ?? 0.0) }
-        return min(1.0, total / Double(lineWords.count))
-    }
-
-    // MARK: - Update Word Progress (motor Apple Music optimizado 60fps)
+// MARK: - Update Word Progress (motor Apple Music optimizado 60fps)
     private func updateWordProgress(for time: TimeInterval) {
         guard let engine = lyricsEngine else { return }
         
