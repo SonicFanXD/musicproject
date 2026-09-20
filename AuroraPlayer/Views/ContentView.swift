@@ -999,7 +999,7 @@ struct ContentView: View {
             // 48pt pero decodificaba los 768px completos (2.4MB) por fila en el
             // scroll → picos de RAM + tirones. Reescalar a 96px (48pt @2x):
             // ~15KB retenidos por fila en vez de 2.4MB (160× menos).
-            Image(uiImage: artwork.preparingThumbnail(of: CGSize(width: 96, height: 96)) ?? artwork)
+            Image(uiImage: AppTheme.thumbnail(from: artwork, size: CGSize(width: 96, height: 96)))
                 .resizable()
                 .interpolation(.high)
                 .scaledToFill()

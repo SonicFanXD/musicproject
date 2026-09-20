@@ -308,6 +308,40 @@ enum AppTheme {
         return color
     }
 
+    // MARK: - Miniaturas de carátula (caché)
+
+    // ✅ `preparingThumbnail(of:)` decodifica la portada COMPLETA (768px ≈ 2.4MB)
+    // y devuelve un UIImage NUEVO en cada llamada. En filas que se re-renderizan
+    // (scroll, cambios de estado del motor) eso es CPU y churn de memoria en A11.
+    // Clave = instancia de la carátula (`Song.artwork` ya devuelve la MISMA
+    // instancia cacheada por id de canción) + tamaño en píxeles.
+    static let thumbnailCache: NSCache<NSString, UIImage> = {
+        let cache = NSCache<NSString, UIImage>()
+        // ✅ ANTI-JETSAM (iPhone 8 Plus / 3GB): tope por MEMORIA, no por conteo.
+        // 12MB ≈ 330 miniaturas de 96px o ≈ 33 de 300px; las carátulas completas
+        // nunca entran aquí (siguen en Song.artworkCache).
+        cache.countLimit = 400
+        cache.totalCostLimit = 12 * 1024 * 1024
+        return cache
+    }()
+
+    /// Miniatura cacheada de una carátula. Mismo resultado que
+    /// `artwork.preparingThumbnail(of:)` (y mismo fallback a la original),
+    /// pero sin recomputarla en cada render de fila.
+    static func thumbnail(from artwork: UIImage, size: CGSize) -> UIImage {
+        let width = max(1, Int(size.width.rounded()))
+        let height = max(1, Int(size.height.rounded()))
+        let key = "\(ObjectIdentifier(artwork).hashValue)-\(width)x\(height)" as NSString
+
+        if let cached = thumbnailCache.object(forKey: key) { return cached }
+        guard let thumbnail = artwork.preparingThumbnail(of: CGSize(width: width, height: height)) else {
+            return artwork
+        }
+        // Costo = bytes del bitmap (RGBA) para que NSCache expulse por RAM real.
+        thumbnailCache.setObject(thumbnail, forKey: key, cost: width * height * 4)
+        return thumbnail
+    }
+
     /// Extrae el color más REPRESENTATIVO de una portada:
     /// ✅ SISTEMA DE MAYORÍA: cuantización RGB para encontrar el color más frecuente
     /// No usa promedio (puede ser sesgado), usa frecuencia de colores

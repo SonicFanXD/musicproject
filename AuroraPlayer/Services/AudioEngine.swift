@@ -499,8 +499,9 @@ class AudioEngine: NSObject, ObservableObject {
             forName: UIApplication.didReceiveMemoryWarningNotification,
             object: nil, queue: .main
         ) { [weak self] _ in
-            AppLog.warning(.performance, "Aviso de memoria: liberando cachés (colores de carátula + lock screen)")
+            AppLog.warning(.performance, "Aviso de memoria: liberando cachés (colores + miniaturas de carátula + lock screen)")
             AppTheme.artworkColorCache.removeAllObjects()
+            AppTheme.thumbnailCache.removeAllObjects()
             self?.cachedNowPlayingArtwork = nil
             self?.cachedArtworkSongID = nil
         }
