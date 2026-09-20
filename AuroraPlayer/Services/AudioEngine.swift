@@ -1832,6 +1832,9 @@ class AudioEngine: NSObject, ObservableObject {
         // playerNode.stop() descarta cualquier canción pre-encadenada por
         // adelantado; hay que volver a programarla tras el seek.
         clearChainedAhead()
+        // ✅ FIX: Limpiar también la precarga de la siguiente canción para evitar
+        // que quede apuntando a una canción ya no relevante tras el seek.
+        clearPreloadedNext()
 
         let clampedTime = max(0, min(time, duration))
         currentTime = clampedTime
@@ -2491,6 +2494,10 @@ class AudioEngine: NSObject, ObservableObject {
                 // después `resume()` solo hacía playerNode.play() sobre un
                 // nodo que ya "estaba reproduciendo" (no-op) — silencio
                 // seguía. Apple recomienda pausar explícitamente en este caso.
+                // ✅ FIX: Se llama suspendForRouteLoss() UNA SOLA VEZ al inicio.
+                // La llamada duplicada después del asyncAfter causaba doble suspensión
+                // y estado inconsistente. El asyncAfter solo reintenta resume() si
+                // wasPlayingBeforeRouteChange es true (ya verificado en línea 2506).
                 self.wasPlayingBeforeRouteChange = self.isPlaying
                 if self.isPlaying {
                     // ⛔️ No pause() a secas: suspendForRouteLoss() invalida la
@@ -2518,11 +2525,6 @@ class AudioEngine: NSObject, ObservableObject {
                             }
                         }
                     }
-                    // obsoleto que se dispare en plena caída de la ruta no
-                    // puede llamar a playNext() (salto a la canción siguiente)
-                    // y publica rate 0 al lock screen/CC (nada de
-                    // "reproduciendo" con la barra congelada).
-                    self.suspendForRouteLoss()
                     AppLog.info(.playback, "Audífonos/Bluetooth desconectados: suspendido sin salto de canción")
                 }
             } else {
