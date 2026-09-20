@@ -132,12 +132,12 @@ class FileAccessService: ObservableObject {
     // ✅ CONCURRENCIA OPTIMIZADA: ventana aumentada de lecturas AVAsset en vuelo.
     // Aumentado de 4 a 8 para iPhone 8/A11 con suficiente RAM para indexación más rápida
     // Los índices preservan el orden original (determinista).
-    private let maxConcurrentMetadataReads = 8
+    private let maxConcurrentMetadataReads = 16
     // ✅ Lotes de 4 en vuelo × 50 URLs: más paralelismo para indexación más rápida
     // sin saturar memoria en dispositivos modernos.
     private let maxInFlightBatches = 4
     // ✅ Lotes más grandes: 50 → 75 URLs para menos overhead de scheduling
-    private let metadataBatchSize = 75
+    private let metadataBatchSize = 150
 
     // Colecciones derivadas cacheadas: se recalculan solo cuando cambia `songs`,
     // no en cada render de la UI.
@@ -562,7 +562,7 @@ class FileAccessService: ObservableObject {
             guard let enumerator = FileManager.default.enumerator(
                 at: url,
                 includingPropertiesForKeys: keys,
-                options: [.skipsHiddenFiles]
+                options: [.skipsHiddenFiles, .skipsPackageDescendants]
             ) else {
                 AppLog.error(.library, "No se pudo crear enumerador para: \(url.lastPathComponent)")
                 return
@@ -592,7 +592,15 @@ class FileAccessService: ObservableObject {
                 fileCount += 1
                 let key = Self.libraryKey(for: fileURL)
                 seenKeys.insert(key)
-                if knownKeys.contains(key) {
+                // ✅ FIX subcarpetas: si es directorio, agregar a lista para escanear recursivamente
+                if values?.isDirectory == true {
+                    // Escanear subcarpeta recursivamente en un lote separado
+                    DispatchQueue.global(qos: .utility).async { [weak self] in
+                        self?.scanFolder(url: fileURL, silent: silent)
+                    }
+                    continue
+                }
+                guard self.supportedExtensions.contains(fileURL.pathExtension.lowercased()) else { continue
                     // ✅ FIX metadata editada: si el archivo ya estaba
                     // indexado, solo se re-lee cuando su fecha de
                     // modificación en disco es MÁS RECIENTE que la que se

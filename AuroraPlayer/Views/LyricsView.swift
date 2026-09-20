@@ -244,7 +244,7 @@ struct LyricsView: View {
     private func wordByWordLyricsView(lyrics: SynchronizedLyrics) -> some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 22) {
+                LazyVStack(alignment: .leading, spacing: 32) {
                     ForEach(Array(lyrics.lines.enumerated()), id: \.element.id) { index, line in
                         let wordsInLine = index < wordsByLine.count ? wordsByLine[index] : []
 
@@ -262,7 +262,7 @@ struct LyricsView: View {
                             .background(
                                 currentLineIndex == index ?
                                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                    .fill(AppTheme.accent.opacity(0.06)) : nil
+                                    .fill(AppTheme.accentGradient.opacity(0.08)) : nil
                             )
                     }
                 }
@@ -270,8 +270,8 @@ struct LyricsView: View {
             }
             .onChange(of: scrollTarget) { target in
                 if let target = target {
-                    // ✅ Misma animación suave que el auto-scroll (consistencia)
-                    withAnimation(.spring(response: 0.6, dampingFraction: 0.85)) {
+                    // ✅ Animación más suave y rápida (antes 0.6, ahora 0.4)
+                    withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
                         proxy.scrollTo(target, anchor: .center)
                     }
                 }
@@ -284,8 +284,8 @@ struct LyricsView: View {
         Haptics.light()
         audioEngine.seek(to: time)
         currentLineIndex = index
-        // ✅ Misma animación suave que el auto-scroll (consistencia)
-        withAnimation(.spring(response: 0.6, dampingFraction: 0.85)) {
+        // ✅ Animación más rápida y suave (antes 0.6, ahora 0.35)
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
             proxy.scrollTo(index, anchor: .center)
         }
     }
@@ -306,23 +306,22 @@ struct LyricsView: View {
             .scaleEffect(isActive ? 1.0 : 0.95)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.vertical, 10)
-            // ✅ ANIMACIÓN MEJORADA: spring con rebote suave (antes damping 1.0
-            // = críticamente amortiguado, se sentía rígido/robótico). Ahora
-            // damping 0.82 da un rebote sutil que se siente orgánico y vivo.
-            .animation(.spring(response: 0.45, dampingFraction: 0.82), value: isActive)
+            // ✅ ANIMACIÓN MÁS RÁPIDA Y SUAVE: response 0.35 (antes 0.45) para
+            // menos retraso, damping 0.8 para rebote sutil pero no excesivo.
+            .animation(.spring(response: 0.35, dampingFraction: 0.8), value: isActive)
     }
 
     // MARK: - Word by Word Line View
-    // ✅ KARAOKE SUTIL: animación delicada y elegante
+    // ✅ KARAOKE SUTIL: animación delicada y elegante con mejor superposición
     private func wordByWordLineView(line: LyricLine, words: [LyricWord], isActive: Bool, progress: Double) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 6) {
             ZStack(alignment: .leading) {
                 // Texto base (gris suave)
                 Text(words.map(\.text).joined(separator: " "))
                     .font(.system(size: isActive ? 18 : 15, weight: isActive ? .medium : .regular))
                     .foregroundStyle(Color.gray.opacity(0.6))
-                    .blur(radius: progress > 0 ? progress * 0.3 : 0)
-                    .opacity(progress > 0.7 ? 0.25 : 1.0)
+                    .blur(radius: progress > 0 ? progress * 0.25 : 0)
+                    .opacity(progress > 0.8 ? 0.2 : 1.0)
 
                 // Texto iluminado (con máscara)
                 Text(words.map(\.text).joined(separator: " "))
@@ -334,9 +333,9 @@ struct LyricsView: View {
                                 .frame(width: geo.size.width * CGFloat(min(max(progress, 0), 1)))
                         }
                     }
-                    .shadow(color: .white.opacity(0.25), radius: progress > 0.5 ? 5 : 0, x: 0, y: 0)
+                    .shadow(color: .white.opacity(0.3), radius: progress > 0.5 ? 6 : 0, x: 0, y: 0)
             }
-            // Barra de progreso muy sutil
+            // Barra de progreso muy sutil con gradiente
             if isActive && progress > 0 {
                 GeometryReader { geo in
                     ZStack(alignment: .leading) {
@@ -345,11 +344,7 @@ struct LyricsView: View {
                             .frame(height: 2)
 
                         RoundedRectangle(cornerRadius: 1.5)
-                            .fill(LinearGradient(
-                                colors: [AppTheme.accent, AppTheme.accent.opacity(0.6)],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            ))
+                            .fill(AppTheme.accentGradient)
                             .frame(width: geo.size.width * CGFloat(progress), height: 2)
                     }
                 }
@@ -357,7 +352,7 @@ struct LyricsView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, 5)
+        .padding(.vertical, 8)
     }
 
     // Progreso de la línea activa: suma de progresos de sus palabras / nº de palabras.

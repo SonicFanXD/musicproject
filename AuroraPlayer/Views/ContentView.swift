@@ -360,11 +360,7 @@ struct ContentView: View {
                     .padding(.horizontal, 24)
                     .padding(.vertical, 14)
                     .background {
-                        Capsule().fill(LinearGradient(
-                            colors: [AppTheme.accent, AppTheme.accent.opacity(0.7)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ))
+                        Capsule().fill(AppTheme.accentGradient)
                     }
                     .shadow(color: AppTheme.accent.opacity(0.35), radius: 10, x: 0, y: 5)
                 }
@@ -451,13 +447,7 @@ struct ContentView: View {
                         .background {
                             if selectedCategory == category {
                                 ZStack {
-                                    Capsule().fill(
-                                        LinearGradient(
-                                            colors: [AppTheme.accent, AppTheme.accent.opacity(0.8)],
-                                            startPoint: .topLeading,
-                                            endPoint: .bottomTrailing
-                                        )
-                                    )
+                                    Capsule().fill(AppTheme.accentGradient)
                                     Capsule().fill(
                                         LinearGradient(
                                             colors: [.white.opacity(0.2), .clear],
@@ -490,13 +480,7 @@ struct ContentView: View {
         HStack {
             Text(Localization.localized("app.name"))
                 .font(.system(size: 26, weight: .bold, design: .rounded))
-                .foregroundStyle(
-                    LinearGradient(
-                        colors: [AppTheme.accent, AppTheme.accent.opacity(0.8)],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
-                )
+                .foregroundStyle(AppTheme.accentGradient)
                 .accessibilityLabel(Localization.localized("app.name"))
             Spacer()
         }
@@ -634,12 +618,7 @@ struct ContentView: View {
 
                 Image(systemName: "square.stack.3d.up")
                     .font(.system(size: 34, weight: .semibold))
-                    .foregroundStyle(
-                        LinearGradient(
-                            colors: [AppTheme.accent, AppTheme.accent.opacity(0.7)],
-                            startPoint: .top, endPoint: .bottom
-                        )
-                    )
+                    .foregroundStyle(AppTheme.accentGradient)
             }
 
             Text(Localization.localized("indexing.indexingLibrary"))

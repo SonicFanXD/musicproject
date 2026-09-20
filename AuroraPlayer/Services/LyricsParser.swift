@@ -341,16 +341,23 @@ class LyricsParser {
     /// Limpieza final de texto: elimina brackets, timestamps residuales y puntuación suelta
     private static func cleanText(_ text: String) -> String {
         var cleaned = text
-        // Eliminar cualquier bracket residual
+        // Eliminar cualquier bracket residual (incluyendo corchetes)
         cleaned = cleaned.replacingOccurrences(of: "\\[.*?\\]", with: "", options: .regularExpression)
         cleaned = cleaned.replacingOccurrences(of: "<.*?>", with: "", options: .regularExpression)
+        cleaned = cleaned.replacingOccurrences(of: "\\]", with: "", options: .regularExpression)
+        cleaned = cleaned.replacingOccurrences(of: "\\[", with: "", options: .regularExpression)
         // Eliminar timestamps sueltos
         cleaned = cleaned.replacingOccurrences(of: "\\d{1,2}:\\d{2}(\\.\\d{1,3})?", with: "", options: .regularExpression)
-        // Limpiar puntuación suelta al inicio
+        // Limpiar puntuación suelta al inicio y al final
         cleaned = cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
-        while cleaned.hasPrefix(".") || cleaned.hasPrefix(",") || cleaned.hasPrefix("-") || cleaned.hasPrefix("—") {
+        while cleaned.hasPrefix(".") || cleaned.hasPrefix(",") || cleaned.hasPrefix("-") || cleaned.hasPrefix("—") || cleaned.hasPrefix(">") || cleaned.hasPrefix("<") {
             cleaned = String(cleaned.dropFirst()).trimmingCharacters(in: .whitespaces)
         }
+        while cleaned.hasSuffix(".") || cleaned.hasSuffix(",") || cleaned.hasSuffix("-") || cleaned.hasSuffix(">") || cleaned.hasSuffix("<") {
+            cleaned = String(cleaned.dropLast()).trimmingCharacters(in: .whitespaces)
+        }
+        // Limpiar espacios múltiples
+        cleaned = cleaned.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
         return cleaned
     }
 

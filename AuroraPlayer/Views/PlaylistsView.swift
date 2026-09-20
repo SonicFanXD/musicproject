@@ -36,13 +36,7 @@ struct PlaylistsView: View {
                 ToolbarItem(placement: .principal) {
                     Text(Localization.localized("playlists.title"))
                         .font(.system(size: 18, weight: .bold, design: .rounded))
-                        .foregroundStyle(
-                            LinearGradient(
-                                colors: [AppTheme.accent, AppTheme.accent.opacity(0.75)],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                        )
+                        .foregroundStyle(AppTheme.accentGradient)
                         .lineLimit(1)
                         .minimumScaleFactor(0.7)
                         .accessibilityLabel(Localization.localized("playlists.title"))
@@ -85,24 +79,13 @@ struct PlaylistsView: View {
                     .frame(width: 88, height: 88)
                     .overlay {
                         Circle()
-                            .stroke(
-                                LinearGradient(
-                                    colors: [AppTheme.accent.opacity(0.4), AppTheme.accent.opacity(0.1)],
-                                    startPoint: .topLeading, endPoint: .bottomTrailing
-                                ),
-                                lineWidth: 2
-                            )
+                            .stroke(AppTheme.accentGradient, lineWidth: 2)
                     }
                     .shadow(color: AppTheme.accent.opacity(0.15), radius: 12, y: 6)
 
                 Image(systemName: "music.note.list")
                     .font(.system(size: 38, weight: .semibold))
-                    .foregroundStyle(
-                        LinearGradient(
-                            colors: [AppTheme.accent, AppTheme.accent.opacity(0.7)],
-                            startPoint: .top, endPoint: .bottom
-                        )
-                    )
+                    .foregroundStyle(AppTheme.accentGradient)
             }
 
             Text(Localization.localized("playlists.yourPlaylists"))

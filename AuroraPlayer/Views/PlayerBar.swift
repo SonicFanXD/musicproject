@@ -143,8 +143,8 @@ struct PlayerBar: View {
                                         .opacity(audioEngine.isPlaying ? 1.0 : 0)
                                         .animation(
                                             audioEngine.isPlaying
-                                                ? .easeInOut(duration: 1.6).repeatForever(autoreverses: true)
-                                                : .easeOut(duration: 0.2),
+                                                ? .easeInOut(duration: 0.8).repeatForever(autoreverses: true)
+                                                : .easeOut(duration: 0.15),
                                             value: audioEngine.isPlaying
                                         )
                                         .drawingGroup()

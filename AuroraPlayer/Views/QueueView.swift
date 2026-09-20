@@ -51,12 +51,7 @@ struct QueueView: View {
                         ToolbarItem(placement: .principal) {
                             Text(Localization.localized("queue.title"))
                                 .font(.system(size: 18, weight: .bold, design: .rounded))
-                                .foregroundStyle(
-                                    LinearGradient(
-                                        colors: [AppTheme.accent, AppTheme.accent.opacity(0.75)],
-                                        startPoint: .leading, endPoint: .trailing
-                                    )
-                                )
+                                .foregroundStyle(AppTheme.accentGradient)
                                 .lineLimit(1).minimumScaleFactor(0.7)
                                 .accessibilityLabel(Localization.localized("queue.title"))
                         }
@@ -113,11 +108,7 @@ struct QueueView: View {
                     .padding(.vertical, 12)
                     .background {
                         if selectedTab == tab {
-                            Capsule().fill(LinearGradient(
-                                colors: [AppTheme.accent, AppTheme.accent.opacity(0.7)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            ))
+                            Capsule().fill(AppTheme.accentGradient)
                                 .shadow(color: AppTheme.accent.opacity(0.3), radius: 6, x: 0, y: 3)
                         } else {
                             // ✅ 60fps: color OPACO (sin blur) para el selector
