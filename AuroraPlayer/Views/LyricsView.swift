@@ -255,34 +255,51 @@ struct LyricsView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 22) {
-                    ForEach(Array(lyrics.lines.enumerated()), id: \.element.id) { index, line in
-                        let wordsInLine = index < wordsByLine.count ? wordsByLine[index] : []
-
-                        wordByWordLineView(line: line, words: wordsInLine, isActive: currentLineIndex == index,
-                            progress: lyricsState.progress)
-                            .id(index)
-                            .contentShape(Rectangle())
-                            .onTapGesture {
-                                seekToLine(index, time: line.time, proxy: proxy)
-                            }
-                            .background(
-                                currentLineIndex == index ?
-                                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                    .fill(AppTheme.accent.opacity(0.06)) : nil
-                            )
+                    ForEach(Array(tokensByLine.enumerated()), id: \.self) { index, tokens in
+                        if let line = index < lyrics.lines.count ? lyrics.lines[index] : nil {
+                            wordByWordLineViewTokens(tokens: tokens, line: line, isActive: currentLineIndex == index)
+                                .id(index)
+                                .contentShape(Rectangle())
+                                .onTapGesture {
+                                    seekToLine(index, time: line.time, proxy: proxy)
+                                }
+                                .background(
+                                    currentLineIndex == index ?
+                                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                        .fill(AppTheme.accent.opacity(0.06)) : nil
+                                )
+                        }
                     }
                 }
                 .padding(.horizontal, 24).padding(.vertical, 20)
             }
             .onChange(of: scrollTarget) { target in
                 if let target = target {
-                    // ✅ Misma animación suave que el auto-scroll (consistencia)
                     withAnimation(.spring(response: 0.6, dampingFraction: 0.85)) {
                         proxy.scrollTo(target, anchor: .center)
                     }
                 }
             }
         }
+    }
+
+    // MARK: - Word by Word Line View con Tokens (Apple Music model)
+    private func wordByWordLineViewTokens(tokens: [LyricsToken], line: LyricLine, isActive: Bool) -> some View {
+        HStack(spacing: 2) {
+            ForEach(tokens, id: \.id) { token in
+                let isActiveToken = lyricsState.activeTokenID == token.id
+                let tokenProgress = isActiveToken ? lyricsState.progress : 0.0
+                
+                Text(token.text)
+                    .font(.system(size: isActive ? 18 : 15, weight: isActive ? .medium : .regular))
+                    .foregroundStyle(tokenProgress > 0.5 ? .white : Color.gray.opacity(0.5))
+                    .opacity(tokenProgress > 0.9 ? 1.0 : tokenProgress > 0.1 ? 0.7 : 0.4)
+                    .scaleEffect(tokenProgress > 0.8 ? 1.03 : 1.0)
+                    .drawingGroup(opaque: false, colorMode: .nonLinear)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 6)
     }
 
     // MARK: - Seek a línea (tap en letra)
