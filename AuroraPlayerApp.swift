@@ -32,7 +32,7 @@ struct AuroraPlayerApp: App {
         .onChange(of: scenePhase) { newPhase in
             if newPhase == .active {
                 // Manejar shortcuts que podrían haber iniciado la app
-                if let shortcutItem = UIApplication.shared.shortcutItems.first {
+                if let shortcutItems = UIApplication.shared.shortcutItems, let shortcutItem = shortcutItems.first {
                     AuroraIntents.handleShortcutItem(shortcutItem)
                 }
             }

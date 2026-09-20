@@ -2325,7 +2325,7 @@ class AudioEngine: NSObject, ObservableObject {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
                     guard let self = self else { return }
                     let route = AVAudioSession.sharedInstance().currentRoute.outputs.first
-                    let isHeadphoneRoute = route.map { output in
+                    _ = route.map { output in
                         Self.isHeadphonePort(output.portType)
                     } ?? false
 
