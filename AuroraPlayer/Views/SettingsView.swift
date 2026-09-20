@@ -385,7 +385,10 @@ struct SettingsView: View {
                         .onChange(of: showVisualizerInBar) { v in AppLog.info(.settings, "Visualizador en barra: \(v ? "activado" : "desactivado")") }
                         .onChange(of: compactPlayerBar) { v in AppLog.info(.settings, "Barra compacta: \(v ? "activado" : "desactivado")") }
                         .onChange(of: showLyricsByDefault) { v in AppLog.info(.settings, "Letras por defecto: \(v ? "activado" : "desactivado")") }
-                        .onChange(of: showFPS) { v in AppLog.info(.settings, "Contador FPS: \(v ? "activado" : "desactivado")") }
+                        .onChange(of: showFPS) { v in
+                            AppLog.info(.settings, "Contador FPS: \(v ? "activado" : "desactivado")")
+                            FPSOverlayController.shared.setEnabled(v)
+                        }
 
                         // Rendimiento (info técnica)
                         settingsSection(icon: "gauge.open.with.needle", title: Localization.localized("settings.performance"), color: .indigo) {
