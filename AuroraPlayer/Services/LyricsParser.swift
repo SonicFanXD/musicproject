@@ -255,13 +255,6 @@ class LyricsParser {
         }
         
         return minutes * 60 + seconds + milliseconds
-        }
-
-        if !currentLineWords.isEmpty {
-            lyricLines.append(LyricLine(time: currentLineWords.first?.time ?? 0, text: currentLineWords.map { $0.text }.joined(separator: " ")))
-        }
-
-        return SynchronizedLyrics(lines: lyricLines, words: lyricWords, isWordByWord: true)
     }
 
     // MARK: - Parse enhanced line format (mm:ss.xx text)
