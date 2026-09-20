@@ -1,12 +1,13 @@
 import SwiftUI
 
-// MARK: - Vista de lyrics línea por línea (optimizada para iPhone 8 Plus)
+// MARK: - Vista de lyrics línea por línea con animación SpotiFLAC-style
 // ✅ Diseño: ScrollView + LazyVStack para máximo rendimiento (60 fps)
-// ✅ Línea activa en blanco opaco, líneas inactivas atenuadas
-// ✅ Auto-scroll suave con ScrollViewReader (solo cuando cambia activeID)
+// ✅ Animación de relleno progresivo: línea oscura que se "ilumina" de izquierda a derecha
+// ✅ CADisplayLink a 60 Hz en ViewModel para interpolación fluida
+// ✅ Aislamiento de rendimiento: solo línea activa anima a 60 fps
 // ✅ Padding vertical generoso (200 pt) para centrar primera/última línea
 // ✅ Render 100% por código, sin assets
-// ✅ PROHIBIDO: APIs de iOS 17+, TimelineView, CADisplayLink
+// ✅ PROHIBIDO: APIs de iOS 17+ (MeshGradient, scrollTargetBehavior, etc.)
 struct LyricsView: View {
     let song: Song?
     @ObservedObject var viewModel: LyricsViewModel
@@ -35,8 +36,8 @@ struct LyricsView: View {
         .onAppear {
             parseLyricsIfNeeded()
         }
-        // ✅ iOS 16 onChange clásico: scroll solo cuando cambia activeID
-        .onChange(of: viewModel.activeID) { newID in
+        // ✅ iOS 16 onChange clásico: scroll solo cuando cambia activeLineID
+        .onChange(of: viewModel.lyricsState.activeLineID) { newID in
             if let newID = newID {
                 scrollTarget = newID
             }
@@ -81,12 +82,26 @@ struct LyricsView: View {
                     Color.clear.frame(height: 200)
                     
                     ForEach(viewModel.lyricsLines) { line in
-                        lyricLineView(line: line, isActive: viewModel.activeID == line.id)
-                            .id(line.id)
-                            .contentShape(Rectangle())
-                            .onTapGesture {
-                                seekToLine(line)
-                            }
+                        let isActive = viewModel.lyricsState.activeLineID == line.id
+                        let progress = isActive ? viewModel.lyricsState.progress : 0.0
+                        
+                        if isActive {
+                            // ✅ Línea activa con animación de relleno progresivo
+                            animatedLyricLine(line: line, progress: progress)
+                                .id(line.id)
+                                .contentShape(Rectangle())
+                                .onTapGesture {
+                                    seekToLine(line)
+                                }
+                        } else {
+                            // ✅ Línea inactiva estática (sin animación a 60 fps)
+                            staticLyricLine(line: line)
+                                .id(line.id)
+                                .contentShape(Rectangle())
+                                .onTapGesture {
+                                    seekToLine(line)
+                                }
+                        }
                     }
                     
                     Color.clear.frame(height: 200)
@@ -105,17 +120,41 @@ struct LyricsView: View {
         }
     }
     
-    // MARK: - Vista de línea individual
-    // ✅ No recrea Text en cada frame: solo cambia color/opacidad
-    // ✅ Sin blur/shadow por frame para máximo rendimiento en iPhone 8 Plus
-    private func lyricLineView(line: LyricsLine, isActive: Bool) -> some View {
+    // MARK: - Línea animada con relleno progresivo (SpotiFLAC-style)
+    // ✅ Solo la línea activa tiene esta complejidad (renderizado a 60 fps)
+    // ✅ Dos capas de Text superpuestas: base atenuada + superior brillante con máscara
+    private func animatedLyricLine(line: LyricsLine, progress: Double) -> some View {
+        ZStack(alignment: .leading) {
+            // ✅ Capa base: texto atenuado (siempre visible)
+            Text(line.cleanText)
+                .font(.system(size: 24, weight: .bold))
+                .foregroundStyle(Color.white.opacity(0.35))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, 12)
+            
+            // ✅ Capa superior: texto brillante con máscara de relleno
+            Text(line.cleanText)
+                .font(.system(size: 24, weight: .bold))
+                .foregroundStyle(Color.white)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, 12)
+                .mask(alignment: .leading) {
+                    GeometryReader { geo in
+                        Rectangle()
+                            .frame(width: geo.size.width * CGFloat(progress))
+                    }
+                }
+        }
+    }
+    
+    // MARK: - Línea estática (inactiva)
+    // ✅ Sin animación, renderizado estático para máximo rendimiento
+    private func staticLyricLine(line: LyricsLine) -> some View {
         Text(line.cleanText)
-            .font(.system(size: isActive ? 24 : 18, weight: isActive ? .bold : .regular))
-            .foregroundStyle(isActive ? Color.white : Color.white.opacity(0.35))
+            .font(.system(size: 18, weight: .regular))
+            .foregroundStyle(Color.white.opacity(0.35))
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.vertical, 12)
-            // ✅ Animación suave solo cuando cambia el estado de activación
-            .animation(.easeInOut(duration: 0.25), value: isActive)
     }
     
     // MARK: - Seek a línea
