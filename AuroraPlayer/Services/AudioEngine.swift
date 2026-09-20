@@ -766,17 +766,20 @@ class AudioEngine: NSObject, ObservableObject {
         let sessionMode: AVAudioSession.Mode = (modeIndex == 1 && isWiredRoute) ? .measurement : .default
         
         do {
-            var options: AVAudioSession.CategoryOptions = [.allowBluetoothA2DP]
-            if allowAirPlay { options.insert(.allowAirPlay) }
+            // ✅ CORRECCIÓN -50: No mezclar .allowBluetoothA2DP y .allowAirPlay juntos
+            // Seleccionar según prioridad: AirPlay primero, luego Bluetooth A2DP
+            var options: AVAudioSession.CategoryOptions = []
+            if allowAirPlay {
+                options.insert(.allowAirPlay)
+            } else {
+                options.insert(.allowBluetoothA2DP)
+            }
+            // ✅ Omitir .allowBluetoothHFP por defecto (degrada calidad a mono 8/16kHz)
+            // Los controles del auricular funcionan por AVRCP sobre A2DP sin HFP
+            
             try session.setCategory(
                 .playback,
                 mode: sessionMode,
-                // ✅ MÁXIMA CALIDAD BT: SOLO perfiles de música (A2DP/AirPlay).
-                // Quitado .allowBluetoothHFP: HFP es el perfil de llamadas (SCO,
-                // mono 8/16kHz, mSBC/CVSD) — si lo permitimos y el A2DP falla o
-                // tarda, iOS puede enrutar la música por HFP y suena comprimido.
-                // Los controles del auricular (play/pausa/siguiente) siguen
-                // funcionando por AVRCP sobre A2DP sin necesidad de HFP.
                 options: options
             )
 

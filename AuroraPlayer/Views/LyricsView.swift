@@ -91,22 +91,16 @@ struct LyricsView: View {
                         let isActive = viewModel.activeLineID == line.id
                         let progress = isActive ? viewModel.progress : 0.0
                         
-                        if isActive {
-                            // ✅ Línea activa con animación de relleno progresivo
-                            animatedLyricLine(line: line, progress: progress)
-                                .id(line.id)
-                                .contentShape(Rectangle())
-                                .onTapGesture {
-                                    seekToLine(line)
-                                }
-                        } else {
-                            // ✅ Línea inactiva estática (sin animación a 60 fps)
-                            staticLyricLine(line: line)
-                                .id(line.id)
-                                .contentShape(Rectangle())
-                                .onTapGesture {
-                                    seekToLine(line)
-                                }
+                        // ✅ Forzar re-renderización con subvista separada y Equatable
+                        LyricLineView(
+                            line: line,
+                            isActive: isActive,
+                            progress: progress
+                        )
+                        .id(line.id)
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            seekToLine(line)
                         }
                     }
                     
@@ -265,6 +259,65 @@ struct LyricsView: View {
         .frame(maxWidth: 200, alignment: .leading)
     }
     #endif
+}
+
+// MARK: - Subvista de línea individual con Equatable
+// ✅ Forza re-renderización cuando cambia isActive o progress
+// ✅ Soluciona el bug visual donde SwiftUI reutilizaba subvistas congeladas
+private struct LyricLineView: View, Equatable {
+    let line: LyricsLine
+    let isActive: Bool
+    let progress: Double
+    
+    static func == (lhs: LyricLineView, rhs: LyricLineView) -> Bool {
+        lhs.line.id == rhs.line.id &&
+        lhs.isActive == rhs.isActive &&
+        lhs.progress == rhs.progress
+    }
+    
+    var body: some View {
+        if isActive {
+            // ✅ Línea activa con animación de relleno progresivo
+            animatedLyricLine(line: line, progress: progress)
+        } else {
+            // ✅ Línea inactiva estática (sin animación a 60 fps)
+            staticLyricLine(line: line)
+        }
+    }
+    
+    // MARK: - Línea animada con relleno progresivo (SpotiFLAC-style)
+    private func animatedLyricLine(line: LyricsLine, progress: Double) -> some View {
+        ZStack(alignment: .leading) {
+            // ✅ Capa base: texto atenuado (siempre visible)
+            Text(line.cleanText)
+                .font(.system(size: 24, weight: .bold))
+                .foregroundStyle(Color.white.opacity(0.35))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, 12)
+            
+            // ✅ Capa superior: texto brillante con máscara de relleno
+            Text(line.cleanText)
+                .font(.system(size: 24, weight: .bold))
+                .foregroundStyle(Color.white)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, 12)
+                .mask(alignment: .leading) {
+                    GeometryReader { geo in
+                        Rectangle()
+                            .frame(width: geo.size.width * CGFloat(progress))
+                    }
+                }
+        }
+    }
+    
+    // MARK: - Línea estática (inactiva)
+    private func staticLyricLine(line: LyricsLine) -> some View {
+        Text(line.cleanText)
+            .font(.system(size: 18, weight: .regular))
+            .foregroundStyle(Color.white.opacity(0.35))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.vertical, 12)
+    }
 }
 
 // MARK: - Preview

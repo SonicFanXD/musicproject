@@ -26,6 +26,7 @@ final class LyricsViewModel: ObservableObject {
     private var lastUpdateTime: CFTimeInterval = 0
     private var lastAudioTime: TimeInterval = 0
     private var currentInterpolatedTime: TimeInterval = 0
+    private var lastProcessedTimeMs: Int = 0  // ✅ Guarda para evitar procesamiento duplicado
     
     // MARK: - Initialization
     init() {
@@ -94,6 +95,11 @@ final class LyricsViewModel: ObservableObject {
         guard let audioEngine = audioEngine else { return }
         
         let currentTimeMs = Int(audioEngine.currentTime * 1000)
+        
+        // ✅ Guarda para evitar procesamiento duplicado en frames consecutivos
+        guard currentTimeMs != lastProcessedTimeMs else { return }
+        lastProcessedTimeMs = currentTimeMs
+        
         // ✅ CADisplayLink corre en el run loop principal pero no está marcado como @MainActor
         // Usamos MainActor.assumeIsolated para asegurar thread-safety con Swift 6 concurrency
         MainActor.assumeIsolated {
