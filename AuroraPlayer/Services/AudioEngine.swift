@@ -2377,6 +2377,29 @@ class AudioEngine: NSObject, ObservableObject {
                 if self.isPlaying {
                     // ⛔️ No pause() a secas: suspendForRouteLoss() invalida la
                     // generación ANTES de detener el nodo → un completion
+                    // de audio en el playerNode.
+                    let position = self.currentTime
+                    self.suspendForRouteLoss()
+                    // ✅ FIX Lightning DAC: reanudar en otra ruta después de desconectar
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+                        guard let self = self else { return }
+                        let route = AVAudioSession.sharedInstance().currentRoute.outputs.first
+                        // Si hay una ruta disponible y estaba reproduciendo, reanudar
+                        if route != nil && self.wasPlayingBeforeRouteChange {
+                            do {
+                                try self.startEngineSafely()
+                                self.anchorPlaybackPosition(position)
+                                if let file = self.audioFile {
+                                    self.scheduleFile(file, from: position, generation: self.scheduleGeneration)
+                                    self.scheduleAheadIfPossible()
+                                }
+                                self.resume()
+                                AppLog.info(.playback, "Dispositivo desconectado, reanudando en \(route?.portName ?? "?")")
+                            } catch {
+                                AppLog.error(.playback, error, context: "oldDeviceUnavailable: reanudar en nueva ruta")
+                            }
+                        }
+                    }
                     // obsoleto que se dispare en plena caída de la ruta no
                     // puede llamar a playNext() (salto a la canción siguiente)
                     // y publica rate 0 al lock screen/CC (nada de
