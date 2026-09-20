@@ -23,17 +23,12 @@ struct AuroraPlayerApp: App {
                     // ✅ Logs técnicos: memoria, térmico, ciclo de vida, rutas de audio
                     AppLog.bootstrap()
                     AppLog.info(.lifecycle, "App iniciada (v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"))")
-                    // ✅ Configurar intents de Siri
-                    AuroraIntents.configureIntents()
                 }
                 .onChange(of: showFPS) { newValue in
                     FPSOverlayController.shared.setEnabled(newValue)
                 }
         }
-        // ✅ Manejar shortcuts de la app (3D Touch / Haptic Touch)
-        .onOpenURL { url in
-            AppLog.info(.lifecycle, "App abierta con URL: \(url)")
-        }
+        // ✅ Manejar actividades de usuario continuadas
         .onContinueUserActivity { userActivity in
             AppLog.info(.lifecycle, "Actividad de usuario continuada: \(userActivity.activityType)")
         }

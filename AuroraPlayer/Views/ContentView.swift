@@ -162,11 +162,15 @@ struct ContentView: View {
                 }
                 .onReceive(Notification.Name.openSearch) { _ in
                     shouldShowSearch = true
-                    searchFieldFocused = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        searchFieldFocused = true
+                    }
                 }
                 .onChange(of: shouldShowSearch) { _ in
                     if shouldShowSearch {
-                        searchFieldFocused = true
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                            searchFieldFocused = true
+                        }
                     }
                 }
                 .navigationBarTitleDisplayMode(.inline)

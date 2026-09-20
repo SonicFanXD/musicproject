@@ -1,15 +1,13 @@
 import Foundation
 import Intents
-import IntentsUI
 
 // MARK: - Intents para Siri
 class AuroraIntents {
     
     static func configureIntents() {
         // Donar sugerencias de Siri para la app
-        INVoiceShortcutCenter.shared.setSuggestions([
-            INShortcut(intent: INPlayMediaIntent(), phrases: ["Reproducir", "Play"])
-        ]) { error in
+        let playIntent = INPlayMediaIntent()
+        INVoiceShortcutCenter.shared.setShortcutSuggestions([INShortcut(intent: playIntent)]) { error in
             if let error = error {
                 print("Error configurando intents: \(error)")
             }
@@ -19,13 +17,13 @@ class AuroraIntents {
     static func handleShortcutItem(_ shortcutItem: UIApplicationShortcutItem) {
         switch shortcutItem.type {
         case "com.aurora.player.play":
-            NotificationCenter.default.post(name: .init(rawValue: "com.aurora.playback.resume"))
+            NotificationCenter.default.post(name: .playbackResume, object: nil)
         case "com.aurora.player.pause":
-            NotificationCenter.default.post(name: .init(rawValue: "com.aurora.playback.pause"))
+            NotificationCenter.default.post(name: .playbackPause, object: nil)
         case "com.aurora.player.shuffle":
-            NotificationCenter.default.post(name: .init(rawValue: "com.aurora.playback.shuffle"))
+            NotificationCenter.default.post(name: .playbackShuffle, object: nil)
         case "com.aurora.player.search":
-            NotificationCenter.default.post(name: .init(rawValue: "com.aurora.openSearch"))
+            NotificationCenter.default.post(name: .openSearch, object: nil)
         default:
             break
         }
