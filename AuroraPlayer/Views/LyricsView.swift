@@ -312,57 +312,55 @@ struct LyricsView: View {
     }
 
     // MARK: - Word by Word Line View
-    // ✅ MEJORA KARAOKE: animación side-by-side más visible y distintiva
-    // Estilo Apple Music mejorado: la línea se muestra gris y las palabras se van
-    // "cubriendo de blanco" según su progreso con efectos visuales más prominentes.
-    // Optimizado: un solo Text con máscara por línea (no re-render por palabra).
+    // ✅ KARAOKE VISIBLE: animación side-by-side MUY visible y agresiva
+    // Estilo Apple Music mejorado con efectos mucho más prominentes.
     private func wordByWordLineView(line: LyricLine, words: [LyricWord], isActive: Bool, progress: Double) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 8) {
             ZStack(alignment: .leading) {
-                // Texto base (gris/oscuro) - siempre visible
+                // Texto base (gris oscuro) - siempre visible
                 Text(words.map(\.text).joined(separator: " "))
-                    .font(.system(size: isActive ? 23 : 19, weight: isActive ? .bold : .medium))
-                    .foregroundStyle(isActive ? Color.secondary : Color.secondary.opacity(0.6))
-                    .blur(radius: progress > 0.1 ? progress * 0.8 : 0)
-                    .opacity(progress > 0.8 ? 0.3 : 1.0)
-                    .animation(.easeOut(duration: 0.2), value: progress)
+                    .font(.system(size: isActive ? 24 : 20, weight: isActive ? .bold : .medium))
+                    .foregroundStyle(isActive ? Color.secondary.opacity(0.4) : Color.secondary.opacity(0.5))
+                    .blur(radius: progress > 0.05 ? progress * 1.5 : 0)
+                    .opacity(progress > 0.7 ? 0.2 : 1.0)
+                    .animation(.easeOut(duration: 0.3), value: progress)
 
-                // Texto iluminado (con máscara de progreso)
+                // Texto iluminado (con máscara de progreso) - BLANCO BRILLANTE
                 Text(words.map(\.text).joined(separator: " "))
-                    .font(.system(size: isActive ? 23 : 19, weight: isActive ? .bold : .medium))
-                    .foregroundStyle(AppTheme.accent)
+                    .font(.system(size: isActive ? 24 : 20, weight: isActive ? .bold : .medium))
+                    .foregroundStyle(.white)
                     .mask(alignment: .leading) {
                         GeometryReader { geo in
                             Rectangle()
                                 .frame(width: geo.size.width * CGFloat(min(max(progress, 0), 1)))
                         }
                     }
-                    // ✅ MEJORA KARAOKE: efectos visuales más prominentes (sin drawingGroup para mejor visibilidad)
-                    .shadow(color: AppTheme.accent.opacity(0.8), radius: progress > 0.3 ? 12 : 0, x: 0, y: 0)
-                    .shadow(color: AppTheme.accent.opacity(0.4), radius: progress > 0.5 ? 20 : 0, x: 0, y: 0)
-                    .scaleEffect(progress > 0.9 ? 1.02 : 1.0)
-                    .animation(.spring(response: 0.3, dampingFraction: 0.7), value: progress)
+                    // ✅ KARAOKE VISIBLE: efectos visuales MUY prominentes
+                    .shadow(color: AppTheme.accent.opacity(1.0), radius: progress > 0.2 ? 15 : 0, x: 0, y: 0)
+                    .shadow(color: .white.opacity(0.8), radius: progress > 0.4 ? 25 : 0, x: 0, y: 0)
+                    .scaleEffect(progress > 0.8 ? 1.05 : 1.0)
+                    .animation(.spring(response: 0.25, dampingFraction: 0.65), value: progress)
             }
-            // ✅ MEJORA KARAOKE: barra de progreso debajo del texto
+            // ✅ KARAOKE VISIBLE: barra de progreso gruesa y visible
             if isActive && progress > 0 {
                 GeometryReader { geo in
                     ZStack(alignment: .leading) {
-                        RoundedRectangle(cornerRadius: 2)
-                            .fill(Color.secondary.opacity(0.2))
-                            .frame(height: 3)
+                        RoundedRectangle(cornerRadius: 3)
+                            .fill(Color.secondary.opacity(0.3))
+                            .frame(height: 5)
 
-                        RoundedRectangle(cornerRadius: 2)
+                        RoundedRectangle(cornerRadius: 3)
                             .fill(AppTheme.accent)
-                            .frame(width: geo.size.width * CGFloat(progress), height: 3)
-                            .shadow(color: AppTheme.accent.opacity(0.6), radius: 4, x: 0, y: 0)
+                            .frame(width: geo.size.width * CGFloat(progress), height: 5)
+                            .shadow(color: AppTheme.accent.opacity(0.8), radius: 6, x: 0, y: 0)
                     }
                 }
-                .frame(height: 3)
-                .animation(.easeOut(duration: 0.15), value: progress)
+                .frame(height: 5)
+                .animation(.easeOut(duration: 0.2), value: progress)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, 8)
+        .padding(.vertical, 10)
     }
 
     // Progreso de la línea activa: suma de progresos de sus palabras / nº de palabras.
