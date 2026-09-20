@@ -3,19 +3,14 @@ import Combine
 import AVFoundation
 import QuartzCore
 
-// MARK: - Estado de lyrics para la vista
-struct LyricsState {
-    var activeLineID: Int? = nil
-    var progress: Double = 0.0  // 0.0 a 1.0 para la línea activa
-}
-
 // MARK: - ViewModel para lyrics línea por línea (SpotiFLAC-style animation)
 // ✅ Diseñado para iPhone 8 Plus: CADisplayLink a 60 Hz para animación fluida
 // ✅ Interpolación de tiempo para relleno progresivo de izquierda a derecha
 // ✅ Conecta con AudioEngine existente sin modificar la ruta de audio
 final class LyricsViewModel: ObservableObject {
     // MARK: - Published Properties
-    @Published var lyricsState = LyricsState()
+    @Published var activeLineID: Int? = nil
+    @Published var progress: Double = 0.0  // 0.0 a 1.0 para la línea activa
     @Published var lyricsLines: [LyricsLine] = []
     @Published var hasLyrics: Bool = false
     
@@ -54,7 +49,8 @@ final class LyricsViewModel: ObservableObject {
         self.hasLyrics = !lines.isEmpty
         
         // ✅ Reset estado
-        lyricsState = LyricsState()
+        activeLineID = nil
+        progress = 0.0
         lastUpdateTime = 0
         lastAudioTime = 0
         currentInterpolatedTime = 0
@@ -133,10 +129,12 @@ final class LyricsViewModel: ObservableObject {
                 progress = 1.0
             }
             
-            lyricsState = LyricsState(activeLineID: newIndex, progress: progress)
+            activeLineID = newIndex
+            self.progress = progress
         } else {
             // ✅ Gap o silencio: no línea activa, progress = 0
-            lyricsState = LyricsState(activeLineID: nil, progress: 0.0)
+            activeLineID = nil
+            progress = 0.0
         }
     }
     

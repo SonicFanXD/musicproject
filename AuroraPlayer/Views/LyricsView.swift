@@ -37,7 +37,7 @@ struct LyricsView: View {
             parseLyricsIfNeeded()
         }
         // ✅ iOS 16 onChange clásico: scroll solo cuando cambia activeLineID
-        .onChange(of: viewModel.lyricsState.activeLineID) { newID in
+        .onChange(of: viewModel.activeLineID) { newID in
             if let newID = newID {
                 scrollTarget = newID
             }
@@ -82,8 +82,8 @@ struct LyricsView: View {
                     Color.clear.frame(height: 200)
                     
                     ForEach(viewModel.lyricsLines) { line in
-                        let isActive = viewModel.lyricsState.activeLineID == line.id
-                        let progress = isActive ? viewModel.lyricsState.progress : 0.0
+                        let isActive = viewModel.activeLineID == line.id
+                        let progress = isActive ? viewModel.progress : 0.0
                         
                         if isActive {
                             // ✅ Línea activa con animación de relleno progresivo
