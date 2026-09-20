@@ -17,6 +17,7 @@ struct LyricsEngine {
     /// - Parameter timeMs: Tiempo en milisegundos
     /// - Returns: Índice de la línea activa, o nil si timeMs cae en un gap o fuera de rango
     /// ✅ Búsqueda binaria O(log n): cero allocations, cero closures, puramente determinista
+    /// ✅ BUFFER DE TRANSICIÓN: Para líneas cortas consecutivas, añade 120ms de overlap
     func activeIndex(at timeMs: Int) -> Int? {
         guard !lines.isEmpty else { return nil }
         
@@ -38,6 +39,17 @@ struct LyricsEngine {
                 low = mid + 1
             } else {
                 // ✅ timeMs está dentro de [startMs, endMs)
+                // ✅ BUFFER DE TRANSICIÓN: Si hay línea siguiente y el tiempo está cerca del final,
+                // extender la línea actual por 120ms para evitar transición brusca
+                if mid < lines.count - 1 {
+                    let nextLine = lines[mid + 1]
+                    let gap = nextLine.startMs - line.endMs
+                    let timeToNext = nextLine.startMs - timeMs
+                    // Si el gap es pequeño (< 200ms) y estamos cerca del final (< 150ms de nextLine)
+                    if gap < 200 && timeToNext < 150 {
+                        return mid  // Retener línea actual durante overlap
+                    }
+                }
                 return mid
             }
         }

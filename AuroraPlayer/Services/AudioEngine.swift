@@ -1501,7 +1501,7 @@ class AudioEngine: NSObject, ObservableObject {
         // ✅ OPTIMIZACIÓN BATERÍA: Detener engine cuando no se reproduce
         // Si no hay canción pre-encadenada y el usuario pausó, detener el engine
         // para ahorrar CPU/batería. Al reanudar, resume() reactivará el engine.
-        if !isUsingFallback && !hasChainedAhead && engine.isRunning {
+        if !isUsingFallback && chainedAheadIndex == nil && engine.isRunning {
             engine.stop()
             AppLog.debug(.playback, "Engine detenido por pausa (ahorro de batería)")
         }
@@ -2584,8 +2584,8 @@ class AudioEngine: NSObject, ObservableObject {
                 if shouldResume {
                     // ✅ Verificar si la app está en primer plano antes de reanudar
                     DispatchQueue.main.async { [weak self] in
-                        guard let self = self,
-                              UIApplication.shared.applicationState == .active else {
+                        guard let self = self else { return }
+                        guard UIApplication.shared.applicationState == .active else {
                             // ✅ App en segundo plano: no reanudar automáticamente
                             self.wasPlayingBeforeInterruption = false
                             return

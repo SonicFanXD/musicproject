@@ -14,6 +14,7 @@ final class LyricsViewModel: ObservableObject {
     // MARK: - Published Properties
     @Published var activeLineID: Int? = nil
     @Published var progress: Double = 0.0  // 0.0 a 1.0 para la línea activa
+    @Published var clockUpdateDate: TimeInterval = CACurrentMediaTime()  // ✅ Ancla de tiempo para interpolación
     @Published var lyricsLines: [LyricsLine] = []
     @Published var hasLyrics: Bool = false
     
@@ -146,6 +147,8 @@ final class LyricsViewModel: ObservableObject {
             
             activeLineID = newIndex
             self.progress = progress
+            // ✅ Actualizar ancla de tiempo para interpolación en vista
+            clockUpdateDate = CACurrentMediaTime()
         } else {
             // ✅ Gap o silencio: no línea activa, progress = 0
             // ✅ DEBUG: Log de gap
