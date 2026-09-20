@@ -1182,7 +1182,6 @@ class AudioEngine: NSObject, ObservableObject {
         if !lyrics.isEmpty {
             Task { @MainActor in
                 lyricsViewModel.parseLyrics(lyrics)
-                lyricsViewModel.startMonitoring()
             }
         }
         saveState()
@@ -1532,10 +1531,6 @@ class AudioEngine: NSObject, ObservableObject {
         wallAnchor = CACurrentMediaTime()
         clock.time = current
         isPlaying = false
-        // ✅ Detener monitoreo de lyrics line-by-line
-        Task { @MainActor in
-            lyricsViewModel.stopMonitoring()
-        }
         updateNowPlayingInfo()
         saveState()
     }
@@ -1615,10 +1610,6 @@ class AudioEngine: NSObject, ObservableObject {
         // ✅ FIX Centro de Control: publicar rate 1.0 + elapsed al reanudar
         updateNowPlayingInfo()
         startDisplayTimer()
-        // ✅ Iniciar monitoreo de lyrics line-by-line
-        Task { @MainActor in
-            lyricsViewModel.startMonitoring()
-        }
         if !isUsingFallback {
             scheduleAheadIfPossible()
         }

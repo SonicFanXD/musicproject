@@ -4,9 +4,8 @@ import SwiftUI
 // ✅ Diseño: ScrollView + LazyVStack para máximo rendimiento (60 fps)
 // ✅ Línea activa en blanco opaco, líneas inactivas atenuadas
 // ✅ Auto-scroll suave con ScrollViewReader (solo cuando cambia activeID)
-// ✅ Padding vertical generoso (200 pt) para centrar primera/última línea
+// ✅ Padding vertical generoso para centrar primera/última línea
 // ✅ Render 100% por código, sin assets
-// ✅ PROHIBIDO: APIs de iOS 17+, TimelineView, CADisplayLink
 struct LyricsView: View {
     let song: Song?
     @ObservedObject var viewModel: LyricsViewModel
@@ -75,30 +74,33 @@ struct LyricsView: View {
     // MARK: - Contenido de lyrics
     private var lyricsContentView: some View {
         ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 8) {
-                    // ✅ Padding vertical generoso (200 pt) para centrar primera/última línea
-                    Color.clear.frame(height: 200)
-                    
-                    ForEach(viewModel.lyricsLines) { line in
-                        lyricLineView(line: line, isActive: viewModel.activeID == line.id)
-                            .id(line.id)
-                            .contentShape(Rectangle())
-                            .onTapGesture {
-                                seekToLine(line)
-                            }
+            TimelineView(.animation) { timeline in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 8) {
+                        Color.clear.frame(height: UIScreen.main.bounds.height * 0.4)
+
+                        ForEach(viewModel.lyricsLines) { line in
+                            lyricLineView(
+                                line: line,
+                                isActive: viewModel.activeID == line.id,
+                                currentTime: viewModel.interpolatedTime(at: timeline.date)
+                            )
+                                .id(line.id)
+                                .contentShape(Rectangle())
+                                .onTapGesture {
+                                    seekToLine(line)
+                                }
+                        }
+
+                        Color.clear.frame(height: UIScreen.main.bounds.height * 0.4)
                     }
-                    
-                    Color.clear.frame(height: 200)
+                    .padding(.horizontal, 24)
                 }
-                .padding(.horizontal, 24)
-            }
-            // ✅ iOS 16 onChange clásico: scroll suave solo cuando cambia scrollTarget
-            .onChange(of: scrollTarget) { target in
-                if let target = target {
-                    // ✅ Animación suave solo cuando cambia la línea activa
-                    withAnimation(.easeInOut(duration: 0.25)) {
-                        proxy.scrollTo(target, anchor: .center)
+                .onChange(of: scrollTarget) { target in
+                    if let target = target {
+                        withAnimation(.easeInOut(duration: 0.25)) {
+                            proxy.scrollTo(target, anchor: .center)
+                        }
                     }
                 }
             }
@@ -106,16 +108,37 @@ struct LyricsView: View {
     }
     
     // MARK: - Vista de línea individual
-    // ✅ No recrea Text en cada frame: solo cambia color/opacidad
-    // ✅ Sin blur/shadow por frame para máximo rendimiento en iPhone 8 Plus
-    private func lyricLineView(line: LyricsLine, isActive: Bool) -> some View {
-        Text(line.cleanText)
-            .font(.system(size: isActive ? 24 : 18, weight: isActive ? .bold : .regular))
-            .foregroundStyle(isActive ? Color.white : Color.white.opacity(0.35))
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.vertical, 12)
-            // ✅ Animación suave solo cuando cambia el estado de activación
-            .animation(.easeInOut(duration: 0.25), value: isActive)
+    @ViewBuilder
+    private func lyricLineView(line: LyricsLine, isActive: Bool, currentTime: TimeInterval) -> some View {
+        let font = Font.system(size: isActive ? 24 : 18, weight: isActive ? .bold : .regular)
+        let progress = isActive ? smoothstep(
+            (currentTime * 1000 - Double(line.startMs)) / Double(max(1, line.endMs - line.startMs))
+        ) : 0
+
+        ZStack(alignment: .leading) {
+            Text(line.cleanText)
+                .font(font)
+                .foregroundStyle(Color.white.opacity(isActive ? 0.35 : 0.35))
+
+            Text(line.cleanText)
+                .font(font)
+                .foregroundStyle(Color.white)
+                .mask(alignment: .leading) {
+                    GeometryReader { geometry in
+                        Rectangle()
+                            .frame(width: geometry.size.width * progress)
+                    }
+                }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 12)
+        .scaleEffect(isActive ? 1 : 0.98)
+        .animation(.spring(response: 0.4, dampingFraction: 0.7), value: viewModel.activeID)
+    }
+
+    private func smoothstep(_ value: Double) -> Double {
+        let clamped = min(max(value, 0), 1)
+        return clamped * clamped * (3 - 2 * clamped)
     }
     
     // MARK: - Seek a línea
