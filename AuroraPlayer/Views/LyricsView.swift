@@ -313,20 +313,20 @@ struct LyricsView: View {
     }
 
     // MARK: - Word by Word Line View
-    // ✅ KARAOKE SUAVE: animación delicada y estable
+    // ✅ KARAOKE SUTIL: animación delicada y elegante
     private func wordByWordLineView(line: LyricLine, words: [LyricWord], isActive: Bool, progress: Double) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             ZStack(alignment: .leading) {
                 // Texto base (gris suave)
                 Text(words.map(\.text).joined(separator: " "))
-                    .font(.system(size: isActive ? 20 : 16, weight: isActive ? .semibold : .regular))
-                    .foregroundStyle(Color.gray.opacity(0.5))
-                    .blur(radius: progress > 0 ? progress * 0.5 : 0)
-                    .opacity(progress > 0.7 ? 0.3 : 1.0)
+                    .font(.system(size: isActive ? 18 : 15, weight: isActive ? .medium : .regular))
+                    .foregroundStyle(Color.gray.opacity(0.6))
+                    .blur(radius: progress > 0 ? progress * 0.3 : 0)
+                    .opacity(progress > 0.7 ? 0.25 : 1.0)
 
                 // Texto iluminado (con máscara)
                 Text(words.map(\.text).joined(separator: " "))
-                    .font(.system(size: isActive ? 20 : 16, weight: isActive ? .semibold : .regular))
+                    .font(.system(size: isActive ? 18 : 15, weight: isActive ? .medium : .regular))
                     .foregroundStyle(.white)
                     .mask(alignment: .leading) {
                         GeometryReader { geo in
@@ -334,26 +334,26 @@ struct LyricsView: View {
                                 .frame(width: geo.size.width * CGFloat(min(max(progress, 0), 1)))
                         }
                     }
-                    .shadow(color: .white.opacity(0.4), radius: progress > 0.4 ? 8 : 0, x: 0, y: 0)
+                    .shadow(color: .white.opacity(0.25), radius: progress > 0.5 ? 5 : 0, x: 0, y: 0)
             }
-            // Barra de progreso delicada
+            // Barra de progreso muy sutil
             if isActive && progress > 0 {
                 GeometryReader { geo in
                     ZStack(alignment: .leading) {
-                        RoundedRectangle(cornerRadius: 2)
-                            .fill(Color.gray.opacity(0.15))
-                            .frame(height: 3)
+                        RoundedRectangle(cornerRadius: 1.5)
+                            .fill(Color.gray.opacity(0.1))
+                            .frame(height: 2)
 
-                        RoundedRectangle(cornerRadius: 2)
+                        RoundedRectangle(cornerRadius: 1.5)
                             .fill(AppTheme.accent)
-                            .frame(width: geo.size.width * CGFloat(progress), height: 3)
+                            .frame(width: geo.size.width * CGFloat(progress), height: 2)
                     }
                 }
-                .frame(height: 3)
+                .frame(height: 2)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, 6)
+        .padding(.vertical, 5)
     }
 
     // Progreso de la línea activa: suma de progresos de sus palabras / nº de palabras.
