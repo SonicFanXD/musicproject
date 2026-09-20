@@ -104,7 +104,8 @@ struct LyricsView: View {
                     case .plain(let text):
                         plainLyricsView(text: text)
                     case .synchronized(let syncLyrics):
-                        if syncLyrics.isWordByWord {
+                        // ✅ DEBUG: siempre usar word-by-word si hay palabras
+                        if syncLyrics.isWordByWord || !syncLyrics.words.isEmpty {
                             wordByWordLyricsView(lyrics: syncLyrics)
                         } else {
                             synchronizedLyricsView(lyrics: syncLyrics)

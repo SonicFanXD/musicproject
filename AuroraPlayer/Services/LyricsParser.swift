@@ -11,18 +11,31 @@ class LyricsParser {
             return .none
         }
 
-        if hasLRCTimestamps(trimmedLyrics) {
-            return .synchronized(parseLRC(trimmedLyrics))
+        // ✅ DETECCIÓN MEJORADA: Priorizar formatos word-by-word
+        if hasWordByWordFormat(trimmedLyrics) {
+            let result = parseWordByWord(trimmedLyrics)
+            if result.isWordByWord {
+                AppLog.info(.playback, "Lyrics: formato word-by-word detectado")
+                return .synchronized(result)
+            }
         }
 
-        if hasWordByWordFormat(trimmedLyrics) {
-            return .synchronized(parseWordByWord(trimmedLyrics))
+        if hasLRCTimestamps(trimmedLyrics) {
+            let result = parseLRC(trimmedLyrics)
+            if result.isWordByWord {
+                AppLog.info(.playback, "Lyrics: formato LRC word-by-word detectado")
+            } else {
+                AppLog.info(.playback, "Lyrics: formato LRC línea por línea detectado")
+            }
+            return .synchronized(result)
         }
 
         if hasEnhancedLineFormat(trimmedLyrics) {
+            AppLog.info(.playback, "Lyrics: formato línea mejorado detectado")
             return .synchronized(parseEnhancedLines(trimmedLyrics))
         }
 
+        AppLog.info(.playback, "Lyrics: formato plano detectado")
         return .plain(trimmedLyrics)
     }
 
@@ -36,10 +49,27 @@ class LyricsParser {
     }
 
     private static func hasWordByWordFormat(_ text: String) -> Bool {
-        let pattern = "<\\d{1,2}:\\d{2}(\\.\\d{1,3})?>"
-        let regex = try? NSRegularExpression(pattern: pattern, options: [])
-        let range = NSRange(location: 0, length: text.utf16.count)
-        return (regex?.numberOfMatches(in: text, options: [], range: range) ?? 0) > 5
+        // ✅ DETECCIÓN MEJORADA: múltiples formatos word-by-word
+        // Formato Apple Music: timestamps entre palabras
+        let pattern1 = "<\\d{1,2}:\\d{2}(\\.\\d{1,3})?>"
+        let regex1 = try? NSRegularExpression(pattern: pattern1, options: [])
+        let range1 = NSRange(location: 0, length: text.utf16.count)
+        if (regex1?.numberOfMatches(in: text, options: [], range: range1) ?? 0) > 5 {
+            return true
+        }
+
+        // Formato alternativo: timestamps entre palabras sin <>
+        let pattern2 = "\\[\\d{1,2}:\\d{2}(\\.\\d{1,3})?\\]"
+        let regex2 = try? NSRegularExpression(pattern: pattern2, options: [])
+        let range2 = NSRange(location: 0, length: text.utf16.count)
+        let lineCount = text.components(separatedBy: .newlines).count
+        let matchCount = regex2?.numberOfMatches(in: text, options: [], range: range2) ?? 0
+        // Si hay más matches que líneas, probablemente es word-by-word
+        if matchCount > lineCount * 2 {
+            return true
+        }
+
+        return false
     }
 
     private static func hasEnhancedLineFormat(_ text: String) -> Bool {
