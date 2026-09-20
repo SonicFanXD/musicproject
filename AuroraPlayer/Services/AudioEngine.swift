@@ -2008,10 +2008,10 @@ class AudioEngine: NSObject, ObservableObject {
         guard let output = session.currentRoute.outputs.first else { return }
         let newName = output.portName
         let newType = output.portType.rawValue
-        // ✅ OPTIMIZACIÓN BATERÍA: solo publicar si la ruta CAMBIÓ de verdad.
-        // Evita dispatch al main + re-render de la UI en cada cambio de ruta
-        // innecesario (antes publicaba siempre, incluso con mismos valores).
-        guard newName != currentRouteName || newType != outputPortType else { return }
+        // ✅ FIX detección al inicio: siempre publicar si la ruta está vacía
+        // (cuando la app arranca con audífonos conectados, currentRouteName está vacío)
+        let isFirstDetection = currentRouteName.isEmpty || outputPortType.isEmpty
+        guard newName != currentRouteName || newType != outputPortType || isFirstDetection else { return }
         DispatchQueue.main.async {
             self.currentRouteName = newName
             self.outputPortType = newType
