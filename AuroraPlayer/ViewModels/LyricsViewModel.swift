@@ -60,7 +60,9 @@ final class LyricsViewModel: ObservableObject {
         // ✅ Timer 10 Hz (cada 100ms) - suficiente para detectar cambio de línea
         // Para line-by-line, 10 Hz es más que suficiente y ahorra batería
         timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
-            self?.updateActiveLine()
+            Task { @MainActor [weak self] in
+                self?.updateActiveLine()
+            }
         }
         
         RunLoop.current.add(timer!, forMode: .common)

@@ -99,7 +99,13 @@ struct LRCParser {
         
         let milliseconds = millisecondRange.map { Int(line[$0]) ?? 0 } ?? 0
         // ✅ Verificar si es 2 o 3 dígitos basado en la longitud del texto en el rango
-        let msMultiplier = millisecondRange != nil && (line[uncheckedSubstring: millisecondRange!].count == 3) ? 1 : 10
+        let msMultiplier: Int
+        if let msRange = millisecondRange {
+            let msText = String(line[msRange])
+            msMultiplier = msText.count == 3 ? 1 : 10
+        } else {
+            msMultiplier = 10
+        }
         
         return (minutes * 60 * 1000) + (seconds * 1000) + (milliseconds * msMultiplier)
     }

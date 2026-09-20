@@ -1178,7 +1178,8 @@ class AudioEngine: NSObject, ObservableObject {
         // la canción anterior mientras el audio ya había cambiado → "punto random".
         playCurrentSong()
         // ✅ Iniciar monitoreo de lyrics line-by-line
-        if let lyrics = song.lyrics, !lyrics.isEmpty {
+        let lyrics = song.lyrics
+        if !lyrics.isEmpty {
             Task { @MainActor in
                 lyricsViewModel.parseLyrics(lyrics)
                 lyricsViewModel.startMonitoring()
