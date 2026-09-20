@@ -664,10 +664,12 @@ class AudioEngine: NSObject, ObservableObject {
         // cuando el sistema ya terminó de estabilizar la ruta) se oía. Ahora
         // se reconecta SIEMPRE con el formato actual antes de arrancar, sin
         // depender de que el primer intento falle para corregirlo.
-        if let file = audioFile {
-            reconnectPlayerNode(format: file.processingFormat)
-        } else {
-            reconnectPlayerNode(format: AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 2) ?? engine.outputNode.outputFormat(forBus: 0))
+        // ✅ CORRECCIÓN: Solo reconectar si el formato cambió para evitar coste innecesario
+        let targetFormat: AVAudioFormat = audioFile?.processingFormat
+            ?? AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 2)
+            ?? engine.outputNode.outputFormat(forBus: 0)
+        if formatKey(targetFormat) != connectedFormatKey {
+            reconnectPlayerNode(format: targetFormat)
         }
 
         // 2. Arrancar el engine con un reintento tras reconectar el grafo
@@ -1498,13 +1500,9 @@ class AudioEngine: NSObject, ObservableObject {
         updateNowPlayingInfo()
         saveState()
         
-        // ✅ OPTIMIZACIÓN BATERÍA: Detener engine cuando no se reproduce
-        // Si no hay canción pre-encadenada y el usuario pausó, detener el engine
-        // para ahorrar CPU/batería. Al reanudar, resume() reactivará el engine.
-        if !isUsingFallback && chainedAheadIndex == nil && engine.isRunning {
-            engine.stop()
-            AppLog.debug(.playback, "Engine detenido por pausa (ahorro de batería)")
-        }
+        // ✅ No detenemos el engine al pausar: engine.pause() se reanuda en ~10 ms,
+        // engine.stop() tarda ~150 ms en A11. El consumo extra en pausa es mínimo
+        // (el playerNode está pausado, no hay render de audio activo).
     }
 
     /// ⛔️ Suspensión TOTAL al perder la ruta de audio (audífonos/BT desconectados).

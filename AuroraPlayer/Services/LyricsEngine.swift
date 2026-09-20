@@ -39,14 +39,17 @@ struct LyricsEngine {
                 low = mid + 1
             } else {
                 // ✅ timeMs está dentro de [startMs, endMs)
-                // ✅ BUFFER DE TRANSICIÓN: Si hay línea siguiente y el tiempo está cerca del final,
-                // extender la línea actual por 120ms para evitar transición brusca
+                // ✅ BUFFER DE TRANSICIÓN PROPORCIONAL: Buffer proporcional al gap real, acotado a 60 ms
+                // - gap = 0 (líneas consecutivas sin silencio) → sin buffer (0 ms)
+                // - gap >= 100 ms → buffer completo (60 ms)
+                // Esto elimina el lag perceptible en versos rápidos conservando la
+                // transición suave cuando hay silencio real entre líneas.
                 if mid < lines.count - 1 {
                     let nextLine = lines[mid + 1]
                     let gap = nextLine.startMs - line.endMs
-                    let timeToNext = nextLine.startMs - timeMs
-                    // Si el gap es pequeño (< 200ms) y estamos cerca del final (< 150ms de nextLine)
-                    if gap < 200 && timeToNext < 150 {
+                    // Buffer proporcional al gap real, acotado a 60 ms
+                    let buffer = min(60, max(0, gap / 2))
+                    if buffer > 0, timeMs >= line.endMs - buffer {
                         return mid  // Retener línea actual durante overlap
                     }
                 }

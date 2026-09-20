@@ -22,7 +22,7 @@ final class LyricsViewModel: ObservableObject {
     // MARK: - Dependencies
     weak var audioEngine: AudioEngine?
     private var engine: LyricsEngine?
-    private var displayLink: CADisplayLink?
+    private var lyricsTimer: Timer?  // ✅ Timer 0.1s para updates (reemplaza CADisplayLink)
     private var clockCancellable: AnyCancellable?  // ✅ Para observar clock.time de AudioEngine
     
     // MARK: - Estado interno para interpolación
@@ -41,9 +41,9 @@ final class LyricsViewModel: ObservableObject {
         self.audioEngine = engine
         
         // ✅ Observar clock.time de AudioEngine para interpolación fluida
-        clockCancellable = engine.clock.objectWillChange.sink { [weak self] _ in
+        clockCancellable = engine.clock.$time.sink { [weak self] newTime in
             Task { @MainActor in
-                self?.clockTime = engine.clock.time
+                self?.clockTime = newTime
             }
         }
         
@@ -52,7 +52,7 @@ final class LyricsViewModel: ObservableObject {
     }
     
     deinit {
-        stopDisplayLink()
+        stopMonitoring()
     }
     
     // MARK: - Parse lyrics
@@ -74,21 +74,29 @@ final class LyricsViewModel: ObservableObject {
     }
     
     // MARK: - Control de reproducción
-    /// Inicia CADisplayLink a 60 Hz para animación fluida
+    /// Inicia Timer 0.1s para updates de lyrics
     @MainActor
     func startMonitoring() {
-        stopDisplayLink()
+        stopMonitoring()
         
-        // ✅ CADisplayLink a 60 Hz para animación fluida (SpotiFLAC-style)
-        displayLink = CADisplayLink(target: self, selector: #selector(updateFromDisplayLink))
-        displayLink?.add(to: .main, forMode: .common)
-        displayLink?.isPaused = false
+        // ✅ Timer 0.1s para updates (CADisplayLink a 60 Hz era desperdicio)
+        lyricsTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
+            guard let self, let audioEngine = self.audioEngine else { return }
+            let currentTimeMs = Int(audioEngine.currentTime * 1000)
+            guard currentTimeMs != self.lastProcessedTimeMs else { return }
+            self.lastProcessedTimeMs = currentTimeMs
+            Task { @MainActor in
+                self.updateState(at: currentTimeMs)
+            }
+        }
     }
     
-    /// Detiene CADisplayLink cuando la reproducción se pausa
+    /// Detiene Timer cuando la reproducción se pausa
     @MainActor
     func stopMonitoring() {
-        stopDisplayLink()
+        lyricsTimer?.invalidate()
+        lyricsTimer = nil
+        lastProcessedTimeMs = -1
     }
     
     /// Recalcula línea activa inmediatamente después de un seek
@@ -101,29 +109,6 @@ final class LyricsViewModel: ObservableObject {
         
         // ✅ Actualizar inmediatamente sin esperar al siguiente frame
         updateState(at: currentTimeMs)
-    }
-    
-    // MARK: - CADisplayLink callback
-    @objc private func updateFromDisplayLink() {
-        guard let audioEngine = audioEngine else { return }
-        
-        let currentTimeMs = Int(audioEngine.currentTime * 1000)
-        
-        // ✅ Guarda para evitar procesamiento duplicado en frames consecutivos
-        guard currentTimeMs != lastProcessedTimeMs else { return }
-        lastProcessedTimeMs = currentTimeMs
-        
-        // ✅ CADisplayLink corre en el run loop principal pero no está marcado como @MainActor
-        // Usamos MainActor.assumeIsolated para asegurar thread-safety con Swift 6 concurrency
-        MainActor.assumeIsolated {
-            updateState(at: currentTimeMs)
-        }
-    }
-    
-    // MARK: - Stop display link
-    private func stopDisplayLink() {
-        displayLink?.invalidate()
-        displayLink = nil
     }
     
     // MARK: - Update logic con interpolación
