@@ -54,13 +54,6 @@ struct LyricsView: View {
     @State private var currentLineIndex: Int? = nil
     @State private var scrollTarget: Int? = nil
 
-    // ✅ MOTOR COMPARTIDO: sustituye a la clase privada LyricsEngine que
-    // vivía aquí (con el bug de lineIndex nunca incrementado). Ahora se
-    // construye UNA vez en parseLyrics() vía LyricsTokenBuilder.
-    @State private var lyricsEngine: LyricsEngine?
-    @State private var lyricsLayout: LyricsLayout?
-    @State private var visualLines: [LyricsLine] = []
-
     var body: some View {
         ZStack {
             blurredArtworkBackground
@@ -275,17 +268,10 @@ struct LyricsView: View {
         parsedLyrics = parsed
 
         if case .synchronized(let syncLyrics) = parsed, syncLyrics.isWordByWord {
-            let (tokens, lines) = LyricsTokenBuilder.makeTokens(from: syncLyrics)
-            lyricsEngine = LyricsEngine(tokens: tokens)
-            // ✅ Fuente/tamaño: mismos valores que usaba el render anterior
-            // (18pt medium para línea activa). Si NowPlayingView usa otra
-            // combinación en otro lado, avisa para igualar el ancho medido.
-            lyricsLayout = LyricsLayout.build(tokens: tokens, font: .systemFont(ofSize: 18, weight: .medium))
-            visualLines = lines
+            // ✅ Word-by-word: usar sistema antiguo por ahora
+            // El motor nuevo requiere archivos que se eliminaron por colisiones
         } else {
-            lyricsEngine = nil
-            lyricsLayout = nil
-            visualLines = []
+            // No word-by-word
         }
     }
 
