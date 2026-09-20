@@ -11,6 +11,7 @@ enum LogCategory: String, CaseIterable {
     case cache         // guardado/carga del caché de biblioteca
     case settings      // cambios de ajustes del usuario
     case lifecycle     // foreground/background/terminación de la app
+    case lyrics        // sincronización de letras, engine de lyrics, parser
 
     var displayName: String {
         switch self {
@@ -26,6 +27,7 @@ enum LogCategory: String, CaseIterable {
         case .cache: return "Caché"
         case .settings: return "Ajustes"
         case .lifecycle: return "Ciclo de vida"
+        case .lyrics: return "Letras"
         }
     }
 
@@ -44,6 +46,7 @@ enum LogCategory: String, CaseIterable {
         case .cache: return "#30D158"      // verde claro
         case .settings: return "#64D2FF"   // cian
         case .lifecycle: return "#FF453A"  // rojo
+        case .lyrics: return "#30D158"     // verde (reutiliza cache color)
         }
     }
 

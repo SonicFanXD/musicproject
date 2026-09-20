@@ -32,6 +32,12 @@ struct LyricsView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
+            
+            #if DEBUG
+            // ✅ DEBUG: Overlay para diagnóstico de lyrics
+            debugOverlay
+                .padding(8)
+            #endif
         }
         .onAppear {
             parseLyricsIfNeeded()
@@ -219,6 +225,46 @@ struct LyricsView: View {
             viewModel.hasLyrics = false
         }
     }
+    
+    #if DEBUG
+    // MARK: - Debug Overlay
+    /// Overlay temporal para diagnóstico de lyrics
+    /// Muestra en tiempo real el estado del ViewModel para identificar bugs
+    private var debugOverlay: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("LYRICS DEBUG")
+                .font(.system(size: 10, weight: .bold))
+                .foregroundColor(.green)
+            
+            Text("activeLineID: \(String(describing: viewModel.activeLineID))")
+                .font(.system(size: 9, design: .monospaced))
+                .foregroundColor(.green)
+            
+            Text("Total lines: \(viewModel.lyricsLines.count)")
+                .font(.system(size: 9, design: .monospaced))
+                .foregroundColor(.green)
+            
+            if !viewModel.lyricsLines.isEmpty {
+                Text("First line id: \(viewModel.lyricsLines.first?.id ?? -1)")
+                    .font(.system(size: 9, design: .monospaced))
+                    .foregroundColor(.green)
+                
+                Text("Last line id: \(viewModel.lyricsLines.last?.id ?? -1)")
+                    .font(.system(size: 9, design: .monospaced))
+                    .foregroundColor(.green)
+                
+                let activeCount = viewModel.lyricsLines.filter { viewModel.activeLineID == $0.id }.count
+                Text("isActive count: \(activeCount)")
+                    .font(.system(size: 9, design: .monospaced))
+                    .foregroundColor(.green)
+            }
+        }
+        .padding(8)
+        .background(Color.black.opacity(0.7))
+        .cornerRadius(8)
+        .frame(maxWidth: 200, alignment: .leading)
+    }
+    #endif
 }
 
 // MARK: - Preview
