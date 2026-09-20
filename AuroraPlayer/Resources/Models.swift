@@ -310,6 +310,7 @@ extension Song {
         let format = formatName
         parts.append(format)
 
+        // ✅ Reordenar: bits ANTES de kHz
         if bitDepth > 0 && (format == "FLAC" || format == "ALAC" || format == "WAV" || format == "AIFF") {
             parts.append("\(bitDepth)-bit")
         }

@@ -348,8 +348,16 @@ struct NowPlayingView: View {
                         Image(systemName: "waveform.circle.fill")
                             .font(.system(size: 10, weight: .semibold))
 
-                        Text(song.audioQualityDescription)
-                            .font(.system(size: 10, weight: .medium).monospacedDigit())
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(song.audioQualityDescription)
+                                .font(.system(size: 10, weight: .medium).monospacedDigit())
+
+                            if !audioEngine.routeDisplay.isEmpty {
+                                Text(audioEngine.routeDisplay)
+                                    .font(.system(size: 8, weight: .regular))
+                                    .foregroundStyle(playIconColor.opacity(0.7))
+                            }
+                        }
 
                         Image(systemName: "chevron.down")
                             .font(.system(size: 7, weight: .bold))
