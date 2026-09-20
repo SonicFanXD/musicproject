@@ -10,6 +10,13 @@ import Foundation
 // ✅ Si algo falla se devuelve nil y el llamador sigue con LRCParser (fallback).
 struct TTMLParser {
     static let namespace = "http://www.w3.org/ns/ttml"
+    /// ✅ Marca INTERNA de los saltos duros (`<br/>`): XMLParser no emite nunca
+    /// este carácter en el contenido, así que distingue un salto REAL (fila
+    /// nueva) de la indentación del XML, que es whitespace normal y debe
+    /// colapsarse. Sin esto, `<br/>` se convertía en un espacio y las dos filas
+    /// visuales de un verso se fundían en una sola línea que envolvía por
+    /// anchura → el relleno progresivo iluminaba ambas filas en paralelo.
+    static let hardBreak: Character = "\u{0000}"
     /// Duración por defecto de la última línea si el TTML no trae `end`.
     private static let defaultLineDurationMs = 10_000
 
@@ -35,6 +42,8 @@ struct TTMLParser {
         let beginMs: Int
         let endMs: Int?
         let text: String
+        /// Fila visual dentro de la línea (0 si el verso no tiene `<br/>`).
+        let rowIndex: Int
     }
 
     struct Line {
@@ -72,7 +81,12 @@ struct TTMLParser {
         words.enumerated().map { index, word in
             let fallbackEndMs = index + 1 < words.count ? words[index + 1].beginMs : lineEndMs
             let endMs = word.endMs ?? fallbackEndMs
-            return LyricWordToken(text: word.text, startMs: word.beginMs, endMs: max(endMs, word.beginMs))
+            return LyricWordToken(
+                text: word.text,
+                startMs: word.beginMs,
+                endMs: max(endMs, word.beginMs),
+                rowIndex: word.rowIndex
+            )
         }
     }
 
@@ -106,6 +120,18 @@ struct TTMLParser {
         text.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
     }
 
+    /// ✅ Normaliza RESPETANDO los saltos duros: cada fila se normaliza por
+    /// separado (la indentación del XML desaparece) y las filas se unen con un
+    /// `\n` real. Las filas vacías se descartan, y el índice de fila de cada
+    /// palabra (`rowIndex`) se cuenta con la MISMA regla, así que quedan
+    /// alineados fila ↔ palabras incluso con `<br/>` repetidos o al final.
+    static func normalizedRows(_ text: String) -> String {
+        text.split(separator: hardBreak, omittingEmptySubsequences: true)
+            .map { normalized(String($0)) }
+            .filter { !$0.isEmpty }
+            .joined(separator: "\n")
+    }
+
     // MARK: - XMLParserDelegate
     /// ✅ Acumula en propiedades escalares/arrays propios (sin structs copiados
     /// por carácter) para que el parseo de una canción sea de un solo pase.
@@ -119,10 +145,13 @@ struct TTMLParser {
         private var lineEndMs: Int?
         private var lineText = ""
         private var lineWords: [Word] = []
+        /// Fila visual actual dentro de la línea (sube con cada `<br/>`).
+        private var lineRowIndex = 0
 
         private var wordBeginMs = 0
         private var wordEndMs: Int?
         private var wordText = ""
+        private var wordRowIndex = 0
 
         func parser(
             _ parser: XMLParser,
@@ -142,14 +171,16 @@ struct TTMLParser {
                 lineEndMs = TTMLParser.milliseconds(attributeDict["end"])
                 lineText = ""
                 lineWords = []
+                lineRowIndex = 0
             case "span":
                 guard isInsideLine else { return }
                 isInsideWord = true
                 wordBeginMs = TTMLParser.milliseconds(attributeDict["begin"]) ?? lineBeginMs
                 wordEndMs = TTMLParser.milliseconds(attributeDict["end"])
                 wordText = ""
+                wordRowIndex = lineRowIndex
             case "br":
-                if isInsideLine { lineText += "\n" }
+                markHardBreak()
             default:
                 break
             }
@@ -182,17 +213,42 @@ struct TTMLParser {
         private func finishWord() {
             guard isInsideWord else { return }
             isInsideWord = false
-            let text = wordText.trimmingCharacters(in: .whitespacesAndNewlines)
+            // ✅ Nunca se deja la marca de salto dentro del texto de una palabra.
+            let text = wordText
+                .split(separator: TTMLParser.hardBreak, omittingEmptySubsequences: true)
+                .map { TTMLParser.normalized(String($0)) }
+                .filter { !$0.isEmpty }
+                .joined(separator: " ")
             if !text.isEmpty {
-                lineWords.append(Word(beginMs: wordBeginMs, endMs: wordEndMs, text: text))
+                lineWords.append(Word(
+                    beginMs: wordBeginMs,
+                    endMs: wordEndMs,
+                    text: text,
+                    rowIndex: wordRowIndex
+                ))
             }
             wordText = ""
+        }
+
+        /// ✅ `<br/>` = fila nueva. Los saltos repetidos o al principio de la
+        /// línea se ignoran para que `lineRowIndex` cuente exactamente las filas
+        /// que `normalizedRows` va a conservar.
+        private func markHardBreak() {
+            guard isInsideLine, !isAtRowBreak else { return }
+            lineText.append(TTMLParser.hardBreak)
+            lineRowIndex += 1
+        }
+
+        /// ✅ ¿La fila actual está vacía (solo whitespace o un salto ya puesto)?
+        private var isAtRowBreak: Bool {
+            guard let index = lineText.lastIndex(where: { !$0.isWhitespace }) else { return true }
+            return lineText[index] == TTMLParser.hardBreak
         }
 
         private func finishLine() {
             guard isInsideLine else { return }
             isInsideLine = false
-            let text = TTMLParser.normalized(lineText)
+            let text = TTMLParser.normalizedRows(lineText)
             if !text.isEmpty {
                 entries.append(Line(beginMs: lineBeginMs, endMs: lineEndMs, text: text, words: lineWords))
             }
@@ -239,6 +295,29 @@ extension TTMLParser {
         assert(parse("[00:01.00]Texto LRC normal") == nil, "TTML Test 2 falló: LRC no debe parsearse como TTML")
         assert(parse("") == nil, "TTML Test 2 falló: Texto vacío")
         print("✅ TTML Test 2 (no confunde LRC) passed")
+
+        // ✅ Test 2b: `<br/>` = fila visual propia (nunca un espacio perdido).
+        let multiline = """
+        <tt xmlns="http://www.w3.org/ns/ttml"><body><div>
+        <p begin="00:00:01.000" end="00:00:05.000">
+          <span begin="00:00:01.000" end="00:00:02.000">Primera</span>
+          <span begin="00:00:02.000" end="00:00:03.000">fila<br/></span>
+          <span begin="00:00:04.000" end="00:00:05.000">Segunda</span>
+        </p>
+        </div></body></tt>
+        """
+        guard let rows = parse(multiline)?.first else {
+            assertionFailure("TTML Test 2b falló: no se parseó la línea")
+            return
+        }
+        assert(rows.displayText == "Primera fila\nSegunda", "TTML Test 2b falló: filas mal unidas")
+        assert(rows.visualRows.count == 2, "TTML Test 2b falló: Expected 2 filas visuales")
+        // La fila 1 se rellena con SUS palabras y se queda completa durante el
+        // silencio (3000→4000ms); la fila 2 no empieza hasta su propio timestamp.
+        assert(rows.visualRows[0].startMs == 1000 && rows.visualRows[0].endMs == 3000, "TTML Test 2b falló: ventana de la fila 1")
+        assert(rows.visualRows[1].startMs == 4000 && rows.visualRows[1].endMs == 5000, "TTML Test 2b falló: ventana de la fila 2")
+        assert(rows.visualRows[0].endMs <= rows.visualRows[1].startMs, "TTML Test 2b falló: filas solapadas")
+        print("✅ TTML Test 2b (filas visuales por <br/>) passed")
 
         assert(milliseconds("00:00:12.500") == 12_500, "TTML Test 3 falló: Clock time")
         assert(milliseconds("01:02:03") == 3_723_000, "TTML Test 3 falló: Clock time con horas")

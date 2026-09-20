@@ -144,15 +144,25 @@ final class LyricsViewModel: ObservableObject {
         return max(0, clockTime + min(max(elapsed, 0), 1.0))
     }
 
-    /// Progreso (0...1, sin easing) del relleno de la línea indicada.
-    /// ✅ O(1) con la ventana cacheada: se llama en cada frame SOLO para la línea
-    /// activa, así el resto de la lista no se recalcula.
-    func fillProgress(forLineID id: Int) -> Double {
+    /// Progreso (0...1, sin easing) del relleno de UNA FILA de la línea activa.
+    /// ✅ O(1): se llama en cada frame SOLO para la línea activa (y solo para las
+    /// filas que cambian de progreso), así el resto de la lista no se recalcula.
+    /// ✅ Cada fila usa SU ventana temporal, de modo que el wipe avanza fila a
+    /// fila (nunca en paralelo) y respeta los silencios entre filas: la fila de
+    /// arriba queda completa mientras no llegue el timestamp de la de abajo.
+    /// ✅ La ÚLTIMA fila toma el fin EFECTIVO del motor (incluido el buffer
+    /// adaptativo), así una línea de una sola fila se rellena exactamente igual
+    /// que antes de existir las filas visuales.
+    func fillProgress(forLineID id: Int, row: LyricVisualRow, isLastRow: Bool) -> Double {
         guard id == activeID, activeEndMs > activeStartMs else { return 0 }
 
+        let startMs = Double(row.startMs)
+        let endMs = Double(isLastRow ? max(activeEndMs, row.endMs) : row.endMs)
+        guard endMs > startMs else { return 1 }
+
         let timeMs = interpolatedTime() * 1000
-        let clampedMs = min(max(timeMs, Double(activeStartMs)), Double(activeEndMs))
-        return (clampedMs - Double(activeStartMs)) / Double(activeEndMs - activeStartMs)
+        let clampedMs = min(max(timeMs, startMs), endMs)
+        return (clampedMs - startMs) / (endMs - startMs)
     }
 
     // MARK: - Reloj interno

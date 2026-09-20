@@ -7,6 +7,9 @@ import SwiftUI
 //    ancla CACurrentMediaTime del ViewModel.
 // ✅ Solo la línea ACTIVA tiene TimelineView → el resto del LazyVStack no se
 //    re-evalúa en cada frame.
+// ✅ Una línea lógica puede tener VARIAS filas visuales (TTML <br/>): cada fila
+//    lleva su propia máscara y su propia ventana temporal, así el relleno
+//    avanza de arriba abajo (nunca en paralelo) y respeta los silencios.
 // ✅ Sin temporizadores propios (ni en la vista ni en el modelo).
 // ✅ Auto-scroll suave con ScrollViewReader (solo cuando cambia la línea activa)
 // ✅ Render 100% por código, sin assets
@@ -203,6 +206,10 @@ private struct LyricLineView: View {
     let isActive: Bool
     let viewModel: LyricsViewModel
 
+    /// ✅ Separación entre filas visuales de una misma línea lógica (también en
+    /// la capa atenuada, para que el texto no salte al activarse la línea).
+    private static let rowSpacing: CGFloat = 2
+
     private var fontSize: CGFloat {
         isActive ? 24 : 18
     }
@@ -216,7 +223,7 @@ private struct LyricLineView: View {
             if isActive {
                 activeLine
             } else {
-                dimmedText
+                dimmedRows
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -226,40 +233,59 @@ private struct LyricLineView: View {
         .animation(.spring(response: 0.4, dampingFraction: 0.7), value: isActive)
     }
 
-    // MARK: Línea activa (relleno animado)
+    // MARK: Línea activa (relleno animado, fila a fila)
     /// ✅ Con reproducción activa se piden frames a 60 Hz; en pausa se dibuja el
     /// estado congelado una sola vez (sin gastar GPU/batería).
     @ViewBuilder
     private var activeLine: some View {
         if viewModel.isPlaying {
             TimelineView(.animation) { _ in
-                fillLayer(progress: easedProgress)
+                activeRows
             }
         } else {
-            fillLayer(progress: easedProgress)
+            activeRows
         }
     }
 
-    /// Capa superior: texto brillante recortado por una máscara que se expande
-    /// de izquierda a derecha según el progreso (la base queda atenuada).
-    private func fillLayer(progress: Double) -> some View {
-        LyricFillText(
-            text: line.displayText,
-            fontSize: fontSize,
-            fontWeight: fontWeight,
-            progress: progress
+    /// ✅ UN solo TimelineView para la línea completa: cada fila visual lleva su
+    /// propia máscara y su propia ventana temporal, pero solo hay UNA
+    /// suscripción de frames por línea activa (nunca una por fila).
+    private var activeRows: some View {
+        VStack(alignment: .leading, spacing: Self.rowSpacing) {
+            ForEach(line.visualRows.indices, id: \.self) { index in
+                LyricFillText(
+                    text: line.visualRows[index].text,
+                    fontSize: fontSize,
+                    fontWeight: fontWeight,
+                    progress: easedProgress(forRowIndex: index)
+                )
+            }
+        }
+    }
+
+    /// ✅ Misma estructura de filas que la capa activa: el texto de una línea
+    /// normal (una sola fila) se dibuja exactamente igual que antes.
+    private var dimmedRows: some View {
+        VStack(alignment: .leading, spacing: Self.rowSpacing) {
+            ForEach(line.visualRows.indices, id: \.self) { index in
+                Text(line.visualRows[index].text)
+                    .font(.system(size: fontSize, weight: fontWeight))
+                    .foregroundStyle(Color.white.opacity(0.35))
+            }
+        }
+    }
+
+    /// ✅ Smoothstep (t·t·(3−2t)) POR FILA: cada fila se rellena en su propio
+    /// rango, así la fila de arriba se completa antes de que empiece la de abajo.
+    private func easedProgress(forRowIndex index: Int) -> Double {
+        let rows = line.visualRows
+        guard rows.indices.contains(index) else { return 0 }
+
+        let raw = viewModel.fillProgress(
+            forLineID: line.id,
+            row: rows[index],
+            isLastRow: index == rows.count - 1
         )
-    }
-
-    private var dimmedText: some View {
-        Text(line.displayText)
-            .font(.system(size: fontSize, weight: fontWeight))
-            .foregroundStyle(Color.white.opacity(0.35))
-    }
-
-    /// ✅ Smoothstep (t·t·(3−2t)): entrada y salida del relleno más suaves.
-    private var easedProgress: Double {
-        let raw = viewModel.fillProgress(forLineID: line.id)
         return raw * raw * (3 - 2 * raw)
     }
 }
