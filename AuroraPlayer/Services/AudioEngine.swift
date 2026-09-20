@@ -2329,7 +2329,9 @@ class AudioEngine: NSObject, ObservableObject {
                         Self.isHeadphonePort(output.portType)
                     } ?? false
 
-                    if wasPlaying && isHeadphoneRoute && !self.isPlaying {
+                    // ✅ FIX desconexión BT: reanudar en CUALQUIER ruta (no solo audífonos)
+                    // Si estaba reproduciendo y se cambió de ruta, reanudar si está pausado
+                    if wasPlaying && !self.isPlaying {
                         self.resume()
                         AppLog.info(.playback, "Ruta cambiada a \(route?.portName ?? "?"): reproducción reanudada")
                     } else if wasPlaying && self.isPlaying, !self.isUsingFallback, let file = self.audioFile {
