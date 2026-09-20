@@ -84,7 +84,7 @@ final class LyricsViewModel: ObservableObject {
         guard let engine = engine else { return }
         
         let currentTimeMs = Int((audioEngine?.currentTime ?? 0) * 1000)
-        let newIndex = engine.seekIndex(at: currentTimeMs)
+        _ = engine.seekIndex(at: currentTimeMs)
         
         // ✅ Actualizar inmediatamente sin esperar al siguiente frame
         updateState(at: currentTimeMs)
@@ -95,7 +95,11 @@ final class LyricsViewModel: ObservableObject {
         guard let audioEngine = audioEngine else { return }
         
         let currentTimeMs = Int(audioEngine.currentTime * 1000)
-        updateState(at: currentTimeMs)
+        // ✅ CADisplayLink corre en el run loop principal pero no está marcado como @MainActor
+        // Usamos MainActor.assumeIsolated para asegurar thread-safety con Swift 6 concurrency
+        MainActor.assumeIsolated {
+            updateState(at: currentTimeMs)
+        }
     }
     
     // MARK: - Stop display link
