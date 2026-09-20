@@ -85,9 +85,6 @@ struct LyricsView: View {
                         let isActive = viewModel.activeLineID == line.id
                         let progress = isActive ? viewModel.progress : 0.0
                         
-                        // ✅ DEBUG: Log para identificar el bug
-                        let _ = print("Line \(line.id) — active: \(String(describing: viewModel.activeLineID)) — isActive: \(isActive)")
-                        
                         if isActive {
                             // ✅ Línea activa con animación de relleno progresivo
                             animatedLyricLine(line: line, progress: progress)

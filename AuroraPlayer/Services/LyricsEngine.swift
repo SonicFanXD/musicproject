@@ -66,6 +66,11 @@ struct LyricsEngine {
         guard index >= 0 && index < lines.count else { return nil }
         return lines[index]
     }
+    
+    // ✅ DEBUG: IDs de todas las líneas para diagnóstico
+    func allLineIDs() -> [Int] {
+        lines.map { $0.id }
+    }
 }
 
 // MARK: - Tests unitarios para LyricsEngine

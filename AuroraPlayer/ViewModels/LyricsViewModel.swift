@@ -115,6 +115,9 @@ final class LyricsViewModel: ObservableObject {
         // ✅ Calcular línea activa y progress
         let newIndex = engine.activeIndex(at: timeMs)
         
+        // ✅ DEBUG: Log de diagnóstico
+        print("⏱ timeMs=\(timeMs) — newIndex=\(String(describing: newIndex)) — lineIDs=\(engine.allLineIDs())")
+        
         if let newIndex = newIndex, let line = engine.line(at: newIndex) {
             // ✅ Calcular progress para la línea activa
             let lineStart = TimeInterval(line.startMs) / 1000.0
@@ -129,10 +132,15 @@ final class LyricsViewModel: ObservableObject {
                 progress = 1.0
             }
             
+            // ✅ DEBUG: Log de asignación
+            print("✅ Asignando activeLineID=\(newIndex) — progress=\(progress)")
+            
             activeLineID = newIndex
             self.progress = progress
         } else {
             // ✅ Gap o silencio: no línea activa, progress = 0
+            // ✅ DEBUG: Log de gap
+            print("⚠️ Gap/silencio: activeLineID=nil")
             activeLineID = nil
             progress = 0.0
         }
