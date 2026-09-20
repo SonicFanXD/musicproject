@@ -52,7 +52,10 @@ final class LyricsViewModel: ObservableObject {
     }
     
     deinit {
-        stopMonitoring()
+        // No podemos llamar a stopMonitoring() (@MainActor) desde deinit no aislado.
+        // Timer.invalidate() es thread-safe, así que lo hacemos directamente.
+        lyricsTimer?.invalidate()
+        lyricsTimer = nil
     }
     
     // MARK: - Parse lyrics
@@ -81,11 +84,11 @@ final class LyricsViewModel: ObservableObject {
         
         // ✅ Timer 0.1s para updates (CADisplayLink a 60 Hz era desperdicio)
         lyricsTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
-            guard let self, let audioEngine = self.audioEngine else { return }
-            let currentTimeMs = Int(audioEngine.currentTime * 1000)
-            guard currentTimeMs != self.lastProcessedTimeMs else { return }
-            self.lastProcessedTimeMs = currentTimeMs
-            Task { @MainActor in
+            Task { @MainActor [weak self] in
+                guard let self, let audioEngine = self.audioEngine else { return }
+                let currentTimeMs = Int(audioEngine.currentTime * 1000)
+                guard currentTimeMs != self.lastProcessedTimeMs else { return }
+                self.lastProcessedTimeMs = currentTimeMs
                 self.updateState(at: currentTimeMs)
             }
         }
