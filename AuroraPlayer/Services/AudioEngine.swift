@@ -93,6 +93,12 @@ class AudioEngine: NSObject, ObservableObject {
             }
         }
     }
+    // ✅ MEJORA SHUFFLE: lista de canciones mezcladas que se consume secuencialmente
+    // Evita repeticiones hasta que todas las canciones hayan sonado
+    private var shuffledPlaylist: [Song] = []
+    private var shuffleIndex: Int = 0
+    // ✅ MEJORA QUEUE: cola manual de canciones para reproducir después
+    @Published var manualQueue: [Song] = []
     @Published var repeatMode: RepeatMode = {
         if let raw = UserDefaults.standard.string(forKey: "com.aurora.repeatMode"),
            let mode = RepeatMode(rawValue: raw) { return mode }
@@ -1500,29 +1506,51 @@ class AudioEngine: NSObject, ObservableObject {
     /// Calcula el índice de la siguiente canción según shuffle/repeat-all.
     /// Retorna nil si se alcanzó el final de la playlist sin repeat.
     /// NOTA: repeat-one se maneja aparte, en indexToChainAhead().
-    /// FIX: shuffle nunca devuelve el mismo índice actual (evita bucles infinitos
-    /// donde la "siguiente" canción es la misma → completion handler se repite).
+    /// ✅ MEJORA SHUFFLE: usa lista mezclada que se consume secuencialmente
+    /// para evitar repeticiones hasta que todas las canciones hayan sonado.
+    /// ✅ MEJORA QUEUE: prioriza cola manual sobre la playlist normal.
     private func computeNextIndex() -> Int? {
+        // ✅ MEJORA QUEUE: primero revisar cola manual
+        if !manualQueue.isEmpty {
+            // Añadir primera canción de cola manual a la playlist y reproducirla
+            let nextSong = manualQueue.removeFirst()
+            playlist.insert(nextSong, at: currentIndex + 1)
+            currentIndex += 1
+            updateNextUpQueue()
+            return currentIndex
+        }
+        
         guard !playlist.isEmpty else { return nil }
         if playlist.count == 1 {
             return repeatMode == .all || repeatMode == .one ? 0 : nil
         }
         if isShuffleEnabled {
-            var nextIndex: Int
-            repeat {
-                nextIndex = Int.random(in: 0..<playlist.count)
-            } while nextIndex == currentIndex
-            // ✅ REPRODUCCIÓN: con playlist de 2+ canciones, evitar repetir la
-            // canción que acaba de sonar (la primera del historial). Con el
-            // RNG puro la misma canción podía sonar dos veces seguidas.
-            if playlist.count > 1,
-               let lastPlayed = playHistory.first,
-               nextIndex != currentIndex,
-               playlist[nextIndex].id == lastPlayed.id {
-                nextIndex = (nextIndex + 1) % playlist.count
-                if nextIndex == currentIndex { nextIndex = (nextIndex + 1) % playlist.count }
+            // ✅ MEJORA: usar lista mezclada en lugar de RNG cada vez
+            if shuffledPlaylist.isEmpty || shuffleIndex >= shuffledPlaylist.count {
+                // Regenerar lista mezclada cuando se agota
+                shuffledPlaylist = playlist.shuffled()
+                shuffleIndex = 0
+                // Asegurar que la primera no sea la actual
+                if let currentIdx = shuffledPlaylist.firstIndex(where: { $0.id == playlist[currentIndex].id }) {
+                    shuffledPlaylist.remove(at: currentIdx)
+                    if shuffleIndex >= shuffledPlaylist.count {
+                        shuffleIndex = 0
+                    }
+                }
             }
-            return nextIndex
+            // Obtener siguiente de la lista mezclada
+            guard shuffleIndex < shuffledPlaylist.count else {
+                // Lista agotada, reiniciar con repeat-all o nil si no hay repeat
+                if repeatMode == .all {
+                    shuffledPlaylist = playlist.shuffled()
+                    shuffleIndex = 0
+                    return playlist.firstIndex(where: { $0.id == shuffledPlaylist[0].id })
+                }
+                return nil
+            }
+            let nextSong = shuffledPlaylist[shuffleIndex]
+            shuffleIndex += 1
+            return playlist.firstIndex(where: { $0.id == nextSong.id })
         }
         let next = currentIndex + 1
         if next >= playlist.count {
@@ -1653,6 +1681,9 @@ class AudioEngine: NSObject, ObservableObject {
         guard !playlist.isEmpty else { return }
         if isShuffleEnabled {
             originalPlaylist = playlist
+            // ✅ MEJORA: inicializar lista mezclada nueva
+            shuffledPlaylist = playlist.shuffled()
+            shuffleIndex = 0
             let current = playlist[currentIndex]
             playlist.shuffle()
             if let newIndex = playlist.firstIndex(where: { $0.id == current.id }) {
@@ -1661,6 +1692,9 @@ class AudioEngine: NSObject, ObservableObject {
                 currentIndex = 0
             }
         } else {
+            // ✅ MEJORA: limpiar lista mezclada al desactivar
+            shuffledPlaylist = []
+            shuffleIndex = 0
             if !originalPlaylist.isEmpty {
                 let current = playlist[currentIndex]
                 playlist = originalPlaylist
@@ -1700,6 +1734,46 @@ class AudioEngine: NSObject, ObservableObject {
         AppLog.info(.playback, "Repetición: \(name)")
     }
 
+    // ✅ MEJORA QUEUE: añadir canción a la cola manual
+    func addToQueue(_ song: Song) {
+        manualQueue.append(song)
+        updateNextUpQueue()
+        AppLog.info(.playback, "Añadido a cola: \(song.title)")
+    }
+
+    // ✅ MEJORA QUEUE: añadir canciones a la cola manual
+    func addToQueue(_ songs: [Song]) {
+        manualQueue.append(contentsOf: songs)
+        updateNextUpQueue()
+        AppLog.info(.playback, "Añadidas \(songs.count) canciones a cola")
+    }
+
+    // ✅ MEJORA QUEUE: quitar canción de la cola manual
+    func removeFromQueue(at index: Int) {
+        guard index >= 0 && index < manualQueue.count else { return }
+        let removed = manualQueue.remove(at: index)
+        updateNextUpQueue()
+        AppLog.info(.playback, "Quitado de cola: \(removed.title)")
+    }
+
+    // ✅ MEJORA QUEUE: mover canción en la cola manual
+    func moveInQueue(from sourceIndex: Int, to destinationIndex: Int) {
+        guard sourceIndex >= 0 && sourceIndex < manualQueue.count,
+              destinationIndex >= 0 && destinationIndex < manualQueue.count,
+              sourceIndex != destinationIndex else { return }
+        let song = manualQueue.remove(at: sourceIndex)
+        manualQueue.insert(song, at: destinationIndex)
+        updateNextUpQueue()
+        AppLog.info(.playback, "Reordenado en cola: \(song.title)")
+    }
+
+    // ✅ MEJORA QUEUE: limpiar cola manual
+    func clearQueue() {
+        manualQueue.removeAll()
+        updateNextUpQueue()
+        AppLog.info(.playback, "Cola manual limpiada")
+    }
+
     func restoreState(with songs: [Song]) {
         guard !songs.isEmpty else { return }
 
@@ -1712,6 +1786,18 @@ class AudioEngine: NSObject, ObservableObject {
             return
         }
         hasRestored = true
+
+        // ✅ MEJORA QUEUE: restaurar cola manual
+        if let queueIDs = state["manualQueue"] as? [String] {
+            var restoredQueue: [Song] = []
+            for idString in queueIDs {
+                if let savedID = UUID(uuidString: idString),
+                   let song = songs.first(where: { $0.id == savedID }) {
+                    restoredQueue.append(song)
+                }
+            }
+            manualQueue = restoredQueue
+        }
 
         // ✅ FIX canción errónea al reabrir: la canción se busca por SU ID
         // (UUID). Antes se restauraba por `currentIndex` aplicado a la lista
@@ -1984,17 +2070,27 @@ class AudioEngine: NSObject, ObservableObject {
     }
 
     private func updateNextUpQueue() {
+        // ✅ MEJORA QUEUE: cola manual primero, luego la playlist normal
+        var upcoming: [Song] = []
+        
+        // Añadir cola manual primero
+        upcoming.append(contentsOf: manualQueue)
+        
+        // Luego añadir canciones de la playlist
         guard currentIndex < playlist.count else {
-            nextUpQueue = []
+            nextUpQueue = upcoming
             return
         }
         let nextIndex = currentIndex + 1
         guard nextIndex < playlist.count else {
-            nextUpQueue = []
+            nextUpQueue = upcoming
             return
         }
-        let upcoming = Array(playlist.suffix(from: nextIndex))
-        nextUpQueue = Array(upcoming.prefix(3))
+        let playlistUpcoming = Array(playlist.suffix(from: nextIndex))
+        upcoming.append(contentsOf: playlistUpcoming)
+        
+        // ✅ MEJORA: mostrar 10 canciones en lugar de 3 para mejor visualización
+        nextUpQueue = Array(upcoming.prefix(10))
     }
 
     private func addToHistory(_ song: Song) {
@@ -2417,6 +2513,8 @@ class AudioEngine: NSObject, ObservableObject {
             state["songID"] = song.id.uuidString
             state["songDuration"] = song.duration
         }
+        // ✅ MEJORA QUEUE: guardar cola manual para persistencia
+        state["manualQueue"] = manualQueue.map { $0.id.uuidString }
         UserDefaults.standard.set(state, forKey: stateDefaultsKey)
     }
 
