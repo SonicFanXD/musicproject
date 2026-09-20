@@ -587,26 +587,25 @@ class FileAccessService: ObservableObject {
                 // para que un archivo problemático no detenga toda la carpeta
                 let values = try? fileURL.resourceValues(forKeys: Set(keys))
                 if values?.isDirectory == true { continue }
+                // ✅ FIX subcarpetas: si es directorio, escanear recursivamente
+                if values?.isDirectory == true {
+                    DispatchQueue.global(qos: .utility).async { [weak self] in
+                        self?.scanFolder(fileURL, silent: silent)
+                    }
+                    continue
+                }
+                
                 guard self.supportedExtensions.contains(fileURL.pathExtension.lowercased()) else { continue }
 
                 fileCount += 1
                 let key = Self.libraryKey(for: fileURL)
                 seenKeys.insert(key)
-                // ✅ FIX subcarpetas: si es directorio, agregar a lista para escanear recursivamente
-                if values?.isDirectory == true {
-                    // Escanear subcarpeta recursivamente en un lote separado
-                    DispatchQueue.global(qos: .utility).async { [weak self] in
-                        self?.scanFolder(url: fileURL, silent: silent)
-                    }
-                    continue
-                }
-                guard self.supportedExtensions.contains(fileURL.pathExtension.lowercased()) else { continue
+                
+                if knownKeys.contains(key) {
                     // ✅ FIX metadata editada: si el archivo ya estaba
                     // indexado, solo se re-lee cuando su fecha de
                     // modificación en disco es MÁS RECIENTE que la que se
-                    // guardó la última vez (edición externa de tags). Antes
-                    // esta rama simplemente hacía `continue` siempre, sin
-                    // importar si el contenido había cambiado.
+                    // guardó la última vez (edición externa de tags).
                     if let diskDate = values?.contentModificationDate,
                        let savedDate = knownModDates[key],
                        diskDate > savedDate {
@@ -620,6 +619,7 @@ class FileAccessService: ObservableObject {
                     }
                     continue
                 }
+                
                 batch.append(fileURL)
                 if batch.count == self.metadataBatchSize {
                     // ✅ FIX: propagar `silent` — sin esto, los lotes de la
@@ -1324,19 +1324,20 @@ class FileAccessService: ObservableObject {
         var channelCount: Int = 0
         var bitrateKbps: Int?
         let audioTrack: AVAssetTrack? = (try? await asset.loadTracks(withMediaType: .audio))?.first
-        if let track = audioTrack,
-           let firstDesc = track.formatDescriptions.first,
-           let desc = firstDesc as! CMAudioFormatDescription?,
-           let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(desc) {
-            sampleRate = Double(asbd.pointee.mSampleRate)
-            channelCount = Int(asbd.pointee.mChannelsPerFrame)
-            let fileBits = Int(asbd.pointee.mBitsPerChannel)
-            // ✅ FIX bit depth FLAC/ALAC: inferir del bitrate cuando el ASBD
-            // reporta 0 (ver inferBitDepth).
-            bitDepth = Self.inferBitDepth(
-                fileBits: fileBits,
-                formatID: asbd.pointee.mFormatID,
-                ext: url.pathExtension,
+        if let track = audioTrack {
+            let formatDescriptions = try? await track.load(.formatDescriptions)
+            if let firstDesc = formatDescriptions?.first,
+               let desc = firstDesc as! CMAudioFormatDescription?,
+               let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(desc) {
+                sampleRate = Double(asbd.pointee.mSampleRate)
+                channelCount = Int(asbd.pointee.mChannelsPerFrame)
+                let fileBits = Int(asbd.pointee.mBitsPerChannel)
+                // ✅ FIX bit depth FLAC/ALAC: inferir del bitrate cuando el ASBD
+                // reporta 0 (ver inferBitDepth).
+                bitDepth = Self.inferBitDepth(
+                    fileBits: fileBits,
+                    formatID: asbd.pointee.mFormatID,
+                    ext: url.pathExtension,
                 sampleRate: sampleRate
             )
             // ✅ DEBUG: Log para verificar extracción de bitDepth
@@ -1345,8 +1346,8 @@ class FileAccessService: ObservableObject {
         // ✅ LOSSLESS → profundidad real; LOSSY (MP3/AAC, bitDepth 0) →
         // bitrate medio en kbps (la "calidad" equivalente del codec).
         if bitDepth == 0, let track = audioTrack {
-            let rate = track.estimatedDataRate
-            if rate.isFinite, rate > 0 { bitrateKbps = Int(rate / 1000) }
+            let rate = try? await track.load(.estimatedDataRate)
+            if let rate = rate, rate.isFinite, rate > 0 { bitrateKbps = Int(rate / 1000) }
         }
         // Formato: usar solo la extensión (evita abrir AVAudioFile innecesariamente)
         let formatDescription = [
@@ -1454,13 +1455,19 @@ class FileAccessService: ObservableObject {
         let sampleRate: Double
         let fileBits: Int
         let channels: Int
-        if let track = audioTrack,
-           let firstDesc = track.formatDescriptions.first,
-           let desc = firstDesc as! CMAudioFormatDescription?,
-           let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(desc) {
-            sampleRate = Double(asbd.pointee.mSampleRate)
-            fileBits = Int(asbd.pointee.mBitsPerChannel)
-            channels = Int(asbd.pointee.mChannelsPerFrame)
+        if let track = audioTrack {
+            let formatDescriptions = try? await track.load(.formatDescriptions)
+            if let firstDesc = formatDescriptions?.first,
+               let desc = firstDesc as! CMAudioFormatDescription?,
+               let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(desc) {
+                sampleRate = Double(asbd.pointee.mSampleRate)
+                fileBits = Int(asbd.pointee.mBitsPerChannel)
+                channels = Int(asbd.pointee.mChannelsPerFrame)
+            } else {
+                sampleRate = 0
+                fileBits = 0
+                channels = 0
+            }
         } else {
             sampleRate = 0
             fileBits = 0
@@ -1475,8 +1482,8 @@ class FileAccessService: ObservableObject {
         // ✅ LOSSLESS → bits reales; LOSSY (bitDepth 0) → bitrate medio kbps.
         var lastFormatBitrate: Int?
         if bits == 0, let track = audioTrack {
-            let rate = track.estimatedDataRate
-            if rate.isFinite, rate > 0 { lastFormatBitrate = Int(rate / 1000) }
+            let rate = try? await track.load(.estimatedDataRate)
+            if let rate = rate, rate.isFinite, rate > 0 { lastFormatBitrate = Int(rate / 1000) }
         }
         let formatDescription = [Self.formatLabel(for: url.pathExtension), bits > 0 ? "\(bits) bits" : nil, lastFormatBitrate.map { "~\($0) kbps" } ?? nil, sampleRate > 0 ? "\(Int(sampleRate / 1000)) kHz" : nil]
             .compactMap { $0 }
