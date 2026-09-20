@@ -289,6 +289,23 @@ private struct LyricLineView: View, Equatable {
         // ✅ Transición suave entre estados con animation
         lyricText(line: line, isActive: isActive, progress: progress, clockTime: clockTime, clockUpdateDate: clockUpdateDate)
             .animation(.easeInOut(duration: 0.25), value: isActive)
+            .onChange(of: isActive) { newValue in
+                if !newValue {
+                    // ✅ Al dejar de ser activa: congelar progress para retención visual (~200ms)
+                    frozenProgress = progress
+                    // ✅ Atenuación en dos fases
+                    withAnimation(.easeInOut(duration: 0.15)) {
+                        brightnessOpacity = 0.7
+                    }
+                    withAnimation(.easeInOut(duration: 0.15).delay(0.15)) {
+                        brightnessOpacity = 0.35
+                    }
+                } else {
+                    // ✅ Al volverse activa: restaurar opacidad completa y limpiar frozenProgress
+                    brightnessOpacity = 1.0
+                    frozenProgress = 0
+                }
+            }
     }
     
     // MARK: - Texto de línea con distinción activa/inactiva y relleno progresivo
@@ -311,7 +328,7 @@ private struct LyricLineView: View, Equatable {
                 // Capa superior: texto brillante con máscara de relleno
                 Text(line.cleanText)
                     .font(.system(size: fontSize, weight: fontWeight))
-                    .foregroundStyle(Color.white)
+                    .foregroundStyle(Color.white.opacity(brightnessOpacity))
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.vertical, 12)
                     .mask(alignment: .leading) {
