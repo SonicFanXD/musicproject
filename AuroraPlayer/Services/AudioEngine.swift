@@ -382,6 +382,9 @@ class AudioEngine: NSObject, ObservableObject {
     private var equalizerNode: AVAudioUnitEQ?
     @Published var isEQEnabled: Bool = false
     @Published var eqPreset: EQPreset = .flat
+    // ✅ LIMITER: prevenir distorsión a volumen alto universalmente
+    @Published var isLimiterEnabled: Bool = true
+    private var limiterNode: AVAudioUnitDynamicsProcessor?
     // ✅ Audio Mono: mezcla ambos canales en uno para usuarios con audífono único
     @Published var isMonoAudioEnabled: Bool = UserDefaults.standard.bool(forKey: "com.aurora.monoAudio") {
         didSet {
@@ -798,6 +801,23 @@ class AudioEngine: NSObject, ObservableObject {
         equalizerNode = AVAudioUnitEQ(numberOfBands: 10)
         guard let eq = equalizerNode else { return }
 
+        // ✅ LIMITER: crear dynamics processor para prevenir distorsión
+        if let existingLimiter = limiterNode {
+            engine.detach(existingLimiter)
+        }
+        limiterNode = AVAudioUnitDynamicsProcessor()
+        guard let limiter = limiterNode else { return }
+
+        // Configurar como limiter duro para prevenir clipping
+        limiter.threshold = -0.1 // -0.1 dB para dejar un margen mínimo
+        limiter.headRoom = 0.1 // 0.1 dB de headroom
+        limiter.expansionRatio = 1.0 // Sin expansión
+        limiter.expansionThreshold = -20.0
+        limiter.compressionRatio = 20.0 // Ratio alto para limiter duro
+        limiter.attackTime = 0.001 // 1ms de attack rápido
+        limiter.releaseTime = 0.05 // 50ms de release suave
+        limiter.masterGain = 0.0 // Sin ganancia adicional
+
         let frequencies: [Float] = [32, 64, 125, 250, 500, 1000, 2000, 4000, 8000, 16000]
         for (index, freq) in frequencies.enumerated() {
             let band = eq.bands[index]
@@ -832,7 +852,25 @@ class AudioEngine: NSObject, ObservableObject {
         if !engine.outputConnectionPoints(for: monoMixerNode, outputBus: 0).isEmpty {
             engine.disconnectNodeOutput(monoMixerNode)
         }
-        if let eq = equalizerNode {
+        if let eq = equalizerNode, let limiter = limiterNode {
+            // ✅ LIMITER: conectar limiter en el grafo
+            engine.attach(limiter)
+            // Desconectar nodos previos de forma segura
+            if !engine.outputConnectionPoints(for: playerNode, outputBus: 0).isEmpty {
+                engine.disconnectNodeOutput(playerNode)
+            }
+            if !engine.outputConnectionPoints(for: eq, outputBus: 0).isEmpty {
+                engine.disconnectNodeOutput(eq)
+            }
+            if !engine.outputConnectionPoints(for: limiter, outputBus: 0).isEmpty {
+                engine.disconnectNodeOutput(limiter)
+            }
+
+            engine.connect(playerNode, to: eq, format: format)
+            engine.connect(eq, to: limiter, format: format)
+            engine.connect(limiter, to: monoMixerNode, format: format)
+            engine.connect(monoMixerNode, to: mixer, format: monoMixerOutputFormat())
+        } else if let eq = equalizerNode {
             // Desconectar nodos previos de forma segura
             if !engine.outputConnectionPoints(for: playerNode, outputBus: 0).isEmpty {
                 engine.disconnectNodeOutput(playerNode)
@@ -916,7 +954,15 @@ class AudioEngine: NSObject, ObservableObject {
     /// banda desactiva el bypass.
     private func updateEQBypassState() {
         equalizerNode?.bypass = !(isEQEnabled && eqPreset != .flat)
+        limiterNode?.bypass = !isLimiterEnabled
         applyEQHeadroom()
+    }
+
+    /// ✅ LIMITER: activar/desactivar limiter para prevenir distorsión
+    func toggleLimiter() {
+        isLimiterEnabled.toggle()
+        updateEQBypassState()
+        AppLog.info(.playback, "Limiter: \(isLimiterEnabled ? "activado" : "desactivado")")
     }
 
     /// ✅ CALIDAD (anti-clipping): el EQ puede realzar hasta +8 dB (preset

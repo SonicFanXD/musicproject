@@ -254,6 +254,23 @@ struct SettingsView: View {
                                     }
                                 )
                             )
+                            settingsDivider
+                            // ✅ LIMITER: anti-distorsión universal
+                            settingsToggleRow(
+                                title: Localization.localized("settings.limiter"),
+                                subtitle: Localization.localized("settings.limiterSubtitle"),
+                                icon: "waveform.path",
+                                color: .purple,
+                                isOn: Binding(
+                                    get: { audioEngine.isLimiterEnabled },
+                                    set: { newValue in
+                                        if newValue != audioEngine.isLimiterEnabled {
+                                            Haptics.light()
+                                            audioEngine.toggleLimiter()
+                                        }
+                                    }
+                                )
+                            )
                         }
 
                         // Apariencia

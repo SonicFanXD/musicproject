@@ -194,6 +194,8 @@ final class Localization: ObservableObject {
             "settings.showFPSSubtitle": [.spanish: "Contador de frames en tiempo real", .english: "Real-time frame counter"],
             "settings.audioMode": [.spanish: "Modo de audio", .english: "Audio Mode"],
             "settings.audioModeSubtitle": [.spanish: "Measurement desactiva procesamiento del sistema", .english: "Measurement disables system processing"],
+            "settings.limiter": [.spanish: "Anti-distorsión", .english: "Anti-distortion"],
+            "settings.limiterSubtitle": [.spanish: "Evita distorsión a volumen alto en cualquier dispositivo", .english: "Prevents distortion at high volume on any device"],
             "audio.quality.title": [.spanish: "Calidad de audio", .english: "Audio Quality"],
             "audio.quality.close": [.spanish: "Cerrar", .english: "Close"],
             "audio.quality.stereo": [.spanish: "Estéreo", .english: "Stereo"],
