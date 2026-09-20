@@ -463,27 +463,6 @@ private class LyricsEngine {
             lyricsState = newState
         }
     }
-        // Palabra siguiente: futura (progreso 0.0)
-        for i in max(0, activeIndex - 2)...min(words.count - 1, activeIndex + 2) {
-            let word = words[i]
-            let timeDiff = time - word.time
-
-            if i < activeIndex {
-                // Palabra ya cantada
-                newProgress[word.id] = 1.0
-            } else if i == activeIndex {
-                // Palabra activa: interpolación suave
-                if let duration = word.duration, duration > 0 {
-                    newProgress[word.id] = min(1.0, max(0.0, timeDiff / duration))
-                } else {
-                    // Sin duration: progreso simple basado en tiempo
-                    newProgress[word.id] = timeDiff > 0 ? 1.0 : 0.0
-                }
-            } else {
-                // Palabra futura
-                newProgress[word.id] = 0.0
-            }
-        }
 
     // MARK: - Parse Lyrics (inicializar motor Apple Music)
     private func parseLyrics() {
