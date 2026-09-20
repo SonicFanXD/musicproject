@@ -24,10 +24,8 @@ class LyricsParser {
         let syncLyrics = SynchronizedLyrics(
             lines: lines.map { line in
                 LyricLine(
-                    id: UUID(),
-                    text: line.cleanText,
                     time: TimeInterval(line.startMs) / 1000.0,
-                    duration: TimeInterval(line.endMs - line.startMs) / 1000.0
+                    text: line.cleanText
                 )
             },
             words: [], // ✅ Eliminado word-by-word

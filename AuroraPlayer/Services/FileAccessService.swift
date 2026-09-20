@@ -1327,7 +1327,7 @@ class FileAccessService: ObservableObject {
         if let track = audioTrack {
             let formatDescriptions = try? await track.load(.formatDescriptions)
             if let firstDesc = formatDescriptions?.first,
-               let desc = firstDesc as! CMAudioFormatDescription?,
+               let desc = firstDesc as? CMAudioFormatDescription,
                let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(desc) {
                 sampleRate = Double(asbd.pointee.mSampleRate)
                 channelCount = Int(asbd.pointee.mChannelsPerFrame)
@@ -1459,7 +1459,7 @@ class FileAccessService: ObservableObject {
         if let track = audioTrack {
             let formatDescriptions = try? await track.load(.formatDescriptions)
             if let firstDesc = formatDescriptions?.first,
-               let desc = firstDesc as! CMAudioFormatDescription?,
+               let desc = firstDesc as? CMAudioFormatDescription,
                let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(desc) {
                 sampleRate = Double(asbd.pointee.mSampleRate)
                 fileBits = Int(asbd.pointee.mBitsPerChannel)

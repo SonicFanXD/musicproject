@@ -6,7 +6,6 @@ import AVFoundation
 // ✅ Diseñado para iPhone 8 Plus: Timer 10 Hz (cada 100ms) para mínima batería
 // ✅ Conecta con AudioEngine existente sin modificar la ruta de audio
 // ✅ Detecta cambio de línea eficientemente sin recalcular cada frame
-@MainActor
 final class LyricsViewModel: ObservableObject {
     // MARK: - Published Properties
     @Published var activeID: Int? = nil
@@ -39,6 +38,7 @@ final class LyricsViewModel: ObservableObject {
     // MARK: - Parse lyrics
     /// Parsea texto LRC y prepara el motor de lyrics
     /// - Parameter text: Texto LRC crudo (formato clásico o híbrido)
+    @MainActor
     func parseLyrics(_ text: String) {
         let lines = LRCParser.parse(text)
         self.lyricsLines = lines
@@ -53,6 +53,7 @@ final class LyricsViewModel: ObservableObject {
     
     // MARK: - Control de reproducción
     /// Inicia el timer cuando la reproducción comienza
+    @MainActor
     func startMonitoring() {
         stopTimer()
         
@@ -66,11 +67,13 @@ final class LyricsViewModel: ObservableObject {
     }
     
     /// Detiene el timer cuando la reproducción se pausa
+    @MainActor
     func stopMonitoring() {
         stopTimer()
     }
     
     /// Recalcula línea activa inmediatamente después de un seek
+    @MainActor
     func handleSeek() {
         guard let engine = engine else { return }
         

@@ -169,7 +169,8 @@ struct LyricsView: View {
         guard let song = song else { return }
         
         // ✅ Usar lyrics del modelo de canción (ya parseado en FileAccessService)
-        if let lyrics = song.lyrics, !lyrics.isEmpty {
+        let lyrics = song.lyrics
+        if !lyrics.isEmpty {
             viewModel.parseLyrics(lyrics)
         } else {
             viewModel.hasLyrics = false
@@ -181,7 +182,7 @@ struct LyricsView: View {
 #if DEBUG
 struct LyricsView_Previews: PreviewProvider {
     static var previews: some View {
-        let viewModel = LyricsViewModel(audioEngine: AudioEngine())
+        let viewModel = LyricsViewModel()
         viewModel.parseLyrics("""
         [00:01.00]Primera línea de prueba
         [00:05.50]Segunda línea de prueba

@@ -1179,8 +1179,10 @@ class AudioEngine: NSObject, ObservableObject {
         playCurrentSong()
         // ✅ Iniciar monitoreo de lyrics line-by-line
         if let lyrics = song.lyrics, !lyrics.isEmpty {
-            lyricsViewModel.parseLyrics(lyrics)
-            lyricsViewModel.startMonitoring()
+            Task { @MainActor in
+                lyricsViewModel.parseLyrics(lyrics)
+                lyricsViewModel.startMonitoring()
+            }
         }
         saveState()
     }
@@ -1530,7 +1532,9 @@ class AudioEngine: NSObject, ObservableObject {
         clock.time = current
         isPlaying = false
         // ✅ Detener monitoreo de lyrics line-by-line
-        lyricsViewModel.stopMonitoring()
+        Task { @MainActor in
+            lyricsViewModel.stopMonitoring()
+        }
         updateNowPlayingInfo()
         saveState()
     }
@@ -1611,7 +1615,9 @@ class AudioEngine: NSObject, ObservableObject {
         updateNowPlayingInfo()
         startDisplayTimer()
         // ✅ Iniciar monitoreo de lyrics line-by-line
-        lyricsViewModel.startMonitoring()
+        Task { @MainActor in
+            lyricsViewModel.startMonitoring()
+        }
         if !isUsingFallback {
             scheduleAheadIfPossible()
         }
@@ -1822,7 +1828,9 @@ class AudioEngine: NSObject, ObservableObject {
         // ✅ RELOJ DE PARED: anclar la extrapolación en la posición buscada.
         anchorPlaybackPosition(clampedTime)
         // ✅ Handle seek en lyrics line-by-line
-        lyricsViewModel.handleSeek()
+        Task { @MainActor in
+            lyricsViewModel.handleSeek()
+        }
         // ✅ FIX sincronización: en pausa el seek NO debe iniciar la reproducción.
         scheduleFile(file, from: clampedTime, autostart: isPlaying, generation: generation)
         if isPlaying {
