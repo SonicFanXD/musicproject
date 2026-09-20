@@ -1,6 +1,7 @@
 import SwiftUI
 import AVFoundation
 import AVKit
+import CoreImage
 
 struct NowPlayingView: View {
     @ObservedObject var audioEngine: AudioEngine
@@ -34,6 +35,10 @@ struct NowPlayingView: View {
     // ✅ Guardamos el UIColor dominante crudo para calcular contraste
     // ✅ FIX: usar accentUIColor en vez de systemPurple hardcodeado
     @State private var extractedUIColor: UIColor = AppTheme.accentUIColor
+    // ✅ OPT: Pre-calcular blur de fondo para evitar offscreen rendering en cada render
+    @State private var blurredArtwork: UIImage?
+    // ✅ OPT: Caché de currentArtist para evitar iterar artistas en cada render
+    @State private var cachedCurrentArtist: Artist?
 
     // ✅ Caché de color dominante por canción: evita recalcular el histograma
     // HSB al reabrir NowPlaying o re-entrar a la misma pista (60fps sin hitch)
@@ -60,11 +65,9 @@ struct NowPlayingView: View {
     private var playIconColor: Color { AppTheme.contrastingText(on: extractedUIColor) }
 
     // ✅ NUEVO: resoluciones para el menú de 3 puntos (artista/álbum actuales)
+    // ✅ OPT: Usar caché para evitar iterar artistas en cada render
     private var currentArtist: Artist? {
-        guard let song = audioEngine.currentSong else { return nil }
-        let preferred = song.albumArtist.isEmpty ? song.artist : song.albumArtist
-        return fileAccessService.artists.first { $0.name == preferred }
-            ?? fileAccessService.artists.first { $0.name == song.artist }
+        cachedCurrentArtist
     }
 
     private var currentAlbum: Album? {
@@ -161,6 +164,8 @@ struct NowPlayingView: View {
             }
             .onAppear {
                 extractColorFromArtwork()
+                precalculateBlurredBackground()
+                cacheCurrentArtist()
                 AppLog.info(.interface, "NowPlaying abierto: '\(audioEngine.currentSong?.displayName ?? "—")'")
                 withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
                     artworkScale = 1.0
@@ -177,6 +182,8 @@ struct NowPlayingView: View {
             }
             .onChange(of: audioEngine.currentSong?.id) { _ in
                 extractColorFromArtwork()
+                precalculateBlurredBackground()
+                cacheCurrentArtist()
                 // ✅ Propagar el color de acento a ThemeManager para que PlayerBar
                 // y todas las vistas que lo observen se actualicen al instante
                 ThemeManager.shared.updateArtworkAccent(from: audioEngine.currentSong)
@@ -231,19 +238,16 @@ struct NowPlayingView: View {
     // MARK: - Background (respeta "Reducir transparencia")
     private var backgroundView: some View {
         Group {
-            if let artwork = audioEngine.currentSong?.artwork, !reduceTransparency {
+            if let blurred = blurredArtwork, !reduceTransparency {
                 GeometryReader { geometry in
                     ZStack {
-                        // ✅ FIX barra negra: scaledToFill + clipped para cubrir
-                        // TODA la pantalla (scaledToFit dejaba franjas en pantallas
-                        // altas/anchas por encima y debajo de la imagen cuadrada).
-                        Image(uiImage: artwork)
+                        // ✅ OPT: Usar imagen pre-blureada para evitar offscreen rendering en cada render
+                        Image(uiImage: blurred)
                             .resizable()
                             .interpolation(.medium)
                             .scaledToFill()
                             .frame(width: geometry.size.width + 60, height: geometry.size.height + 60)
                             .clipped()
-                            .blur(radius: 25)
                             .opacity(0.45)
 
                         extractedColor.opacity(0.12)
@@ -265,6 +269,46 @@ struct NowPlayingView: View {
                 .allowsHitTesting(false)
             }
         }
+    }
+
+    // ✅ OPT: Pre-calcular blur de fondo en background para evitar offscreen rendering
+    private func precalculateBlurredBackground() {
+        guard let artwork = audioEngine.currentSong?.artwork else {
+            blurredArtwork = nil
+            return
+        }
+
+        let songID = audioEngine.currentSong?.id
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self,
+                  songID == self.audioEngine.currentSong?.id else { return }
+
+            // Aplicar blur usando CIFilter (más eficiente que SwiftUI .blur en cada render)
+            guard let ciImage = CIImage(image: artwork),
+                  let filter = CIFilter(name: "CIGaussianBlur") else { return }
+            filter.setValue(ciImage, forKey: kCIInputImageKey)
+            filter.setValue(25, forKey: kCIInputRadiusKey)
+            guard let outputImage = filter.outputImage,
+                  let cgImage = CIContext(options: nil).createCGImage(outputImage, from: outputImage.extent) else { return }
+
+            let finalBlurred = UIImage(cgImage: cgImage)
+
+            DispatchQueue.main.async {
+                guard songID == self.audioEngine.currentSong?.id else { return }
+                self.blurredArtwork = finalBlurred
+            }
+        }
+    }
+
+    // ✅ OPT: Caché de currentArtist para evitar iterar artistas en cada render
+    private func cacheCurrentArtist() {
+        guard let song = audioEngine.currentSong else {
+            cachedCurrentArtist = nil
+            return
+        }
+        let preferred = song.albumArtist.isEmpty ? song.artist : song.albumArtist
+        cachedCurrentArtist = fileAccessService.artists.first { $0.name == preferred }
+            ?? fileAccessService.artists.first { $0.name == song.artist }
     }
 
     // MARK: - Artwork (mejorado con mejor sombras y efectos)
