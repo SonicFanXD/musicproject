@@ -1,5 +1,6 @@
 import SwiftUI
 import QuartzCore
+import CoreImage
 
 // MARK: - Vista de lyrics línea por línea con animación SpotiFLAC-style
 // ✅ Diseño: ScrollView + LazyVStack para máximo rendimiento (60 fps)
@@ -13,8 +14,10 @@ struct LyricsView: View {
     let song: Song?
     @ObservedObject var viewModel: LyricsViewModel
     @Environment(\.dismiss) private var dismiss
-    
+
     @State private var scrollTarget: Int? = nil
+    // ✅ OPT: Pre-calcular blur de fondo para evitar offscreen rendering en cada render
+    @State private var blurredArtwork: UIImage?
     
     var body: some View {
         ZStack {
@@ -42,12 +45,16 @@ struct LyricsView: View {
         }
         .onAppear {
             parseLyricsIfNeeded()
+            precalculateBlurredBackground()
         }
         // ✅ iOS 16 onChange clásico: scroll solo cuando cambia activeLineID
         .onChange(of: viewModel.activeLineID) { newID in
             if let newID = newID {
                 scrollTarget = newID
             }
+        }
+        .onChange(of: song?.id) { _ in
+            precalculateBlurredBackground()
         }
     }
     
@@ -176,7 +183,17 @@ struct LyricsView: View {
     private var blurredArtworkBackground: some View {
         GeometryReader { geometry in
             Group {
-                if let artwork = song?.artwork {
+                if let blurred = blurredArtwork {
+                    // ✅ OPT: Usar imagen pre-blureada para evitar offscreen rendering en cada render
+                    Image(uiImage: blurred)
+                        .resizable()
+                        .interpolation(.medium)
+                        .scaledToFill()
+                        .frame(width: geometry.size.width, height: geometry.size.height)
+                        .opacity(0.4)
+                        .overlay(Color(UIColor.systemBackground).opacity(0.72))
+                } else if let artwork = song?.artwork {
+                    // Fallback si aún no se ha pre-calculado el blur
                     Image(uiImage: artwork)
                         .resizable()
                         .interpolation(.medium)
@@ -192,6 +209,35 @@ struct LyricsView: View {
                         endPoint: .bottom
                     )
                 }
+            }
+        }
+    }
+
+    // ✅ OPT: Pre-calcular blur de fondo en background para evitar offscreen rendering
+    private func precalculateBlurredBackground() {
+        guard let artwork = song?.artwork else {
+            blurredArtwork = nil
+            return
+        }
+
+        let songID = song?.id
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self,
+                  songID == self.song?.id else { return }
+
+            // Aplicar blur usando CIFilter (más eficiente que SwiftUI .blur en cada render)
+            guard let ciImage = CIImage(image: artwork),
+                  let filter = CIFilter(name: "CIGaussianBlur") else { return }
+            filter.setValue(ciImage, forKey: kCIInputImageKey)
+            filter.setValue(60, forKey: kCIInputRadiusKey)
+            guard let outputImage = filter.outputImage,
+                  let cgImage = CIContext(options: nil).createCGImage(outputImage, from: outputImage.extent) else { return }
+
+            let finalBlurred = UIImage(cgImage: cgImage)
+
+            DispatchQueue.main.async {
+                guard songID == self.song?.id else { return }
+                self.blurredArtwork = finalBlurred
             }
         }
     }
