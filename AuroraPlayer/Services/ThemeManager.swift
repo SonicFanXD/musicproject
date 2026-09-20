@@ -93,37 +93,36 @@ final class ThemeManager: ObservableObject {
         }
     }
 
-    /// Color final efectivo del acento: mezcla más visible de dos colores
-    /// si el modo está activo y hay colores disponibles; si no, el acento manual.
-    var resolvedAccent: Color {
-        if accentFromArtwork, let primary = artworkAccentColor, let secondary = artworkSecondaryColor {
-            // ✅ MEZCLA MÁS VISIBLE: 60% primario, 40% secundario
-            let uiPrimary = UIColor(primary)
-            let uiSecondary = UIColor(secondary)
-            var r1: CGFloat = 0, g1: CGFloat = 0, b1: CGFloat = 0, a1: CGFloat = 0
-            var r2: CGFloat = 0, g2: CGFloat = 0, b2: CGFloat = 0, a2: CGFloat = 0
-            uiPrimary.getRed(&r1, green: &g1, blue: &b1, alpha: &a1)
-            uiSecondary.getRed(&r2, green: &g2, blue: &b2, alpha: &a2)
-            let mixedR = r1 * 0.6 + r2 * 0.4
-            let mixedG = g1 * 0.6 + g2 * 0.4
-            let mixedB = b1 * 0.6 + b2 * 0.4
-            return Color(UIColor(red: mixedR, green: mixedG, blue: mixedB, alpha: 1.0))
-        } else if accentFromArtwork, let c = artworkAccentColor {
-            return c
-        }
-        return accent
-    }
-
-    /// ✅ Gradiente de dos colores para elementos premium
-    var resolvedAccentGradient: LinearGradient? {
+    /// ✅ Gradiente de dos colores universal para todos los elementos
+    /// Si hay dos colores de carátula, usa gradiente; si no, usa color sólido
+    var resolvedAccentGradient: LinearGradient {
         if accentFromArtwork, let primary = artworkAccentColor, let secondary = artworkSecondaryColor {
             return LinearGradient(
                 colors: [primary, secondary],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
+        } else if accentFromArtwork, let c = artworkAccentColor {
+            return LinearGradient(
+                colors: [c, c.opacity(0.8)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
         }
-        return nil
+        return LinearGradient(
+            colors: [accent, accent.opacity(0.8)],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+    }
+
+    /// Color final efectivo del acento: usa el color primario sólido
+    /// para compatibilidad con vistas que no soportan gradientes
+    var resolvedAccent: Color {
+        if accentFromArtwork, let c = artworkAccentColor {
+            return c
+        }
+        return accent
     }
 
     private static func normalizeArtworkAccent(_ uiColor: UIColor) -> Color {
