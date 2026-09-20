@@ -203,6 +203,9 @@ final class ThemeManager: ObservableObject {
 enum AppTheme {
     /// Acento efectivo: respeta el modo "acento desde carátula" si está activo.
     static var accent: Color { ThemeManager.shared.resolvedAccent }
+    
+    /// ✅ Gradiente de dos colores universal para elementos que lo soportan
+    static var accentGradient: LinearGradient { ThemeManager.shared.resolvedAccentGradient }
 
     /// ✅ Acento como UIColor: reemplaza los antiguos fallbacks
     /// `UIColor.systemPurple` hardcodeados (no respetaban el ajuste).

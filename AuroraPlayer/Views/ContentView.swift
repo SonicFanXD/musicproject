@@ -182,7 +182,7 @@ struct ContentView: View {
                                 showPlaylists = true
                             } label: {
                                 Image(systemName: "music.note.list")
-                                    .foregroundStyle(AppTheme.accent)
+                                    .foregroundStyle(AppTheme.accentGradient)
                                     .font(.system(size: 16, weight: .medium))
                                     .frame(width: 44, height: 44)
                                     .contentShape(Rectangle())
@@ -192,7 +192,7 @@ struct ContentView: View {
                                 showSettings = true
                             } label: {
                                 Image(systemName: "gearshape.fill")
-                                    .foregroundStyle(AppTheme.accent)
+                                    .foregroundStyle(AppTheme.accentGradient)
                                     .font(.system(size: 16, weight: .medium))
                                     .frame(width: 44, height: 44)
                                     .contentShape(Rectangle())
@@ -667,7 +667,7 @@ struct ContentView: View {
                     Spacer()
                     Text("\(Int(indexingProgress * 100))%")
                         .font(.system(size: 13, weight: .bold).monospacedDigit())
-                        .foregroundStyle(AppTheme.accent)
+                        .foregroundStyle(AppTheme.accentGradient)
                 }
             }
             .padding(.horizontal, 8)
@@ -1516,7 +1516,7 @@ struct CategorySortMenu<Option: RawRepresentable & Hashable & CaseIterable>: Vie
             HStack(spacing: 6) {
                 Image(systemName: optionIcon(current))
                     .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(AppTheme.accent)
+                    .foregroundStyle(AppTheme.accentGradient)
                 Text("\(Localization.localized("sort.sortBy")): \(optionTitle(current))")
                     .font(.system(size: 12, weight: .medium))
                     .lineLimit(1)
@@ -1644,7 +1644,7 @@ struct ContentUnavailableLibraryView: View {
                 Circle().fill(AppTheme.accent.opacity(0.1)).frame(width: 80, height: 80)
                 Image(systemName: icon)
                     .font(.system(size: 36, weight: .semibold))
-                    .foregroundStyle(AppTheme.accent)
+                    .foregroundStyle(AppTheme.accentGradient)
             }
             Text(title)
                 .font(.system(size: 20, weight: .bold, design: .rounded))
