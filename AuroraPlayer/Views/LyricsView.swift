@@ -292,6 +292,7 @@ private struct LyricLineView: View, Equatable {
     }
     
     // MARK: - Texto de línea con distinción activa/inactiva y relleno progresivo
+    @ViewBuilder
     private func lyricText(line: LyricsLine, isActive: Bool, progress: Double, clockTime: TimeInterval, clockUpdateDate: TimeInterval) -> some View {
         let opacity: Double = isActive ? 1.0 : 0.35
         let fontWeight: Font.Weight = isActive ? .bold : .regular
@@ -299,7 +300,7 @@ private struct LyricLineView: View, Equatable {
         
         if isActive {
             // ✅ Línea activa: blanco con relleno progresivo
-            return ZStack(alignment: .leading) {
+            ZStack(alignment: .leading) {
                 // Capa base: texto atenuado (siempre visible debajo)
                 Text(line.cleanText)
                     .font(.system(size: fontSize, weight: fontWeight))
@@ -336,7 +337,7 @@ private struct LyricLineView: View, Equatable {
             }
         } else {
             // ✅ Línea inactiva: texto atenuado simple
-            return Text(line.cleanText)
+            Text(line.cleanText)
                 .font(.system(size: fontSize, weight: fontWeight))
                 .foregroundStyle(Color.white.opacity(opacity))
                 .frame(maxWidth: .infinity, alignment: .leading)
