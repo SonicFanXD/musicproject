@@ -129,18 +129,15 @@ class FileAccessService: ObservableObject {
     private var inFlightBatches: Int {
         inFlightByGeneration.values.reduce(0, +)
     }
-    // ✅ CONCURRENCIA SEGURA: ventana acotada de lecturas AVAsset en vuelo.
-    // Cada lote de 50 URLs lanzaba 50 makeSong() concurrentes (cada uno con
-    // varios asset.load en paralelo) × 3 lotes = ~150+ lecturas AVFoundation
-    // simultáneas → picos de CPU/RAM y tirones en el scroll. Con la ventana
-    // de 4, el throughput se mantiene (4 canciones en paralelo) pero sin
-    // saturar el sistema: indexa igual de rápido en la práctica y la UI va
-    // fluida. Los índices preservan el orden original (determinista).
-    private let maxConcurrentMetadataReads = 4
-    // ✅ Lotes de 3 en vuelo × 50 URLs: suficiente paralelismo para indexar
-    // rápido sin los picos de memoria de lotes gigantes.
-    private let maxInFlightBatches = 3
-    private let metadataBatchSize = 50
+    // ✅ CONCURRENCIA OPTIMIZADA: ventana aumentada de lecturas AVAsset en vuelo.
+    // Aumentado de 4 a 8 para iPhone 8/A11 con suficiente RAM para indexación más rápida
+    // Los índices preservan el orden original (determinista).
+    private let maxConcurrentMetadataReads = 8
+    // ✅ Lotes de 4 en vuelo × 50 URLs: más paralelismo para indexación más rápida
+    // sin saturar memoria en dispositivos modernos.
+    private let maxInFlightBatches = 4
+    // ✅ Lotes más grandes: 50 → 75 URLs para menos overhead de scheduling
+    private let metadataBatchSize = 75
 
     // Colecciones derivadas cacheadas: se recalculan solo cuando cambia `songs`,
     // no en cada render de la UI.
