@@ -1,8 +1,5 @@
 import Foundation
 
-// MARK: - Simplified Lyrics Parser (line-by-line only)
-// ✅ Eliminado sistema word-by-word por bugs y complejidad
-// ✅ Ahora usa LRCParser optimizado para formato híbrido y clásico
 class LyricsParser {
 
     // MARK: - Parse lyrics from string
@@ -13,14 +10,16 @@ class LyricsParser {
             return .none
         }
 
-        // ✅ Usar nuevo LRCParser para formato híbrido y clásico
+        if let ttml = TTMLParser.parse(trimmedLyrics) {
+            return .synchronized(ttml)
+        }
+
         let lines = LRCParser.parse(trimmedLyrics)
         
         guard !lines.isEmpty else {
             return .plain(trimmedLyrics)
         }
         
-        // ✅ Convertir a SynchronizedLyrics para compatibilidad con modelo existente
         let syncLyrics = SynchronizedLyrics(
             lines: lines.map { line in
                 LyricLine(
@@ -28,14 +27,11 @@ class LyricsParser {
                     text: line.cleanText
                 )
             },
-            words: [], // ✅ Eliminado word-by-word
-            isWordByWord: false // ✅ Ahora siempre line-by-line
+            words: [],
+            isWordByWord: false
         )
         
         return .synchronized(syncLyrics)
     }
     
-    // MARK: - Cleanup (funciones obsoletas eliminadas)
-    // Eliminado: parseWordByWord, parseLRC, hasWordByWordFormat, etc.
-    // Todo el procesamiento word-by-word fue eliminado por bugs y complejidad
 }

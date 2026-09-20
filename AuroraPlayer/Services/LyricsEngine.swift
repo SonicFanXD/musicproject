@@ -34,16 +34,25 @@ struct LyricsEngine {
             
             if timeMs < line.startMs {
                 high = mid - 1
-            } else if timeMs >= line.endMs {
+            } else if timeMs >= effectiveEndMs(for: mid) {
                 low = mid + 1
             } else {
                 // ✅ timeMs está dentro de [startMs, endMs)
                 return mid
             }
+
         }
         
         // ✅ Gap entre líneas: timeMs no está en ninguna línea
         return nil
+    }
+
+    /// Keeps a line visible briefly into a gap, using the actual gap length.
+    /// Short gaps get a proportionally shorter transition than long gaps.
+    private func effectiveEndMs(for index: Int) -> Int {
+        guard index + 1 < lines.count else { return lines[index].endMs }
+        let gap = max(0, lines[index + 1].startMs - lines[index].endMs)
+        return min(lines[index + 1].startMs, lines[index].endMs + min(gap / 2, 60))
     }
     
     // MARK: - Seek a tiempo específico
