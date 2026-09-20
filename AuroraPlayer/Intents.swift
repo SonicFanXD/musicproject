@@ -1,5 +1,6 @@
 import Foundation
 import Intents
+import UIKit
 
 // MARK: - Intents para Siri
 class AuroraIntents {
@@ -7,10 +8,8 @@ class AuroraIntents {
     static func configureIntents() {
         // Donar sugerencias de Siri para la app
         let playIntent = INPlayMediaIntent()
-        INVoiceShortcutCenter.shared.setShortcutSuggestions([INShortcut(intent: playIntent)]) { error in
-            if let error = error {
-                print("Error configurando intents: \(error)")
-            }
+        if let shortcut = INShortcut(intent: playIntent) {
+            INVoiceShortcutCenter.shared.setShortcutSuggestions([shortcut])
         }
     }
     

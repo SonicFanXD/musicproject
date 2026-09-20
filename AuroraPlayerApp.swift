@@ -28,10 +28,6 @@ struct AuroraPlayerApp: App {
                     FPSOverlayController.shared.setEnabled(newValue)
                 }
         }
-        // ✅ Manejar actividades de usuario continuadas
-        .onContinueUserActivity { userActivity in
-            AppLog.info(.lifecycle, "Actividad de usuario continuada: \(userActivity.activityType)")
-        }
         // ✅ Manejar shortcuts al abrir desde home screen
         .onChange(of: scenePhase) { newPhase in
             if newPhase == .active {

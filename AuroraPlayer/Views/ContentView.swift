@@ -151,16 +151,16 @@ struct ContentView: View {
                     }
                 }
                 // ✅ Manejar shortcuts de la app (3D Touch / Haptic Touch)
-                .onReceive(Notification.Name.playbackResume) { _ in
+                .onReceive(NotificationCenter.default.publisher(for: .playbackResume)) { _ in
                     audioEngine.resume()
                 }
-                .onReceive(Notification.Name.playbackPause) { _ in
+                .onReceive(NotificationCenter.default.publisher(for: .playbackPause)) { _ in
                     audioEngine.pause()
                 }
-                .onReceive(Notification.Name.playbackShuffle) { _ in
+                .onReceive(NotificationCenter.default.publisher(for: .playbackShuffle)) { _ in
                     audioEngine.toggleShuffle()
                 }
-                .onReceive(Notification.Name.openSearch) { _ in
+                .onReceive(NotificationCenter.default.publisher(for: .openSearch)) { _ in
                     shouldShowSearch = true
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                         searchFieldFocused = true
