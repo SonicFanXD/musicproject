@@ -1338,10 +1338,11 @@ class FileAccessService: ObservableObject {
                     fileBits: fileBits,
                     formatID: asbd.pointee.mFormatID,
                     ext: url.pathExtension,
-                sampleRate: sampleRate
-            )
-            // ✅ DEBUG: Log para verificar extracción de bitDepth
-            AppLog.debug(.metadata, "Archivo: \(url.lastPathComponent) - bitDepth extraído: \(bitDepth) (raw: \(fileBits))")
+                    sampleRate: sampleRate
+                )
+                // ✅ DEBUG: Log para verificar extracción de bitDepth
+                AppLog.debug(.metadata, "Archivo: \(url.lastPathComponent) - bitDepth extraído: \(bitDepth) (raw: \(fileBits))")
+            }
         }
         // ✅ LOSSLESS → profundidad real; LOSSY (MP3/AAC, bitDepth 0) →
         // bitrate medio en kbps (la "calidad" equivalente del codec).

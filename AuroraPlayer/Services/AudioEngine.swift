@@ -979,15 +979,28 @@ class AudioEngine: NSObject, ObservableObject {
     private func configureSessionWithBluetoothOptimization() {
         let session = AVAudioSession.sharedInstance()
         do {
-            // ✅ RESTAURADO: 48 kHz para Bluetooth optimización de calidad
-            // Aunque A2DP recodifica a 44.1 kHz, pedir 48 kHz mejora la calidad
-            // del upsampling interno de iOS antes de la recodificación
-            try session.setPreferredSampleRate(48000)
+            // La tasa la decide iOS (ver playCurrentSong): aqui solo el buffer.
             // ✅ RESTAURADO: buffer de 40ms (igual que la ruta general).
             try session.setPreferredIOBufferDuration(0.04)
-            AppLog.info(.playback, "Sesión optimizada para BT: 48kHz, buffer 40ms")
+            AppLog.info(.playback, "Sesión optimizada para BT: buffer 40ms (tasa decidida por iOS)")
         } catch {
             AppLog.error(.playback, error, context: "configureSessionWithBluetoothOptimization")
+        }
+    }
+
+    /// "Sin remuestreo / bit-clean": solo es cierto si (1) la tasa de salida
+    /// coincide con la del archivo, (2) la salida es cableada (jack/USB DAC; ni
+    /// BT con codec con perdida ni el altavoz con su DSP de proteccion),
+    /// (3) no hay EQ ni mono procesando y (4) la ganancia es 1.0 (limiter OFF).
+    /// iOS no ofrece modo exclusivo, asi que es la mejor garantia posible.
+    private func refreshBitPerfect(outputRate: Double) {
+        let sourceRate = currentSong?.sampleRate ?? 0
+        let processing = (isEQEnabled && eqPreset != .flat) || isMonoAudioEnabled
+        let unityGain = !isLimiterEnabled && isWiredRoute
+        let value = sourceRate > 0 && abs(outputRate - sourceRate) < 1 && !processing && unityGain
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self, self.isBitPerfect != value else { return }
+            self.isBitPerfect = value
         }
     }
 
@@ -1014,12 +1027,16 @@ class AudioEngine: NSObject, ObservableObject {
         }
         // ✅ NIVEL BASE: 1.0 cuando el limiter está desactivado (bit-perfect),
         // 0.99 cuando está activo (mínima protección anti-clipping).
-        let base: Float = isLimiterEnabled ? 0.99 : 1.0
+        // En Bluetooth el codificador AAC/SBC puede saturar con picos entre
+        // muestras: ~1 dB de margen (0.89) evita clipping del codec.
+        let base: Float = isBluetoothRoute ? 0.89 : (isLimiterEnabled ? 0.99 : 1.0)
         // ✅ HEADROOM DEL EQ: atenuación mínima necesaria (3 dB en lugar de 6-9 dB)
         // para máxima dinámica y calidad de audio.
         // Solo se aplica cuando el EQ está procesando (no flat).
         let eqAttenuation: Float = maxGain > 0 ? pow(10, -min(maxGain, 3) / 20) : 1
-        engine.mainMixerNode.outputVolume = base * eqAttenuation
+        outputGain = base * eqAttenuation
+        engine.mainMixerNode.outputVolume = outputGain * fadeFactor
+        refreshBitPerfect(outputRate: outputSampleRate)
     }
 
     func setEQGain(for band: Int, gain: Float) {
@@ -1036,6 +1053,7 @@ class AudioEngine: NSObject, ObservableObject {
     func toggleMonoAudio() {
         isMonoAudioEnabled.toggle()
         applyMonoAudio()
+        refreshBitPerfect(outputRate: outputSampleRate)
         AppLog.info(.playback, "Audio mono: \(isMonoAudioEnabled ? "activado" : "desactivado")")
     }
 
@@ -1162,6 +1180,9 @@ class AudioEngine: NSObject, ObservableObject {
         // ✅ FIX anti-pop: el fade de PAUSA deja el mixer en volumen 0; si el
         // usuario elige otra canción estando en pausa, el mixer seguiría mudo.
         monoMixerNode.volume = 1
+        volumeFadeGeneration += 1
+        fadeFactor = 1
+        engine.mainMixerNode.outputVolume = outputGain * fadeFactor
         AppLog.info(.playback, "Reproduciendo: \(song.displayName)")
 
         // ✅ FIX: Incrementar scheduleGeneration UNA SOLA VEZ al inicio
@@ -1221,17 +1242,14 @@ class AudioEngine: NSObject, ObservableObject {
 
             do {
                 let session = AVAudioSession.sharedInstance()
-                // ✅ BT: 48 kHz FIJO para optimización de calidad. Aunque A2DP
-                // recodifica a 44.1 kHz, pedir 48 kHz mejora el upsampling interno
-                // de iOS antes de la recodificación. Cambiar el reloj por canción con
-                // un auricular conectado fuerza una reconfiguración de ruta (click,
-                // microcorte, pico de CPU).
-                // Cable / DAC USB / altavoz: tasa NATIVA del archivo (bit-clean);
-                // si el hardware no la soporta, iOS elige la más cercana y el
-                // mainMixer hace el remuestreo con la calidad fijada abajo.
-                let targetRate: Double = isBluetoothRoute ? 48000 : sampleRate
-                if abs(session.sampleRate - targetRate) > 1 {
-                    try session.setPreferredSampleRate(targetRate)
+                // Bluetooth: NO pedir tasa. iOS/el enlace A2DP deciden el reloj
+                // (forzar 48 kHz no mejora nada y, si el enlace va a 44.1 kHz, solo
+                // anade un remuestreo). Ademas evita reconfigurar la ruta por
+                // cancion (click / microcorte).
+                // Cable / DAC USB / altavoz: tasa NATIVA del archivo; si el
+                // hardware no la soporta iOS elige la mas cercana.
+                if !isBluetoothRoute, abs(session.sampleRate - sampleRate) > 1 {
+                    try session.setPreferredSampleRate(sampleRate)
                 }
             } catch {
                 AppLog.debug(.playback, "setPreferredSampleRate no soportado: \(error.localizedDescription)")
@@ -1381,6 +1399,12 @@ class AudioEngine: NSObject, ObservableObject {
     // mixer a 0 en ~40 ms y al reanudar lo subimos de vuelta. Solo 4 pasos de
     // volume (no por-frame) → sin coste en CPU ni en la UI.
     private var volumeFadeGeneration = 0
+    // Factor de fade (0...1) y ganancia base de salida: el volumen real del
+    // mainMixer es SIEMPRE outputGain * fadeFactor. El fade actua sobre el
+    // mainMixer (siempre en el grafo), no sobre monoMixerNode (que en estereo
+    // ya no esta conectado y por eso el fade anti-pop no hacia nada).
+    private var fadeFactor: Float = 1
+    private var outputGain: Float = 1
     // ✅ ANTI-DOBLE-RESUME: al cambiar la ruta (BT/audífonos) el sistema puede
     // entregar 2 notificaciones seguidas (categoría + dispositivo) y cada una
     // disparar resume() → doble reprogramación y doble log (visto en logs).
@@ -1394,12 +1418,12 @@ class AudioEngine: NSObject, ObservableObject {
         let generation = volumeFadeGeneration
         let steps = 4
         let stepDuration = duration / Double(steps)
-        let mixer = monoMixerNode
-        let from = mixer.volume
+        let from = fadeFactor
         func scheduleStep(_ step: Int) {
             guard self.volumeFadeGeneration == generation else { return }
             let progress = Float(step) / Float(steps)
-            mixer.volume = from + (target - from) * progress
+            self.fadeFactor = from + (target - from) * progress
+            self.engine.mainMixerNode.outputVolume = self.outputGain * self.fadeFactor
             if step < steps {
                 DispatchQueue.main.asyncAfter(deadline: .now() + stepDuration) {
                     scheduleStep(step + 1)
@@ -1446,7 +1470,8 @@ class AudioEngine: NSObject, ObservableObject {
         // en silencio, avanza la pista, y al reanudar ya va a mitad de
         // canción sin que el usuario la escuchara. El guard de isPlaying en
         // el bloque diferido de playCurrentSong cancela ese arranque.
-        volumeFadeGeneration += 1
+        // (No incrementar volumeFadeGeneration aqui: cancelaba la rampa de
+        // bajada recien lanzada y el fade-out nunca se ejecutaba.)
         isPlaying = false
         AppLog.info(.playback, String(format: "Pausa en %.1fs — '%@'", currentTime, currentSong?.displayName ?? "—"))
         updateNowPlayingInfo()
@@ -2224,6 +2249,8 @@ class AudioEngine: NSObject, ObservableObject {
         DispatchQueue.main.async {
             self.currentRouteName = newName
             self.outputPortType = newType
+            // La ganancia depende de la ruta (margen extra en Bluetooth).
+            self.applyOutputGain()
             // ✅ FIX: Forzar actualización de la info de calidad al cambiar ruta
             self.updateAudioQuality()
         }
@@ -2275,6 +2302,8 @@ class AudioEngine: NSObject, ObservableObject {
         let newChannels = Int(session.outputNumberOfChannels)
         // ✅ OPTIMIZACIÓN BATERÍA: no recrear el string de calidad ni publicar
         // si no hubo cambios reales en la salida (evita re-render UI + dispatch).
+        // Recalcular SIEMPRE (cambia con la cancion aunque la tasa de salida no).
+        refreshBitPerfect(outputRate: newRate)
         guard outputSampleRate != newRate || outputChannelCount != newChannels else { return }
         DispatchQueue.main.async {
             self.outputSampleRate = newRate
@@ -2282,9 +2311,6 @@ class AudioEngine: NSObject, ObservableObject {
             
             // ✅ AUDIÓFILO: determinar si la salida es bit-perfect
             // Bit-perfect = sample rate de salida coincide con el del archivo
-            let sourceRate = self.currentSong?.sampleRate ?? 0
-            let bitPerfect = sourceRate > 0 && abs(newRate - sourceRate) < 1
-            self.isBitPerfect = bitPerfect
 
             // ✅ La ganancia de salida se recalcula al cambiar de salida porque
             // el headroom anti-clipping se combina con el ajuste de limiter.

@@ -318,14 +318,14 @@ struct LyricsView: View {
             ZStack(alignment: .leading) {
                 // Texto base (gris suave)
                 Text(words.map(\.text).joined(separator: " "))
-                    .font(.system(size: isActive ? 18 : 15, weight: isActive ? .medium : .regular))
+                    .font(.system(size: isActive ? 22 : 18, weight: isActive ? .medium : .regular))
                     .foregroundStyle(Color.gray.opacity(0.6))
                     .blur(radius: progress > 0 ? progress * 0.25 : 0)
                     .opacity(progress > 0.8 ? 0.2 : 1.0)
 
                 // Texto iluminado (con máscara)
                 Text(words.map(\.text).joined(separator: " "))
-                    .font(.system(size: isActive ? 18 : 15, weight: isActive ? .medium : .regular))
+                    .font(.system(size: isActive ? 22 : 18, weight: isActive ? .medium : .regular))
                     .foregroundStyle(.white)
                     .mask(alignment: .leading) {
                         GeometryReader { geo in
