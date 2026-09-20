@@ -432,6 +432,12 @@ class AudioEngine: NSObject, ObservableObject {
         setupEqualizer()
         observeRouteChanges()
         observeInterruptions()
+        // ✅ FIX detección inicial: forzar actualización de ruta al iniciar
+        // para detectar dispositivos conectados al arrancar la app
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+            self?.updateRouteName()
+            self?.updateAudioQuality()
+        }
         setupRemoteCommandCenter()
         setupBackgroundNotification()
         setupPlaybackStateObserver()

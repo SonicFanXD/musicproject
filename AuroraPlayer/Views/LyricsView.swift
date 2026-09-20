@@ -337,13 +337,11 @@ struct LyricsView: View {
                                 .frame(width: geo.size.width * CGFloat(min(max(progress, 0), 1)))
                         }
                     }
-                    // ✅ MEJORA KARAOKE: efectos visuales más prominentes
+                    // ✅ MEJORA KARAOKE: efectos visuales más prominentes (sin drawingGroup para mejor visibilidad)
                     .shadow(color: AppTheme.accent.opacity(0.8), radius: progress > 0.3 ? 12 : 0, x: 0, y: 0)
                     .shadow(color: AppTheme.accent.opacity(0.4), radius: progress > 0.5 ? 20 : 0, x: 0, y: 0)
                     .scaleEffect(progress > 0.9 ? 1.02 : 1.0)
                     .animation(.spring(response: 0.3, dampingFraction: 0.7), value: progress)
-                    // ✅ 60fps: rasteriza el overlay karaoke en la GPU una sola vez
-                    .drawingGroup()
             }
             // ✅ MEJORA KARAOKE: barra de progreso debajo del texto
             if isActive && progress > 0 {

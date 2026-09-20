@@ -225,10 +225,12 @@ struct SettingsView: View {
                                 selection: Binding(
                                     get: { self.audioSessionMode },
                                     set: { newValue in
-                                        Haptics.light()
-                                        self.audioSessionMode = newValue
-                                        audioEngine.setAudioSessionMode(newValue)
-                                        AppLog.info(.settings, "Modo de audio: \(newValue == 1 ? "Measurement" : "Default")")
+                                        if newValue != self.audioSessionMode {
+                                            Haptics.light()
+                                            self.audioSessionMode = newValue
+                                            audioEngine.setAudioSessionMode(newValue)
+                                            AppLog.info(.settings, "Modo de audio: \(newValue == 1 ? "Measurement" : "Default")")
+                                        }
                                     }
                                 ),
                                 onChange: { newValue in
