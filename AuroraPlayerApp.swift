@@ -7,6 +7,7 @@ struct AuroraPlayerApp: App {
     @AppStorage("com.aurora.showFPS") private var showFPS = false
     // ✅ Leer el tema guardado (0=Sistema, 1=Claro, 2=Oscuro) para aplicarlo globalmente
     @AppStorage("com.aurora.uiTheme") private var savedThemeIndex = 0
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
         WindowGroup {
@@ -22,10 +23,28 @@ struct AuroraPlayerApp: App {
                     // ✅ Logs técnicos: memoria, térmico, ciclo de vida, rutas de audio
                     AppLog.bootstrap()
                     AppLog.info(.lifecycle, "App iniciada (v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"))")
+                    // ✅ Configurar intents de Siri
+                    AuroraIntents.configureIntents()
                 }
                 .onChange(of: showFPS) { newValue in
                     FPSOverlayController.shared.setEnabled(newValue)
                 }
+        }
+        // ✅ Manejar shortcuts de la app (3D Touch / Haptic Touch)
+        .onOpenURL { url in
+            AppLog.info(.lifecycle, "App abierta con URL: \(url)")
+        }
+        .onContinueUserActivity { userActivity in
+            AppLog.info(.lifecycle, "Actividad de usuario continuada: \(userActivity.activityType)")
+        }
+        // ✅ Manejar shortcuts al abrir desde home screen
+        .onChange(of: scenePhase) { newPhase in
+            if newPhase == .active {
+                // Manejar shortcuts que podrían haber iniciado la app
+                if let shortcutItem = UIApplication.shared.shortcutItems.first {
+                    AuroraIntents.handleShortcutItem(shortcutItem)
+                }
+            }
         }
     }
 }

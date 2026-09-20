@@ -58,5 +58,41 @@
     </dict>
     <key>CFBundleDisplayName</key>
     <string>Aurora Player</string>
+    <!-- ✅ 3D Touch / Haptic Touch shortcuts -->
+    <key>UIApplicationShortcutItems</key>
+    <array>
+        <dict>
+            <key>UIApplicationShortcutItemIconType</key>
+            <string>UIApplicationShortcutIconTypePlay</string>
+            <key>UIApplicationShortcutItemTitle</key>
+            <string>Reproducir</string>
+            <key>UIApplicationShortcutItemType</key>
+            <string>com.aurora.player.play</string>
+        </dict>
+        <dict>
+            <key>UIApplicationShortcutItemIconType</key>
+            <string>UIApplicationShortcutIconTypePause</string>
+            <key>UIApplicationShortcutItemTitle</key>
+            <string>Pausar</string>
+            <key>UIApplicationShortcutItemType</key>
+            <string>com.aurora.player.pause</string>
+        </dict>
+        <dict>
+            <key>UIApplicationShortcutItemIconType</key>
+            <string>UIApplicationShortcutIconTypeShuffle</string>
+            <key>UIApplicationShortcutItemTitle</key>
+            <string>Shuffle</string>
+            <key>UIApplicationShortcutItemType</key>
+            <string>com.aurora.player.shuffle</string>
+        </dict>
+        <dict>
+            <key>UIApplicationShortcutItemIconType</key>
+            <string>UIApplicationShortcutIconTypeSearch</string>
+            <key>UIApplicationShortcutItemTitle</key>
+            <string>Buscar</string>
+            <key>UIApplicationShortcutItemType</key>
+            <string>com.aurora.player.search</string>
+        </dict>
+    </array>
 </dict>
 </plist>

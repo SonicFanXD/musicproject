@@ -24,6 +24,9 @@ struct ContentView: View {
     // ✅ Manejo de ciclo de vida para detectar cambios en segundo plano
     @Environment(\.scenePhase) private var scenePhase
     
+    // ✅ Manejo de shortcuts de la app (3D Touch / Haptic Touch)
+    @State private var shouldShowSearch = false
+    
     // ✅ FIX ordenamiento: @AppStorage leído vía computed property no siempre
     // invalida la vista al cambiar la opción. Se usa @State (reactivo) sincronizado
     // bidireccionalmente con @AppStorage (persistente) para garantizar el re-render.
@@ -145,6 +148,25 @@ struct ContentView: View {
                     if newPhase == .active {
                         AppLog.info(.lifecycle, "App volvió a activo, detección silenciosa de canciones nuevas...")
                         fileAccessService.backgroundScanForNewSongs()
+                    }
+                }
+                // ✅ Manejar shortcuts de la app (3D Touch / Haptic Touch)
+                .onReceive(Notification.Name.playbackResume) { _ in
+                    audioEngine.resume()
+                }
+                .onReceive(Notification.Name.playbackPause) { _ in
+                    audioEngine.pause()
+                }
+                .onReceive(Notification.Name.playbackShuffle) { _ in
+                    audioEngine.toggleShuffle()
+                }
+                .onReceive(Notification.Name.openSearch) { _ in
+                    shouldShowSearch = true
+                    searchFieldFocused = true
+                }
+                .onChange(of: shouldShowSearch) { _ in
+                    if shouldShowSearch {
+                        searchFieldFocused = true
                     }
                 }
                 .navigationBarTitleDisplayMode(.inline)
