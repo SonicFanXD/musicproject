@@ -68,229 +68,7 @@ struct ContentView: View {
                     artistSortRaw = artistSortRawStorage
                     artistSortAscending = artistSortAscendingStorage
                 }
-            NavigationStack {
-                VStack(spacing: 0) {
-                    // ✅ Header flotante con nombre de app integrado al fondo (sin NavigationBar separada)
-                    headerView
-
-                    // ✅ FIX orden: buscador PRIMERO, luego los chips de
-                    // categorías. Antes los chips quedaban arriba del buscador
-                    // y se veía invertido (los filtros encima del campo de
-                    // búsqueda).
-                    searchFieldInline
-                        .padding(.horizontal, 12)
-                        .padding(.top, 8)
-                        .padding(.bottom, 4)
-
-                    categoryPicker
-
-                    // ✅ Transición animada entre categorías: el contenido
-                    // entra con fade + slide suave, sale con fade + micro-escala.
-                    // Solo transform/opacity → renderizado por GPU, 60fps estables.
-                    ZStack {
-                        switch selectedCategory {
-                        case .songs:
-                            libraryScroll(id: "songs") { songsSection }
-                        case .albums:
-                            libraryScroll(id: "albums") { albumsSection }
-                        case .artists:
-                            libraryScroll(id: "artists") { artistsSection }
-                        case .playlists:
-                            libraryScroll(id: "playlists") { playlistsSection }
-                        }
-                    }
-                    .animation(.spring(response: 0.32, dampingFraction: 0.88), value: selectedCategory)
-                    .refreshable {
-                        fileAccessService.refreshAllFolders()
-                        try? await Task.sleep(nanoseconds: 600_000_000)
-                    }
-                }
-                // ✅ BÚSQUEDA: mantener el índice sincronizado con la
-                // librería (solo se reconstruye cuando cambian las
-                // canciones/álbumes/artistas, nunca por tecla).
-                .onReceive(fileAccessService.$songs) { songs in
-                    LibrarySearchIndex.shared.update(
-                        songs: songs,
-                        albums: fileAccessService.albums,
-                        artists: fileAccessService.artists
-                    )
-                }
-                // ✅ Sincronización bidireccional: mantener @AppStorage actualizado
-                // cuando cambian las variables @State de ordenamiento
-                .onChange(of: sortOptionRaw) { songSortRawStorage = $0 }
-                .onChange(of: songSortAscending) { songSortAscendingStorage = $0 }
-                .onChange(of: albumSortRaw) { albumSortRawStorage = $0 }
-                .onChange(of: albumSortAscending) { albumSortAscendingStorage = $0 }
-                .onChange(of: artistSortRaw) { artistSortRawStorage = $0 }
-                .onChange(of: artistSortAscending) { artistSortAscendingStorage = $0 }
-                // ✅ OPT: Recalcular caché de búsqueda cuando cambian los filtros
-                .onChange(of: searchText) { _ in recalculateSearchCache() }
-                .onChange(of: sortOptionRaw) { _ in recalculateSearchCache() }
-                .onChange(of: songSortAscending) { _ in recalculateSearchCache() }
-                .onChange(of: albumSortRaw) { _ in recalculateSearchCache() }
-                .onChange(of: albumSortAscending) { _ in recalculateSearchCache() }
-                .onChange(of: artistSortRaw) { _ in recalculateSearchCache() }
-                .onChange(of: artistSortAscending) { _ in recalculateSearchCache() }
-                .onReceive(fileAccessService.$songs) { _ in recalculateSearchCache() }
-                .onReceive(fileAccessService.$albums) { _ in recalculateSearchCache() }
-                .onReceive(fileAccessService.$artists) { _ in recalculateSearchCache() }
-                // ✅ FIX LAG DE TECLADO: antes había aquí un .onChange(of: searchText)
-                // que llamaba a LibrarySearchIndex.shared.update(...) en CADA tecla.
-                // update() ignora por completo `searchText` (solo sincroniza el índice
-                // con la librería), así que ese bloque no aportaba nada a la búsqueda:
-                // solo recorría toda la biblioteca (map de IDs de canciones/álbumes/
-                // artistas) en cada pulsación, de forma síncrona en el hilo principal,
-                // congelando el teclado en bibliotecas grandes. El índice ya se
-                // mantiene sincronizado por sí solo vía .onReceive(fileAccessService.$songs)
-                // y por el .onChange(of: selectedCategoryRaw) de abajo — filtrar por
-                // `searchText` ya lo hacen filteredSongs/filteredAlbums/filteredArtists
-                // al recomputarse en cada render, sin necesidad de este bloque.
-                // Sincronizar el índice también al cambiar de categoría
-                // (álbumes/artistas pueden haberse reconstruido).
-                .onChange(of: selectedCategoryRaw) { _ in
-                    LibrarySearchIndex.shared.update(
-                        songs: fileAccessService.songs,
-                        albums: fileAccessService.albums,
-                        artists: fileAccessService.artists
-                    )
-                }
-                // ✅ DETECCIÓN EN SEGUNDO PLANO: cuando la app vuelve a activa,
-                // verificar si hay canciones nuevas SILENCIOSAMENTE (sin tarjeta
-                // compacta ni re-indexado visible). Antes aquí se lanzaba un
-                // rescan completo (refreshAllFolders) en CADA activación,
-                // incluida la primera apertura → era la causa de que al abrir
-                // la app arrancara "a indexar todo" con la animación compacta.
-                .onChange(of: scenePhase) { newPhase in
-                    if newPhase == .active {
-                        AppLog.info(.lifecycle, "App volvió a activo, detección silenciosa de canciones nuevas...")
-                        fileAccessService.backgroundScanForNewSongs()
-                    }
-                }
-                // ✅ Manejar shortcuts de la app (3D Touch / Haptic Touch)
-                .onReceive(NotificationCenter.default.publisher(for: .playbackResume)) { _ in
-                    audioEngine.resume()
-                }
-                .onReceive(NotificationCenter.default.publisher(for: .playbackPause)) { _ in
-                    audioEngine.pause()
-                }
-                .onReceive(NotificationCenter.default.publisher(for: .playbackShuffle)) { _ in
-                    audioEngine.toggleShuffle()
-                }
-                .onReceive(NotificationCenter.default.publisher(for: .openSearch)) { _ in
-                    shouldShowSearch = true
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                        searchFieldFocused = true
-                    }
-                }
-                .onChange(of: shouldShowSearch) { _ in
-                    if shouldShowSearch {
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                            searchFieldFocused = true
-                        }
-                    }
-                }
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbarBackground(.hidden, for: .navigationBar)
-                .toolbar {
-                    ToolbarItem(placement: .navigationBarTrailing) {
-                        HStack(spacing: 6) {
-                            Button {
-                                showPlaylists = true
-                            } label: {
-                                Image(systemName: "music.note.list")
-                                    .foregroundStyle(AppTheme.accentGradient)
-                                    .font(.system(size: 16, weight: .medium))
-                                    .frame(width: 44, height: 44)
-                                    .contentShape(Rectangle())
-                            }
-
-                            Button {
-                                showSettings = true
-                            } label: {
-                                Image(systemName: "gearshape.fill")
-                                    .foregroundStyle(AppTheme.accentGradient)
-                                    .font(.system(size: 16, weight: .medium))
-                                    .frame(width: 44, height: 44)
-                                    .contentShape(Rectangle())
-                            }
-                        }
-                    }
-                }
-                .sheet(isPresented: $showSettings) {
-                    SettingsView(audioEngine: audioEngine, fileAccessService: fileAccessService)
-                }
-                .sheet(isPresented: $showPlaylists) {
-                    PlaylistsView(fileAccessService: fileAccessService, audioEngine: audioEngine)
-                }
-                .onAppear {
-                    restoreLibraryIfNeeded()
-                    audioEngine.isKeepScreenOnEnabled = keepScreenOnUserDefaults
-                    fileAccessService.ensureLikedPlaylistExists()
-                    // ✅ INDEXACIÓN: decidir tarjeta grande vs indicador compacto.
-                    syncFirstTimeIndexing()
-                    maybeAutoResume()
-                    // ✅ OPT: Inicializar caché de búsqueda
-                    recalculateSearchCache()
-                    if fileAccessService.isInitialLibraryLoaded {
-                        withAnimation(.easeOut(duration: 0.3)) { isInitialLoad = false }
-                    }
-                }
-                .task {
-                    try? await Task.sleep(nanoseconds: 8_000_000_000)
-                    if isInitialLoad {
-                        withAnimation(.easeOut(duration: 0.3)) { isInitialLoad = false }
-                    }
-                }
-                .sheet(isPresented: $showFolderPicker) {
-                    FolderPickerView(fileAccessService: fileAccessService)
-                }
-                .onChange(of: fileAccessService.isInitialLibraryLoaded) { loaded in
-                    if loaded {
-                        hasRestored = false
-                        restoreLibraryIfNeeded()
-                        // ✅ FIX "Reproducir al iniciar" con escaneo lento: si la
-                        // biblioteca terminó de cargar DESPUÉS del onAppear, el
-                        // restore recién ocurrió aquí — reintentar el auto-resume.
-                        maybeAutoResume()
-                        withAnimation(.easeOut(duration: 0.3)) {
-                            isInitialLoad = false
-                        }
-                    }
-                }
-                .onChange(of: audioEngine.currentSong?.id) { _ in
-                    // ✅ FIX "Reproducir al iniciar": el restore puede completarse
-                    // en cualquier momento (escaneo asíncrono) — cuando la canción
-                    // aparezca, re-evaluar el auto-resume una vez.
-                    maybeAutoResume()
-                }
-                .overlay {
-                    // ✅ Indicador compacto flotante: SOLO en re-escaneos con
-                    // biblioteca ya cargada (no en la primera indexación, donde
-                    // ya está la tarjeta grande en la lista).
-                    if fileAccessService.isScanning && !fileAccessService.songs.isEmpty && !firstTimeIndexing {
-                        VStack {
-                            Spacer()
-                            HStack(spacing: 10) {
-                                ProgressView()
-                                    .controlSize(.small)
-                                    .tint(AppTheme.accent)
-                                Text(Localization.localized("indexing.updating"))
-                                    .font(.system(size: 13, weight: .medium))
-                                    .foregroundStyle(.secondary)
-                            }
-                            .padding(.horizontal, 18)
-                            .padding(.vertical, 10)
-                            .background {
-                                Capsule()
-                                    .fill(AnyShapeStyle(.ultraThinMaterial))
-                                    .shadow(color: .black.opacity(0.1), radius: 8, y: 4)
-                            }
-                            .padding(.bottom, 80)
-                        }
-                        .transition(.opacity)
-                    }
-                }
-            }
+            navigationStackWithModifiers
 
             if isInitialLoad {
                 SplashView()
@@ -310,6 +88,234 @@ struct ContentView: View {
             }
             // ✅ INDEXACIÓN: sincronizar tarjeta grande / indicador compacto.
             syncFirstTimeIndexing()
+        }
+    }
+
+    // ✅ FIX: extraído de body para evitar type-check timeout del compilador (ContentView:241)
+    @ViewBuilder
+    private var navigationStackWithModifiers: some View {
+        NavigationStack {
+            VStack(spacing: 0) {
+                // ✅ Header flotante con nombre de app integrado al fondo (sin NavigationBar separada)
+                headerView
+
+                // ✅ FIX orden: buscador PRIMERO, luego los chips de
+                // categorías. Antes los chips quedaban arriba del buscador
+                // y se veía invertido (los filtros encima del campo de
+                // búsqueda).
+                searchFieldInline
+                    .padding(.horizontal, 12)
+                    .padding(.top, 8)
+                    .padding(.bottom, 4)
+
+                categoryPicker
+
+                // ✅ Transición animada entre categorías: el contenido
+                // entra con fade + slide suave, sale con fade + micro-escala.
+                // Solo transform/opacity → renderizado por GPU, 60fps estables.
+                ZStack {
+                    switch selectedCategory {
+                    case .songs:
+                        libraryScroll(id: "songs") { songsSection }
+                    case .albums:
+                        libraryScroll(id: "albums") { albumsSection }
+                    case .artists:
+                        libraryScroll(id: "artists") { artistsSection }
+                    case .playlists:
+                        libraryScroll(id: "playlists") { playlistsSection }
+                    }
+                }
+                .animation(.spring(response: 0.32, dampingFraction: 0.88), value: selectedCategory)
+                .refreshable {
+                    fileAccessService.refreshAllFolders()
+                    try? await Task.sleep(nanoseconds: 600_000_000)
+                }
+            }
+            // ✅ BÚSQUEDA: mantener el índice sincronizado con la
+            // librería (solo se reconstruye cuando cambian las
+            // canciones/álbumes/artistas, nunca por tecla).
+            .onReceive(fileAccessService.$songs) { songs in
+                LibrarySearchIndex.shared.update(
+                    songs: songs,
+                    albums: fileAccessService.albums,
+                    artists: fileAccessService.artists
+                )
+            }
+            // ✅ Sincronización bidireccional: mantener @AppStorage actualizado
+            // cuando cambian las variables @State de ordenamiento
+            .onChange(of: sortOptionRaw) { songSortRawStorage = $0 }
+            .onChange(of: songSortAscending) { songSortAscendingStorage = $0 }
+            .onChange(of: albumSortRaw) { albumSortRawStorage = $0 }
+            .onChange(of: albumSortAscending) { albumSortAscendingStorage = $0 }
+            .onChange(of: artistSortRaw) { artistSortRawStorage = $0 }
+            .onChange(of: artistSortAscending) { artistSortAscendingStorage = $0 }
+            // ✅ OPT: Recalcular caché de búsqueda cuando cambian los filtros
+            .onChange(of: searchText) { _ in recalculateSearchCache() }
+            .onChange(of: sortOptionRaw) { _ in recalculateSearchCache() }
+            .onChange(of: songSortAscending) { _ in recalculateSearchCache() }
+            .onChange(of: albumSortRaw) { _ in recalculateSearchCache() }
+            .onChange(of: albumSortAscending) { _ in recalculateSearchCache() }
+            .onChange(of: artistSortRaw) { _ in recalculateSearchCache() }
+            .onChange(of: artistSortAscending) { _ in recalculateSearchCache() }
+            .onReceive(fileAccessService.$songs) { _ in recalculateSearchCache() }
+            .onReceive(fileAccessService.$albums) { _ in recalculateSearchCache() }
+            .onReceive(fileAccessService.$artists) { _ in recalculateSearchCache() }
+            // ✅ FIX LAG DE TECLADO: antes había aquí un .onChange(of: searchText)
+            // que llamaba a LibrarySearchIndex.shared.update(...) en CADA tecla.
+            // update() ignora por completo `searchText` (solo sincroniza el índice
+            // con la librería), así que ese bloque no aportaba nada a la búsqueda:
+            // solo recorría toda la biblioteca (map de IDs de canciones/álbumes/
+            // artistas) en cada pulsación, de forma síncrona en el hilo principal,
+            // congelando el teclado en bibliotecas grandes. El índice ya se
+            // mantiene sincronizado por sí solo vía .onReceive(fileAccessService.$songs)
+            // y por el .onChange(of: selectedCategoryRaw) de abajo — filtrar por
+            // `searchText` ya lo hacen filteredSongs/filteredAlbums/filteredArtists
+            // al recomputarse en cada render, sin necesidad de este bloque.
+            // Sincronizar el índice también al cambiar de categoría
+            // (álbumes/artistas pueden haberse reconstruido).
+            .onChange(of: selectedCategoryRaw) { _ in
+                LibrarySearchIndex.shared.update(
+                    songs: fileAccessService.songs,
+                    albums: fileAccessService.albums,
+                    artists: fileAccessService.artists
+                )
+            }
+            // ✅ DETECCIÓN EN SEGUNDO PLANO: cuando la app vuelve a activa,
+            // verificar si hay canciones nuevas SILENCIOSAMENTE (sin tarjeta
+            // compacta ni re-indexado visible). Antes aquí se lanzaba un
+            // rescan completo (refreshAllFolders) en CADA activación,
+            // incluida la primera apertura → era la causa de que al abrir
+            // la app arrancara "a indexar todo" con la animación compacta.
+            .onChange(of: scenePhase) { newPhase in
+                if newPhase == .active {
+                    AppLog.info(.lifecycle, "App volvió a activo, detección silenciosa de canciones nuevas...")
+                    fileAccessService.backgroundScanForNewSongs()
+                }
+            }
+            // ✅ Manejar shortcuts de la app (3D Touch / Haptic Touch)
+            .onReceive(NotificationCenter.default.publisher(for: .playbackResume)) { _ in
+                audioEngine.resume()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .playbackPause)) { _ in
+                audioEngine.pause()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .playbackShuffle)) { _ in
+                audioEngine.toggleShuffle()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .openSearch)) { _ in
+                shouldShowSearch = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    searchFieldFocused = true
+                }
+            }
+            .onChange(of: shouldShowSearch) { _ in
+                if shouldShowSearch {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        searchFieldFocused = true
+                    }
+                }
+            }
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.hidden, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    HStack(spacing: 6) {
+                        Button {
+                            showPlaylists = true
+                        } label: {
+                            Image(systemName: "music.note.list")
+                                .foregroundStyle(AppTheme.accentGradient)
+                                .font(.system(size: 16, weight: .medium))
+                                .frame(width: 44, height: 44)
+                                .contentShape(Rectangle())
+                        }
+
+                        Button {
+                            showSettings = true
+                        } label: {
+                            Image(systemName: "gearshape.fill")
+                                .foregroundStyle(AppTheme.accentGradient)
+                                .font(.system(size: 16, weight: .medium))
+                                .frame(width: 44, height: 44)
+                                .contentShape(Rectangle())
+                        }
+                    }
+                }
+            }
+            .sheet(isPresented: $showSettings) {
+                SettingsView(audioEngine: audioEngine, fileAccessService: fileAccessService)
+            }
+            .sheet(isPresented: $showPlaylists) {
+                PlaylistsView(fileAccessService: fileAccessService, audioEngine: audioEngine)
+            }
+            .onAppear {
+                restoreLibraryIfNeeded()
+                audioEngine.isKeepScreenOnEnabled = keepScreenOnUserDefaults
+                fileAccessService.ensureLikedPlaylistExists()
+                // ✅ INDEXACIÓN: decidir tarjeta grande vs indicador compacto.
+                syncFirstTimeIndexing()
+                maybeAutoResume()
+                // ✅ OPT: Inicializar caché de búsqueda
+                recalculateSearchCache()
+                if fileAccessService.isInitialLibraryLoaded {
+                    withAnimation(.easeOut(duration: 0.3)) { isInitialLoad = false }
+                }
+            }
+            .task {
+                try? await Task.sleep(nanoseconds: 8_000_000_000)
+                if isInitialLoad {
+                    withAnimation(.easeOut(duration: 0.3)) { isInitialLoad = false }
+                }
+            }
+            .sheet(isPresented: $showFolderPicker) {
+                FolderPickerView(fileAccessService: fileAccessService)
+            }
+            .onChange(of: fileAccessService.isInitialLibraryLoaded) { loaded in
+                if loaded {
+                    hasRestored = false
+                    restoreLibraryIfNeeded()
+                    // ✅ FIX "Reproducir al iniciar" con escaneo lento: si la
+                    // biblioteca terminó de cargar DESPUÉS del onAppear, el
+                    // restore recién ocurrió aquí — reintentar el auto-resume.
+                    maybeAutoResume()
+                    withAnimation(.easeOut(duration: 0.3)) {
+                        isInitialLoad = false
+                    }
+                }
+            }
+            .onChange(of: audioEngine.currentSong?.id) { _ in
+                // ✅ FIX "Reproducir al iniciar": el restore puede completarse
+                // en cualquier momento (escaneo asíncrono) — cuando la canción
+                // aparezca, re-evaluar el auto-resume una vez.
+                maybeAutoResume()
+            }
+            .overlay {
+                // ✅ Indicador compacto flotante: SOLO en re-escaneos con
+                // biblioteca ya cargada (no en la primera indexación, donde
+                // ya está la tarjeta grande en la lista).
+                if fileAccessService.isScanning && !fileAccessService.songs.isEmpty && !firstTimeIndexing {
+                    VStack {
+                        Spacer()
+                        HStack(spacing: 10) {
+                            ProgressView()
+                                .controlSize(.small)
+                                .tint(AppTheme.accent)
+                            Text(Localization.localized("indexing.updating"))
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(.horizontal, 18)
+                        .padding(.vertical, 10)
+                        .background {
+                            Capsule()
+                                .fill(AnyShapeStyle(.ultraThinMaterial))
+                                .shadow(color: .black.opacity(0.1), radius: 8, y: 4)
+                        }
+                        .padding(.bottom, 80)
+                    }
+                    .transition(.opacity)
+                }
+            }
         }
     }
 
