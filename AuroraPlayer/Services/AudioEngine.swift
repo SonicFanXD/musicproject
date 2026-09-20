@@ -408,9 +408,7 @@ class AudioEngine: NSObject, ObservableObject {
                t == AVAudioSession.Port.bluetoothHFP.rawValue
     }
 
-    // ✅ FIX: Exponer isWiredRoute para que AudioQualityDetailView pueda detectar
-    // cuando el limiter bloquea bit-perfect en ruta cableada
-    var isWiredRoute: Bool {
+    private var isWiredRoute: Bool {
         let t = currentPortType
         return t == AVAudioSession.Port.headphones.rawValue ||
                t == AVAudioSession.Port.usbAudio.rawValue
@@ -666,12 +664,10 @@ class AudioEngine: NSObject, ObservableObject {
         // cuando el sistema ya terminó de estabilizar la ruta) se oía. Ahora
         // se reconecta SIEMPRE con el formato actual antes de arrancar, sin
         // depender de que el primer intento falle para corregirlo.
-        // ✅ CORRECCIÓN: Solo reconectar si el formato cambió para evitar coste innecesario
-        let targetFormat: AVAudioFormat = audioFile?.processingFormat
-            ?? AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 2)
-            ?? engine.outputNode.outputFormat(forBus: 0)
-        if formatKey(targetFormat) != connectedFormatKey {
-            reconnectPlayerNode(format: targetFormat)
+        if let file = audioFile {
+            reconnectPlayerNode(format: file.processingFormat)
+        } else {
+            reconnectPlayerNode(format: AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 2) ?? engine.outputNode.outputFormat(forBus: 0))
         }
 
         // 2. Arrancar el engine con un reintento tras reconectar el grafo
@@ -770,20 +766,17 @@ class AudioEngine: NSObject, ObservableObject {
         let sessionMode: AVAudioSession.Mode = (modeIndex == 1 && isWiredRoute) ? .measurement : .default
         
         do {
-            // ✅ CORRECCIÓN -50: No mezclar .allowBluetoothA2DP y .allowAirPlay juntos
-            // Seleccionar según prioridad: AirPlay primero, luego Bluetooth A2DP
-            var options: AVAudioSession.CategoryOptions = []
-            if allowAirPlay {
-                options.insert(.allowAirPlay)
-            } else {
-                options.insert(.allowBluetoothA2DP)
-            }
-            // ✅ Omitir .allowBluetoothHFP por defecto (degrada calidad a mono 8/16kHz)
-            // Los controles del auricular funcionan por AVRCP sobre A2DP sin HFP
-            
+            var options: AVAudioSession.CategoryOptions = [.allowBluetoothA2DP]
+            if allowAirPlay { options.insert(.allowAirPlay) }
             try session.setCategory(
                 .playback,
                 mode: sessionMode,
+                // ✅ MÁXIMA CALIDAD BT: SOLO perfiles de música (A2DP/AirPlay).
+                // Quitado .allowBluetoothHFP: HFP es el perfil de llamadas (SCO,
+                // mono 8/16kHz, mSBC/CVSD) — si lo permitimos y el A2DP falla o
+                // tarda, iOS puede enrutar la música por HFP y suena comprimido.
+                // Los controles del auricular (play/pausa/siguiente) siguen
+                // funcionando por AVRCP sobre A2DP sin necesidad de HFP.
                 options: options
             )
 
@@ -1314,10 +1307,10 @@ class AudioEngine: NSObject, ObservableObject {
             // ✅ FIX punto aleatorio: tras engine.stop(), el reloj interno del nodo
             // (sampleTime) no se resetea hasta el proximo render. Programar + play
             // inmediato arranca desde un punto residual al azar por milisegundos.
-            // ✅ CORRECCIÓN LATENCIA: Eliminado delay de 0.1s. El uso de anchorPlaybackPosition
-            // y el reloj de pared (CACurrentMediaTime) garantizan la sincronización exacta.
-            // El render thread se resetea correctamente sin retraso artificial.
-            DispatchQueue.main.async { [weak self] in
+            // ✅ RESTAURADO: 0.1s. Ese margen da tiempo al render thread a
+            // resetear el timeline del nodo antes de programar + play; con 0.02s
+            // se podía arrancar desde un punto residual (glitch al iniciar).
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
                 guard let self = self,
                       self.scheduleGeneration == currentGeneration,
                       !self.isStopping else { return }
@@ -1501,10 +1494,6 @@ class AudioEngine: NSObject, ObservableObject {
         AppLog.info(.playback, String(format: "Pausa en %.1fs — '%@'", currentTime, currentSong?.displayName ?? "—"))
         updateNowPlayingInfo()
         saveState()
-        
-        // ✅ No detenemos el engine al pausar: engine.pause() se reanuda en ~10 ms,
-        // engine.stop() tarda ~150 ms en A11. El consumo extra en pausa es mínimo
-        // (el playerNode está pausado, no hay render de audio activo).
     }
 
     /// ⛔️ Suspensión TOTAL al perder la ruta de audio (audífonos/BT desconectados).
@@ -1834,9 +1823,6 @@ class AudioEngine: NSObject, ObservableObject {
         // playerNode.stop() descarta cualquier canción pre-encadenada por
         // adelantado; hay que volver a programarla tras el seek.
         clearChainedAhead()
-        // ✅ FIX: Limpiar también la precarga de la siguiente canción para evitar
-        // que quede apuntando a una canción ya no relevante tras el seek.
-        clearPreloadedNext()
 
         let clampedTime = max(0, min(time, duration))
         currentTime = clampedTime
@@ -2415,8 +2401,6 @@ class AudioEngine: NSObject, ObservableObject {
 
     // ✅ Auto-reanudación al conectar audífonos
     private var wasPlayingBeforeRouteChange = false
-    // ✅ Auto-reanudación tras interrupciones (llamadas, Siri)
-    private var wasPlayingBeforeInterruption = false
 
     /// ¿La salida de audio dada es de tipo "audífonos/BT/dispositivo externo"?
     private static func isHeadphonePort(_ port: AVAudioSession.Port) -> Bool {
@@ -2496,10 +2480,6 @@ class AudioEngine: NSObject, ObservableObject {
                 // después `resume()` solo hacía playerNode.play() sobre un
                 // nodo que ya "estaba reproduciendo" (no-op) — silencio
                 // seguía. Apple recomienda pausar explícitamente en este caso.
-                // ✅ FIX: Se llama suspendForRouteLoss() UNA SOLA VEZ al inicio.
-                // La llamada duplicada después del asyncAfter causaba doble suspensión
-                // y estado inconsistente. El asyncAfter solo reintenta resume() si
-                // wasPlayingBeforeRouteChange es true (ya verificado en línea 2506).
                 self.wasPlayingBeforeRouteChange = self.isPlaying
                 if self.isPlaying {
                     // ⛔️ No pause() a secas: suspendForRouteLoss() invalida la
@@ -2527,6 +2507,11 @@ class AudioEngine: NSObject, ObservableObject {
                             }
                         }
                     }
+                    // obsoleto que se dispare en plena caída de la ruta no
+                    // puede llamar a playNext() (salto a la canción siguiente)
+                    // y publica rate 0 al lock screen/CC (nada de
+                    // "reproduciendo" con la barra congelada).
+                    self.suspendForRouteLoss()
                     AppLog.info(.playback, "Audífonos/Bluetooth desconectados: suspendido sin salto de canción")
                 }
             } else {
@@ -2574,30 +2559,24 @@ class AudioEngine: NSObject, ObservableObject {
                   let type = AVAudioSession.InterruptionType(rawValue: typeVal) else { return }
             if type == .began && self.isPlaying {
                 // ✅ GUARDAR estado antes de pausar para reanudación automática
-                self.wasPlayingBeforeInterruption = true
+                self.wasPlayingBeforeRouteChange = true
                 self.pause()
             } else if type == .ended {
                 let shouldResume = (info[AVAudioSessionInterruptionOptionKey] as? UInt)
                     .flatMap { AVAudioSession.InterruptionOptions(rawValue: $0) }
                     .map { $0.contains(.shouldResume) } ?? false
                 // ✅ FIX: Solo reanudar si iOS explícitamente lo indica (shouldResume)
-                // ✅ CORRECCIÓN: No reanudar si la app está en segundo plano
-                // ✅ CORRECCIÓN: Eliminar delay artificial de 0.1s, reanudar inmediatamente
+                // No reanudar automáticamente basado solo en wasPlayingBeforeRouteChange
+                // para evitar reanudaciones no deseadas al navegar por la app
                 if shouldResume {
-                    // ✅ Verificar si la app está en primer plano antes de reanudar
-                    DispatchQueue.main.async { [weak self] in
-                        guard let self = self else { return }
-                        guard UIApplication.shared.applicationState == .active else {
-                            // ✅ App en segundo plano: no reanudar automáticamente
-                            self.wasPlayingBeforeInterruption = false
-                            return
-                        }
-                        self.resume()
-                        self.wasPlayingBeforeInterruption = false
+                    // ✅ Pequeño delay para asegurar que el sistema esté listo
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+                        self?.resume()
+                        self?.wasPlayingBeforeRouteChange = false
                     }
                 } else {
                     // ✅ Limpiar el flag si no hay shouldResume para evitar reanudaciones futuras
-                    self.wasPlayingBeforeInterruption = false
+                    self.wasPlayingBeforeRouteChange = false
                 }
             }
         }

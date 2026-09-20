@@ -346,11 +346,9 @@ struct QueueView: View {
     @ViewBuilder
     private func artworkMiniature(_ artwork: UIImage?, size: CGFloat, corner: CGFloat) -> some View {
         if let artwork = artwork {
-            // ✅ OPT: Usar caché de thumbnails para evitar decodificaciones repetidas
-            // Para vistas sin songID (como current song en QueueView), usamos data-based cache
-            let imageData = artwork.pngData() ?? Data()
-            let thumbnail = ArtworkThumbnailCache.shared.thumbnail(for: imageData, from: artwork, size: CGSize(width: size * 2, height: size * 2))
-            Image(uiImage: thumbnail)
+            // ✅ ANTI-JETSAM: reescalar al tamaño real ×2 (la fuente completa
+            // de 768px no debe retenerse en filas de 48pt → 160× menos RAM).
+            Image(uiImage: artwork.preparingThumbnail(of: CGSize(width: size * 2, height: size * 2)) ?? artwork)
                 .resizable()
                 .interpolation(.high)
                 .scaledToFill()

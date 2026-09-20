@@ -1,23 +1,18 @@
 import SwiftUI
-import QuartzCore
-import CoreImage
 
-// MARK: - Vista de lyrics línea por línea con animación SpotiFLAC-style
+// MARK: - Vista de lyrics línea por línea (optimizada para iPhone 8 Plus)
 // ✅ Diseño: ScrollView + LazyVStack para máximo rendimiento (60 fps)
-// ✅ Animación de relleno progresivo: línea oscura que se "ilumina" de izquierda a derecha
-// ✅ CADisplayLink a 60 Hz en ViewModel para interpolación fluida
-// ✅ Aislamiento de rendimiento: solo línea activa anima a 60 fps
+// ✅ Línea activa en blanco opaco, líneas inactivas atenuadas
+// ✅ Auto-scroll suave con ScrollViewReader (solo cuando cambia activeID)
 // ✅ Padding vertical generoso (200 pt) para centrar primera/última línea
 // ✅ Render 100% por código, sin assets
-// ✅ PROHIBIDO: APIs de iOS 17+ (MeshGradient, scrollTargetBehavior, etc.)
+// ✅ PROHIBIDO: APIs de iOS 17+, TimelineView, CADisplayLink
 struct LyricsView: View {
     let song: Song?
     @ObservedObject var viewModel: LyricsViewModel
     @Environment(\.dismiss) private var dismiss
-
+    
     @State private var scrollTarget: Int? = nil
-    // ✅ OPT: Pre-calcular blur de fondo para evitar offscreen rendering en cada render
-    @State private var blurredArtwork: UIImage?
     
     var body: some View {
         ZStack {
@@ -36,25 +31,15 @@ struct LyricsView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            
-            #if DEBUG
-            // ✅ DEBUG: Overlay para diagnóstico de lyrics
-            debugOverlay
-                .padding(8)
-            #endif
         }
         .onAppear {
             parseLyricsIfNeeded()
-            precalculateBlurredBackground()
         }
-        // ✅ iOS 16 onChange clásico: scroll solo cuando cambia activeLineID
-        .onChange(of: viewModel.activeLineID) { newID in
+        // ✅ iOS 16 onChange clásico: scroll solo cuando cambia activeID
+        .onChange(of: viewModel.activeID) { newID in
             if let newID = newID {
                 scrollTarget = newID
             }
-        }
-        .onChange(of: song?.id) { _ in
-            precalculateBlurredBackground()
         }
     }
     
@@ -96,22 +81,12 @@ struct LyricsView: View {
                     Color.clear.frame(height: 200)
                     
                     ForEach(viewModel.lyricsLines) { line in
-                        let isActive = viewModel.activeLineID == line.id
-                        let progress = isActive ? viewModel.progress : 0.0
-                        
-                        // ✅ Forzar re-renderización con subvista separada y Equatable
-                        LyricLineView(
-                            line: line,
-                            isActive: isActive,
-                            progress: progress,
-                            clockTime: viewModel.clockTime,
-                            clockUpdateDate: viewModel.clockUpdateDate
-                        )
-                        .id(line.id)
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            seekToLine(line)
-                        }
+                        lyricLineView(line: line, isActive: viewModel.activeID == line.id)
+                            .id(line.id)
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                seekToLine(line)
+                            }
                     }
                     
                     Color.clear.frame(height: 200)
@@ -130,41 +105,17 @@ struct LyricsView: View {
         }
     }
     
-    // MARK: - Línea animada con relleno progresivo (SpotiFLAC-style)
-    // ✅ Solo la línea activa tiene esta complejidad (renderizado a 60 fps)
-    // ✅ Dos capas de Text superpuestas: base atenuada + superior brillante con máscara
-    private func animatedLyricLine(line: LyricsLine, progress: Double) -> some View {
-        ZStack(alignment: .leading) {
-            // ✅ Capa base: texto atenuado (siempre visible)
-            Text(line.cleanText)
-                .font(.system(size: 24, weight: .bold))
-                .foregroundStyle(Color.white.opacity(0.35))
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.vertical, 12)
-            
-            // ✅ Capa superior: texto brillante con máscara de relleno
-            Text(line.cleanText)
-                .font(.system(size: 24, weight: .bold))
-                .foregroundStyle(Color.white)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.vertical, 12)
-                .mask(alignment: .leading) {
-                    GeometryReader { geo in
-                        Rectangle()
-                            .frame(width: geo.size.width * CGFloat(progress))
-                    }
-                }
-        }
-    }
-    
-    // MARK: - Línea estática (inactiva)
-    // ✅ Sin animación, renderizado estático para máximo rendimiento
-    private func staticLyricLine(line: LyricsLine) -> some View {
+    // MARK: - Vista de línea individual
+    // ✅ No recrea Text en cada frame: solo cambia color/opacidad
+    // ✅ Sin blur/shadow por frame para máximo rendimiento en iPhone 8 Plus
+    private func lyricLineView(line: LyricsLine, isActive: Bool) -> some View {
         Text(line.cleanText)
-            .font(.system(size: 18, weight: .regular))
-            .foregroundStyle(Color.white.opacity(0.35))
+            .font(.system(size: isActive ? 24 : 18, weight: isActive ? .bold : .regular))
+            .foregroundStyle(isActive ? Color.white : Color.white.opacity(0.35))
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.vertical, 12)
+            // ✅ Animación suave solo cuando cambia el estado de activación
+            .animation(.easeInOut(duration: 0.25), value: isActive)
     }
     
     // MARK: - Seek a línea
@@ -183,17 +134,7 @@ struct LyricsView: View {
     private var blurredArtworkBackground: some View {
         GeometryReader { geometry in
             Group {
-                if let blurred = blurredArtwork {
-                    // ✅ OPT: Usar imagen pre-blureada para evitar offscreen rendering en cada render
-                    Image(uiImage: blurred)
-                        .resizable()
-                        .interpolation(.medium)
-                        .scaledToFill()
-                        .frame(width: geometry.size.width, height: geometry.size.height)
-                        .opacity(0.4)
-                        .overlay(Color(UIColor.systemBackground).opacity(0.72))
-                } else if let artwork = song?.artwork {
-                    // Fallback si aún no se ha pre-calculado el blur
+                if let artwork = song?.artwork {
                     Image(uiImage: artwork)
                         .resizable()
                         .interpolation(.medium)
@@ -209,38 +150,6 @@ struct LyricsView: View {
                         endPoint: .bottom
                     )
                 }
-            }
-        }
-    }
-
-    // ✅ OPT: Pre-calcular blur de fondo en background para evitar offscreen rendering
-    private func precalculateBlurredBackground() {
-        guard let artwork = song?.artwork else {
-            blurredArtwork = nil
-            return
-        }
-
-        let songID = song?.id
-        let artworkForBlur = artwork
-        DispatchQueue.global(qos: .userInitiated).async {
-            // ✅ FIX: eliminado [weak self] — View es struct, self no puede ser weak.
-            // Captura explícita de songID y artwork para evitar referencia a self.
-            guard songID == song?.id else { return }
-
-            // Aplicar blur usando CIFilter (más eficiente que SwiftUI .blur en cada render)
-            guard let ciImage = CIImage(image: artworkForBlur),
-                  let filter = CIFilter(name: "CIGaussianBlur") else { return }
-            filter.setValue(ciImage, forKey: kCIInputImageKey)
-            filter.setValue(60, forKey: kCIInputRadiusKey)
-            guard let outputImage = filter.outputImage,
-                  let cgImage = CIContext(options: nil).createCGImage(outputImage, from: outputImage.extent) else { return }
-
-            let finalBlurred = UIImage(cgImage: cgImage)
-
-            // Usar Task.mainActor para acceder a @State en struct de SwiftUI
-            Task { @MainActor [songID] in
-                guard songID == song?.id else { return }
-                self.blurredArtwork = finalBlurred
             }
         }
     }
@@ -269,145 +178,6 @@ struct LyricsView: View {
             viewModel.parseLyrics(lyrics)
         } else {
             viewModel.hasLyrics = false
-        }
-    }
-    
-    #if DEBUG
-    // MARK: - Debug Overlay
-    /// Overlay temporal para diagnóstico de lyrics
-    /// Muestra en tiempo real el estado del ViewModel para identificar bugs
-    private var debugOverlay: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("LYRICS DEBUG")
-                .font(.system(size: 10, weight: .bold))
-                .foregroundColor(.green)
-            
-            Text("activeLineID: \(String(describing: viewModel.activeLineID))")
-                .font(.system(size: 9, design: .monospaced))
-                .foregroundColor(.green)
-            
-            Text("Total lines: \(viewModel.lyricsLines.count)")
-                .font(.system(size: 9, design: .monospaced))
-                .foregroundColor(.green)
-            
-            if !viewModel.lyricsLines.isEmpty {
-                Text("First line id: \(viewModel.lyricsLines.first?.id ?? -1)")
-                    .font(.system(size: 9, design: .monospaced))
-                    .foregroundColor(.green)
-                
-                Text("Last line id: \(viewModel.lyricsLines.last?.id ?? -1)")
-                    .font(.system(size: 9, design: .monospaced))
-                    .foregroundColor(.green)
-                
-                let activeCount = viewModel.lyricsLines.filter { viewModel.activeLineID == $0.id }.count
-                Text("isActive count: \(activeCount)")
-                    .font(.system(size: 9, design: .monospaced))
-                    .foregroundColor(.green)
-            }
-        }
-        .padding(8)
-        .background(Color.black.opacity(0.7))
-        .cornerRadius(8)
-        .frame(maxWidth: 200, alignment: .leading)
-    }
-    #endif
-}
-
-// MARK: - Subvista de línea individual con Equatable
-// ✅ Forza re-renderización cuando cambia isActive o progress
-// ✅ Soluciona el bug visual donde SwiftUI reutilizaba subvistas congeladas
-// ✅ Animación premium: interpolación 60 fps, smoothstep easing, transición suave
-private struct LyricLineView: View, Equatable {
-    let line: LyricsLine
-    let isActive: Bool
-    let progress: Double
-    let clockTime: TimeInterval
-    let clockUpdateDate: TimeInterval
-    
-    @State private var frozenProgress: Double = 0  // ✅ Para retención de máscara
-    @State private var brightnessOpacity: Double = 1.0  // ✅ Para atenuación en dos fases
-    
-    static func == (lhs: LyricLineView, rhs: LyricLineView) -> Bool {
-        lhs.line.id == rhs.line.id &&
-        lhs.isActive == rhs.isActive &&
-        lhs.progress == rhs.progress
-    }
-    
-    var body: some View {
-        // ✅ Simplificación: una sola capa con opacidad según isActive
-        // ✅ Transición suave entre estados con animation
-        lyricText(line: line, isActive: isActive, progress: progress, clockTime: clockTime, clockUpdateDate: clockUpdateDate)
-            .animation(.easeInOut(duration: 0.25), value: isActive)
-            .onChange(of: isActive) { newValue in
-                if !newValue {
-                    // ✅ Al dejar de ser activa: congelar progress para retención visual (~200ms)
-                    frozenProgress = progress
-                    // ✅ Atenuación en dos fases
-                    withAnimation(.easeInOut(duration: 0.15)) {
-                        brightnessOpacity = 0.7
-                    }
-                    withAnimation(.easeInOut(duration: 0.15).delay(0.15)) {
-                        brightnessOpacity = 0.35
-                    }
-                } else {
-                    // ✅ Al volverse activa: restaurar opacidad completa y limpiar frozenProgress
-                    brightnessOpacity = 1.0
-                    frozenProgress = 0
-                }
-            }
-    }
-    
-    // MARK: - Texto de línea con distinción activa/inactiva y relleno progresivo
-    @ViewBuilder
-    private func lyricText(line: LyricsLine, isActive: Bool, progress: Double, clockTime: TimeInterval, clockUpdateDate: TimeInterval) -> some View {
-        let opacity: Double = isActive ? 1.0 : 0.35
-        let fontWeight: Font.Weight = isActive ? .bold : .regular
-        let fontSize: CGFloat = isActive ? 24 : 18
-        
-        if isActive {
-            // ✅ Línea activa: blanco con relleno progresivo
-            ZStack(alignment: .leading) {
-                // Capa base: texto atenuado (siempre visible debajo)
-                Text(line.cleanText)
-                    .font(.system(size: fontSize, weight: fontWeight))
-                    .foregroundStyle(Color.white.opacity(0.35))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.vertical, 12)
-                
-                // Capa superior: texto brillante con máscara de relleno
-                Text(line.cleanText)
-                    .font(.system(size: fontSize, weight: fontWeight))
-                    .foregroundStyle(Color.white.opacity(brightnessOpacity))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.vertical, 12)
-                    .mask(alignment: .leading) {
-                        GeometryReader { geo in
-                            // ✅ TimelineView para interpolación a 60 fps del relleno
-                            TimelineView(.animation) { context in
-                                let now = context.date.timeIntervalSinceReferenceDate
-                                let elapsed = now - clockUpdateDate
-                                let interpolatedTime = clockTime + elapsed
-                                let start = Double(line.startMs) / 1000.0
-                                let end = Double(line.endMs) / 1000.0
-                                let rawProgress = end > start ? (interpolatedTime - start) / (end - start) : 1.0
-                                let clampedProgress = max(0, min(1, rawProgress))
-                                
-                                // ✅ Smoothstep easing para movimiento más natural
-                                let eased = clampedProgress * clampedProgress * (3 - 2 * clampedProgress)
-                                
-                                Rectangle()
-                                    .frame(width: geo.size.width * CGFloat(eased))
-                            }
-                        }
-                    }
-            }
-        } else {
-            // ✅ Línea inactiva: texto atenuado simple
-            Text(line.cleanText)
-                .font(.system(size: fontSize, weight: fontWeight))
-                .foregroundStyle(Color.white.opacity(opacity))
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.vertical, 12)
         }
     }
 }

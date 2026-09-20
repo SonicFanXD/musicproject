@@ -49,9 +49,6 @@ struct LRCParser {
                 endMs: endMs
             )
             
-            // ✅ DEBUG: Log de línea parseada
-            AppLog.debug(.lyrics, "Parsed line id=\(idCounter) — text=\(cleanText.prefix(30))")
-            
             lines.append(lyricLine)
             idCounter += 1
         }

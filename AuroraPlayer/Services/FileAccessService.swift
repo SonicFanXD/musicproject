@@ -8,26 +8,18 @@ final class LikedSongsCache {
     static let shared = LikedSongsCache()
     private var cache: Set<UUID> = []
     private var isValid = false
-    // ✅ FIX thread-safety: NSLock para proteger acceso concurrente desde MainActor y Task.detached
-    private let lock = NSLock()
 
     func isLiked(_ songID: UUID) -> Bool {
-        lock.lock()
-        defer { lock.unlock() }
         guard isValid else { return false }
         return cache.contains(songID)
     }
 
     func update(likedIDs: Set<UUID>) {
-        lock.lock()
-        defer { lock.unlock() }
         cache = likedIDs
         isValid = true
     }
 
     func invalidate() {
-        lock.lock()
-        defer { lock.unlock() }
         isValid = false
     }
 

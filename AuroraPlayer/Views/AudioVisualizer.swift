@@ -273,10 +273,8 @@ struct CircularAudioVisualizer: View {
 
         phase += 0.15
 
-        // ✅ FIX: Usar enumerated() para obtener el índice real de iteración.
-        // El uso anterior de firstIndex(of:) devolvía el primer índice con ese valor,
-        // no el índice de iteración, causando un patrón visual incorrecto.
-        amplitudes = amplitudes.enumerated().map { (index, current) in
+        amplitudes = amplitudes.map { current in
+            let index = amplitudes.firstIndex(of: current) ?? 0
             let travel = sin(phase + Double(index) * 0.4) * 0.3
             let target = min(1.0, max(0.05, 0.25 + travel + CGFloat.random(in: 0.1...0.4) * 0.5))
             return current + (target - current) * 0.6

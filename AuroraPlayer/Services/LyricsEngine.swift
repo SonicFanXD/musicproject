@@ -17,7 +17,6 @@ struct LyricsEngine {
     /// - Parameter timeMs: Tiempo en milisegundos
     /// - Returns: Índice de la línea activa, o nil si timeMs cae en un gap o fuera de rango
     /// ✅ Búsqueda binaria O(log n): cero allocations, cero closures, puramente determinista
-    /// ✅ BUFFER DE TRANSICIÓN: Para líneas cortas consecutivas, añade 120ms de overlap
     func activeIndex(at timeMs: Int) -> Int? {
         guard !lines.isEmpty else { return nil }
         
@@ -39,20 +38,6 @@ struct LyricsEngine {
                 low = mid + 1
             } else {
                 // ✅ timeMs está dentro de [startMs, endMs)
-                // ✅ BUFFER DE TRANSICIÓN PROPORCIONAL: Buffer proporcional al gap real, acotado a 60 ms
-                // - gap = 0 (líneas consecutivas sin silencio) → sin buffer (0 ms)
-                // - gap >= 100 ms → buffer completo (60 ms)
-                // Esto elimina el lag perceptible en versos rápidos conservando la
-                // transición suave cuando hay silencio real entre líneas.
-                if mid < lines.count - 1 {
-                    let nextLine = lines[mid + 1]
-                    let gap = nextLine.startMs - line.endMs
-                    // Buffer proporcional al gap real, acotado a 60 ms
-                    let buffer = min(60, max(0, gap / 2))
-                    if buffer > 0, timeMs >= line.endMs - buffer {
-                        return mid  // Retener línea actual durante overlap
-                    }
-                }
                 return mid
             }
         }
@@ -80,11 +65,6 @@ struct LyricsEngine {
     func line(at index: Int) -> LyricsLine? {
         guard index >= 0 && index < lines.count else { return nil }
         return lines[index]
-    }
-    
-    // ✅ DEBUG: IDs de todas las líneas para diagnóstico
-    func allLineIDs() -> [Int] {
-        lines.map { $0.id }
     }
 }
 

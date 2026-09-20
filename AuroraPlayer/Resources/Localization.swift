@@ -207,7 +207,6 @@ final class Localization: ObservableObject {
             "quality.bitPerfect": [.spanish: "Bit-Perfect", .english: "Bit-Perfect"],
             "quality.bitPerfectYes": [.spanish: "Sí (sin remuestreo)", .english: "Yes (no resampling)"],
             "quality.bitPerfectNo": [.spanish: "No (remuestreado)", .english: "No (resampled)"],
-            "quality.bitPerfectBlocked": [.spanish: "🔒 Bit-Perfect bloqueado por Limiter — desactívalo en Ajustes → Audio", .english: "🔒 Bit-Perfect blocked by Limiter — disable it in Settings → Audio"],
             "quality.bluetoothCodec": [.spanish: "Codec Bluetooth", .english: "Bluetooth Codec"],
             "quality.usbDAC": [.spanish: "DAC USB", .english: "USB DAC"],
             "quality.sessionMode": [.spanish: "Modo de sesión", .english: "Session Mode"],

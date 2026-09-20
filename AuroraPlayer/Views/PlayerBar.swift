@@ -245,9 +245,8 @@ struct PlayerBar: View {
     @ViewBuilder
     private func artwork(for song: Song) -> some View {
         if let art = song.artwork {
-            // ✅ OPT: Usar caché de thumbnails para evitar decodificaciones repetidas
-            let thumbnail = ArtworkThumbnailCache.shared.thumbnail(for: song.id, from: art, size: CGSize(width: 96, height: 96))
-            Image(uiImage: thumbnail)
+            // ✅ ANTI-JETSAM: miniatura 96px (48pt @2x) en vez de la 768px completa.
+            Image(uiImage: art.preparingThumbnail(of: CGSize(width: 96, height: 96)) ?? art)
                 .resizable()
                 .interpolation(.high) // ✅ Mejor calidad de interpolación
                 .scaledToFill()

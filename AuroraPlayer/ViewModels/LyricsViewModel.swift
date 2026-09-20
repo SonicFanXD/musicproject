@@ -1,35 +1,25 @@
 import Foundation
 import Combine
 import AVFoundation
-import QuartzCore
 
-// ✅ Importar AppLog para logs de diagnóstico
-// La app usa AppLog en lugar de print() para logging persistente
-
-// MARK: - ViewModel para lyrics línea por línea (SpotiFLAC-style animation)
-// ✅ Diseñado para iPhone 8 Plus: CADisplayLink a 60 Hz para animación fluida
-// ✅ Interpolación de tiempo para relleno progresivo de izquierda a derecha
+// MARK: - ViewModel para lyrics línea por línea
+// ✅ Diseñado para iPhone 8 Plus: Timer 10 Hz (cada 100ms) para mínima batería
 // ✅ Conecta con AudioEngine existente sin modificar la ruta de audio
+// ✅ Detecta cambio de línea eficientemente sin recalcular cada frame
 final class LyricsViewModel: ObservableObject {
     // MARK: - Published Properties
-    @Published var activeLineID: Int? = nil
-    @Published var progress: Double = 0.0  // 0.0 a 1.0 para la línea activa
-    @Published var clockUpdateDate: TimeInterval = CACurrentMediaTime()  // ✅ Ancla de tiempo para interpolación
-    @Published var clockTime: TimeInterval = 0.0  // ✅ Tiempo actual del reloj de audio
+    @Published var activeID: Int? = nil
     @Published var lyricsLines: [LyricsLine] = []
     @Published var hasLyrics: Bool = false
     
     // MARK: - Dependencies
     weak var audioEngine: AudioEngine?
     private var engine: LyricsEngine?
-    private var lyricsTimer: Timer?  // ✅ Timer 0.1s para updates (reemplaza CADisplayLink)
-    private var clockCancellable: AnyCancellable?  // ✅ Para observar clock.time de AudioEngine
+    private var timer: Timer?
     
-    // MARK: - Estado interno para interpolación
-    private var lastUpdateTime: CFTimeInterval = 0
-    private var lastAudioTime: TimeInterval = 0
-    private var currentInterpolatedTime: TimeInterval = 0
-    private var lastProcessedTimeMs: Int = -1  // ✅ Guarda para evitar procesamiento duplicado
+    // MARK: - Estado interno
+    private var lastActiveID: Int? = nil
+    private var lastTimeMs: Int = 0
     
     // MARK: - Initialization
     init() {
@@ -39,23 +29,10 @@ final class LyricsViewModel: ObservableObject {
     // MARK: - Conectar audioEngine (llamado por AudioEngine después de init)
     func connectAudioEngine(_ engine: AudioEngine) {
         self.audioEngine = engine
-        
-        // ✅ Observar clock.time de AudioEngine para interpolación fluida
-        clockCancellable = engine.clock.$time.sink { [weak self] newTime in
-            Task { @MainActor in
-                self?.clockTime = newTime
-            }
-        }
-        
-        // ✅ Inicializar clockTime con el valor actual
-        clockTime = engine.clock.time
     }
     
     deinit {
-        // No podemos llamar a stopMonitoring() (@MainActor) desde deinit no aislado.
-        // Timer.invalidate() es thread-safe, así que lo hacemos directamente.
-        lyricsTimer?.invalidate()
-        lyricsTimer = nil
+        stopTimer()
     }
     
     // MARK: - Parse lyrics
@@ -69,37 +46,32 @@ final class LyricsViewModel: ObservableObject {
         self.hasLyrics = !lines.isEmpty
         
         // ✅ Reset estado
-        activeLineID = nil
-        progress = 0.0
-        lastUpdateTime = 0
-        lastAudioTime = 0
-        currentInterpolatedTime = 0
+        activeID = nil
+        lastActiveID = nil
+        lastTimeMs = 0
     }
     
     // MARK: - Control de reproducción
-    /// Inicia Timer 0.1s para updates de lyrics
+    /// Inicia el timer cuando la reproducción comienza
     @MainActor
     func startMonitoring() {
-        stopMonitoring()
+        stopTimer()
         
-        // ✅ Timer 0.1s para updates (CADisplayLink a 60 Hz era desperdicio)
-        lyricsTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
+        // ✅ Timer 10 Hz (cada 100ms) - suficiente para detectar cambio de línea
+        // Para line-by-line, 10 Hz es más que suficiente y ahorra batería
+        timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
-                guard let self, let audioEngine = self.audioEngine else { return }
-                let currentTimeMs = Int(audioEngine.currentTime * 1000)
-                guard currentTimeMs != self.lastProcessedTimeMs else { return }
-                self.lastProcessedTimeMs = currentTimeMs
-                self.updateState(at: currentTimeMs)
+                self?.updateActiveLine()
             }
         }
+        
+        RunLoop.current.add(timer!, forMode: .common)
     }
     
-    /// Detiene Timer cuando la reproducción se pausa
+    /// Detiene el timer cuando la reproducción se pausa
     @MainActor
     func stopMonitoring() {
-        lyricsTimer?.invalidate()
-        lyricsTimer = nil
-        lastProcessedTimeMs = -1
+        stopTimer()
     }
     
     /// Recalcula línea activa inmediatamente después de un seek
@@ -108,53 +80,39 @@ final class LyricsViewModel: ObservableObject {
         guard let engine = engine else { return }
         
         let currentTimeMs = Int((audioEngine?.currentTime ?? 0) * 1000)
-        _ = engine.seekIndex(at: currentTimeMs)
+        let newIndex = engine.seekIndex(at: currentTimeMs)
         
-        // ✅ Actualizar inmediatamente sin esperar al siguiente frame
-        updateState(at: currentTimeMs)
+        // ✅ Actualizar inmediatamente sin esperar al timer
+        activeID = newIndex
+        lastActiveID = newIndex
+        lastTimeMs = currentTimeMs
     }
     
-    // MARK: - Update logic con interpolación
-    /// Actualiza el estado en cada frame (60 Hz) para animación fluida
-    @MainActor
-    private func updateState(at timeMs: Int) {
-        guard let engine = engine else { return }
+    // MARK: - Timer management
+    private func stopTimer() {
+        timer?.invalidate()
+        timer = nil
+    }
+    
+    // MARK: - Update logic
+    /// Actualiza la línea activa basándose en el tiempo actual
+    /// ✅ Solo actualiza el estado cuando cambia la línea activa (no en cada tick)
+    private func updateActiveLine() {
+        guard let engine = engine,
+              let audioEngine = audioEngine else { return }
         
-        let currentTime = TimeInterval(timeMs) / 1000.0
+        let currentTimeMs = Int(audioEngine.currentTime * 1000)
         
-        // ✅ Calcular línea activa y progress
-        let newIndex = engine.activeIndex(at: timeMs)
+        // ✅ Optimización: solo procesar si el tiempo cambió significativamente
+        guard currentTimeMs != lastTimeMs else { return }
+        lastTimeMs = currentTimeMs
         
-        // ✅ DEBUG: Log de diagnóstico
-        AppLog.debug(.lyrics, "timeMs=\(timeMs) — newIndex=\(String(describing: newIndex)) — lineIDs=\(engine.allLineIDs())")
+        let newIndex = engine.activeIndex(at: currentTimeMs)
         
-        if let newIndex = newIndex, let line = engine.line(at: newIndex) {
-            // ✅ Calcular progress para la línea activa
-            let lineStart = TimeInterval(line.startMs) / 1000.0
-            let lineEnd = TimeInterval(line.endMs) / 1000.0
-            let lineDuration = lineEnd - lineStart
-            
-            let progress: Double
-            if lineDuration > 0 {
-                let lineProgress = (currentTime - lineStart) / lineDuration
-                progress = max(0.0, min(1.0, lineProgress))
-            } else {
-                progress = 1.0
-            }
-            
-            // ✅ DEBUG: Log de asignación
-            AppLog.debug(.lyrics, "Asignando activeLineID=\(newIndex) — progress=\(progress)")
-            
-            activeLineID = newIndex
-            self.progress = progress
-            // ✅ Actualizar ancla de tiempo para interpolación en vista
-            clockUpdateDate = CACurrentMediaTime()
-        } else {
-            // ✅ Gap o silencio: no línea activa, progress = 0
-            // ✅ DEBUG: Log de gap
-            AppLog.debug(.lyrics, "Gap/silencio: activeLineID=nil")
-            activeLineID = nil
-            progress = 0.0
+        // ✅ Solo actualizar @Published si cambió el índice (evita re-renders innecesarios)
+        if newIndex != lastActiveID {
+            activeID = newIndex
+            lastActiveID = newIndex
         }
     }
     
