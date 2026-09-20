@@ -262,10 +262,10 @@ enum AppTheme {
     /// Extrae el color más REPRESENTATIVO y vibrante de una portada:
     /// en vez del promedio (que era apagado/grisáceo), usa un histograma
     /// HSB y elige el bucket con mayor saturación×peso y brillo moderado.
-    /// ✅ MEJORA PRECISIÓN: usa tamaño mayor (80x80) para mejor detección
-    /// ✅ OPTIMIZACIÓN: balance entre área de cobertura y saturación
+    /// ✅ MEJORA PRECISIÓN: usa tamaño moderado (64x64) para balance
+    /// ✅ FIJAR PESOS: más conservador para evitar colores incorrectos
     static func dominantColor(from artwork: UIImage) -> UIColor? {
-        let size = CGSize(width: 80, height: 80)
+        let size = CGSize(width: 64, height: 64)
         UIGraphicsBeginImageContextWithOptions(size, false, 1.0)
         artwork.draw(in: CGRect(origin: .zero, size: size))
         guard let cgImage = UIGraphicsGetImageFromCurrentImageContext()?.cgImage else {
@@ -318,9 +318,9 @@ enum AppTheme {
                 let delta = maxC - minC
                 let br = maxC
                 let s: Float = maxC == 0 ? 0 : delta / maxC
-                // ✅ MEJORA: Filtros más estrictos para evitar ruido y colores microscópicos
-                // Solo descartamos píxeles casi-puros blanco/negro sin matiz.
-                guard s >= 0.08, br >= 0.08, br <= 0.95 else { continue }
+                // ✅ FILTROS MÁS CONSERVADORES: evitar colores incorrectos
+                // Solo píxeles con saturación y brillo moderados
+                guard s >= 0.15, br >= 0.12, br <= 0.92 else { continue }
                 var h: Float = 0
                 if delta > 0 {
                     if maxC == r { h = ((g - b) / delta).truncatingRemainder(dividingBy: 6) }
@@ -332,14 +332,13 @@ enum AppTheme {
                 let hi = min(hueBins - 1, Int(h * Float(hueBins)))
                 let si = min(satBins - 1, Int(s * Float(satBins)))
                 let bi = min(brBins - 1, Int(br * Float(brBins)))
-                // ✅ MEJORA PRECISIÓN: Sistema de pesos mejorado para mayor precisión
-                // - Factor de área: 1.5 * sqrt(count) para dar más peso a colores grandes
-                // - Factor de saturación: s^1.5 para priorizar colores muy vivos
-                // - Factor de brillo: campana más centrada en 0.5 (colores medios)
-                // - Factor de consistencia: penaliza colores muy aislados
-                let areaWeight: Float = 1.5
-                let satWeight = pow(s, 1.5)
-                let brightWeight = max(0.2, 1.0 - abs(br - 0.5) * 2.0)
+                // ✅ PESOS CONSERVADORES: balance más preciso
+                // - Factor de área: 1.0 (no exagerar áreas grandes)
+                // - Factor de saturación: s^1.2 (moderado)
+                // - Factor de brillo: campana centrada en 0.45 (ligeramente más oscuro)
+                let areaWeight: Float = 1.0
+                let satWeight = pow(s, 1.2)
+                let brightWeight = max(0.25, 1.0 - abs(br - 0.45) * 1.8)
                 let weight = areaWeight * satWeight * brightWeight
                 let w = max(weight, 0.0001)
                 let idx = (bi * satBins + si) * hueBins + hi
