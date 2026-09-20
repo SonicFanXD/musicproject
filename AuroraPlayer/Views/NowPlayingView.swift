@@ -211,7 +211,7 @@ struct NowPlayingView: View {
             .toolbarBackground(.hidden, for: .navigationBar)
             .navigationBarBackButtonHidden(true)
             .sheet(isPresented: $showLyrics) {
-                LyricsView(song: audioEngine.currentSong, audioEngine: audioEngine, clock: audioEngine.clock)
+                LyricsView(song: audioEngine.currentSong, viewModel: audioEngine.lyricsViewModel)
             }
             .sheet(isPresented: $showEqualizer) {
                 EqualizerView(audioEngine: audioEngine)

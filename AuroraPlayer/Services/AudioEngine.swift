@@ -122,6 +122,19 @@ class AudioEngine: NSObject, ObservableObject {
 
     // ✅ Reloj de reproducción publicado para las vistas de UI
     let clock = PlaybackClock()
+    
+    // ✅ ViewModel de lyrics line-by-line (optimizado para iPhone 8 Plus)
+    // Inicializado diferidamente para evitar ciclo de referencia
+    private var _lyricsViewModel: LyricsViewModel?
+    var lyricsViewModel: LyricsViewModel {
+        if let viewModel = _lyricsViewModel {
+            return viewModel
+        }
+        let viewModel = LyricsViewModel()
+        viewModel.connectAudioEngine(self)
+        _lyricsViewModel = viewModel
+        return viewModel
+    }
 
     // MARK: - Motor de audio mejorado
     private let engine = AVAudioEngine()
@@ -771,11 +784,8 @@ class AudioEngine: NSObject, ObservableObject {
             // orden descendente con fallback robusto. iOS 16 en A11 (iPhone 8)
             // devuelve error -50 (paramErr) con 0.02, así que vamos bajando
             // hasta encontrar el menor soportado por el hardware/DAC actual.
-            // ✅ RESTAURADO: buffer de 40ms (idéntico a la versión previa a la
-            // iteración de lyrics). El buffer de 85ms agrandaba la granularidad
-            // con la que el render thread ve los fades/volumen de play/pause/skip
-            // y hacía menos reactiva la respuesta a los toques.
-            let bufferDurations: [TimeInterval] = [0.04, 0.03, 0.02, 0.05]
+            // ✅ OPTIMIZACIÓN: buffers de 8-10ms para menor latencia sin glitches
+            let bufferDurations: [TimeInterval] = [0.008, 0.01, 0.015, 0.02]
             for duration in bufferDurations {
                 do {
                     try session.setPreferredIOBufferDuration(duration)
@@ -980,9 +990,9 @@ class AudioEngine: NSObject, ObservableObject {
         let session = AVAudioSession.sharedInstance()
         do {
             // La tasa la decide iOS (ver playCurrentSong): aqui solo el buffer.
-            // ✅ RESTAURADO: buffer de 40ms (igual que la ruta general).
-            try session.setPreferredIOBufferDuration(0.04)
-            AppLog.info(.playback, "Sesión optimizada para BT: buffer 40ms (tasa decidida por iOS)")
+            // ✅ OPTIMIZACIÓN: buffer de 8ms para menor latencia sin glitches
+            try session.setPreferredIOBufferDuration(0.008)
+            AppLog.info(.playback, "Sesión optimizada para BT: buffer 8ms (tasa decidida por iOS)")
         } catch {
             AppLog.error(.playback, error, context: "configureSessionWithBluetoothOptimization")
         }
@@ -1167,6 +1177,11 @@ class AudioEngine: NSObject, ObservableObject {
         // El retraso anterior creaba una ventana donde el UI seguía mostrando
         // la canción anterior mientras el audio ya había cambiado → "punto random".
         playCurrentSong()
+        // ✅ Iniciar monitoreo de lyrics line-by-line
+        if let lyrics = song.lyrics, !lyrics.isEmpty {
+            lyricsViewModel.parseLyrics(lyrics)
+            lyricsViewModel.startMonitoring()
+        }
         saveState()
     }
 
@@ -1514,6 +1529,8 @@ class AudioEngine: NSObject, ObservableObject {
         wallAnchor = CACurrentMediaTime()
         clock.time = current
         isPlaying = false
+        // ✅ Detener monitoreo de lyrics line-by-line
+        lyricsViewModel.stopMonitoring()
         updateNowPlayingInfo()
         saveState()
     }
@@ -1593,6 +1610,8 @@ class AudioEngine: NSObject, ObservableObject {
         // ✅ FIX Centro de Control: publicar rate 1.0 + elapsed al reanudar
         updateNowPlayingInfo()
         startDisplayTimer()
+        // ✅ Iniciar monitoreo de lyrics line-by-line
+        lyricsViewModel.startMonitoring()
         if !isUsingFallback {
             scheduleAheadIfPossible()
         }
@@ -1802,6 +1821,8 @@ class AudioEngine: NSObject, ObservableObject {
         currentTime = clampedTime
         // ✅ RELOJ DE PARED: anclar la extrapolación en la posición buscada.
         anchorPlaybackPosition(clampedTime)
+        // ✅ Handle seek en lyrics line-by-line
+        lyricsViewModel.handleSeek()
         // ✅ FIX sincronización: en pausa el seek NO debe iniciar la reproducción.
         scheduleFile(file, from: clampedTime, autostart: isPlaying, generation: generation)
         if isPlaying {
