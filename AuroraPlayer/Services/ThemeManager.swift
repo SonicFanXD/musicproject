@@ -38,6 +38,9 @@ final class ThemeManager: ObservableObject {
 
     @Published private(set) var artworkAccentColor: Color?
     @Published private(set) var artworkAccentUIColor: UIColor?
+    // ✅ SISTEMA DOS COLORES: segundo color dominante para gradiente premium
+    @Published private(set) var artworkSecondaryColor: Color?
+    @Published private(set) var artworkSecondaryUIColor: UIColor?
 
     // ✅ La caché de colores vive en AppTheme.artworkColorCache (compartida)
 
@@ -56,12 +59,18 @@ final class ThemeManager: ObservableObject {
         guard let song, let artwork = song.artwork else {
             artworkAccentColor = nil
             artworkAccentUIColor = nil
+            artworkSecondaryColor = nil
+            artworkSecondaryUIColor = nil
             return
         }
         let cacheKey = song.id.uuidString as NSString
         if let cached = AppTheme.artworkColorCache.object(forKey: cacheKey) {
             artworkAccentUIColor = cached
             artworkAccentColor = Self.normalizeArtworkAccent(cached)
+            // ✅ Dos colores: detectar secundario también
+            let secondary = AppTheme.secondaryDominantColor(from: artwork, primary: cached)
+            artworkSecondaryUIColor = secondary
+            artworkSecondaryColor = Self.normalizeArtworkAccent(secondary)
             applyGlobalUIKitTint()
             return
         }
@@ -69,10 +78,13 @@ final class ThemeManager: ObservableObject {
             let dominant = AppTheme.dominantColor(from: artwork)
             guard let dominant else { return }
             AppTheme.artworkColorCache.setObject(dominant, forKey: cacheKey)
+            let secondary = AppTheme.secondaryDominantColor(from: artwork, primary: dominant)
             DispatchQueue.main.async {
                 guard let self, self.accentFromArtwork else { return }
                 self.artworkAccentUIColor = dominant
                 self.artworkAccentColor = Self.normalizeArtworkAccent(dominant)
+                self.artworkSecondaryUIColor = secondary
+                self.artworkSecondaryColor = Self.normalizeArtworkAccent(secondary)
                 self.applyGlobalUIKitTint()
             }
         }
@@ -262,8 +274,7 @@ enum AppTheme {
     /// Extrae el color más REPRESENTATIVO y vibrante de una portada:
     /// en vez del promedio (que era apagado/grisáceo), usa un histograma
     /// HSB y elige el bucket con mayor saturación×peso y brillo moderado.
-    /// ✅ MEJORA PRECISIÓN: usa tamaño moderado (64x64) para balance
-    /// ✅ FIJAR PESOS: más conservador para evitar colores incorrectos
+    /// ✅ MEJORA PRECISIÓN: penaliza elementos pequeños para evitar falsos positivos
     static func dominantColor(from artwork: UIImage) -> UIColor? {
         let size = CGSize(width: 64, height: 64)
         UIGraphicsBeginImageContextWithOptions(size, false, 1.0)
@@ -318,9 +329,9 @@ enum AppTheme {
                 let delta = maxC - minC
                 let br = maxC
                 let s: Float = maxC == 0 ? 0 : delta / maxC
-                // ✅ FILTROS MÁS CONSERVADORES: evitar colores incorrectos
+                // ✅ FILTROS MÁS ESTRICTOS: evitar elementos pequeños
                 // Solo píxeles con saturación y brillo moderados
-                guard s >= 0.15, br >= 0.12, br <= 0.92 else { continue }
+                guard s >= 0.20, br >= 0.15, br <= 0.90 else { continue }
                 var h: Float = 0
                 if delta > 0 {
                     if maxC == r { h = ((g - b) / delta).truncatingRemainder(dividingBy: 6) }
@@ -332,13 +343,13 @@ enum AppTheme {
                 let hi = min(hueBins - 1, Int(h * Float(hueBins)))
                 let si = min(satBins - 1, Int(s * Float(satBins)))
                 let bi = min(brBins - 1, Int(br * Float(brBins)))
-                // ✅ PESOS CONSERVADORES: balance más preciso
-                // - Factor de área: 1.0 (no exagerar áreas grandes)
-                // - Factor de saturación: s^1.2 (moderado)
-                // - Factor de brillo: campana centrada en 0.45 (ligeramente más oscuro)
-                let areaWeight: Float = 1.0
-                let satWeight = pow(s, 1.2)
-                let brightWeight = max(0.25, 1.0 - abs(br - 0.45) * 1.8)
+                // ✅ PESOS CORREGIDOS: penalizar más elementos pequeños
+                // - Factor de área: sqrt(count) para dar peso a áreas grandes
+                // - Factor de saturación: s^1.3 para colores muy vivos
+                // - Factor de brillo: campana centrada en 0.5
+                let areaWeight: Float = sqrt(Float(bucketCounts[idx] + 1))
+                let satWeight = pow(s, 1.3)
+                let brightWeight = max(0.3, 1.0 - abs(br - 0.5) * 2.0)
                 let weight = areaWeight * satWeight * brightWeight
                 let w = max(weight, 0.0001)
                 let idx = (bi * satBins + si) * hueBins + hi
@@ -422,6 +433,97 @@ enum AppTheme {
             blue: CGFloat(totalB / totalCount),
             alpha: 1
         )
+    }
+
+    /// ✅ SISTEMA DOS COLORES: extrae el segundo color dominante
+    /// Busca el color con mayor peso que sea suficientemente diferente del primario
+    static func secondaryDominantColor(from artwork: UIImage, primary: UIColor) -> UIColor? {
+        let size = CGSize(width: 64, height: 64)
+        UIGraphicsBeginImageContextWithOptions(size, false, 1.0)
+        artwork.draw(in: CGRect(origin: .zero, size: size))
+        guard let cgImage = UIGraphicsGetImageFromCurrentImageContext()?.cgImage else {
+            UIGraphicsEndImageContext()
+            return nil
+        }
+        UIGraphicsEndImageContext()
+
+        let bytesPerRow = cgImage.bytesPerRow
+        let width = cgImage.width
+        let height = cgImage.height
+        var data = [UInt8](repeating: 0, count: height * bytesPerRow)
+        guard let ctx = CGContext(
+            data: &data, width: width, height: height,
+            bitsPerComponent: 8, bytesPerRow: bytesPerRow,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return nil }
+        ctx.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+
+        let hueBins = 36, satBins = 6, brBins = 6
+        var buckets = [Float](repeating: 0, count: hueBins * satBins * brBins)
+        var bucketCounts = [Int](repeating: 0, count: hueBins * satBins * brBins)
+
+        for y in 0..<height {
+            for x in 0..<width {
+                let off = y * bytesPerRow + x * 4
+                let r = Float(data[off]) / 255
+                let g = Float(data[off + 1]) / 255
+                let b = Float(data[off + 2]) / 255
+                let a = Float(data[off + 3]) / 255
+                guard a > 0.5 else { continue }
+
+                let maxC = max(r, g, b)
+                let minC = min(r, g, b)
+                let delta = maxC - minC
+                let br = maxC
+                let s: Float = maxC == 0 ? 0 : delta / maxC
+                guard s >= 0.20, br >= 0.15, br <= 0.90 else { continue }
+
+                var h: Float = 0
+                if delta > 0 {
+                    if maxC == r { h = ((g - b) / delta).truncatingRemainder(dividingBy: 6) }
+                    else if maxC == g { h = (b - r) / delta + 2 }
+                    else { h = (r - g) / delta + 4 }
+                    h /= 6
+                    if h < 0 { h += 1 }
+                }
+                let hi = min(hueBins - 1, Int(h * Float(hueBins)))
+                let si = min(satBins - 1, Int(s * Float(satBins)))
+                let bi = min(brBins - 1, Int(br * Float(brBins)))
+                let idx = (bi * satBins + si) * hueBins + hi
+                buckets[idx] += 1.0
+                bucketCounts[idx] += 1
+            }
+        }
+
+        // ✅ Obtener hue del primario para evitar colores similares
+        var primaryHue: CGFloat = 0
+        primary.getHue(&primaryHue, saturation: nil, brightness: nil, alpha: nil)
+
+        // Encontrar el bucket con mayor peso que sea diferente del primario
+        var maxWeight: Float = 0
+        var bestIdx = 0
+        for i in 0..<buckets.count {
+            if buckets[i] > maxWeight {
+                let bucketHue = CGFloat(Float(i % hueBins) / Float(hueBins))
+                let hueDiff = abs(bucketHue - primaryHue)
+                // ✅ Solo elegir si es suficientemente diferente (al menos 1/12 del círculo = 30 grados)
+                if hueDiff > 0.08 || hueDiff < 0.92 {
+                    maxWeight = buckets[i]
+                    bestIdx = i
+                }
+            }
+        }
+
+        guard maxWeight > 0 else { return nil }
+
+        let hue = CGFloat(Float(bestIdx % hueBins) / Float(hueBins))
+        let si = (bestIdx / hueBins) % satBins
+        let bi = bestIdx / (hueBins * satBins)
+        let saturation = CGFloat(min(0.95, max(0.1, Float(si) / Float(satBins))))
+        let brightness = CGFloat(min(0.92, max(0.1, Float(bi) / Float(brBins))))
+
+        return UIColor(hue: hue, saturation: saturation, brightness: brightness, alpha: 1)
     }
 
     static func dominantColor(from uiColor: UIColor?) -> UIColor? {
