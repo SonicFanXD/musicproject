@@ -68,9 +68,10 @@ final class ThemeManager: ObservableObject {
             artworkAccentUIColor = cached
             artworkAccentColor = Self.normalizeArtworkAccent(cached)
             // ✅ Dos colores: detectar secundario también
-            let secondary = AppTheme.secondaryDominantColor(from: artwork, primary: cached)
-            artworkSecondaryUIColor = secondary
-            artworkSecondaryColor = Self.normalizeArtworkAccent(secondary)
+            if let secondary = AppTheme.secondaryDominantColor(from: artwork, primary: cached) {
+                artworkSecondaryUIColor = secondary
+                artworkSecondaryColor = Self.normalizeArtworkAccent(secondary)
+            }
             applyGlobalUIKitTint()
             return
         }
@@ -83,8 +84,10 @@ final class ThemeManager: ObservableObject {
                 guard let self, self.accentFromArtwork else { return }
                 self.artworkAccentUIColor = dominant
                 self.artworkAccentColor = Self.normalizeArtworkAccent(dominant)
-                self.artworkSecondaryUIColor = secondary
-                self.artworkSecondaryColor = Self.normalizeArtworkAccent(secondary)
+                if let secondary = secondary {
+                    self.artworkSecondaryUIColor = secondary
+                    self.artworkSecondaryColor = Self.normalizeArtworkAccent(secondary)
+                }
                 self.applyGlobalUIKitTint()
             }
         }
@@ -369,6 +372,7 @@ enum AppTheme {
                 let hi = min(hueBins - 1, Int(h * Float(hueBins)))
                 let si = min(satBins - 1, Int(s * Float(satBins)))
                 let bi = min(brBins - 1, Int(br * Float(brBins)))
+                let idx = (bi * satBins + si) * hueBins + hi
                 // ✅ PESOS CORREGIDOS: penalizar más elementos pequeños
                 // - Factor de área: sqrt(count) para dar peso a áreas grandes
                 // - Factor de saturación: s^1.3 para colores muy vivos
@@ -378,7 +382,6 @@ enum AppTheme {
                 let brightWeight = max(0.3, 1.0 - abs(br - 0.5) * 2.0)
                 let weight = areaWeight * satWeight * brightWeight
                 let w = max(weight, 0.0001)
-                let idx = (bi * satBins + si) * hueBins + hi
                 buckets[idx] += w
                 bucketCounts[idx] += 1
                 let angle = Float(h * 2 * .pi)
