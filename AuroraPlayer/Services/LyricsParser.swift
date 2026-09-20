@@ -154,63 +154,107 @@ class LyricsParser {
     // MARK: - Parse word-by-word format (<mm:ss.xx>word)
 
     private static func parseWordByWord(_ text: String) -> SynchronizedLyrics {
+        // ✅ MEJORA: Soportar formato híbrido con timestamps de línea [mm:ss.xx]
+        // y timestamps de palabra <mm:ss.xx>word dentro de cada línea
         var lyricWords: [LyricWord] = []
-        let pattern = "<(\\d{1,2}):(\\d{2})(\\.(\\d{1,3}))?>([^<]+)"
-
-        guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else {
-            return SynchronizedLyrics()
-        }
-
-        let range = NSRange(location: 0, length: text.utf16.count)
-        let matches = regex.matches(in: text, options: [], range: range)
-
-        var tempWords: [(time: Double, text: String)] = []
-
-        for match in matches {
-            guard let minutesRange = Range(match.range(at: 1), in: text),
-                  let secondsRange = Range(match.range(at: 2), in: text),
-                  let textRange = Range(match.range(at: 5), in: text) else { continue }
-
-            let minutes = Double(text[minutesRange]) ?? 0
-            let seconds = Double(text[secondsRange]) ?? 0
-            let wordText = cleanText(String(text[textRange]))
-
-            var milliseconds: Double = 0
-            if match.range(at: 4).location != NSNotFound, let msRange = Range(match.range(at: 4), in: text) {
-                milliseconds = Double("0." + String(text[msRange])) ?? 0
+        var lyricLines: [LyricLine] = []
+        
+        // Patrón para timestamps de línea: [mm:ss.xx]
+        let lineTimestampPattern = "\\[(\\d{1,2}):(\\d{2})(\\.(\\d{1,3}))?\\]"
+        // Patrón para timestamps de palabra: <mm:ss.xx>word
+        let wordTimestampPattern = "<(\\d{1,2}):(\\d{2})(\\.(\\d{1,3}))?>([^<]+)"
+        
+        // Dividir el texto en líneas separadas por timestamps de línea
+        let lines = text.components(separatedBy: "\n")
+        
+        for line in lines {
+            let trimmedLine = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmedLine.isEmpty else { continue }
+            
+            // Extraer timestamp de línea si existe
+            var lineTime: TimeInterval = 0
+            if let lineTimestamp = extractFirstTimestamp(from: trimmedLine, pattern: lineTimestampPattern) {
+                lineTime = lineTimestamp
             }
-
-            let timestamp = minutes * 60 + seconds + milliseconds
-            if !wordText.isEmpty {
-                tempWords.append((time: timestamp, text: wordText))
+            
+            // Extraer todas las palabras con sus timestamps
+            var tempWords: [(time: Double, text: String)] = []
+            
+            if let wordRegex = try? NSRegularExpression(pattern: wordTimestampPattern, options: []) {
+                let range = NSRange(location: 0, length: trimmedLine.utf16.count)
+                let matches = wordRegex.matches(in: trimmedLine, options: [], range: range)
+                
+                for match in matches {
+                    guard let minutesRange = Range(match.range(at: 1), in: trimmedLine),
+                          let secondsRange = Range(match.range(at: 2), in: trimmedLine),
+                          let textRange = Range(match.range(at: 5), in: trimmedLine) else { continue }
+                    
+                    let minutes = Double(trimmedLine[minutesRange]) ?? 0
+                    let seconds = Double(trimmedLine[secondsRange]) ?? 0
+                    let wordText = cleanText(String(trimmedLine[textRange]))
+                    
+                    var milliseconds: Double = 0
+                    if match.range(at: 4).location != NSNotFound, let msRange = Range(match.range(at: 4), in: trimmedLine) {
+                        milliseconds = Double("0." + String(trimmedLine[msRange])) ?? 0
+                    }
+                    
+                    let timestamp = minutes * 60 + seconds + milliseconds
+                    if !wordText.isEmpty {
+                        tempWords.append((time: timestamp, text: wordText))
+                    }
+                }
             }
-        }
-
-        // Calculate duration for each word based on next word's timestamp
-        for (index, word) in tempWords.enumerated() {
-            let duration: TimeInterval? = index < tempWords.count - 1 ? tempWords[index + 1].time - word.time : nil
-            lyricWords.append(LyricWord(time: word.time, text: word.text, duration: duration))
+            
+            // Si hay palabras con timestamps, crear LyricWord objects
+            if !tempWords.isEmpty {
+                for (index, word) in tempWords.enumerated() {
+                    let duration: TimeInterval? = index < tempWords.count - 1 ? tempWords[index + 1].time - word.time : nil
+                    lyricWords.append(LyricWord(time: word.time, text: word.text, duration: duration))
+                }
+                
+                // Crear línea completa con todas las palabras
+                let lineText = tempWords.map { $0.text }.joined(separator: " ")
+                lyricLines.append(LyricLine(time: lineTime > 0 ? lineTime : tempWords.first?.time ?? 0, text: lineText))
+            } else {
+                // Si no hay palabras word-by-word, tratar como línea normal
+                let textContent = stripTimestamps(from: trimmedLine)
+                if !textContent.isEmpty {
+                    lyricLines.append(LyricLine(time: lineTime, text: cleanText(textContent)))
+                }
+            }
         }
 
         if lyricWords.count > 1 {
             let needsSorting = zip(lyricWords, lyricWords.dropFirst()).contains { $0.time > $1.time }
             if needsSorting { lyricWords.sort { $0.time < $1.time } }
         }
+        
+        if lyricLines.count > 1 {
+            let needsSorting = zip(lyricLines, lyricLines.dropFirst()).contains { $0.time > $1.time }
+            if needsSorting { lyricLines.sort { $0.time < $1.time } }
+        }
 
-        // Generate lines from words
-        var lyricLines: [LyricLine] = []
-        var currentLineWords: [LyricWord] = []
-        var lastTime: TimeInterval = 0
-
-        for word in lyricWords {
-            if word.time - lastTime > 2.0 {
-                if !currentLineWords.isEmpty {
-                    lyricLines.append(LyricLine(time: currentLineWords.first?.time ?? 0, text: currentLineWords.map { $0.text }.joined(separator: " ")))
-                }
-                currentLineWords = []
-            }
-            currentLineWords.append(word)
-            lastTime = word.time
+        return SynchronizedLyrics(lines: lyricLines, words: lyricWords, isWordByWord: !lyricWords.isEmpty && lyricWords.count > lyricLines.count)
+    }
+    
+    // ✅ HELPER: Extraer primer timestamp de una línea
+    private static func extractFirstTimestamp(from text: String, pattern: String) -> TimeInterval? {
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else { return nil }
+        let range = NSRange(location: 0, length: text.utf16.count)
+        guard let match = regex.firstMatch(in: text, options: [], range: range) else { return nil }
+        
+        guard let minutesRange = Range(match.range(at: 1), in: text),
+              let secondsRange = Range(match.range(at: 2), in: text) else { return nil }
+        
+        let minutes = Double(text[minutesRange]) ?? 0
+        let seconds = Double(text[secondsRange]) ?? 0
+        
+        var milliseconds: Double = 0
+        if match.range(at: 4).location != NSNotFound, let msRange = Range(match.range(at: 4), in: text) {
+            milliseconds = Double("0." + String(text[msRange])) ?? 0
+        }
+        
+        return minutes * 60 + seconds + milliseconds
         }
 
         if !currentLineWords.isEmpty {

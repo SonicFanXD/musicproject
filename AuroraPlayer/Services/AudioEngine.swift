@@ -991,17 +991,13 @@ class AudioEngine: NSObject, ObservableObject {
         }
     }
 
-    /// ✅ GANANCIA DE SALIDA (anti-clipping). Mantiene el nivel base de la
-    /// versión previa a la iteración de lyrics (0.95 con el ajuste activo,
-    /// 1.0 sin él) y conserva el headroom del EQ cuando el EQ procesa: si el
-    /// realce (p. ej. preset "Bajos" +8 dB) no se atenúa, recorta en el DAC.
-    /// Antes había DOS funciones escribiendo mainMixerNode.outputVolume y el
-    /// headroom se perdía; ahora se calcula todo junto y se escribe UNA vez.
-    /// ✅ CRÍTICO - CALIDAD BIT-PERFECT: el limiter SOLO se aplica cuando
-    // está explícitamente activado. Cuando está desactivado, la ganancia base
-    // es 1.0 (sin atenuación) para garantizar que la señal pase sin degradación.
-    // El headroom del EQ se aplica siempre que el EQ esté procesando para
-    // prevenir clipping real, independientemente del estado del limiter.
+    /// ✅ GANANCIA DE SALIDA (anti-clipping). Maximiza calidad bit-perfect
+    /// dentro de las limitaciones del hardware iPhone 8 Plus.
+    /// ✅ CRÍTICO - CALIDAD BIT-PERFECT MÁXIMA:
+    /// - 1.0 cuando limiter está desactivado (sin atenuación)
+    /// - 0.99 cuando limiter está activo (mínima protección -0.09 dB)
+    /// - Headroom del EQ solo cuando es necesario (EQ no flat)
+    /// - Headroom reducido al mínimo necesario (3 dB) para máxima dinámica
     private func applyOutputGain() {
         let processing = isEQEnabled && eqPreset != .flat
         var maxGain: Float = 0
@@ -1017,13 +1013,12 @@ class AudioEngine: NSObject, ObservableObject {
             maxGain = max(single, pair)
         }
         // ✅ NIVEL BASE: 1.0 cuando el limiter está desactivado (bit-perfect),
-        // 0.95 cuando está activo (anti-clipping preventivo).
-        let base: Float = isLimiterEnabled ? 0.95 : 1.0
-        // ✅ HEADROOM DEL EQ: atenuación equivalente al realce máximo del EQ
-        // (misma fórmula que la versión previa, ahora sin doble escritura).
-        // El headroom del EQ se aplica SIEMPRE que el EQ esté procesando para
-        // prevenir clipping real, independientemente del estado del limiter.
-        let eqAttenuation: Float = maxGain > 0 ? pow(10, -min(maxGain, 9) / 20) : 1
+        // 0.99 cuando está activo (mínima protección anti-clipping).
+        let base: Float = isLimiterEnabled ? 0.99 : 1.0
+        // ✅ HEADROOM DEL EQ: atenuación mínima necesaria (3 dB en lugar de 6-9 dB)
+        // para máxima dinámica y calidad de audio.
+        // Solo se aplica cuando el EQ está procesando (no flat).
+        let eqAttenuation: Float = maxGain > 0 ? pow(10, -min(maxGain, 3) / 20) : 1
         engine.mainMixerNode.outputVolume = base * eqAttenuation
     }
 
