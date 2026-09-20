@@ -279,12 +279,14 @@ struct NowPlayingView: View {
         }
 
         let songID = audioEngine.currentSong?.id
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            guard let self = self,
-                  songID == self.audioEngine.currentSong?.id else { return }
+        let artworkForBlur = artwork
+        DispatchQueue.global(qos: .userInitiated).async {
+            // ✅ FIX: eliminado [weak self] — View es struct, self no puede ser weak.
+            // Captura explícita de songID y artwork para evitar referencia a self.
+            guard songID == audioEngine.currentSong?.id else { return }
 
             // Aplicar blur usando CIFilter (más eficiente que SwiftUI .blur en cada render)
-            guard let ciImage = CIImage(image: artwork),
+            guard let ciImage = CIImage(image: artworkForBlur),
                   let filter = CIFilter(name: "CIGaussianBlur") else { return }
             filter.setValue(ciImage, forKey: kCIInputImageKey)
             filter.setValue(25, forKey: kCIInputRadiusKey)
@@ -293,8 +295,9 @@ struct NowPlayingView: View {
 
             let finalBlurred = UIImage(cgImage: cgImage)
 
-            DispatchQueue.main.async {
-                guard songID == self.audioEngine.currentSong?.id else { return }
+            // Usar Task.mainActor para acceder a @State en struct de SwiftUI
+            Task { @MainActor [songID] in
+                guard songID == audioEngine.currentSong?.id else { return }
                 self.blurredArtwork = finalBlurred
             }
         }

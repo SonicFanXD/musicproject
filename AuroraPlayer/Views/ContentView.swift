@@ -263,20 +263,12 @@ struct ContentView: View {
                     // aparezca, re-evaluar el auto-resume una vez.
                     maybeAutoResume()
                 }
+                // ✅ FIX: extraído de body para evitar type-check timeout del compilador (ContentView:241)
+                .task(initialLoadTask)
                 .overlay {
-                    // ✅ Indicador compacto flotante: SOLO en re-escaneos con
-                    // biblioteca ya cargada (no en la primera indexación, donde
-                    // ya está la tarjeta grande en la lista).
-                    if fileAccessService.isScanning && !fileAccessService.songs.isEmpty && !firstTimeIndexing {
-                        VStack {
-                            Spacer()
-                            HStack(spacing: 10) {
-                                ProgressView()
-                                    .controlSize(.small)
-                                    .tint(AppTheme.accent)
-                                Text(Localization.localized("indexing.updating"))
-                                    .font(.system(size: 13, weight: .medium))
-                                    .foregroundStyle(.secondary)
+                    // ✅ FIX: extraído de body para evitar type-check timeout del compilador (ContentView:241)
+                    scanningOverlay
+                }
                             }
                             .padding(.horizontal, 18)
                             .padding(.vertical, 10)
@@ -310,6 +302,50 @@ struct ContentView: View {
             }
             // ✅ INDEXACIÓN: sincronizar tarjeta grande / indicador compacto.
             syncFirstTimeIndexing()
+        }
+    }
+
+    // ✅ FIX: extraído de body para evitar type-check timeout del compilador (ContentView:241)
+    @ViewBuilder
+    private func initialLoadTask() -> some View {
+        Task {
+            try? await Task.sleep(nanoseconds: 8_000_000_000)
+            if isInitialLoad {
+                withAnimation(.easeOut(duration: 0.3)) { isInitialLoad = false }
+            }
+        }
+        return EmptyView()
+    }
+
+    // ✅ FIX: extraído de body para evitar type-check timeout del compilador (ContentView:241)
+    @ViewBuilder
+    private var scanningOverlay: some View {
+        // ✅ Indicador compacto flotante: SOLO en re-escaneos con
+        // biblioteca ya cargada (no en la primera indexación, donde
+        // ya está la tarjeta grande en la lista).
+        if fileAccessService.isScanning && !fileAccessService.songs.isEmpty && !firstTimeIndexing {
+            VStack {
+                Spacer()
+                HStack(spacing: 10) {
+                    ProgressView()
+                        .controlSize(.small)
+                        .tint(AppTheme.accent)
+                    Text(Localization.localized("indexing.updating"))
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, 18)
+                .padding(.vertical, 10)
+                .background {
+                    Capsule()
+                        .fill(AnyShapeStyle(.ultraThinMaterial))
+                        .shadow(color: .black.opacity(0.1), radius: 8, y: 4)
+                }
+                .padding(.bottom, 80)
+            }
+            .transition(.opacity)
+        } else {
+            EmptyView()
         }
     }
 
