@@ -940,8 +940,9 @@ class AudioEngine: NSObject, ObservableObject {
     private func updateEQBypassState() {
         equalizerNode?.bypass = !(isEQEnabled && eqPreset != .flat)
         applyEQHeadroom()
-        // ✅ LIMITER iOS 16: reducir volumen base cuando está activo
-        let limiterVolume: Float = isLimiterEnabled ? 0.85 : 1.0
+        // ✅ LIMITER iOS 16: reducción más conservadora del volumen base
+        // 0.95 en lugar de 0.85 para evitar volumen muy bajo en altavoces
+        let limiterVolume: Float = isLimiterEnabled ? 0.95 : 1.0
         engine.mainMixerNode.outputVolume = limiterVolume
     }
 
