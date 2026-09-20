@@ -408,7 +408,9 @@ class AudioEngine: NSObject, ObservableObject {
                t == AVAudioSession.Port.bluetoothHFP.rawValue
     }
 
-    private var isWiredRoute: Bool {
+    // ✅ FIX: Exponer isWiredRoute para que AudioQualityDetailView pueda detectar
+    // cuando el limiter bloquea bit-perfect en ruta cableada
+    var isWiredRoute: Bool {
         let t = currentPortType
         return t == AVAudioSession.Port.headphones.rawValue ||
                t == AVAudioSession.Port.usbAudio.rawValue

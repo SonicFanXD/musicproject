@@ -379,10 +379,17 @@ struct AudioQualityDetailView: View {
     private var audiophileInfoSection: some View {
         settingsSection(title: "Audiófilo", icon: "waveform.circle") {
             // ✅ AUDIÓFILO: Indicador Bit-Perfect
-            detailRow(Localization.localized("quality.bitPerfect"), 
+            detailRow(Localization.localized("quality.bitPerfect"),
                       audioEngine.isBitPerfect ? Localization.localized("quality.bitPerfectYes") : Localization.localized("quality.bitPerfectNo"),
                       isHighlighted: audioEngine.isBitPerfect)
-            
+
+            // ✅ FIX: Mostrar mensaje cuando el limiter bloquea bit-perfect en ruta cableada
+            if !audioEngine.isBitPerfect && audioEngine.isLimiterEnabled && audioEngine.isWiredRoute {
+                detailRow("", Localization.localized("quality.bitPerfectBlocked"))
+                    .font(.system(size: 11))
+                    .foregroundStyle(.orange)
+            }
+
             // ✅ AUDIÓFILO: Codec Bluetooth (si aplica)
             if !audioEngine.bluetoothCodec.isEmpty {
                 detailRow(Localization.localized("quality.bluetoothCodec"), audioEngine.bluetoothCodec)
@@ -390,12 +397,12 @@ struct AudioQualityDetailView: View {
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
             }
-            
+
             // ✅ AUDIÓFILO: DAC USB (si aplica)
             if !audioEngine.usbDACInfo.isEmpty {
                 detailRow(Localization.localized("quality.usbDAC"), audioEngine.usbDACInfo)
             }
-            
+
             // ✅ AUDIÓFILO: Modo de sesión
             if !audioEngine.audioSessionMode.isEmpty {
                 detailRow(Localization.localized("quality.sessionMode"), audioEngine.audioSessionMode)
