@@ -3,9 +3,6 @@ import AVFoundation
 import ImageIO
 import UIKit
 
-// ✅ Configuración de escaneo
-@AppStorage("com.aurora.scanOnlyNewSongs") private var scanOnlyNewSongs = true
-
 // ✅ Cache de liked songs para evitar recalcular en cada render de fila
 final class LikedSongsCache {
     static let shared = LikedSongsCache()

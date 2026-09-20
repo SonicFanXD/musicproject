@@ -943,7 +943,9 @@ class AudioEngine: NSObject, ObservableObject {
         
         // ✅ LIMITER iOS 16: ajuste basado en la ruta de audio
         // Altavoces built-in necesitan más volumen, externos necesitan protección
-        let isBuiltInSpeaker = currentRoute?.type == .builtInSpeaker
+        let session = AVAudioSession.sharedInstance()
+        let currentRoute = session.currentRoute
+        let isBuiltInSpeaker = currentRoute.outputs.contains { $0.portType == .builtInSpeaker }
         let limiterVolume: Float
         if isLimiterEnabled {
             if isBuiltInSpeaker {

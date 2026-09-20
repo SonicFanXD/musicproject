@@ -430,11 +430,8 @@ enum AppTheme {
         primary.getRed(&primaryR, green: &primaryG, blue: &primaryB, alpha: nil)
 
         // ✅ Encontrar el segundo bucket más frecuente que sea diferente del primario
-        var sortedBuckets = colorBuckets.enumerated().sorted { $0.element > $1.element }
+        let sortedBuckets = colorBuckets.enumerated().sorted { $0.element > $1.element }
         for (idx, count) in sortedBuckets where count > 10 {
-            let ri = idx % levels
-            let gi = (idx / levels) % levels
-            let bi = idx / (levels * levels)
             let r = bucketSums[idx][0] / Float(count)
             let g = bucketSums[idx][1] / Float(count)
             let b = bucketSums[idx][2] / Float(count)

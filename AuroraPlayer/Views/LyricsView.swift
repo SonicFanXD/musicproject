@@ -259,11 +259,7 @@ struct LyricsView: View {
                         let wordsInLine = index < wordsByLine.count ? wordsByLine[index] : []
 
                         wordByWordLineView(line: line, words: wordsInLine, isActive: currentLineIndex == index,
-                            // ✅ FIX KARAOKE: solo la línea ACTIVA recibe su progreso.
-                            // Antes `lineProgress` (calculado SIEMPRE para la línea
-                            // activa) se pasaba a todas → cada línea se iluminaba
-                            // hasta el mismo ancho que la activa.
-                            progress: currentLineIndex == index ? lineProgress : 0)
+                            progress: lyricsState.progress)
                             .id(index)
                             .contentShape(Rectangle())
                             .onTapGesture {
