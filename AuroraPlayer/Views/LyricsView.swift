@@ -299,7 +299,7 @@ private struct LyricLineView: View, Equatable {
         
         if isActive {
             // ✅ Línea activa: blanco con relleno progresivo
-            ZStack(alignment: .leading) {
+            return ZStack(alignment: .leading) {
                 // Capa base: texto atenuado (siempre visible debajo)
                 Text(line.cleanText)
                     .font(.system(size: fontSize, weight: fontWeight))
@@ -336,7 +336,7 @@ private struct LyricLineView: View, Equatable {
             }
         } else {
             // ✅ Línea inactiva: texto atenuado simple
-            Text(line.cleanText)
+            return Text(line.cleanText)
                 .font(.system(size: fontSize, weight: fontWeight))
                 .foregroundStyle(Color.white.opacity(opacity))
                 .frame(maxWidth: .infinity, alignment: .leading)

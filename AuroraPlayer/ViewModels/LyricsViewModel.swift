@@ -30,7 +30,6 @@ final class LyricsViewModel: ObservableObject {
     private var lastAudioTime: TimeInterval = 0
     private var currentInterpolatedTime: TimeInterval = 0
     private var lastProcessedTimeMs: Int = -1  // ✅ Guarda para evitar procesamiento duplicado
-    private var lastProcessedTimeMs: Int = 0  // ✅ Guarda para evitar procesamiento duplicado
     
     // MARK: - Initialization
     init() {
