@@ -1260,9 +1260,8 @@ class AudioEngine: NSObject, ObservableObject {
             // ✅ FIX punto aleatorio: tras engine.stop(), el reloj interno del nodo
             // (sampleTime) no se resetea hasta el proximo render. Programar + play
             // inmediato arranca desde un punto residual al azar por milisegundos.
-            // ✅ OPTIMIZACIÓN: delay reducido a 0.1s para respuesta más rápida en iPhone 8
-            // Este retraso da tiempo al render thread a resetear el timeline antes.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+            // ✅ FIX DELAY: reducido a 0.02s para respuesta casi inmediata
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.02) { [weak self] in
                 guard let self = self,
                       self.scheduleGeneration == currentGeneration,
                       !self.isStopping else { return }
@@ -1414,12 +1413,9 @@ class AudioEngine: NSObject, ObservableObject {
             wallAnchor = CACurrentMediaTime()
         }
         clock.time = currentTime
-        // ✅ FADE anti-pop: bajar el volume a 0 y SOLO entonces cortar el nodo.
-        // El corte real se difiere 30ms (reducido de 45ms para respuesta más inmediata);
-        // si en ese lapso llega resume() (que sube el volumen), el nodo ni se toca
-        // → transición limpia en ambos sentidos.
-        rampMixerVolume(to: 0, duration: 0.03)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) { [weak self] in
+        // ✅ FIX DELAY: reducir fade anti-pop de 30ms a 10ms para respuesta más inmediata
+        rampMixerVolume(to: 0, duration: 0.01)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.01) { [weak self] in
             guard let self, !self.isPlaying else { return }
             if self.playerNode.isPlaying {
                 self.playerNode.pause()
@@ -1484,10 +1480,10 @@ class AudioEngine: NSObject, ObservableObject {
     }
 
     func resume() {
-        // ✅ ANTI-DOBLE-RESUME: ya reproduciendo + llamada duplicada en 100ms
-        // (reducido de 150ms para respuesta más inmediata).
+        // ✅ ANTI-DOBLE-RESUME: ya reproduciendo + llamada duplicada en 50ms
+        // (reducido de 100ms para respuesta más inmediata).
         let now = CACurrentMediaTime()
-        if isPlaying, now - lastResumeCallTime < 0.1 {
+        if isPlaying, now - lastResumeCallTime < 0.05 {
             return
         }
         lastResumeCallTime = now
