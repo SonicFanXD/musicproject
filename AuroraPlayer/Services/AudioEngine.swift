@@ -1310,10 +1310,10 @@ class AudioEngine: NSObject, ObservableObject {
             // ✅ FIX punto aleatorio: tras engine.stop(), el reloj interno del nodo
             // (sampleTime) no se resetea hasta el proximo render. Programar + play
             // inmediato arranca desde un punto residual al azar por milisegundos.
-            // ✅ RESTAURADO: 0.1s. Ese margen da tiempo al render thread a
-            // resetear el timeline del nodo antes de programar + play; con 0.02s
-            // se podía arrancar desde un punto residual (glitch al iniciar).
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+            // ✅ CORRECCIÓN LATENCIA: Eliminado delay de 0.1s. El uso de anchorPlaybackPosition
+            // y el reloj de pared (CACurrentMediaTime) garantizan la sincronización exacta.
+            // El render thread se resetea correctamente sin retraso artificial.
+            DispatchQueue.main.async { [weak self] in
                 guard let self = self,
                       self.scheduleGeneration == currentGeneration,
                       !self.isStopping else { return }
@@ -1497,6 +1497,14 @@ class AudioEngine: NSObject, ObservableObject {
         AppLog.info(.playback, String(format: "Pausa en %.1fs — '%@'", currentTime, currentSong?.displayName ?? "—"))
         updateNowPlayingInfo()
         saveState()
+        
+        // ✅ OPTIMIZACIÓN BATERÍA: Detener engine cuando no se reproduce
+        // Si no hay canción pre-encadenada y el usuario pausó, detener el engine
+        // para ahorrar CPU/batería. Al reanudar, resume() reactivará el engine.
+        if !isUsingFallback && !hasChainedAhead && engine.isRunning {
+            engine.stop()
+            AppLog.debug(.playback, "Engine detenido por pausa (ahorro de batería)")
+        }
     }
 
     /// ⛔️ Suspensión TOTAL al perder la ruta de audio (audífonos/BT desconectados).
@@ -2404,6 +2412,8 @@ class AudioEngine: NSObject, ObservableObject {
 
     // ✅ Auto-reanudación al conectar audífonos
     private var wasPlayingBeforeRouteChange = false
+    // ✅ Auto-reanudación tras interrupciones (llamadas, Siri)
+    private var wasPlayingBeforeInterruption = false
 
     /// ¿La salida de audio dada es de tipo "audífonos/BT/dispositivo externo"?
     private static func isHeadphonePort(_ port: AVAudioSession.Port) -> Bool {
@@ -2562,24 +2572,30 @@ class AudioEngine: NSObject, ObservableObject {
                   let type = AVAudioSession.InterruptionType(rawValue: typeVal) else { return }
             if type == .began && self.isPlaying {
                 // ✅ GUARDAR estado antes de pausar para reanudación automática
-                self.wasPlayingBeforeRouteChange = true
+                self.wasPlayingBeforeInterruption = true
                 self.pause()
             } else if type == .ended {
                 let shouldResume = (info[AVAudioSessionInterruptionOptionKey] as? UInt)
                     .flatMap { AVAudioSession.InterruptionOptions(rawValue: $0) }
                     .map { $0.contains(.shouldResume) } ?? false
                 // ✅ FIX: Solo reanudar si iOS explícitamente lo indica (shouldResume)
-                // No reanudar automáticamente basado solo en wasPlayingBeforeRouteChange
-                // para evitar reanudaciones no deseadas al navegar por la app
+                // ✅ CORRECCIÓN: No reanudar si la app está en segundo plano
+                // ✅ CORRECCIÓN: Eliminar delay artificial de 0.1s, reanudar inmediatamente
                 if shouldResume {
-                    // ✅ Pequeño delay para asegurar que el sistema esté listo
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
-                        self?.resume()
-                        self?.wasPlayingBeforeRouteChange = false
+                    // ✅ Verificar si la app está en primer plano antes de reanudar
+                    DispatchQueue.main.async { [weak self] in
+                        guard let self = self,
+                              UIApplication.shared.applicationState == .active else {
+                            // ✅ App en segundo plano: no reanudar automáticamente
+                            self.wasPlayingBeforeInterruption = false
+                            return
+                        }
+                        self.resume()
+                        self.wasPlayingBeforeInterruption = false
                     }
                 } else {
                     // ✅ Limpiar el flag si no hay shouldResume para evitar reanudaciones futuras
-                    self.wasPlayingBeforeRouteChange = false
+                    self.wasPlayingBeforeInterruption = false
                 }
             }
         }
