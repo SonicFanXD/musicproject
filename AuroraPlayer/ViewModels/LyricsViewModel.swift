@@ -15,6 +15,7 @@ final class LyricsViewModel: ObservableObject {
     @Published var activeLineID: Int? = nil
     @Published var progress: Double = 0.0  // 0.0 a 1.0 para la línea activa
     @Published var clockUpdateDate: TimeInterval = CACurrentMediaTime()  // ✅ Ancla de tiempo para interpolación
+    @Published var clockTime: TimeInterval = 0.0  // ✅ Tiempo actual del reloj de audio
     @Published var lyricsLines: [LyricsLine] = []
     @Published var hasLyrics: Bool = false
     
@@ -22,6 +23,7 @@ final class LyricsViewModel: ObservableObject {
     weak var audioEngine: AudioEngine?
     private var engine: LyricsEngine?
     private var displayLink: CADisplayLink?
+    private var clockCancellable: AnyCancellable?  // ✅ Para observar clock.time de AudioEngine
     
     // MARK: - Estado interno para interpolación
     private var lastUpdateTime: CFTimeInterval = 0
@@ -37,6 +39,16 @@ final class LyricsViewModel: ObservableObject {
     // MARK: - Conectar audioEngine (llamado por AudioEngine después de init)
     func connectAudioEngine(_ engine: AudioEngine) {
         self.audioEngine = engine
+        
+        // ✅ Observar clock.time de AudioEngine para interpolación fluida
+        clockCancellable = engine.clock.objectWillChange.sink { [weak self] _ in
+            Task { @MainActor in
+                self?.clockTime = engine.clock.time
+            }
+        }
+        
+        // ✅ Inicializar clockTime con el valor actual
+        clockTime = engine.clock.time
     }
     
     deinit {
@@ -97,9 +109,10 @@ final class LyricsViewModel: ObservableObject {
         
         let currentTimeMs = Int(audioEngine.currentTime * 1000)
         
-        // ✅ Guarda para evitar procesamiento duplicado en frames consecutivos
-        guard currentTimeMs != lastProcessedTimeMs else { return }
-        lastProcessedTimeMs = currentTimeMs
+        // ✅ REMOVIDO: Guarda de lastProcessedTimeMs para permitir interpolación fluida
+        // La interpolación en TimelineView maneja el tiempo continuo
+        // Solo evitamos procesamiento si el tiempo es negativo o inválido
+        guard currentTimeMs >= 0 else { return }
         
         // ✅ CADisplayLink corre en el run loop principal pero no está marcado como @MainActor
         // Usamos MainActor.assumeIsolated para asegurar thread-safety con Swift 6 concurrency

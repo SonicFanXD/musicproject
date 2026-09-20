@@ -97,7 +97,7 @@ struct LyricsView: View {
                             line: line,
                             isActive: isActive,
                             progress: progress,
-                            clockTime: viewModel.clock.time,
+                            clockTime: viewModel.clockTime,
                             clockUpdateDate: viewModel.clockUpdateDate
                         )
                         .id(line.id)
