@@ -1459,6 +1459,27 @@ class AudioEngine: NSObject, ObservableObject {
         scheduleStep(0)
     }
 
+    /// ✅ BIT-PERFECT: tras una INTERRUPCIÓN (llamada, Siri, otra app) o un
+    /// cambio de ruta, iOS puede dejar la salida en otra tasa de muestreo: la
+    /// canción seguiría sonando REMUESTREADA en silencio hasta la siguiente
+    /// pista (el indicador lo delataba, pero no se corregía solo).
+    /// Se reafirma la tasa NATIVA del archivo actual solo en ruta cableada
+    /// (jack/DAC USB): en Bluetooth/AirPlay/altavoz la tasa la decide iOS.
+    /// Se llama ANTES de subir el volumen con el fade anti-pop para que el
+    /// reclock del DAC quede tapado por la rampa.
+    private func reassertNativeSampleRateIfNeeded() {
+        guard !isUsingFallback, isWiredRoute, sampleRate > 0 else { return }
+        let session = AVAudioSession.sharedInstance()
+        let previousRate = session.sampleRate
+        guard abs(previousRate - sampleRate) > 1 else { return }
+        do {
+            try session.setPreferredSampleRate(sampleRate)
+            AppLog.info(.playback, String(format: "Tasa de salida reafirmada: %.0f Hz → %.0f Hz", previousRate, sampleRate))
+        } catch {
+            AppLog.debug(.playback, "No se pudo reafirmar la tasa nativa: \(error.localizedDescription)")
+        }
+    }
+
     func pause() {
         // ✅ FIX: detener el display timer PRIMERO para evitar que siga
         // actualizando currentTime mientras capturamos la posición exacta.
@@ -1617,6 +1638,10 @@ class AudioEngine: NSObject, ObservableObject {
         }
         AppLog.info(.playback, String(format: "Resume desde %.1fs — '%@' (engine running: %@, fallback: %@)", currentTime, currentSong?.displayName ?? "—", engine.isRunning ? "sí" : "no", isUsingFallback ? "sí" : "no"))
         isPlaying = true
+        // ✅ BIT-PERFECT: si el sistema cambió la tasa durante la interrupción o
+        // el cambio de ruta, se recupera la nativa del archivo antes de subir
+        // el volumen (el reclock queda tapado por la rampa del fade).
+        reassertNativeSampleRateIfNeeded()
         // ✅ FADE anti-pop: subir el volumen suavemente tras el play (el mixer
         // quedó en 0 por el fade de pausa). 4 pasos × 10 ms, sin clic.
         rampMixerVolume(to: 1, duration: 0.04)
