@@ -554,11 +554,13 @@ private struct LyricLineView: View, Equatable {
                     ))
             } else {
                 dimmedRows(rows)
-                    // ✅ Profundidad MUY sutil (0.5pt), y SOLO en las líneas
-                    // inactivas: la activa es la que pide frames a 60 Hz y no
-                    // debe pagar ninguna pasada de blur. Si en el iPhone 8 Plus
-                    // no convence, basta con borrar esta línea.
-                    .blur(radius: 0.5)
+                    // ✅ SIN blur: las líneas inactivas visibles son ~10 y cada
+                    // `.blur` es una pasada offscreen propia POR FRAME mientras se
+                    // anima el scroll (justo el "múltiples blurs simultáneos en
+                    // pantalla" que no se puede permitir en un A11 el día que se
+                    // pide 60fps sostenidos). A 0.5pt tampoco aportaba profundidad
+                    // percibible y sí emborronaba algo el texto de 18pt, así que
+                    // se gana fluidez Y nitidez. Restaurarla es añadir una línea.
                     .transition(.opacity)
             }
         }
