@@ -1488,7 +1488,7 @@ class FileAccessService: ObservableObject {
         .compactMap { $0 }
         .joined(separator: " · ")
 
-        return SongMetadata(
+        return (SongMetadata(
             title: title,
             artist: artist,
             albumArtist: albumArtist,
@@ -2430,8 +2430,8 @@ class FileAccessService: ObservableObject {
     }
 
     deinit {
-        if let memoryWarningObserver {
-            NotificationCenter.default.removeObserver(memoryWarningObserver)
+        if let observer = memoryWarningObserver {
+            NotificationCenter.default.removeObserver(observer)
         }
         saveCachedSongs()
         for (_, url) in activeURLs {
