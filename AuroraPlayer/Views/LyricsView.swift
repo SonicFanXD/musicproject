@@ -49,7 +49,11 @@ struct LyricsView: View {
 
     var body: some View {
         ZStack {
-            blurredArtworkBackground
+            // ✅ Fondo como vista propia y `Equatable`: al cambiar de línea activa
+            // este body se re-evalúa, pero el blur de pantalla completa NO vuelve
+            // a componerse si la carátula y el acento siguen siendo los mismos.
+            LyricsArtworkBackground(artwork: song?.artwork, accentToken: AppTheme.accentUIColor)
+                .equatable()
 
             VStack(spacing: 0) {
                 // Header transparente
@@ -224,30 +228,6 @@ struct LyricsView: View {
         viewModel.handleSeek()
     }
 
-    // MARK: - Fondo difuminado
-    private var blurredArtworkBackground: some View {
-        GeometryReader { geometry in
-            Group {
-                if let artwork = song?.artwork {
-                    Image(uiImage: artwork)
-                        .resizable()
-                        .interpolation(.medium)
-                        .scaledToFill()
-                        .frame(width: geometry.size.width, height: geometry.size.height)
-                        .blur(radius: 60)
-                        .opacity(0.4)
-                        .overlay(Color(UIColor.systemBackground).opacity(0.72))
-                } else {
-                    LinearGradient(
-                        colors: [AppTheme.accent.opacity(0.12), Color(UIColor.systemBackground)],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                }
-            }
-        }
-    }
-
     // MARK: - Vista vacía
     private var emptyLyricsView: some View {
         VStack(spacing: 16) {
@@ -275,6 +255,49 @@ struct LyricsView: View {
             viewModel.syncToCurrentTime()
         } else {
             viewModel.clearLyrics()
+        }
+    }
+}
+
+// MARK: - Fondo de carátula difuminada
+/// ✅ Vista PROPIA y `Equatable`: el body de `LyricsView` se re-evalúa en cada
+/// cambio de línea activa; con `.equatable()` esta sub-vista no vuelve a componer
+/// el blur de pantalla completa si la carátula y el acento no han cambiado (era
+/// el candidato a los tirones al cambiar de verso).
+private struct LyricsArtworkBackground: View, Equatable {
+    let artwork: UIImage?
+    /// ✅ Solo como TOKEN de comparación: el color se pinta con `AppTheme.accent`
+    /// para no alterar el tono con conversiones de espacio de color.
+    let accentToken: UIColor
+
+    static func == (lhs: LyricsArtworkBackground, rhs: LyricsArtworkBackground) -> Bool {
+        guard lhs.accentToken == rhs.accentToken else { return false }
+        if let lhsArtwork = lhs.artwork, let rhsArtwork = rhs.artwork {
+            return lhsArtwork === rhsArtwork
+        }
+        return lhs.artwork == nil && rhs.artwork == nil
+    }
+
+    var body: some View {
+        GeometryReader { geometry in
+            Group {
+                if let artwork {
+                    Image(uiImage: artwork)
+                        .resizable()
+                        .interpolation(.medium)
+                        .scaledToFill()
+                        .frame(width: geometry.size.width, height: geometry.size.height)
+                        .blur(radius: 60)
+                        .opacity(0.4)
+                        .overlay(Color(UIColor.systemBackground).opacity(0.72))
+                } else {
+                    LinearGradient(
+                        colors: [AppTheme.accent.opacity(0.12), Color(UIColor.systemBackground)],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                }
+            }
         }
     }
 }
