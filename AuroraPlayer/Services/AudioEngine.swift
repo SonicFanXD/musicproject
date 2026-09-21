@@ -416,8 +416,27 @@ class AudioEngine: NSObject, ObservableObject {
 
     // MARK: - Equalizador
     private var equalizerNode: AVAudioUnitEQ?
-    @Published var isEQEnabled: Bool = false
-    @Published var eqPreset: EQPreset = .flat
+    // ✅ PERSISTENCIA (Fase 6): el EQ (activado + preset) sobrevivía solo a la
+    // sesión — se apagaba y volvía a "Flat" en cada arranque. El preset se guarda
+    // por rawValue (String) y se valida al leer.
+    @Published var isEQEnabled: Bool = UserDefaults.standard.bool(forKey: "com.aurora.eqEnabled") {
+        didSet {
+            if isEQEnabled != oldValue {
+                UserDefaults.standard.set(isEQEnabled, forKey: "com.aurora.eqEnabled")
+            }
+        }
+    }
+    @Published var eqPreset: EQPreset = {
+        if let raw = UserDefaults.standard.string(forKey: "com.aurora.eqPreset"),
+           let preset = EQPreset(rawValue: raw) { return preset }
+        return .flat
+    }() {
+        didSet {
+            if eqPreset != oldValue {
+                UserDefaults.standard.set(eqPreset.rawValue, forKey: "com.aurora.eqPreset")
+            }
+        }
+    }
     // ✅ PROTECCIÓN ANTI-CLIPPING: atenuación fija anti-distorsión (SIN Audio
     // Unit en la cadena, para que la señal no pase por ningún procesador
     // dinámico). Aplica 0.99 (≈ -0.09 dB) sobre la salida.
@@ -427,7 +446,18 @@ class AudioEngine: NSObject, ObservableObject {
     // que apagarla a mano para que el indicador se encendiera. La música a
     // 0 dBFS no satura si nada añade ganancia, y el headroom del EQ sigue
     // calculándose por separado, así que el valor por defecto es 1.0.
-    @Published var isLimiterEnabled: Bool = false
+    // ✅ PERSISTENCIA (Fase 6): el usuario configura su sonido una vez y no
+    // debería rehacerlo en cada arranque. Mismo patrón que isMonoAudioEnabled:
+    // se lee al crear el motor y se guarda con cada cambio. Este ajuste mueve la
+    // ganancia base de salida (0.99 con protección anti-clipping, 1.0 sin ella) y
+    // el indicador bit-perfect, así que recordarlo es lo coherente.
+    @Published var isLimiterEnabled: Bool = UserDefaults.standard.bool(forKey: "com.aurora.limiterEnabled") {
+        didSet {
+            if isLimiterEnabled != oldValue {
+                UserDefaults.standard.set(isLimiterEnabled, forKey: "com.aurora.limiterEnabled")
+            }
+        }
+    }
     // ✅ BLUETOOTH OPTIMIZATION: ajustes para mejorar calidad en BT
     @Published var isBluetoothOptimizationEnabled: Bool = false
     // ✅ Audio Mono: mezcla ambos canales en uno para usuarios con audífono único
@@ -877,7 +907,16 @@ class AudioEngine: NSObject, ObservableObject {
             band.bypass = false
         }
 
-        eq.bypass = !isEQEnabled
+        // ✅ PERSISTENCIA: las bandas nacen a 0 (bucle de arriba), así que un EQ
+        // restaurado desde UserDefaults habría dicho "Bajos" en Ajustes y sonado
+        // plano. Reaplicar aquí el preset guardado deja el estado auditivo igual
+        // al que el usuario dejó.
+        for (index, gain) in eqPreset.gains.enumerated() where index < eq.bands.count {
+            eq.bands[index].gain = gain
+        }
+        // Procesa solo si está activado Y el preset no es plano (misma regla que
+        // updateEQBypassState(): "flat" = bypass total, cero biquads de más).
+        eq.bypass = !(isEQEnabled && eqPreset != .flat)
         engine.attach(eq)
         reconnectPlayerNode(format: AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 2) ?? engine.outputNode.outputFormat(forBus: 0))
     }
