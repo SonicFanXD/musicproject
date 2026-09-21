@@ -241,8 +241,19 @@ class AudioEngine: NSObject, ObservableObject {
             clearPreloadedNext()
             file = cached
         } else {
-            guard let opened = try? AVAudioFile(forReading: url) else { return }
-            file = opened
+            do {
+                file = try AVAudioFile(forReading: url)
+            } catch {
+                // ✅ A.2: antes este fallo salía en silencio (`try?` + return): la
+                // transición caía al reinicio atómico sin dejar rastro del motivo.
+                // Un ÚNICO reintento 50 ms después cubre el caso típico (el
+                // archivo todavía se está copiando o bajando, p. ej. desde
+                // iCloud). La reproducción no se bloquea nunca: si el reintento
+                // también falla, la transición la resuelve el reinicio atómico
+                // con su fade (A.1).
+                retryChainAfterOpenFailure(index: index, url: url, error: error)
+                return
+            }
         }
 
         let fmt = file.processingFormat
@@ -273,6 +284,31 @@ class AudioEngine: NSObject, ObservableObject {
         }
         if connectedFormatKey == nil {
             connectedFormatKey = formatKey(fmt)
+        }
+    }
+
+    /// ✅ A.2 — Reintento ÚNICO del encadenado cuando `AVAudioFile` no se pudo
+    /// abrir. Si el segundo intento funciona, el archivo se deja en la caché de
+    /// precarga para que `scheduleAheadIfPossible()` lo consuma sin volver a
+    /// tocar el disco. Solo se loguea el SEGUNDO fallo (el primero es normal si
+    /// el archivo aún se está escribiendo) para no llenar el registro.
+    private func retryChainAfterOpenFailure(index: Int, url: URL, error: Error) {
+        let generation = scheduleGeneration
+        let firstFailure = error.localizedDescription
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+            guard let self,
+                  self.scheduleGeneration == generation,
+                  self.isPlaying, !self.isStopping,
+                  self.chainedAheadIndex == nil else { return }
+            do {
+                let file = try AVAudioFile(forReading: url)
+                self.preloadedNextIndex = index
+                self.preloadedNextURL = url
+                self.preloadedNextFile = file
+                self.scheduleAheadIfPossible()
+            } catch {
+                AppLog.warning(.playback, "Encadenado imposible para '\(url.lastPathComponent)': \(error.localizedDescription) (primer intento: \(firstFailure))")
+            }
         }
     }
 
