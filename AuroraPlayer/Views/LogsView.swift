@@ -93,13 +93,8 @@ struct LogsView: View {
                 ToolbarItem(placement: .principal) {
                     Text("Registros")
                         .font(.system(size: 20, weight: .bold, design: .rounded))
-                        .foregroundStyle(
-                            LinearGradient(
-                                colors: [AppTheme.accent, AppTheme.accent.opacity(0.75)],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                        )
+                        // ✅ Acento de dos colores (antes un solo color con opacidad).
+                        .foregroundStyle(AppTheme.accentGradient)
                         .accessibilityLabel("Registros")
                 }
 
@@ -207,19 +202,37 @@ struct LogsView: View {
         .padding(.vertical, 12)
     }
 
-    private var lastLogTime: String {
-        guard let last = AppLog.entries.last else { return "—" }
+    /// ✅ Un único DateFormatter reutilizado: crear uno por fila y por render era
+    /// con diferencia lo más caro de la lista (inicializar DateFormatter cuesta
+    /// órdenes de magnitud más que formatear con uno ya creado).
+    private static let timeFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateFormat = "HH:mm:ss"
-        return formatter.string(from: last.date)
+        return formatter
+    }()
+
+    private var lastLogTime: String {
+        guard let last = AppLog.entries.last else { return "—" }
+        return Self.timeFormatter.string(from: last.date)
     }
 
     private func statCard(icon: String, title: String, value: String, color: Color) -> some View {
         VStack(spacing: 6) {
-            HStack(spacing: 4) {
+            HStack(spacing: 5) {
+                // ✅ Disco con micro-gradiente del MISMO tono que el dato: mismo
+                // lenguaje visual que los iconos de sección de Ajustes.
                 Image(systemName: icon)
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(color)
+                    .frame(width: 18, height: 18)
+                    .background {
+                        Circle().fill(
+                            LinearGradient(
+                                colors: [color.opacity(0.22), color.opacity(0.08)],
+                                startPoint: .topLeading, endPoint: .bottomTrailing
+                            )
+                        )
+                    }
 
                 Text(title)
                     .font(.caption2)
@@ -263,6 +276,31 @@ struct LogsView: View {
         .padding(.vertical, 8)
     }
 
+    /// ✅ Superficie con TEXTO BLANCO encima: el secundario conserva su tono pero
+    /// ancla su brillo al del primario si la diferencia es grande, para que la
+    /// pastilla seleccionada no quede a medio legible con paletas de contraste.
+    private func textSafeAccentGradient() -> LinearGradient {
+        let primary = AppTheme.accent
+        // ⚠️ El secundario solo es válido con el modo "acento desde portada"
+        // activo: si no, sería el de una canción anterior (hue equivocado).
+        let manager = ThemeManager.shared
+        let candidate = manager.accentFromArtwork ? manager.artworkSecondaryColor : nil
+        let secondary = candidate ?? primary.opacity(0.85)
+        var h1: CGFloat = 0, s1: CGFloat = 0, b1: CGFloat = 0, a1: CGFloat = 1
+        var h2: CGFloat = 0, s2: CGFloat = 0, b2: CGFloat = 0, a2: CGFloat = 1
+        var stop = secondary
+        if UIColor(primary).getHue(&h1, saturation: &s1, brightness: &b1, alpha: &a1),
+           UIColor(secondary).getHue(&h2, saturation: &s2, brightness: &b2, alpha: &a2),
+           abs(b1 - b2) > 0.3 {
+            stop = Color(UIColor(hue: h2, saturation: s2, brightness: b1, alpha: a2))
+        }
+        return LinearGradient(
+            colors: [primary, stop],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+    }
+
     private func filterChip(title: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(title)
@@ -270,43 +308,59 @@ struct LogsView: View {
                 .foregroundStyle(isSelected ? .white : .secondary)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
+                // ✅ Selección ANIMADA: el fondo ya no cambia de tipo de vista entre
+                // estados (antes saltaba); ahora se funde el relleno de acento sobre
+                // el material, con una transición suave de 0,22 s.
                 .background {
-                    if isSelected {
+                    ZStack {
+                        Capsule().fill(AnyShapeStyle(.ultraThinMaterial))
+
                         Capsule()
-                            .fill(
-                                LinearGradient(
-                                    colors: [AppTheme.accent, AppTheme.accent.opacity(0.85)],
-                                    startPoint: .topLeading, endPoint: .bottomTrailing
-                                )
-                            )
+                            .fill(textSafeAccentGradient())
                             .shadow(color: AppTheme.accent.opacity(0.3), radius: 6, x: 0, y: 3)
-                    } else {
-                        Capsule()
-                            .fill(AnyShapeStyle(.ultraThinMaterial))
+                            .opacity(isSelected ? 1 : 0)
                     }
                 }
+                .animation(.easeInOut(duration: 0.22), value: isSelected)
         }
         .buttonStyle(PressableButtonStyle(scale: 0.95))
     }
 
     // MARK: - Log Entries List
     private var logEntriesList: some View {
-        ScrollView {
+        // ✅ Se filtra UNA vez por render (antes el filtro y el reverso se
+        // calculaban dos veces: para el isEmpty y para el ForEach).
+        let entries = filteredEntries
+
+        return ScrollView {
             LazyVStack(spacing: 8) {
-                if filteredEntries.isEmpty {
-                    VStack(spacing: 12) {
-                        Image(systemName: "doc.text.magnifyingglass")
-                            .font(.system(size: 40))
-                            .foregroundStyle(.tertiary)
+                if entries.isEmpty {
+                    VStack(spacing: 14) {
+                        // ✅ Estado vacío con el acento de la app sobre un disco suave
+                        // (antes era un icono gris plano).
+                        ZStack {
+                            Circle()
+                                .fill(AppTheme.accentGradient(opacity: 0.1))
+                                .frame(width: 72, height: 72)
+
+                            Image(systemName: "doc.text.magnifyingglass")
+                                .font(.system(size: 28, weight: .medium))
+                                .foregroundStyle(AppTheme.accentGradient)
+                        }
 
                         Text("No hay logs que coincidan")
                             .font(.system(size: 16, weight: .semibold))
                             .foregroundStyle(.secondary)
+
+                        Text("Prueba con otra categoría o borra el filtro de búsqueda")
+                            .font(.system(size: 13))
+                            .foregroundStyle(.tertiary)
+                            .multilineTextAlignment(.center)
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 40)
                 } else {
-                    ForEach(filteredEntries) { entry in
+                    ForEach(entries) { entry in
                         logEntryRow(entry: entry)
                     }
                 }
@@ -347,8 +401,11 @@ struct LogsView: View {
 
             VStack(alignment: .leading, spacing: 6) {
                 // ✅ Mensaje expandible: 3 líneas por defecto, tap para desplegar
+                // ✅ Jerarquía: el mensaje sube a 14 (es el contenido a leer) y
+                // baja a regular; la metaduría (nivel, categoría, hora) sigue en
+                // 10-11 pt para que no compita con él.
                 Text(entry.message)
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.system(size: 14, weight: .regular))
                     .foregroundStyle(.primary)
                     .lineLimit(isExpanded ? nil : 3)
                     .contentShape(Rectangle())
@@ -428,8 +485,6 @@ struct LogsView: View {
     }
 
     private func formatDate(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "HH:mm:ss"
-        return formatter.string(from: date)
+        Self.timeFormatter.string(from: date)
     }
 }
