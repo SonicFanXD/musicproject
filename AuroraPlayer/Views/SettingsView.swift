@@ -24,7 +24,6 @@ struct SettingsView: View, SettingsRowBuilding {
     @AppStorage("com.aurora.showVisualizer") private var showVisualizer = true
     @AppStorage("com.aurora.enableHaptics") private var enableHaptics = true
     @AppStorage("com.aurora.keepScreenOn") private var keepScreenOn = false
-    @AppStorage("com.aurora.artworkCorner") private var artworkCorner: Double = 22
     @AppStorage("com.aurora.reduceTransparency") private var reduceTransparency = false
     @AppStorage("com.aurora.hapticIntensity") private var hapticIntensity: Double = 1.0
     @AppStorage("com.aurora.showLyricsByDefault") private var showLyricsByDefault = false
@@ -35,24 +34,11 @@ struct SettingsView: View, SettingsRowBuilding {
     @AppStorage("com.aurora.playerBarStyle") private var playerBarStyle = 0
     // ✅ PARTE C: ondas de la canción actual en las listas.
     @AppStorage("com.aurora.showPlayingIndicator") private var showPlayingIndicator = true
-    // ✅ PARTE C: tamaño de la portada en Now Playing (0 = pequeña, 1 = media, 2 = grande).
-    @AppStorage("com.aurora.nowPlayingArtSize") private var nowPlayingArtSize = 1
     // ✅ PARTE C: velocidad del auto-scroll de las letras (0 = lenta, 1 = normal, 2 = rápida).
     @AppStorage("com.aurora.lyricsScrollSpeed") private var lyricsScrollSpeed = 1
     // ✅ PARTE C: reducir movimiento (accesibilidad + batería).
     @AppStorage("com.aurora.reduceMotion") private var reduceMotion = false
-    @AppStorage("com.aurora.language") private var selectedLanguage = 0 // 0 = español, 1 = inglés
 
-    // ✅ LOCALIZADOS: computados para reaccionar al cambio de idioma al
-    // instante (antes eran `let` hardcodeados en español → el inglés no
-    // se aplicaba en los pickers de Tema, Color de acento e Idioma).
-    private var themes: [String] {
-        [
-            Localization.localized("settings.theme.system"),
-            Localization.localized("settings.theme.light"),
-            Localization.localized("settings.theme.dark")
-        ]
-    }
     /// ✅ ESTILO DE BARRA: etiquetas localizadas (se re-evalúan al cambiar de
     /// idioma, como Tema / Acento / Idioma).
     private var playerBarStyleLabels: [String] {
@@ -60,15 +46,6 @@ struct SettingsView: View, SettingsRowBuilding {
             Localization.localized("settings.playerBarStyle.glass"),
             Localization.localized("settings.playerBarStyle.solid"),
             Localization.localized("settings.playerBarStyle.compact")
-        ]
-    }
-
-    /// ✅ TAMAÑO DE PORTADA: etiquetas localizadas.
-    private var artSizeLabels: [String] {
-        [
-            Localization.localized("settings.artSize.small"),
-            Localization.localized("settings.artSize.medium"),
-            Localization.localized("settings.artSize.large")
         ]
     }
 
@@ -80,19 +57,6 @@ struct SettingsView: View, SettingsRowBuilding {
             Localization.localized("settings.lyricsSpeed.fast")
         ]
     }
-
-    private var accents: [String] {
-        [
-            Localization.localized("settings.accent.purple"),
-            Localization.localized("settings.accent.blue"),
-            Localization.localized("settings.accent.emerald"),
-            Localization.localized("settings.accent.pink"),
-            Localization.localized("settings.accent.amber"),
-            Localization.localized("settings.accent.black"),
-            Localization.localized("settings.accent.darkRed")
-        ]
-    }
-    private var languages: [String] { ["Español", "English"] }
 
     private let themeDefaultsKey = "com.aurora.uiTheme"
 
@@ -133,56 +97,10 @@ struct SettingsView: View, SettingsRowBuilding {
                         )
 
                         // Apariencia
-                        settingsSection(icon: "paintbrush.fill", title: Localization.localized("settings.appearance"), color: .pink) {
-                            settingsMenuButton(title: Localization.localized("settings.theme"), subtitle: themes[selectedThemeIndex], icon: "circle.lefthalf.filled", color: .gray, options: themes, selection: $selectedThemeIndex) { index in
-                                selectedThemeIndex = index
-                                UserDefaults.standard.set(index, forKey: themeDefaultsKey)
-                                AppLog.info(.settings, "Tema: \(themes[index])")
-                            }
-                            settingsDivider
-                            settingsMenuButton(title: Localization.localized("settings.accentColor"), subtitle: accents[theme.accentIndex], icon: "drop.fill", color: theme.accent, options: accents, selection: $theme.accentIndex) { index in
-                                theme.setAccent(index)
-                                AppLog.info(.settings, "Color de acento: \(accents[index])")
-                            }
-                            settingsDivider
-                            settingsSliderRow(title: Localization.localized("settings.artworkCorners"), value: $artworkCorner, range: 0...44, step: 2, color: .blue, suffix: "pt")
-                            settingsDivider
-                            settingsToggleRow(title: Localization.localized("settings.reduceTransparency"), subtitle: Localization.localized("settings.reduceTransparencySubtitle"), icon: "circle.slash", color: .gray, isOn: $reduceTransparency)
-                            settingsDivider
-                            // ✅ REDUCIR MOVIMIENTO: accesibilidad (sensibilidad al
-                            // movimiento) y, de paso, menos trabajo de GPU: splash sin
-                            // stagger ni bucle de halo, transiciones de letra sin
-                            // rebote y visualizador sin CADisplayLink.
-                            settingsToggleRow(
-                                title: Localization.localized("settings.reduceMotion"),
-                                subtitle: Localization.localized("settings.reduceMotionSubtitle"),
-                                icon: "figure.walk.motion",
-                                color: .orange,
-                                isOn: $reduceMotion
-                            )
-                            settingsDivider
-                            settingsMenuButton(title: Localization.localized("settings.language"), subtitle: languages[selectedLanguage], icon: "globe", color: .blue, options: languages, selection: $selectedLanguage) { index in
-                                selectedLanguage = index
-                                // ✅ Aplicar el idioma al instante en toda la app
-                                Localization.shared.currentLanguage = Localization.Language(rawValue: index) ?? .spanish
-                                AppLog.info(.settings, "Idioma: \(languages[index])")
-                            }
-                            settingsDivider
-                            // ✅ TAMAÑO DE PORTADA: mueve el tope y el factor de
-                            // altura, así que se ve distinto también en el 8 Plus.
-                            settingsMenuButton(
-                                title: Localization.localized("settings.nowPlayingArtSize"),
-                                subtitle: artSizeLabels[nowPlayingArtSize],
-                                icon: "photo",
-                                color: .teal,
-                                options: artSizeLabels,
-                                selection: $nowPlayingArtSize,
-                                onChange: { index in
-                                    nowPlayingArtSize = index
-                                    AppLog.info(.settings, "Tamaño de portada: \(artSizeLabels[index])")
-                                }
-                            )
-                        }
+                        AppearanceSettingsSection(
+                            selectedThemeIndex: $selectedThemeIndex,
+                            themeDefaultsKey: themeDefaultsKey
+                        )
 
                         // ✅ Acento de portada: control unificado para todo el entorno
                         // (NowPlaying, álbumes, artistas, PlayerBar, tint global UIKit).
@@ -748,6 +666,109 @@ extension SettingsRowBuilding {
 // su nombre en runtime → EXC_BAD_ACCESS en la stack guard. Con las secciones
 // fuera, ningún tipo individual pasa de un par de niveles de anidación.
 // El contenido es idéntico: solo cambia dónde vive.
+
+/// Apariencia: tema, acento, esquinas, transparencia, movimiento, idioma y
+/// tamaño de portada. Cada ajuste viaja con la sub-vista; el índice de tema
+/// sigue siendo `@State` del padre porque su valor inicial se resuelve en `init`.
+private struct AppearanceSettingsSection: View, SettingsRowBuilding {
+    @ObservedObject var theme = ThemeManager.shared
+    @ObservedObject var localization = Localization.shared
+    @Binding var selectedThemeIndex: Int
+    let themeDefaultsKey: String
+
+    @AppStorage("com.aurora.artworkCorner") private var artworkCorner: Double = 22
+    @AppStorage("com.aurora.reduceTransparency") private var reduceTransparency = false
+    @AppStorage("com.aurora.reduceMotion") private var reduceMotion = false
+    @AppStorage("com.aurora.language") private var selectedLanguage = 0 // 0 = español, 1 = inglés
+    // ✅ PARTE C: tamaño de la portada en Now Playing (0 = pequeña, 1 = media, 2 = grande).
+    @AppStorage("com.aurora.nowPlayingArtSize") private var nowPlayingArtSize = 1
+
+    // ✅ LOCALIZADOS: computados para reaccionar al cambio de idioma al
+    // instante (antes eran `let` hardcodeados en español → el inglés no
+    // se aplicaba en los pickers de Tema, Color de acento e Idioma).
+    private var themes: [String] {
+        [
+            Localization.localized("settings.theme.system"),
+            Localization.localized("settings.theme.light"),
+            Localization.localized("settings.theme.dark")
+        ]
+    }
+
+    /// ✅ TAMAÑO DE PORTADA: etiquetas localizadas.
+    private var artSizeLabels: [String] {
+        [
+            Localization.localized("settings.artSize.small"),
+            Localization.localized("settings.artSize.medium"),
+            Localization.localized("settings.artSize.large")
+        ]
+    }
+
+    private var accents: [String] {
+        [
+            Localization.localized("settings.accent.purple"),
+            Localization.localized("settings.accent.blue"),
+            Localization.localized("settings.accent.emerald"),
+            Localization.localized("settings.accent.pink"),
+            Localization.localized("settings.accent.amber"),
+            Localization.localized("settings.accent.black"),
+            Localization.localized("settings.accent.darkRed")
+        ]
+    }
+    private var languages: [String] { ["Español", "English"] }
+
+    var body: some View {
+        settingsSection(icon: "paintbrush.fill", title: Localization.localized("settings.appearance"), color: .pink) {
+            settingsMenuButton(title: Localization.localized("settings.theme"), subtitle: themes[selectedThemeIndex], icon: "circle.lefthalf.filled", color: .gray, options: themes, selection: $selectedThemeIndex) { index in
+                selectedThemeIndex = index
+                UserDefaults.standard.set(index, forKey: themeDefaultsKey)
+                AppLog.info(.settings, "Tema: \(themes[index])")
+            }
+            settingsDivider
+            settingsMenuButton(title: Localization.localized("settings.accentColor"), subtitle: accents[theme.accentIndex], icon: "drop.fill", color: theme.accent, options: accents, selection: $theme.accentIndex) { index in
+                theme.setAccent(index)
+                AppLog.info(.settings, "Color de acento: \(accents[index])")
+            }
+            settingsDivider
+            settingsSliderRow(title: Localization.localized("settings.artworkCorners"), value: $artworkCorner, range: 0...44, step: 2, color: .blue, suffix: "pt")
+            settingsDivider
+            settingsToggleRow(title: Localization.localized("settings.reduceTransparency"), subtitle: Localization.localized("settings.reduceTransparencySubtitle"), icon: "circle.slash", color: .gray, isOn: $reduceTransparency)
+            settingsDivider
+            // ✅ REDUCIR MOVIMIENTO: accesibilidad (sensibilidad al
+            // movimiento) y, de paso, menos trabajo de GPU: splash sin
+            // stagger ni bucle de halo, transiciones de letra sin
+            // rebote y visualizador sin CADisplayLink.
+            settingsToggleRow(
+                title: Localization.localized("settings.reduceMotion"),
+                subtitle: Localization.localized("settings.reduceMotionSubtitle"),
+                icon: "figure.walk.motion",
+                color: .orange,
+                isOn: $reduceMotion
+            )
+            settingsDivider
+            settingsMenuButton(title: Localization.localized("settings.language"), subtitle: languages[selectedLanguage], icon: "globe", color: .blue, options: languages, selection: $selectedLanguage) { index in
+                selectedLanguage = index
+                // ✅ Aplicar el idioma al instante en toda la app
+                Localization.shared.currentLanguage = Localization.Language(rawValue: index) ?? .spanish
+                AppLog.info(.settings, "Idioma: \(languages[index])")
+            }
+            settingsDivider
+            // ✅ TAMAÑO DE PORTADA: mueve el tope y el factor de
+            // altura, así que se ve distinto también en el 8 Plus.
+            settingsMenuButton(
+                title: Localization.localized("settings.nowPlayingArtSize"),
+                subtitle: artSizeLabels[nowPlayingArtSize],
+                icon: "photo",
+                color: .teal,
+                options: artSizeLabels,
+                selection: $nowPlayingArtSize,
+                onChange: { index in
+                    nowPlayingArtSize = index
+                    AppLog.info(.settings, "Tamaño de portada: \(artSizeLabels[index])")
+                }
+            )
+        }
+    }
+}
 
 /// Biblioteca: alta de carpetas/archivos, listas con eliminar y re-escaneo.
 /// ⚠️ Extraída del `body` padre: es la sección con más anidación real (dos
