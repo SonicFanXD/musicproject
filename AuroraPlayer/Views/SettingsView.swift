@@ -42,7 +42,6 @@ struct SettingsView: View, SettingsRowBuilding {
     // ✅ PARTE C: reducir movimiento (accesibilidad + batería).
     @AppStorage("com.aurora.reduceMotion") private var reduceMotion = false
     @AppStorage("com.aurora.language") private var selectedLanguage = 0 // 0 = español, 1 = inglés
-    @AppStorage("com.aurora.scanOnlyNewSongs") private var scanOnlyNewSongs = true
 
     // ✅ LOCALIZADOS: computados para reaccionar al cambio de idioma al
     // instante (antes eran `let` hardcodeados en español → el inglés no
@@ -121,126 +120,11 @@ struct SettingsView: View, SettingsRowBuilding {
                         headerSection
 
                         // Biblioteca (gestión embebida: sin pantalla aparte)
-                        settingsSection(icon: "folder.fill", title: Localization.localized("settings.library"), color: .blue) {
-                            settingsButton(title: Localization.localized("settings.addFolder"), subtitle: Localization.localized("settings.addFolderSubtitle"), icon: "folder.badge.plus", color: .blue) {
-                                importMode = .folders
-                                showImporter = true
-                            }
-                            settingsDivider
-                            settingsButton(title: Localization.localized("settings.addFiles"), subtitle: Localization.localized("settings.addFilesSubtitle"), icon: "music.note.badge.plus", color: .purple) {
-                                importMode = .files
-                                showImporter = true
-                            }
-                            settingsDivider
-                            settingsToggleRow(
-                                title: Localization.localized("settings.scanOnlyNewSongs"),
-                                subtitle: Localization.localized("settings.scanOnlyNewSongsSubtitle"),
-                                icon: "magnifyingglass",
-                                color: .teal,
-                                isOn: $scanOnlyNewSongs
-                            )
-
-                            // ✅ Carpetas añadidas (lista embebida con eliminar)
-                            if !fileAccessService.folders.isEmpty {
-                                settingsDivider
-                                ForEach(fileAccessService.folders) { folder in
-                                    HStack(spacing: 14) {
-                                        iconView(icon: "folder.fill", color: .blue)
-                                        VStack(alignment: .leading, spacing: 2) {
-                                            Text(folder.displayName)
-                                                .font(.system(size: 15, weight: .medium))
-                                                .foregroundStyle(.primary)
-                                                .lineLimit(1)
-                                            Text(Localization.localized("settings.folderAdded"))
-                                                .font(.system(size: 12))
-                                                .foregroundStyle(.secondary)
-                                        }
-                                        Spacer()
-                                        Button(role: .destructive) {
-                                            fileAccessService.removeFolder(folder)
-                                        } label: {
-                                            Image(systemName: "trash.fill")
-                                                .font(.system(size: 14, weight: .semibold))
-                                                .foregroundStyle(.red)
-                                                .frame(width: 44, height: 44)
-                                                .contentShape(Rectangle())
-                                        }
-                                        .buttonStyle(.plain)
-                                    }
-                                    .padding(.horizontal, 16).padding(.vertical, 10)
-                                    .contentShape(Rectangle())
-                                }
-                            }
-
-                            // ✅ Archivos individuales añadidos (lista embebida)
-                            if !fileAccessService.files.isEmpty {
-                                settingsDivider
-                                ForEach(fileAccessService.files) { file in
-                                    HStack(spacing: 14) {
-                                        iconView(icon: "music.note", color: .purple)
-                                        VStack(alignment: .leading, spacing: 2) {
-                                            Text(file.displayName)
-                                                .font(.system(size: 15, weight: .medium))
-                                                .foregroundStyle(.primary)
-                                                .lineLimit(1)
-                                            Text(Localization.localized("settings.fileAdded"))
-                                                .font(.system(size: 12))
-                                                .foregroundStyle(.secondary)
-                                        }
-                                        Spacer()
-                                        Button(role: .destructive) {
-                                            fileAccessService.removeFile(file)
-                                        } label: {
-                                            Image(systemName: "trash.fill")
-                                                .font(.system(size: 14, weight: .semibold))
-                                                .foregroundStyle(.red)
-                                                .frame(width: 44, height: 44)
-                                                .contentShape(Rectangle())
-                                        }
-                                        .buttonStyle(.plain)
-                                    }
-                                    .padding(.horizontal, 16).padding(.vertical, 10)
-                                    .contentShape(Rectangle())
-                                }
-                            }
-
-                            if fileAccessService.folders.isEmpty && fileAccessService.files.isEmpty {
-                                settingsDivider
-                                VStack(spacing: 6) {
-                                    Text(Localization.localized("settings.emptyLibraryTitle"))
-                                        .font(.system(size: 14, weight: .semibold))
-                                        .foregroundStyle(.primary)
-                                    Text(Localization.localized("settings.emptyLibrarySubtitle"))
-                                        .font(.system(size: 12))
-                                        .foregroundStyle(.secondary)
-                                }
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 14)
-                            }
-
-                            settingsDivider
-                            settingsButton(title: Localization.localized("settings.updateLibrary"), subtitle: fileAccessService.isScanning ? Localization.localized("settings.scanning") : Localization.localized("settings.rescanFolders"), icon: "arrow.clockwise", color: .orange) {
-                                if scanOnlyNewSongs {
-                                    fileAccessService.scanForNewSongsOnly()
-                                } else {
-                                    fileAccessService.refreshAllFolders()
-                                }
-                            }
-                            .disabled(fileAccessService.isScanning)
-
-                            if fileAccessService.isScanning {
-                                HStack(spacing: 10) {
-                                    ProgressView()
-                                        .progressViewStyle(CircularProgressViewStyle(tint: AppTheme.accent))
-                                    Text(Localization.localized("settings.scanning"))
-                                        .font(.system(size: 13))
-                                        .foregroundStyle(.secondary)
-                                    Spacer()
-                                }
-                                .padding(.horizontal, 16).padding(.vertical, 10)
-                            }
-                        }
-                        .onChange(of: scanOnlyNewSongs) { v in AppLog.info(.settings, "Escaneo solo nuevas: \(v ? "activado" : "desactivado")") }
+                        LibrarySettingsSection(
+                            fileAccessService: fileAccessService,
+                            onAddFolder: { importMode = .folders; showImporter = true },
+                            onAddFiles: { importMode = .files; showImporter = true }
+                        )
 
                         // Audio
                         AudioSettingsSection(
@@ -864,6 +748,140 @@ extension SettingsRowBuilding {
 // su nombre en runtime → EXC_BAD_ACCESS en la stack guard. Con las secciones
 // fuera, ningún tipo individual pasa de un par de niveles de anidación.
 // El contenido es idéntico: solo cambia dónde vive.
+
+/// Biblioteca: alta de carpetas/archivos, listas con eliminar y re-escaneo.
+/// ⚠️ Extraída del `body` padre: es la sección con más anidación real (dos
+/// `ForEach` con `Button` dentro de `HStack` dentro de `VStack`).
+private struct LibrarySettingsSection: View, SettingsRowBuilding {
+    @ObservedObject var fileAccessService: FileAccessService
+    @ObservedObject var localization = Localization.shared
+    /// El importador (`fileImporter`, tipos permitidos y resultado) vive en el
+    /// padre: la sección solo pide que se abra en modo carpetas o en modo archivos.
+    let onAddFolder: () -> Void
+    let onAddFiles: () -> Void
+    @AppStorage("com.aurora.scanOnlyNewSongs") private var scanOnlyNewSongs = true
+
+    var body: some View {
+        settingsSection(icon: "folder.fill", title: Localization.localized("settings.library"), color: .blue) {
+            settingsButton(title: Localization.localized("settings.addFolder"), subtitle: Localization.localized("settings.addFolderSubtitle"), icon: "folder.badge.plus", color: .blue) {
+                onAddFolder()
+            }
+            settingsDivider
+            settingsButton(title: Localization.localized("settings.addFiles"), subtitle: Localization.localized("settings.addFilesSubtitle"), icon: "music.note.badge.plus", color: .purple) {
+                onAddFiles()
+            }
+            settingsDivider
+            settingsToggleRow(
+                title: Localization.localized("settings.scanOnlyNewSongs"),
+                subtitle: Localization.localized("settings.scanOnlyNewSongsSubtitle"),
+                icon: "magnifyingglass",
+                color: .teal,
+                isOn: $scanOnlyNewSongs
+            )
+
+            // ✅ Carpetas añadidas (lista embebida con eliminar)
+            if !fileAccessService.folders.isEmpty {
+                settingsDivider
+                ForEach(fileAccessService.folders) { folder in
+                    HStack(spacing: 14) {
+                        iconView(icon: "folder.fill", color: .blue)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(folder.displayName)
+                                .font(.system(size: 15, weight: .medium))
+                                .foregroundStyle(.primary)
+                                .lineLimit(1)
+                            Text(Localization.localized("settings.folderAdded"))
+                                .font(.system(size: 12))
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Button(role: .destructive) {
+                            fileAccessService.removeFolder(folder)
+                        } label: {
+                            Image(systemName: "trash.fill")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(.red)
+                                .frame(width: 44, height: 44)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(.horizontal, 16).padding(.vertical, 10)
+                    .contentShape(Rectangle())
+                }
+            }
+
+            // ✅ Archivos individuales añadidos (lista embebida)
+            if !fileAccessService.files.isEmpty {
+                settingsDivider
+                ForEach(fileAccessService.files) { file in
+                    HStack(spacing: 14) {
+                        iconView(icon: "music.note", color: .purple)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(file.displayName)
+                                .font(.system(size: 15, weight: .medium))
+                                .foregroundStyle(.primary)
+                                .lineLimit(1)
+                            Text(Localization.localized("settings.fileAdded"))
+                                .font(.system(size: 12))
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Button(role: .destructive) {
+                            fileAccessService.removeFile(file)
+                        } label: {
+                            Image(systemName: "trash.fill")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(.red)
+                                .frame(width: 44, height: 44)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(.horizontal, 16).padding(.vertical, 10)
+                    .contentShape(Rectangle())
+                }
+            }
+
+            if fileAccessService.folders.isEmpty && fileAccessService.files.isEmpty {
+                settingsDivider
+                VStack(spacing: 6) {
+                    Text(Localization.localized("settings.emptyLibraryTitle"))
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(.primary)
+                    Text(Localization.localized("settings.emptyLibrarySubtitle"))
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+            }
+
+            settingsDivider
+            settingsButton(title: Localization.localized("settings.updateLibrary"), subtitle: fileAccessService.isScanning ? Localization.localized("settings.scanning") : Localization.localized("settings.rescanFolders"), icon: "arrow.clockwise", color: .orange) {
+                if scanOnlyNewSongs {
+                    fileAccessService.scanForNewSongsOnly()
+                } else {
+                    fileAccessService.refreshAllFolders()
+                }
+            }
+            .disabled(fileAccessService.isScanning)
+
+            if fileAccessService.isScanning {
+                HStack(spacing: 10) {
+                    ProgressView()
+                        .progressViewStyle(CircularProgressViewStyle(tint: AppTheme.accent))
+                    Text(Localization.localized("settings.scanning"))
+                        .font(.system(size: 13))
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                }
+                .padding(.horizontal, 16).padding(.vertical, 10)
+            }
+        }
+        .onChange(of: scanOnlyNewSongs) { v in AppLog.info(.settings, "Escaneo solo nuevas: \(v ? "activado" : "desactivado")") }
+    }
+}
 
 /// Audio: ecualizador, modo de sesión, buffer de E/S, mono y limiter.
 /// ⚠️ Extraída del `body` padre: era la sección más anidada (dos pickers con
