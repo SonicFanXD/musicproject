@@ -156,17 +156,17 @@ struct LyricsView: View {
         .padding(.horizontal, 24)
     }
 
-    /// ✅ Scroll centrado y suave (0.25s easeInOut, el estándar de Apple Music)
-    /// al cambiar de línea activa. Cuanto más corto es el solape entre la
-    /// animación del scroll y el wipe a 60 fps de la línea entrante, menos
-    /// tirones se ven en la transición.
+    /// ✅ Scroll centrado y natural (spring 0.35s, damping 0.85, el tacto de
+    /// Apple Music) al cambiar de línea activa. Cuanto más corto es el solape
+    /// entre la animación del scroll y el wipe a 60 fps de la línea entrante,
+    /// menos tirones se ven en la transición.
     /// ✅ El PRIMER centrado (entrada / cambio de canción) va sin animación: el
     /// usuario no ve la letra "llegar" desde la primera línea.
     private func scrollToActiveLine(_ request: ScrollRequest?, proxy: ScrollViewProxy) {
         guard let request else { return }
 
         if hasDoneInitialScroll {
-            withAnimation(.easeInOut(duration: 0.25)) {
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
                 proxy.scrollTo(request.lineID, anchor: .center)
             }
         } else {
@@ -307,15 +307,35 @@ private struct LyricLineView: View, Equatable {
         Group {
             if isActive {
                 activeLine
+                    // ✅ Al ganar el foco, la capa brillante entra con el spring
+                    // de la línea; al perderlo se funde hacia la capa atenuada
+                    // (0.2s easeInOut) en vez de cambiar de golpe.
+                    .transition(.asymmetric(
+                        insertion: .opacity.animation(lineActivation),
+                        removal: .opacity.animation(.easeInOut(duration: 0.2))
+                    ))
             } else {
                 dimmedRows
+                    // ✅ Profundidad MUY sutil (0.5pt), y SOLO en las líneas
+                    // inactivas: la activa es la que pide frames a 60 Hz y no
+                    // debe pagar ninguna pasada de blur. Si en el iPhone 8 Plus
+                    // no convence, basta con borrar esta línea.
+                    .blur(radius: 0.5)
+                    .transition(.opacity)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 12)
-        // ✅ "Pop" de escala al cambiar de línea activa
-        .scaleEffect(isActive ? 1.0 : 0.985)
-        .animation(.spring(response: 0.4, dampingFraction: 0.7), value: isActive)
+        // ✅ "Pop" premium al cambiar de línea: las inactivas "respiran" algo
+        // más pequeñas (0.96) y la activa recupera la escala completa.
+        .scaleEffect(isActive ? 1.0 : 0.96)
+        .animation(lineActivation, value: isActive)
+    }
+
+    /// ✅ Spring del cambio de línea (activación de la capa brillante y pop de
+    /// escala). El wipe a 60 fps NO lo usa: el TimelineView interpola por frame.
+    private var lineActivation: Animation {
+        .spring(response: 0.4, dampingFraction: 0.75)
     }
 
     // MARK: Línea activa (relleno animado, fila a fila)
