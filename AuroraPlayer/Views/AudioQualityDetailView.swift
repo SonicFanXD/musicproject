@@ -392,7 +392,10 @@ struct AudioQualityDetailView: View {
     private var outputDetailsSection: some View {
         settingsSection(title: Localization.localized("quality.outputDetails"), icon: "hifispeaker") {
             detailRow(Localization.localized("quality.route"), audioEngine.routeDisplay)
-            detailRow(Localization.localized("quality.outputFrequency"), audioEngine.outputSampleRate > 0 ? "\(Int(audioEngine.outputSampleRate)) Hz" : "—")
+            // ✅ Misma unidad que el resto de la app (khzLabel ya evita el "44 kHz"
+            // truncado): antes aquí se veía "44100 Hz" mientras la fila de
+            // resolución mostraba "44.1 kHz".
+            detailRow(Localization.localized("quality.outputFrequency"), audioEngine.outputSampleRate > 0 ? AlbumDetailView.khzLabel(audioEngine.outputSampleRate) : "—")
             detailRow(Localization.localized("quality.outputChannels"), audioEngine.outputChannelCount > 0 ? audioEngine.outputChannelCount.description : "—")
             detailRow(Localization.localized("quality.routeType"), outputTypeLabel)
         }
@@ -409,17 +412,13 @@ struct AudioQualityDetailView: View {
             // ✅ Nota: explica POR QUÉ el indicador puede estar apagado (antes no
             // había ninguna pista y parecía un fallo de la app).
             if !audioEngine.isBitPerfect {
-                detailRow("ℹ️", Localization.localized("quality.bitPerfectHint"))
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
+                hintRow(Localization.localized("quality.bitPerfectHint"))
             }
             
             // ✅ AUDIÓFILO: Codec Bluetooth (si aplica)
             if !audioEngine.bluetoothCodec.isEmpty {
                 detailRow(Localization.localized("quality.bluetoothCodec"), audioEngine.bluetoothCodec)
-                detailRow("ℹ️", Localization.localized("quality.iosBluetoothLimit"))
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
+                hintRow(Localization.localized("quality.iosBluetoothLimit"))
             }
             
             // ✅ AUDIÓFILO: DAC USB (si aplica)
@@ -448,7 +447,15 @@ struct AudioQualityDetailView: View {
         let ext = song.url.pathExtension.uppercased()
         switch ext {
         case "FLAC": return Localization.localized("format.flac")
-        case "ALAC", "M4A": return Localization.localized("format.alac")
+        // ✅ .m4a es un CONTENEDOR: puede llevar ALAC o AAC. Antes se etiquetaba
+        // SIEMPRE como ALAC, así que un AAC dentro de .m4a aparecía como ALAC (un
+        // dato falso en la vista que existe justo para informar de esto). La
+        // descripción del formato, leída del archivo, sí trae el códec real.
+        case "ALAC": return Localization.localized("format.alac")
+        case "M4A", "MP4":
+            return song.formatDescription.localizedCaseInsensitiveContains("alac")
+                ? Localization.localized("format.alac")
+                : Localization.localized("format.aac")
         case "MP3": return Localization.localized("format.mp3")
         case "WAV", "WAVE": return Localization.localized("format.wav")
         case "AIFF", "AIF": return Localization.localized("format.aiff")
@@ -573,6 +580,9 @@ struct AudioQualityDetailView: View {
                 .foregroundStyle(isHighlighted ? AppTheme.accent : .primary)
                 .multilineTextAlignment(.trailing)
                 .lineLimit(2)
+                // ✅ En 375pt un valor largo se recortaba en la segunda línea sin
+                // escalar (p. ej. el detalle de la cadena con preset + "10 bandas").
+                .minimumScaleFactor(0.85)
         }
         .padding(.horizontal, 18).padding(.vertical, 14)
         .background(
@@ -583,6 +593,29 @@ struct AudioQualityDetailView: View {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .strokeBorder(isHighlighted ? AppTheme.accent.opacity(0.3) : Color.clear, lineWidth: 1)
         )
+    }
+
+    /// ✅ Nota informativa al pie de una sección, a tamaño reducido.
+    /// Antes se intentaba con `.font(...)` / `.foregroundStyle(...)` aplicados
+    /// SOBRE `detailRow`, pero esos modificadores no llegan a los `Text` de
+    /// dentro (cada uno fija su propia tipografía) → el aviso se veía igual que
+    /// un dato más, con el icono "ℹ️" como si fuera una etiqueta.
+    @ViewBuilder
+    private func hintRow(_ text: String) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "info.circle")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.secondary)
+
+            Text(text)
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 10)
     }
 
     // MARK: - Section Builder (optimizado para 60fps)
