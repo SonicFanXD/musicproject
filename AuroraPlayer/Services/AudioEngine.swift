@@ -1529,8 +1529,16 @@ class AudioEngine: NSObject, ObservableObject {
     }
 
     /// Identidad del formato conectado al graph (sample rate + canales + EQ)
+    /// ✅ Identidad del FORMATO de stream, no del grafo. El EQ queda fuera a
+    /// propósito: `equalizerNode` se crea UNA vez en `setupEqualizer()` y nunca
+    /// vuelve a nil — encender o apagar el ecualizador solo cambia `bypass`, que
+    /// no altera el formato de las muestras (el nodo procesa, no remuestrea).
+    /// Incluirlo era un componente constante que solo podía descartar el
+    /// encadenado por un motivo falso: la decisión de procesar es del EQ, no del
+    /// formato, y quien reconstruye el grafo de verdad es `reconnectPlayerNode`
+    /// (que consulta `equalizerNode` directamente para insertarlo o no).
     private func formatKey(_ format: AVAudioFormat) -> String {
-        "\(format.sampleRate)-\(format.channelCount)-\(equalizerNode != nil)"
+        "\(format.sampleRate)-\(format.channelCount)"
     }
 
     // MARK: - Controles básicos y otros métodos requeridos
