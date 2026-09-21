@@ -17,6 +17,11 @@ struct TTMLParser {
     /// visuales de un verso se fundían en una sola línea que envolvía por
     /// anchura → el relleno progresivo iluminaba ambas filas en paralelo.
     static let hardBreak: Character = "\u{0000}"
+    /// ✅ Marca INTERNA de "línea todavía sin tiempo conocido": un `<p>` puede
+    /// venir sin `begin` (Apple Music a veces lo omite y deja el tiempo solo en
+    /// los `<span>`). Sin esta marca la línea nacía en 0 ms y su relleno
+    /// arrancaba con la canción, muchísimo antes de sonar.
+    static let unknownBeginMs = -1
 
     // MARK: - Entrada
     /// Devuelve las líneas si `text` es un TTML válido; nil en cualquier otro caso.
@@ -143,7 +148,8 @@ struct TTMLParser {
 
         private var isInsideLine = false
         private var isInsideWord = false
-        private var lineBeginMs = 0
+        /// `unknownBeginMs` mientras no se conozca el inicio real de la línea.
+        private var lineBeginMs = TTMLParser.unknownBeginMs
         private var lineEndMs: Int?
         private var lineText = ""
         private var lineWords: [Word] = []
@@ -169,7 +175,9 @@ struct TTMLParser {
             switch localName(elementName, qualifiedName: qName) {
             case "p":
                 isInsideLine = true
-                lineBeginMs = TTMLParser.milliseconds(attributeDict["begin"]) ?? 0
+                // ✅ Sin `begin` queda como desconocido y lo resuelve el primer
+                // `<span>` que sí lo traiga (ver `span` más abajo).
+                lineBeginMs = TTMLParser.milliseconds(attributeDict["begin"]) ?? TTMLParser.unknownBeginMs
                 lineEndMs = TTMLParser.milliseconds(attributeDict["end"])
                 lineText = ""
                 lineWords = []
@@ -177,7 +185,14 @@ struct TTMLParser {
             case "span":
                 guard isInsideLine else { return }
                 isInsideWord = true
-                wordBeginMs = TTMLParser.milliseconds(attributeDict["begin"]) ?? lineBeginMs
+                let spanBeginMs = TTMLParser.milliseconds(attributeDict["begin"])
+                // ✅ #10 — Un `<p>` sin `begin` hereda el de su primera palabra
+                // (la primera que lo traiga): la línea empieza a iluminarse
+                // cuando suena su primer span, no cuando suena la canción.
+                if lineBeginMs == TTMLParser.unknownBeginMs, let spanBeginMs {
+                    lineBeginMs = spanBeginMs
+                }
+                wordBeginMs = spanBeginMs ?? max(lineBeginMs, 0)
                 wordEndMs = TTMLParser.milliseconds(attributeDict["end"])
                 wordText = ""
                 wordRowIndex = lineRowIndex
@@ -252,7 +267,9 @@ struct TTMLParser {
             isInsideLine = false
             let text = TTMLParser.normalizedRows(lineText)
             if !text.isEmpty {
-                entries.append(Line(beginMs: lineBeginMs, endMs: lineEndMs, text: text, words: lineWords))
+                // ✅ Caso extremo: `<p>` sin `begin` y sin ningún `<span>` con
+                // tiempo → 0 ms (comportamiento anterior), nunca un inicio negativo.
+                entries.append(Line(beginMs: max(lineBeginMs, 0), endMs: lineEndMs, text: text, words: lineWords))
             }
             lineText = ""
             lineWords = []
@@ -320,6 +337,26 @@ extension TTMLParser {
         assert(rows.visualRows[1].startMs == 4000 && rows.visualRows[1].endMs == 5000, "TTML Test 2b falló: ventana de la fila 2")
         assert(rows.visualRows[0].endMs <= rows.visualRows[1].startMs, "TTML Test 2b falló: filas solapadas")
         print("✅ TTML Test 2b (filas visuales por <br/>) passed")
+
+        // ✅ Test 2c (#10): `<p>` SIN `begin` → hereda el de su primer `<span>`,
+        // así la línea no nace en 0 ms ni se ilumina antes de sonar.
+        let noBegin = """
+        <tt xmlns="http://www.w3.org/ns/ttml"><body><div>
+        <p end="00:00:07.000">
+          <span begin="00:00:06.000" end="00:00:06.500">Tarde</span>
+          <span begin="00:00:06.500" end="00:00:07.000">pero a tiempo</span>
+        </p>
+        </div></body></tt>
+        """
+        guard let lateLine = parse(noBegin)?.first else {
+            assertionFailure("TTML Test 2c falló: no se parseó la línea")
+            return
+        }
+        assert(lateLine.startMs == 6000, "TTML Test 2c falló: begin heredado incorrecto")
+        assert(lateLine.endMs == 7000, "TTML Test 2c falló: end explícito perdido")
+        assert(lateLine.words.count == 2, "TTML Test 2c falló: Expected 2 word tokens")
+        assert(lateLine.words[0].startMs == 6000, "TTML Test 2c falló: primera palabra mal fechada")
+        print("✅ TTML Test 2c (línea sin begin) passed")
 
         assert(milliseconds("00:00:12.500") == 12_500, "TTML Test 3 falló: Clock time")
         assert(milliseconds("01:02:03") == 3_723_000, "TTML Test 3 falló: Clock time con horas")
