@@ -10,10 +10,7 @@ struct FolderPickerView: View {
     @State private var showImporter = false
     @State private var importMode: ImportMode = .both
     @State private var appearAnimation = false
-    // ✅ Secciones COLAPSABLES: con la hoja a media altura, las listas de carpetas
-    // y archivos abiertas empujaban las acciones fuera de la vista.
-    @State private var showFolders = false
-    @State private var showFiles = false
+    @State private var headerPulse = false
 
     enum ImportMode {
         case folders
@@ -27,7 +24,7 @@ struct FolderPickerView: View {
                 AppBackground()
 
                 ScrollView {
-                    VStack(spacing: 16) {
+                    VStack(spacing: 20) {
                         headerSection
 
                         actionButtons
@@ -40,7 +37,6 @@ struct FolderPickerView: View {
                     }
                     .padding(.horizontal, 18)
                     .padding(.top, 8)
-                    .padding(.bottom, 24)
                 }
                 .scrollIndicators(.hidden)
             }
@@ -73,26 +69,30 @@ struct FolderPickerView: View {
             }
             .onAppear {
                 withAnimation(.easeOut(duration: 0.5)) { appearAnimation = true }
+                // ✅ El anillo empieza a latir DESPUÉS de la entrada (0,25 s) para que
+                // el pulso no compita con la escala de aparición del icono.
+                withAnimation(.easeInOut(duration: 1.5).repeatForever(autoreverses: true).delay(0.25)) {
+                    headerPulse = true
+                }
             }
         }
     }
 
-    // MARK: - Header Section (compacto)
-    // ✅ Antes medía ~280pt: anillo de 88pt con latido `repeatForever` + disco de
-    // 76pt + icono de 32pt + título de 24pt, en una pantalla que existe para
-    // añadir una carpeta. Ahora es la mitad y el anillo es ESTÁTICO: el latido
-    // pedía frames de forma indefinida (también en segundo plano, justo lo que
-    // no debe pasar) y competía con la animación de entrada.
+    // MARK: - Header Section con animación
+
     private var headerSection: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 16) {
             ZStack {
+                // ✅ Anillo pulsante con material de vidrio (estilo NowPlayingView)
                 Circle()
-                    .stroke(AppTheme.accentGradient(opacity: 0.4), lineWidth: 1.5)
-                    .frame(width: 64, height: 64)
+                    .stroke(AppTheme.accentGradient(opacity: 0.45), lineWidth: 2)
+                    .frame(width: 88, height: 88)
+                    .scaleEffect(headerPulse ? 1.12 : 0.95)
+                    .opacity(headerPulse ? 0.6 : 0.25)
 
                 Circle()
                     .fill(AnyShapeStyle(.ultraThinMaterial))
-                    .frame(width: 56, height: 56)
+                    .frame(width: 76, height: 76)
                     .overlay {
                         Circle()
                             .stroke(
@@ -100,361 +100,351 @@ struct FolderPickerView: View {
                                     colors: [AppTheme.accent.opacity(0.3), .clear],
                                     startPoint: .topLeading, endPoint: .bottomTrailing
                                 ),
-                                lineWidth: 1.2
+                                lineWidth: 1.5
                             )
                     }
 
                 Image(systemName: "music.note.list")
-                    .font(.system(size: 24, weight: .semibold))
+                    .font(.system(size: 32, weight: .semibold))
                     .foregroundStyle(AppTheme.accentGradient)
             }
             .opacity(appearAnimation ? 1 : 0)
             .scaleEffect(appearAnimation ? 1 : 0.7)
 
-            VStack(spacing: 4) {
+            VStack(spacing: 8) {
                 Text(Localization.localized("library.title"))
-                    .font(.system(size: 20, weight: .bold, design: .rounded))
+                    .font(.system(size: 24, weight: .bold, design: .rounded))
                     .foregroundStyle(.primary)
 
                 Text(Localization.localized("library.subtitle"))
-                    .font(.system(size: 13))
+                    .font(.system(size: 15))
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
-                    .lineLimit(2)
             }
             .opacity(appearAnimation ? 1 : 0)
             .offset(y: appearAnimation ? 0 : 10)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 14)
+        .padding(.vertical, 20)
         .background {
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
                 .fill(AnyShapeStyle(.ultraThinMaterial))
                 .shadow(color: .black.opacity(0.06), radius: 12, y: 5)
         }
         .animation(.easeOut(duration: 0.5).delay(0.1), value: appearAnimation)
     }
 
-    // MARK: - Action Buttons (densos)
-    /// ✅ Las tres acciones estaban escritas a mano con el MISMO bloque de ~45
-    /// líneas cada una (y con 16pt de padding vertical: botones gigantes en una
-    /// hoja que ahora abre a media altura). Ahora hay una sola fila reutilizable.
+    // MARK: - Action Buttons
+
     private var actionButtons: some View {
-        VStack(spacing: 10) {
-            actionRow(
-                icon: "folder.fill",
-                title: Localization.localized("folders.addFolder"),
-                subtitle: Localization.localized("folders.addFolderSubtitle"),
-                isAccent: true
-            ) {
+        VStack(spacing: 12) {
+            Button {
                 importMode = .folders
                 showImporter = true
-            }
+            } label: {
+                HStack {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(AppTheme.accentGradient(opacity: 0.12))
+                            .frame(width: 44, height: 44)
 
-            actionRow(
-                icon: "music.note",
-                title: Localization.localized("folders.addFiles"),
-                subtitle: Localization.localized("folders.addFilesSubtitle"),
-                isAccent: true
-            ) {
+                        Image(systemName: "folder.fill")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundStyle(AppTheme.accentGradient)
+                    }
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(Localization.localized("folders.addFolder"))
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.primary)
+
+                        Text(Localization.localized("folders.addFolderSubtitle"))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Spacer()
+
+                    Image(systemName: "chevron.right")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 16) // Expanded touch target
+                .background {
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(.ultraThinMaterial)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            Button {
                 importMode = .files
                 showImporter = true
-            }
+            } label: {
+                HStack {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(AppTheme.accentGradient(opacity: 0.12))
+                            .frame(width: 44, height: 44)
 
-            actionRow(
-                icon: "arrow.clockwise",
-                title: Localization.localized("folders.refresh"),
-                subtitle: Localization.localized("folders.refreshSubtitle"),
-                isAccent: false
-            ) {
-                fileAccessService.refreshAllFolders()
+                        Image(systemName: "music.note")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundStyle(AppTheme.accentGradient)
+                    }
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(Localization.localized("folders.addFiles"))
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.primary)
+
+                        Text(Localization.localized("folders.addFilesSubtitle"))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Spacer()
+
+                    Image(systemName: "chevron.right")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 16) // Expanded touch target
+                .background {
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(.ultraThinMaterial)
+                }
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+
+            Button {
+                fileAccessService.refreshAllFolders()
+            } label: {
+                HStack {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(Color.orange.opacity(0.12))
+                            .frame(width: 44, height: 44)
+
+                        Image(systemName: "arrow.clockwise")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundStyle(Color.orange)
+                    }
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(Localization.localized("folders.refresh"))
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.primary)
+
+                        Text(Localization.localized("folders.refreshSubtitle"))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Spacer()
+
+                    Image(systemName: "chevron.right")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 16) // Expanded touch target
+                .background {
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(.ultraThinMaterial)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
             .disabled(fileAccessService.isScanning)
         }
-    }
-
-    @ViewBuilder
-    private func actionRow(
-        icon: String,
-        title: String,
-        subtitle: String,
-        isAccent: Bool,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            HStack(spacing: 12) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(
-                            isAccent
-                                ? AnyShapeStyle(AppTheme.accentGradient(opacity: 0.12))
-                                : AnyShapeStyle(Color.orange.opacity(0.12))
-                        )
-                        .frame(width: 36, height: 36)
-
-                    Image(systemName: icon)
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(
-                            isAccent
-                                ? AnyShapeStyle(AppTheme.accentGradient)
-                                : AnyShapeStyle(Color.orange)
-                        )
-                }
-
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(title)
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-
-                    Text(subtitle)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-
-                Spacer(minLength: 8)
-
-                Image(systemName: "chevron.right")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
-            .background {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(.ultraThinMaterial)
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
     }
 
     // MARK: - Scanning Progress
 
     private var scanningProgress: some View {
-        HStack(spacing: 10) {
-            ProgressView()
-                .progressViewStyle(CircularProgressViewStyle(tint: AppTheme.accent))
+        VStack(spacing: 12) {
+            HStack {
+                ProgressView()
+                    .progressViewStyle(CircularProgressViewStyle(tint: AppTheme.accent))
 
-            Text(Localization.localized("folders.scanning"))
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+                Text(Localization.localized("folders.scanning"))
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
 
-            Spacer()
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .background {
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(.ultraThinMaterial)
+                Spacer()
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .background {
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(.ultraThinMaterial)
+            }
         }
     }
 
     // MARK: - Library Content
 
     private var libraryContent: some View {
-        VStack(spacing: 12) {
-            // ✅ SECCIONES COLAPSABLES: con la hoja a media altura, tener las dos
-            // listas desplegadas empujaba las acciones fuera de la pantalla. El
-            // contador queda visible aunque estén plegadas.
+        VStack(spacing: 16) {
+            // Folders Section
             if !fileAccessService.folders.isEmpty {
-                collapsibleSection(
-                    title: Localization.localized("folders.folderSection"),
-                    icon: "folder.fill",
-                    count: fileAccessService.folders.count,
-                    isExpanded: $showFolders
-                ) {
-                    VStack(spacing: 6) {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Image(systemName: "folder.fill")
+                            .foregroundStyle(AppTheme.accentGradient)
+
+                        Text(Localization.localized("folders.folderSection"))
+                            .font(.headline)
+                    }
+                    .padding(.horizontal, 4)
+
+                    VStack(spacing: 8) {
                         ForEach(fileAccessService.folders) { folder in
-                            libraryRow(
-                                icon: "folder.fill",
-                                title: folder.displayName,
-                                subtitle: Localization.localized("folders.folderAdded")
-                            ) {
-                                fileAccessService.removeFolder(folder)
+                            HStack {
+                                ZStack {
+                                    RoundedRectangle(cornerRadius: 11, style: .continuous)
+                                        .fill(AppTheme.accentGradient(opacity: 0.12))
+                                        .frame(width: 40, height: 40)
+
+                                    Image(systemName: "folder.fill")
+                                        .font(.system(size: 17, weight: .semibold))
+                                        .foregroundStyle(AppTheme.accentGradient)
+                                }
+
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(folder.displayName)
+                                        .font(.subheadline.weight(.medium))
+
+                                    Text(Localization.localized("folders.folderAdded"))
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+
+                                Spacer()
+
+                                Button(role: .destructive) {
+                                    fileAccessService.removeFolder(folder)
+                                } label: {
+                                    Image(systemName: "trash.fill")
+                                        .font(.caption)
+                                        .frame(width: 44, height: 44) // Bigger invisible touch target
+                                        .contentShape(Rectangle())
+                                }
+                            }
+                            .padding(.horizontal, 15)
+                            .padding(.vertical, 10)
+                            .background {
+                                // ✅ 60fps: color OPACO (no material blur) para listas largas
+                                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                    .fill(Color(UIColor.secondarySystemBackground).opacity(0.6))
                             }
                         }
+                    }
+                    .background {
+                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            .fill(AnyShapeStyle(.ultraThinMaterial))
                     }
                 }
             }
 
+            // Files Section
             if !fileAccessService.files.isEmpty {
-                collapsibleSection(
-                    title: Localization.localized("folders.filesSection"),
-                    icon: "music.note",
-                    count: fileAccessService.files.count,
-                    isExpanded: $showFiles
-                ) {
-                    VStack(spacing: 6) {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Image(systemName: "music.note")
+                            .foregroundStyle(AppTheme.accentGradient)
+
+                        Text(Localization.localized("folders.filesSection"))
+                            .font(.headline)
+                    }
+                    .padding(.horizontal, 4)
+
+                    VStack(spacing: 8) {
                         ForEach(fileAccessService.files) { file in
-                            libraryRow(
-                                icon: "music.note",
-                                title: file.displayName,
-                                subtitle: Localization.localized("folders.fileAdded")
-                            ) {
-                                fileAccessService.removeFile(file)
+                            HStack {
+                                ZStack {
+                                    RoundedRectangle(cornerRadius: 11, style: .continuous)
+                                        .fill(AppTheme.accentGradient(opacity: 0.12))
+                                        .frame(width: 40, height: 40)
+
+                                    Image(systemName: "music.note")
+                                        .font(.system(size: 17, weight: .semibold))
+                                        .foregroundStyle(AppTheme.accentGradient)
+                                }
+
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(file.displayName)
+                                        .font(.subheadline.weight(.medium))
+                                        .lineLimit(1)
+
+                                    Text(Localization.localized("folders.fileAdded"))
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+
+                                Spacer()
+
+                                Button(role: .destructive) {
+                                    fileAccessService.removeFile(file)
+                                } label: {
+                                    Image(systemName: "trash.fill")
+                                        .font(.caption)
+                                        .frame(width: 44, height: 44) // Bigger invisible touch target
+                                        .contentShape(Rectangle())
+                                }
+                            }
+                            .padding(.horizontal, 15)
+                            .padding(.vertical, 10)
+                            .background {
+                                // ✅ 60fps: color OPACO (no material blur) para listas largas
+                                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                    .fill(Color(UIColor.secondarySystemBackground).opacity(0.6))
                             }
                         }
+                    }
+                    .background {
+                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            .fill(AnyShapeStyle(.ultraThinMaterial))
                     }
                 }
             }
 
+            // Empty State
             if fileAccessService.folders.isEmpty && fileAccessService.files.isEmpty {
-                emptyState
-            }
-        }
-    }
+                VStack(spacing: 12) {
+                    // ✅ Estado vacío con el icono del header (mismo lenguaje visual
+                    // que el resto: acento de dos colores sobre un disco suave).
+                    ZStack {
+                        Circle()
+                            .fill(AppTheme.accentGradient(opacity: 0.1))
+                            .frame(width: 72, height: 72)
 
-    // MARK: - Sección colapsable
-
-    /// ✅ `DisclosureGroup` con el contador en la etiqueta (visible aunque esté
-    /// plegada). El chevron lo pone SwiftUI, así que no hay gesto nuevo que
-    /// inventar y la fila sigue siendo táctil de lado a lado.
-    @ViewBuilder
-    private func collapsibleSection<Content: View>(
-        title: String,
-        icon: String,
-        count: Int,
-        isExpanded: Binding<Bool>,
-        @ViewBuilder content: () -> Content
-    ) -> some View {
-        DisclosureGroup(isExpanded: isExpanded) {
-            content()
-                .padding(.top, 8)
-        } label: {
-            HStack(spacing: 10) {
-                Image(systemName: icon)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(AppTheme.accentGradient)
-
-                Text(title)
-                    .font(.system(size: 15, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-
-                Text("\(count)")
-                    .font(.system(size: 12, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 2)
-                    .background {
-                        Capsule().fill(Color(UIColor.tertiarySystemBackground))
+                        Image(systemName: "music.note")
+                            .font(.system(size: 30, weight: .medium))
+                            .foregroundStyle(AppTheme.accentGradient)
                     }
+                    .padding(.bottom, 2)
 
-                Spacer(minLength: 0)
+                    Text(Localization.localized("folders.emptyTitle"))
+                        .font(.headline)
+                        .foregroundStyle(.primary)
+
+                    Text(Localization.localized("folders.emptySubtitle"))
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                        .multilineTextAlignment(.center)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 30)
+                .background {
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .fill(.ultraThinMaterial)
+                }
             }
-        }
-        .tint(AppTheme.accent)
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .background {
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(AnyShapeStyle(.ultraThinMaterial))
-        }
-    }
-
-    // MARK: - Fila de carpeta / archivo
-
-    /// ✅ Carpetas y archivos compartían dos bloques idénticos de ~50 líneas.
-    @ViewBuilder
-    private func libraryRow(
-        icon: String,
-        title: String,
-        subtitle: String,
-        onRemove: @escaping () -> Void
-    ) -> some View {
-        HStack(spacing: 12) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 9, style: .continuous)
-                    .fill(AppTheme.accentGradient(opacity: 0.12))
-                    .frame(width: 34, height: 34)
-
-                Image(systemName: icon)
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(AppTheme.accentGradient)
-            }
-
-            VStack(alignment: .leading, spacing: 1) {
-                Text(title)
-                    .font(.system(size: 14, weight: .medium))
-                    .lineLimit(1)
-
-                Text(subtitle)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
-
-            Spacer(minLength: 8)
-
-            Button(role: .destructive, action: onRemove) {
-                Image(systemName: "trash.fill")
-                    .font(.system(size: 13))
-                    .frame(width: 44, height: 44) // Bigger invisible touch target
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-        }
-        .padding(.leading, 12)
-        .padding(.trailing, 4)
-        .padding(.vertical, 4)
-        .background {
-            // ✅ 60fps: color OPACO (no material blur) para listas largas
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color(UIColor.secondarySystemBackground).opacity(0.6))
-        }
-    }
-
-    // MARK: - Estado vacío
-
-    /// ✅ Estado vacío CON llamada a la acción: antes solo explicaba, y el botón
-    /// para empezar estaba en la lista de acciones de arriba (fuera de la vista
-    /// con la hoja a media altura).
-    private var emptyState: some View {
-        VStack(spacing: 12) {
-            ZStack {
-                Circle()
-                    .fill(AppTheme.accentGradient(opacity: 0.1))
-                    .frame(width: 64, height: 64)
-
-                Image(systemName: "music.note")
-                    .font(.system(size: 26, weight: .medium))
-                    .foregroundStyle(AppTheme.accentGradient)
-            }
-            .padding(.bottom, 2)
-
-            Text(Localization.localized("folders.emptyTitle"))
-                .font(.headline)
-                .foregroundStyle(.primary)
-
-            Text(Localization.localized("folders.emptySubtitle"))
-                .font(.caption)
-                .foregroundStyle(.tertiary)
-                .multilineTextAlignment(.center)
-
-            Button {
-                Haptics.light()
-                importMode = .folders
-                showImporter = true
-            } label: {
-                Label(Localization.localized("folders.addFolder"), systemImage: "folder.badge.plus")
-                    .font(.system(size: 14, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 18)
-                    .padding(.vertical, 10)
-                    .background {
-                        Capsule().fill(AppTheme.accentGradient)
-                    }
-            }
-            .buttonStyle(PressableButtonStyle(scale: 0.96))
-            .padding(.top, 2)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 24)
-        .background {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(.ultraThinMaterial)
         }
     }
 
