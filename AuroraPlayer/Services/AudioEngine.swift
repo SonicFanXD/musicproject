@@ -2760,16 +2760,6 @@ class AudioEngine: NSObject, ObservableObject {
             self.seek(to: posEvent.positionTime)
             return .success
         }
-        // ✅ SINCRONIZACIÓN: comando de REPETICIÓN del Centro de Control / pantalla
-        // de bloqueo. No estaba registrado, así que el botón no aparecía y el modo
-        // solo se podía cambiar desde la app. El handler llega en el hilo
-        // principal, igual que el resto, y reutiliza el ciclo de la UI
-        // (off → todas → una) para que ambos caminos queden siempre de acuerdo.
-        center.repeatCommand.addTarget { [weak self] _ in
-            guard let self = self else { return .commandFailed }
-            self.cycleRepeatMode()
-            return .success
-        }
     }
 
     private func saveState() {
