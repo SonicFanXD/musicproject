@@ -95,6 +95,12 @@ struct LyricsView: View {
             guard let newID else { return }
             requestScroll(to: newID)
         }
+        // ✅ Letras que llegan de un parseo en background: terminan DESPUÉS del
+        // `onAppear`, así que el centrado inicial hay que repetirlo con las líneas
+        // ya publicadas (sigue siendo el primer centrado → sin animación).
+        .onChange(of: viewModel.lyricsRevision) { _ in
+            syncScrollToActiveLine()
+        }
         // ✅ Cambio de canción con la vista abierta: re-parsear y re-centrar sin
         // animación, como si la vista acabara de nacer.
         .onChange(of: song?.id) { _ in

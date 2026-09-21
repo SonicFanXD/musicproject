@@ -19,6 +19,9 @@ final class LyricsViewModel: ObservableObject {
     /// ✅ Espejo de `audioEngine.isPlaying`: permite pausar el TimelineView de la
     /// vista cuando no suena nada (batería) y congelar la interpolación.
     @Published private(set) var isPlaying: Bool = false
+    /// ✅ Sube cuando un parseo EN BACKGROUND termina: la vista lo usa para
+    /// repetir el centrado inicial (cuando termina, el `onAppear` ya pasó).
+    @Published private(set) var lyricsRevision: Int = 0
 
     // MARK: - Dependencies
     weak var audioEngine: AudioEngine?
@@ -38,6 +41,18 @@ final class LyricsViewModel: ObservableObject {
     // MARK: - Ventana de la línea activa (cache O(1) para el wipe)
     private var activeStartMs: Int = 0
     private var activeEndMs: Int = 0
+
+    // MARK: - Parseo (token de vigencia)
+    /// ✅ Cada llamada a `parseLyrics` invalida el parseo pendiente anterior: si el
+    /// usuario cambia de canción mientras uno está en vuelo, el resultado viejo
+    /// se descarta en vez de publicarse sobre la canción nueva.
+    private var parseToken: Int = 0
+    /// ✅ Por debajo de este tamaño el parseo es sub-milisegundo (LRC clásico) y se
+    /// aplica en el MISMO turno: así la vista nace ya centrada, sin parpadeo del
+    /// estado vacío ni segundo centrado. Solo los payloads grandes (TTML con
+    /// timings por palabra, donde el XMLParser + las regex + el troceo de filas
+    /// sí pesan) se van a background.
+    private static let synchronousParseByteLimit = 16_000
 
     // MARK: - Initialization
     init() {
@@ -86,7 +101,37 @@ final class LyricsViewModel: ObservableObject {
     /// - Parameter text: Texto crudo (TTML de Apple Music, LRC clásico o híbrido)
     @MainActor
     func parseLyrics(_ text: String) {
-        let lines = LRCParser.parse(text)
+        parseToken &+= 1
+        let token = parseToken
+
+        // ✅ Camino común (LRC): mismo turno, cero cambios de comportamiento.
+        guard text.utf8.count > Self.synchronousParseByteLimit else {
+            applyParsedLines(LRCParser.parse(text), token: token)
+            return
+        }
+
+        // ✅ Payload grande: `hasLyrics` se publica de inmediato (el llamador ya
+        //    comprobó que hay texto) para no mostrar un falso "no hay letras" y
+        //    para que el contenedor de scroll ya exista cuando lleguen las líneas
+        //    (si naciera después, el centrado de abajo se perdería).
+        hasLyrics = true
+
+        // ✅ `Task.detached` y no `Task {}`: heredar el MainActor ejecutaría el
+        //    parseo en el hilo principal, que es justo lo que se evita.
+        Task.detached(priority: .userInitiated) { [weak self] in
+            let lines = LRCParser.parse(text)
+            await self?.applyParsedLines(lines, token: token, notifyView: true)
+        }
+    }
+
+    /// ✅ Aplica líneas YA parseadas en el hilo principal: publica el estado, deja
+    /// la ventana del wipe lista y recalcula la línea activa con el tiempo real.
+    /// - Parameter notifyView: `true` solo cuando las líneas llegan de un parseo en
+    ///   background (la vista tiene que repetir su centrado inicial).
+    @MainActor
+    private func applyParsedLines(_ lines: [LyricsLine], token: Int, notifyView: Bool = false) {
+        guard token == parseToken else { return }
+
         self.lyricsLines = lines
         self.engine = LyricsEngine(lines: lines)
         self.hasLyrics = !lines.isEmpty
@@ -96,6 +141,10 @@ final class LyricsViewModel: ObservableObject {
         activeEndMs = 0
         anchorClock(at: audioEngine?.currentTime ?? clockTime)
         refreshActiveLine()
+
+        if notifyView {
+            lyricsRevision &+= 1
+        }
     }
 
     // MARK: - Sin lyrics
@@ -103,6 +152,10 @@ final class LyricsViewModel: ObservableObject {
     /// (una canción sin lyrics no debe dejar datos ni despertadores colgando).
     @MainActor
     func clearLyrics() {
+        // ✅ Invalida cualquier parseo en background pendiente: sin esto el
+        //    resultado de la canción anterior podría publicarse sobre la nueva
+        //    (que no tiene letras).
+        parseToken &+= 1
         lyricsLines = []
         engine = nil
         hasLyrics = false
