@@ -510,6 +510,13 @@ struct SettingsView: View {
                 Text(Localization.localized("settings.subtitle"))
                     .font(.system(size: 14))
                     .foregroundStyle(.secondary)
+
+                // ✅ Versión visible en el header (los números de versión no se
+                // traducen, así que no hace falta una key de Localización).
+                Text(appVersionLabel)
+                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                    .foregroundStyle(.tertiary)
+                    .padding(.top, 2)
             }
         }
         .frame(maxWidth: .infinity)
@@ -532,6 +539,13 @@ struct SettingsView: View {
         }
     }
 
+    /// ✅ "v2.2.0 (22)": leído del bundle, sin keys nuevas de Localización.
+    private var appVersionLabel: String {
+        let short = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—"
+        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "—"
+        return "v\(short) (\(build))"
+    }
+
     // MARK: - Section Builder (diseño premium estilo NowPlayingView)
     @ViewBuilder
     private func settingsSection<Content: View>(
@@ -545,8 +559,16 @@ struct SettingsView: View {
                     .foregroundStyle(color)
                     .frame(width: 30, height: 30)
                     .background {
+                        // ✅ Micro-gradiente del MISMO tono de la sección: da
+                        // profundidad sin cambiar el color identificativo de cada
+                        // grupo (Biblioteca/Audio/Apariencia/...).
                         RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .fill(color.opacity(0.15))
+                            .fill(
+                                LinearGradient(
+                                    colors: [color.opacity(0.22), color.opacity(0.08)],
+                                    startPoint: .topLeading, endPoint: .bottomTrailing
+                                )
+                            )
                     }
                     .overlay {
                         RoundedRectangle(cornerRadius: 10, style: .continuous)
@@ -693,8 +715,14 @@ struct SettingsView: View {
             .foregroundStyle(color)
             .frame(width: 32, height: 32)
             .background {
+                // ✅ Mismo micro-gradiente que los iconos de sección.
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(color.opacity(0.12))
+                    .fill(
+                        LinearGradient(
+                            colors: [color.opacity(0.18), color.opacity(0.07)],
+                            startPoint: .topLeading, endPoint: .bottomTrailing
+                        )
+                    )
             }
             .overlay {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
