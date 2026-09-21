@@ -1,7 +1,7 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-struct SettingsView: View {
+struct SettingsView: View, SettingsRowBuilding {
     @ObservedObject var audioEngine: AudioEngine
     @ObservedObject var fileAccessService: FileAccessService
     @Environment(\.dismiss) private var dismiss
@@ -694,9 +694,60 @@ struct SettingsView: View {
         return "\(Localization.localized("settings.version")) \(short) · \(Localization.localized("settings.build")) \(build)"
     }
 
+    // MARK: - Importación embebida (carpetas / canciones individuales)
+
+    /// Tipos de audio soportados para el picker de archivos individuales.
+    private var supportedAudioTypes: [UTType] {
+        var types: [UTType] = [.audio]
+        if let mp3 = UTType(filenameExtension: "mp3") { types.append(mp3) }
+        if let flac = UTType(filenameExtension: "flac") { types.append(flac) }
+        if let m4a = UTType(filenameExtension: "m4a") { types.append(m4a) }
+        if let wav = UTType(filenameExtension: "wav") { types.append(wav) }
+        if let aiff = UTType(filenameExtension: "aiff") { types.append(aiff) }
+        if let ogg = UTType(filenameExtension: "ogg") { types.append(ogg) }
+        if let wma = UTType(filenameExtension: "wma") { types.append(wma) }
+        // ✅ Dolby Digital (AC-3) y Dolby Digital Plus (E-AC-3)
+        if let ac3 = UTType(filenameExtension: "ac3") { types.append(ac3) }
+        if let ec3 = UTType(filenameExtension: "ec3") { types.append(ec3) }
+        if let eac3 = UTType(filenameExtension: "eac3") { types.append(eac3) }
+        if let ddp = UTType(filenameExtension: "ddp") { types.append(ddp) }
+        return types
+    }
+
+    private func handleImportResult(_ result: Result<[URL], Error>) {
+        switch result {
+        case .success(let urls):
+            guard !urls.isEmpty else {
+                AppLog.error(.library, "No se seleccionó nada")
+                return
+            }
+            switch importMode {
+            case .folders:
+                if let url = urls.first {
+                    fileAccessService.addFolder(url: url)
+                }
+            case .files:
+                fileAccessService.addFiles(urls: urls)
+            }
+        case .failure(let error):
+            AppLog.error(.library, "Error al importar: \(error.localizedDescription)")
+        }
+    }
+}
+
+// ✅ Los helpers de fila (sección, botón, toggle, slider, menú, info, stat,
+// divisor e icono) viven en un protocolo con implementación por defecto: así la
+// pantalla de Ajustes y CADA sección extraída los usan con los mismos nombres,
+// sin duplicarlos. Extraer las secciones a structs —cada una con su propio
+// `body`— es lo que baja la profundidad del tipo genérico de la vista: el
+// demangler de Swift desbordaba la pila resolviendo el nombre del tipo gigante
+// que era el `body` de esta pantalla.
+private protocol SettingsRowBuilding {}
+
+extension SettingsRowBuilding {
     // MARK: - Section Builder (diseño premium estilo NowPlayingView)
     @ViewBuilder
-    private func settingsSection<Content: View>(
+    func settingsSection<Content: View>(
         icon: String, title: String, color: Color,
         @ViewBuilder content: () -> Content
     ) -> some View {
@@ -744,7 +795,7 @@ struct SettingsView: View {
 
     // MARK: - Button Row
     @ViewBuilder
-    private func settingsButton(
+    func settingsButton(
         title: String, subtitle: String, icon: String, color: Color,
         action: @escaping () -> Void
     ) -> some View {
@@ -776,7 +827,7 @@ struct SettingsView: View {
 
     // MARK: - Toggle Row
     @ViewBuilder
-    private func settingsToggleRow(
+    func settingsToggleRow(
         title: String, subtitle: String, icon: String, color: Color,
         isOn: Binding<Bool>
     ) -> some View {
@@ -805,7 +856,7 @@ struct SettingsView: View {
 
     // MARK: - Slider Row
     @ViewBuilder
-    private func settingsSliderRow(
+    func settingsSliderRow(
         title: String, value: Binding<Double>, range: ClosedRange<Double>, step: Double,
         color: Color, suffix: String
     ) -> some View {
@@ -832,7 +883,7 @@ struct SettingsView: View {
 
     // MARK: - Info Row
     @ViewBuilder
-    private func settingsInfoRow(
+    func settingsInfoRow(
         title: String, value: String, icon: String, color: Color
     ) -> some View {
         HStack(spacing: 14) {
@@ -857,7 +908,7 @@ struct SettingsView: View {
     }
 
     // MARK: - Icon (diseño premium estilo NowPlayingView)
-    private func iconView(icon: String, color: Color) -> some View {
+    func iconView(icon: String, color: Color) -> some View {
         Image(systemName: icon)
             .font(.system(size: 16, weight: .semibold))
             .foregroundStyle(color)
@@ -880,7 +931,7 @@ struct SettingsView: View {
 
     // MARK: - Menu Picker Button Row
     @ViewBuilder
-    private func settingsMenuButton(
+    func settingsMenuButton(
         title: String, subtitle: String, icon: String, color: Color,
         options: [String], selection: Binding<Int>,
         onChange: @escaping (Int) -> Void
@@ -925,7 +976,7 @@ struct SettingsView: View {
     }
 
     // MARK: - Stat Row
-    private func statRow(title: String, value: String) -> some View {
+    func statRow(title: String, value: String) -> some View {
         HStack {
             Text(title)
                 .font(.system(size: 15, weight: .medium))
@@ -943,50 +994,10 @@ struct SettingsView: View {
     }
 
     // MARK: - Divider
-    private var settingsDivider: some View {
+    var settingsDivider: some View {
         Divider()
             .opacity(0.1)
             .padding(.leading, 60)
-    }
-
-    // MARK: - Importación embebida (carpetas / canciones individuales)
-
-    /// Tipos de audio soportados para el picker de archivos individuales.
-    private var supportedAudioTypes: [UTType] {
-        var types: [UTType] = [.audio]
-        if let mp3 = UTType(filenameExtension: "mp3") { types.append(mp3) }
-        if let flac = UTType(filenameExtension: "flac") { types.append(flac) }
-        if let m4a = UTType(filenameExtension: "m4a") { types.append(m4a) }
-        if let wav = UTType(filenameExtension: "wav") { types.append(wav) }
-        if let aiff = UTType(filenameExtension: "aiff") { types.append(aiff) }
-        if let ogg = UTType(filenameExtension: "ogg") { types.append(ogg) }
-        if let wma = UTType(filenameExtension: "wma") { types.append(wma) }
-        // ✅ Dolby Digital (AC-3) y Dolby Digital Plus (E-AC-3)
-        if let ac3 = UTType(filenameExtension: "ac3") { types.append(ac3) }
-        if let ec3 = UTType(filenameExtension: "ec3") { types.append(ec3) }
-        if let eac3 = UTType(filenameExtension: "eac3") { types.append(eac3) }
-        if let ddp = UTType(filenameExtension: "ddp") { types.append(ddp) }
-        return types
-    }
-
-    private func handleImportResult(_ result: Result<[URL], Error>) {
-        switch result {
-        case .success(let urls):
-            guard !urls.isEmpty else {
-                AppLog.error(.library, "No se seleccionó nada")
-                return
-            }
-            switch importMode {
-            case .folders:
-                if let url = urls.first {
-                    fileAccessService.addFolder(url: url)
-                }
-            case .files:
-                fileAccessService.addFiles(urls: urls)
-            }
-        case .failure(let error):
-            AppLog.error(.library, "Error al importar: \(error.localizedDescription)")
-        }
     }
 }
 
