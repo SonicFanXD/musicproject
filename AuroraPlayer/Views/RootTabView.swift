@@ -47,11 +47,12 @@ struct RootTabView: View {
         // ✅ Tab bar con material: mismo lenguaje visual que el resto de la app.
         .toolbarBackground(.ultraThinMaterial, for: .tabBar)
         .toolbarBackground(.visible, for: .tabBar)
-        // ✅ La PlayerBar conserva su diseño y flota POR ENCIMA del tab bar: el
-        // inset la aparta del borde inferior automáticamente, sin offsets fijos.
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            playerBar
-        }
+        // ✅ FIX 3.0.1: el inset de la PlayerBar ya NO se aplica aquí. Sobre un
+        // TabView, `safeAreaInset` solo conocía el indicador de inicio y colocaba
+        // la barra ENCIMA del tab bar nativo (tapaba los tres iconos). Ahora el
+        // inset vive dentro de cada pestaña (ver `playerBarInset`), cuyo safe area
+        // SÍ incluye el alto del tab bar → la barra queda justo por encima, con
+        // separación, y los iconos siempre visibles y tocables.
         .overlay {
             if isInitialLoad {
                 splashOverlay
@@ -98,24 +99,43 @@ struct RootTabView: View {
     // MARK: - Pestañas
 
     private var welcomeTab: some View {
-        WelcomeView(audioEngine: audioEngine, fileAccessService: fileAccessService)
-            .tabItem { Label(Localization.localized("tab.welcome"), systemImage: "sparkles") }
-            .tag(AppTab.welcome)
+        playerBarInset {
+            WelcomeView(audioEngine: audioEngine, fileAccessService: fileAccessService)
+        }
+        .tabItem { Label(Localization.localized("tab.welcome"), systemImage: "sparkles") }
+        .tag(AppTab.welcome)
     }
 
     private var libraryTab: some View {
-        ContentView(audioEngine: audioEngine, fileAccessService: fileAccessService)
-            .tabItem { Label(Localization.localized("tab.library"), systemImage: "music.note.list") }
-            .tag(AppTab.library)
+        playerBarInset {
+            ContentView(audioEngine: audioEngine, fileAccessService: fileAccessService)
+        }
+        .tabItem { Label(Localization.localized("tab.library"), systemImage: "music.note.list") }
+        .tag(AppTab.library)
     }
 
     private var settingsTab: some View {
-        SettingsView(audioEngine: audioEngine, fileAccessService: fileAccessService)
-            .tabItem { Label(Localization.localized("tab.settings"), systemImage: "gearshape.fill") }
-            .tag(AppTab.settings)
+        playerBarInset {
+            SettingsView(audioEngine: audioEngine, fileAccessService: fileAccessService)
+        }
+        .tabItem { Label(Localization.localized("tab.settings"), systemImage: "gearshape.fill") }
+        .tag(AppTab.settings)
     }
 
     // MARK: - PlayerBar flotante
+
+    /// ✅ Aplica el inset de la PlayerBar DENTRO de una pestaña: el contenido de un
+    /// tab incluye el alto del tab bar en su safe area, así que la barra se coloca
+    /// justo por encima de los iconos (no encima) y, de paso, las listas reservan
+    /// espacio para no ocultar la última fila.
+    private func playerBarInset<Content: View>(
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        content()
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                playerBar
+            }
+    }
 
     private var playerBar: some View {
         PlayerBar(
@@ -124,7 +144,8 @@ struct RootTabView: View {
             clock: audioEngine.clock
         )
         .padding(.horizontal, 10)
-        .padding(.bottom, 6)
+        // ✅ 8pt de aire entre la barra y los iconos del tab bar.
+        .padding(.bottom, 8)
     }
 
     // MARK: - Splash
