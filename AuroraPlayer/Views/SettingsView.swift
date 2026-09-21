@@ -131,6 +131,9 @@ struct SettingsView: View {
 
         let savedTheme = UserDefaults.standard.integer(forKey: themeDefaultsKey)
         _selectedThemeIndex = State(initialValue: savedTheme >= 0 && savedTheme < 3 ? savedTheme : 0)
+        // ⚠️ DIAGNÓSTICO TEMPORAL (crash al abrir Ajustes): marca de arranque.
+        // Se retira en cuanto se localice la causa.
+        AppLog.debug(.interface, "[Settings] init OK (tema guardado: \(savedTheme))")
     }
 
     var body: some View {
@@ -140,9 +143,11 @@ struct SettingsView: View {
 
                 ScrollView {
                     VStack(spacing: 22) {
+                        let _ = AppLog.debug(.interface, "[Settings] body: inicio (header)")
                         headerSection
 
                         // Biblioteca (gestión embebida: sin pantalla aparte)
+                        let _ = AppLog.debug(.interface, "[Settings] body → Biblioteca")
                         settingsSection(icon: "folder.fill", title: Localization.localized("settings.library"), color: .blue) {
                             settingsButton(title: Localization.localized("settings.addFolder"), subtitle: Localization.localized("settings.addFolderSubtitle"), icon: "folder.badge.plus", color: .blue) {
                                 importMode = .folders
@@ -267,6 +272,7 @@ struct SettingsView: View {
                         // Audio
                         // ✅ Crossfade eliminado por completo (fuente de bugs
                         // de sincronización): ya no aparece en Ajustes.
+                        let _ = AppLog.debug(.interface, "[Settings] body → Audio")
                         settingsSection(icon: "waveform", title: Localization.localized("settings.audio"), color: AppTheme.accent) {
                             settingsButton(title: Localization.localized("settings.equalizer"), subtitle: audioEngine.isEQEnabled ? "\(Localization.localized("equalizer.active")) (\(audioEngine.eqPreset.displayName))" : Localization.localized("equalizer.disabled"), icon: "slider.horizontal.3", color: AppTheme.accent) {
                                 showEqualizerSheet = true
@@ -368,6 +374,7 @@ struct SettingsView: View {
                         }
 
                         // Apariencia
+                        let _ = AppLog.debug(.interface, "[Settings] body → Apariencia")
                         settingsSection(icon: "paintbrush.fill", title: Localization.localized("settings.appearance"), color: .pink) {
                             settingsMenuButton(title: Localization.localized("settings.theme"), subtitle: themes[selectedThemeIndex], icon: "circle.lefthalf.filled", color: .gray, options: themes, selection: $selectedThemeIndex) { index in
                                 selectedThemeIndex = index
@@ -423,6 +430,7 @@ struct SettingsView: View {
                         // (NowPlaying, álbumes, artistas, PlayerBar, tint global UIKit).
                         // Un solo ajuste activa/desactiva la detección de colores en
                         // TODAS las vistas simultáneamente.
+                        let _ = AppLog.debug(.interface, "[Settings] body → Acento desde portada")
                         settingsSection(icon: "swatchpalette.fill", title: Localization.localized("settings.artworkAccent"), color: .purple) {
                             settingsToggleRow(
                                 title: Localization.localized("settings.artworkAccentToggle"),
@@ -454,6 +462,7 @@ struct SettingsView: View {
                         }
 
                         // Reproducción
+                        let _ = AppLog.debug(.interface, "[Settings] body → Reproducción")
                         settingsSection(icon: "dial.max.fill", title: Localization.localized("settings.playback"), color: .orange) {
                             settingsToggleRow(title: Localization.localized("settings.visualizer"), subtitle: Localization.localized("settings.visualizerSubtitle"), icon: "waveform.path.ecg", color: .pink, isOn: $showVisualizer)
                             settingsDivider
@@ -491,6 +500,7 @@ struct SettingsView: View {
                         }
                         
                         // ✅ Personalización avanzada
+                        let _ = AppLog.debug(.interface, "[Settings] body → Personalización")
                         settingsSection(icon: "wand.and.rays", title: Localization.localized("settings.customization"), color: .indigo) {
                             settingsSliderRow(title: Localization.localized("settings.hapticIntensity"), value: $hapticIntensity, range: 0.0...1.0, step: 0.1, color: .mint, suffix: "")
                             settingsDivider
@@ -538,6 +548,7 @@ struct SettingsView: View {
                         }
 
                         // Rendimiento (info técnica)
+                        let _ = AppLog.debug(.interface, "[Settings] body → Rendimiento")
                         settingsSection(icon: "gauge.open.with.needle", title: Localization.localized("settings.performance"), color: .indigo) {
                             settingsToggleRow(title: Localization.localized("settings.showFPS"), subtitle: Localization.localized("settings.showFPSSubtitle"), icon: "speedometer", color: .green, isOn: $showFPS)
                             settingsDivider
@@ -552,6 +563,7 @@ struct SettingsView: View {
                         // Estadísticas (✅ incluye canciones en proceso de indexación)
                         let totalSongs = fileAccessService.songs.count + fileAccessService.pendingSongsCount
                         let isIndexing = fileAccessService.isScanning || fileAccessService.pendingSongsCount > 0
+                        let _ = AppLog.debug(.interface, "[Settings] body → Estadísticas (fuerza albums/artists)")
                         settingsSection(icon: "chart.bar.fill", title: Localization.localized("settings.stats"), color: .green) {
                             statRow(title: Localization.localized("library.songs"), value: isIndexing ? "\(totalSongs)+" : "\(totalSongs)")
                             settingsDivider
@@ -561,6 +573,7 @@ struct SettingsView: View {
                         }
 
                         // Avanzado
+                        let _ = AppLog.debug(.interface, "[Settings] body → Avanzado")
                         settingsSection(icon: "wrench.and.screwdriver.fill", title: Localization.localized("settings.advanced"), color: .orange) {
                             settingsButton(title: Localization.localized("settings.logs"), subtitle: Localization.localized("settings.logsSubtitle"), icon: "doc.text.magnifyingglass", color: .gray) {
                                 showLogs = true
@@ -570,6 +583,7 @@ struct SettingsView: View {
                                 showAbout = true
                             }
                         }
+                        let _ = AppLog.debug(.interface, "[Settings] body: FIN")
                     }
                     .padding(.horizontal, 20).padding(.top, 8).padding(.bottom, 30)
                 }
