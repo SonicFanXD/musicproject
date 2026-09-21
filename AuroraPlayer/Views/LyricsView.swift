@@ -12,6 +12,8 @@ import SwiftUI
 //    avanza de arriba abajo (nunca en paralelo) y respeta los silencios.
 // ✅ Sin temporizadores propios (ni en la vista ni en el modelo).
 // ✅ Auto-scroll suave con ScrollViewReader (solo cuando cambia la línea activa)
+// ✅ Colores ADAPTATIVOS (`.primary`): la app no fuerza modo oscuro, así que el
+//    texto blanco fijo era invisible sobre el fondo claro en modo claro.
 // ✅ Render 100% por código, sin assets
 struct LyricsView: View {
     let song: Song?
@@ -379,7 +381,7 @@ private struct LyricLineView: View, Equatable {
             ForEach(line.visualRows.indices, id: \.self) { index in
                 Text(line.visualRows[index].text)
                     .font(.system(size: fontSize, weight: fontWeight))
-                    .foregroundStyle(Color.white.opacity(0.35))
+                    .foregroundStyle(Color.primary.opacity(0.35))
             }
         }
     }
@@ -417,13 +419,13 @@ private struct LyricFillText: View, Equatable {
     private var dimmedLayer: some View {
         Text(text)
             .font(.system(size: fontSize, weight: fontWeight))
-            .foregroundStyle(Color.white.opacity(0.35))
+            .foregroundStyle(Color.primary.opacity(0.35))
     }
 
     private var brightLayer: some View {
         Text(text)
             .font(.system(size: fontSize, weight: fontWeight))
-            .foregroundStyle(Color.white)
+            .foregroundStyle(Color.primary)
     }
 
     /// ✅ Ancho de la máscara = ancho REAL del texto × progreso (0...1).
