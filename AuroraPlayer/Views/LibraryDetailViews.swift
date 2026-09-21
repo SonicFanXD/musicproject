@@ -105,6 +105,9 @@ private func detailTitleReveal(for progress: CGFloat) -> CGFloat {
 struct AlbumDetailView: View {
     let album: Album
     @ObservedObject var audioEngine: AudioEngine
+    // ✅ Inyectado (mismo patrón que NowPlayingView/PlayerBar): lo necesitan las
+    // acciones rápidas de las filas (añadir a la cola y me gusta).
+    @ObservedObject var fileAccessService: FileAccessService
     @Environment(\.dismiss) private var dismiss
 
     // ? Color dominante VIVO (histograma HSB) extra�do en segundo plano
@@ -198,7 +201,16 @@ struct AlbumDetailView: View {
                         }
                     } else {
                         ForEach(Array(cachedSongs.enumerated()), id: \.element.id) { index, song in
-                            AlbumSongRow(song: song, index: index, isCurrent: audioEngine.currentSong?.id == song.id, isPlaying: audioEngine.isPlaying, tintColor: tintColor) {
+                            AlbumSongRow(
+                                song: song,
+                                index: index,
+                                isCurrent: audioEngine.currentSong?.id == song.id,
+                                isPlaying: audioEngine.isPlaying,
+                                tintColor: tintColor,
+                                isLiked: fileAccessService.isLiked(song),
+                                onAddToQueue: { audioEngine.addToQueue(song) },
+                                onToggleLike: { Haptics.light(); fileAccessService.toggleLike(song) }
+                            ) {
                                 audioEngine.play(song: song, from: cachedSongs)
                             }
                         }
@@ -423,7 +435,7 @@ struct AlbumDetailView: View {
                     Image(systemName: "play.fill").font(.system(size: 15, weight: .bold))
                     Text(Localization.localized("details.play")).font(.system(size: 15, weight: .bold, design: .rounded))
                 }
-                .foregroundStyle(onTintColor).frame(maxWidth: .infinity).frame(height: 46)
+                .foregroundStyle(onTintColor).frame(maxWidth: .infinity).frame(height: 48)
                 .background {
                     Capsule().fill(
                         accent.textSafeGradient()
@@ -441,21 +453,32 @@ struct AlbumDetailView: View {
                     audioEngine.play(song: randomSong, from: songs)
                 }
             } label: {
-                Image(systemName: "shuffle")
-                    .font(.system(size: 16, weight: .bold)).foregroundStyle(tintColor)
-                    .frame(width: 48, height: 48)
-                    .background {
-                        Circle().fill(
-                            accent.gradient(primaryOpacity: 0.22, secondaryOpacity: 0.12)
-                        )
-                    }
-                    .frame(width: 56, height: 56)
-                    .background {
-                        Circle().fill(AnyShapeStyle(.ultraThinMaterial))
-                    }
-                    .contentShape(Circle())
+                HStack(spacing: 10) {
+                    Image(systemName: "shuffle").font(.system(size: 15, weight: .bold))
+                    Text(Localization.localized("details.shuffle")).font(.system(size: 15, weight: .bold, design: .rounded))
+                }
+                .foregroundStyle(tintColor)
+                // ✅ GEMELO del botón de reproducir: misma altura (48) y mismo eje
+                // que el primario, con jerarquía secundaria (relleno suave +
+                // borde de acento en vez del sólido). Antes era un círculo de
+                // 56pt que quedaba desalineado respecto a la cápsula de 46pt.
+                .frame(maxWidth: .infinity).frame(height: 48)
+                // ✅ Se MANTIENE el material de vidrio (identidad de la app) y el
+                // acento va como velo encima; antes eran dos círculos apilados
+                // (material + color), ahora una sola cápsula con el mismo vidrio.
+                .background {
+                    Capsule().fill(AnyShapeStyle(.ultraThinMaterial))
+                }
+                .overlay {
+                    Capsule().fill(accent.gradient(primaryOpacity: 0.22, secondaryOpacity: 0.12))
+                }
+                .overlay {
+                    Capsule().strokeBorder(tintColor.opacity(0.35), lineWidth: 1)
+                }
+                .contentShape(Capsule())
             }
-            .buttonStyle(PressableButtonStyle(scale: 0.9))
+            .accessibilityLabel(Localization.localized("details.shuffle"))
+            .buttonStyle(PressableButtonStyle(scale: 0.97))
         }
         .padding(.horizontal, 4)
     }
@@ -478,7 +501,16 @@ struct AlbumDetailView: View {
                 // repetición volvía a empezar el mismo disco en vez de seguir
                 // con el siguiente. Ahora al tocar una canción se reproduce
                 // todo el álbum en corrido desde esa posición.
-                AlbumSongRow(song: song, index: index, isCurrent: audioEngine.currentSong?.id == song.id, isPlaying: audioEngine.isPlaying, tintColor: tintColor) {
+                AlbumSongRow(
+                    song: song,
+                    index: index,
+                    isCurrent: audioEngine.currentSong?.id == song.id,
+                    isPlaying: audioEngine.isPlaying,
+                    tintColor: tintColor,
+                    isLiked: fileAccessService.isLiked(song),
+                    onAddToQueue: { audioEngine.addToQueue(song) },
+                    onToggleLike: { Haptics.light(); fileAccessService.toggleLike(song) }
+                ) {
                     audioEngine.play(song: song, from: cachedSongs)
                 }
             }
@@ -551,6 +583,12 @@ struct AlbumSongRow: View {
     /// anime mientras suena de verdad (ver EqualizerBars).
     let isPlaying: Bool
     let tintColor: Color
+    // ✅ Acciones rápidas por menú contextual. No usamos .swipeActions porque
+    // estas filas viven en un LazyVStack dentro de un ScrollView, y swipeActions
+    // solo se activa dentro de un List.
+    let isLiked: Bool
+    let onAddToQueue: () -> Void
+    let onToggleLike: () -> Void
     let action: () -> Void
 
     var body: some View {
@@ -596,6 +634,24 @@ struct AlbumSongRow: View {
             }
         }
         .buttonStyle(PressableButtonStyle(scale: 0.98))
+        // ✅ Acciones rápidas (mantener pulsada la fila): añadir a la cola y me
+        // gusta. Menú contextual en vez de swipeActions por lo explicado arriba.
+        .contextMenu {
+            Button {
+                Haptics.light()
+                onAddToQueue()
+            } label: {
+                Label(Localization.localized("actions.addToQueue"), systemImage: "text.badge.plus")
+            }
+            Button {
+                onToggleLike()
+            } label: {
+                Label(
+                    Localization.localized(isLiked ? "actions.unlike" : "actions.like"),
+                    systemImage: isLiked ? "heart.slash" : "heart"
+                )
+            }
+        }
     }
 
     private func formatDuration(_ seconds: TimeInterval) -> String {
@@ -657,6 +713,8 @@ private func sectionHeader(icon: String, title: String, accent: DetailAccent) ->
 struct ArtistDetailView: View {
     let artist: Artist
     @ObservedObject var audioEngine: AudioEngine
+    // ✅ Inyectado: acciones rápidas de las filas (cola y me gusta).
+    @ObservedObject var fileAccessService: FileAccessService
     @Environment(\.dismiss) private var dismiss
 
     @State private var appearAnimation = false
@@ -734,7 +792,7 @@ struct ArtistDetailView: View {
                             HStack(spacing: 14) {
                                 ForEach(cachedAlbums) { album in
                                     NavigationLink {
-                                        AlbumDetailView(album: album, audioEngine: audioEngine)
+                                        AlbumDetailView(album: album, audioEngine: audioEngine, fileAccessService: fileAccessService)
                                     } label: {
                                         ArtistAlbumCard(album: album)
                                     }
@@ -749,7 +807,16 @@ struct ArtistDetailView: View {
                 LazyVStack(spacing: 10) {
                     sectionHeader(icon: "music.note.list", title: Localization.localized("details.songs"), accent: accent)
                     ForEach(Array(cachedSongs.enumerated()), id: \.element.id) { index, song in
-                        ArtistSongRow(song: song, index: index, isCurrent: audioEngine.currentSong?.id == song.id, isPlaying: audioEngine.isPlaying, tintColor: tintColor) {
+                        ArtistSongRow(
+                            song: song,
+                            index: index,
+                            isCurrent: audioEngine.currentSong?.id == song.id,
+                            isPlaying: audioEngine.isPlaying,
+                            tintColor: tintColor,
+                            isLiked: fileAccessService.isLiked(song),
+                            onAddToQueue: { audioEngine.addToQueue(song) },
+                            onToggleLike: { Haptics.light(); fileAccessService.toggleLike(song) }
+                        ) {
                             audioEngine.play(song: song, from: cachedSongs)
                         }
                     }
@@ -927,7 +994,7 @@ struct ArtistDetailView: View {
                     Image(systemName: "play.fill").font(.system(size: 15, weight: .bold))
                     Text(Localization.localized("details.play")).font(.system(size: 15, weight: .bold, design: .rounded))
                 }
-                .foregroundStyle(onTintColor).frame(maxWidth: .infinity).frame(height: 46)
+                .foregroundStyle(onTintColor).frame(maxWidth: .infinity).frame(height: 48)
                 .background {
                     Capsule().fill(
                         accent.textSafeGradient()
@@ -945,21 +1012,32 @@ struct ArtistDetailView: View {
                     audioEngine.play(song: randomSong, from: songs)
                 }
             } label: {
-                Image(systemName: "shuffle")
-                    .font(.system(size: 16, weight: .bold)).foregroundStyle(tintColor)
-                    .frame(width: 48, height: 48)
-                    .background {
-                        Circle().fill(
-                            accent.gradient(primaryOpacity: 0.22, secondaryOpacity: 0.12)
-                        )
-                    }
-                    .frame(width: 56, height: 56)
-                    .background {
-                        Circle().fill(AnyShapeStyle(.ultraThinMaterial))
-                    }
-                    .contentShape(Circle())
+                HStack(spacing: 10) {
+                    Image(systemName: "shuffle").font(.system(size: 15, weight: .bold))
+                    Text(Localization.localized("details.shuffle")).font(.system(size: 15, weight: .bold, design: .rounded))
+                }
+                .foregroundStyle(tintColor)
+                // ✅ GEMELO del botón de reproducir: misma altura (48) y mismo eje
+                // que el primario, con jerarquía secundaria (relleno suave +
+                // borde de acento en vez del sólido). Antes era un círculo de
+                // 56pt que quedaba desalineado respecto a la cápsula de 46pt.
+                .frame(maxWidth: .infinity).frame(height: 48)
+                // ✅ Se MANTIENE el material de vidrio (identidad de la app) y el
+                // acento va como velo encima; antes eran dos círculos apilados
+                // (material + color), ahora una sola cápsula con el mismo vidrio.
+                .background {
+                    Capsule().fill(AnyShapeStyle(.ultraThinMaterial))
+                }
+                .overlay {
+                    Capsule().fill(accent.gradient(primaryOpacity: 0.22, secondaryOpacity: 0.12))
+                }
+                .overlay {
+                    Capsule().strokeBorder(tintColor.opacity(0.35), lineWidth: 1)
+                }
+                .contentShape(Capsule())
             }
-            .buttonStyle(PressableButtonStyle(scale: 0.9))
+            .accessibilityLabel(Localization.localized("details.shuffle"))
+            .buttonStyle(PressableButtonStyle(scale: 0.97))
         }
         .padding(.horizontal, 4)
     }
@@ -1055,6 +1133,12 @@ struct ArtistSongRow: View {
     /// anime mientras suena de verdad (ver EqualizerBars).
     let isPlaying: Bool
     let tintColor: Color
+    // ✅ Acciones rápidas por menú contextual. No usamos .swipeActions porque
+    // estas filas viven en un LazyVStack dentro de un ScrollView, y swipeActions
+    // solo se activa dentro de un List.
+    let isLiked: Bool
+    let onAddToQueue: () -> Void
+    let onToggleLike: () -> Void
     let action: () -> Void
 
     var body: some View {
@@ -1099,6 +1183,24 @@ struct ArtistSongRow: View {
         }
         // ? Feedback de presi�n al tocar (micro-escala, animaci�n GPU)
         .buttonStyle(PressableButtonStyle(scale: 0.98))
+        // ✅ Acciones rápidas (mantener pulsada la fila): añadir a la cola y me
+        // gusta. Menú contextual en vez de swipeActions por lo explicado arriba.
+        .contextMenu {
+            Button {
+                Haptics.light()
+                onAddToQueue()
+            } label: {
+                Label(Localization.localized("actions.addToQueue"), systemImage: "text.badge.plus")
+            }
+            Button {
+                onToggleLike()
+            } label: {
+                Label(
+                    Localization.localized(isLiked ? "actions.unlike" : "actions.like"),
+                    systemImage: isLiked ? "heart.slash" : "heart"
+                )
+            }
+        }
     }
 
     private func formatDuration(_ seconds: TimeInterval) -> String {

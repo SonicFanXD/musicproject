@@ -272,14 +272,14 @@ struct NowPlayingView: View {
             .sheet(isPresented: $showArtistDetail) {
                 if let artist = currentArtist {
                     NavigationStack {
-                        ArtistDetailView(artist: artist, audioEngine: audioEngine)
+                        ArtistDetailView(artist: artist, audioEngine: audioEngine, fileAccessService: fileAccessService)
                     }
                 }
             }
             .sheet(isPresented: $showAlbumDetail) {
                 if let album = currentAlbum {
                     NavigationStack {
-                        AlbumDetailView(album: album, audioEngine: audioEngine)
+                        AlbumDetailView(album: album, audioEngine: audioEngine, fileAccessService: fileAccessService)
                     }
                 }
             }

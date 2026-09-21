@@ -757,7 +757,7 @@ struct ContentView: View {
                 .padding(.top, 8)
             ForEach(albums) { album in
                 NavigationLink {
-                    AlbumDetailView(album: album, audioEngine: audioEngine)
+                    AlbumDetailView(album: album, audioEngine: audioEngine, fileAccessService: fileAccessService)
                 } label: {
                     albumListRow(album)
                 }
@@ -801,7 +801,7 @@ struct ContentView: View {
                 .padding(.top, 8)
             ForEach(artists) { artist in
                 NavigationLink {
-                    ArtistDetailView(artist: artist, audioEngine: audioEngine)
+                    ArtistDetailView(artist: artist, audioEngine: audioEngine, fileAccessService: fileAccessService)
                 } label: {
                     artistListRow(artist)
                 }
