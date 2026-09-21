@@ -43,11 +43,6 @@ struct SettingsView: View, SettingsRowBuilding {
     @AppStorage("com.aurora.reduceMotion") private var reduceMotion = false
     @AppStorage("com.aurora.language") private var selectedLanguage = 0 // 0 = español, 1 = inglés
     @AppStorage("com.aurora.scanOnlyNewSongs") private var scanOnlyNewSongs = true
-    // ✅ AUDIÓFILO: configuración del modo de audio
-    @AppStorage("com.aurora.audioSessionMode") private var audioSessionMode = 0 // 0 = default, 1 = measurement
-    // ✅ AUDIÓFILO: buffer de E/S preferido (0 = Auto). Lo lee AudioEngine al
-    // configurar la sesión y lo aplica en vivo `applyPreferredIOBufferDuration`.
-    @AppStorage("com.aurora.ioBufferMs") private var ioBufferMs = 0
 
     // ✅ LOCALIZADOS: computados para reaccionar al cambio de idioma al
     // instante (antes eran `let` hardcodeados en español → el inglés no
@@ -57,18 +52,6 @@ struct SettingsView: View, SettingsRowBuilding {
             Localization.localized("settings.theme.system"),
             Localization.localized("settings.theme.light"),
             Localization.localized("settings.theme.dark")
-        ]
-    }
-    /// ✅ BUFFER I/O: opciones del picker (0 = Auto) y el índice que corresponde
-    /// al valor guardado. Etiquetas localizadas para que el cambio de idioma se
-    /// vea al instante, como en Tema / Acento / Idioma.
-    private let ioBufferValues: [Int] = [0, 8, 15, 20]
-    private var ioBufferLabels: [String] {
-        [
-            Localization.localized("settings.ioBufferAuto"),
-            "8 ms",
-            "15 ms",
-            "20 ms"
         ]
     }
     /// ✅ ESTILO DE BARRA: etiquetas localizadas (se re-evalúan al cambiar de
@@ -97,10 +80,6 @@ struct SettingsView: View, SettingsRowBuilding {
             Localization.localized("settings.lyricsSpeed.normal"),
             Localization.localized("settings.lyricsSpeed.fast")
         ]
-    }
-
-    private var ioBufferIndex: Int {
-        ioBufferValues.firstIndex(of: ioBufferMs) ?? 0
     }
 
     private var accents: [String] {
@@ -264,107 +243,10 @@ struct SettingsView: View, SettingsRowBuilding {
                         .onChange(of: scanOnlyNewSongs) { v in AppLog.info(.settings, "Escaneo solo nuevas: \(v ? "activado" : "desactivado")") }
 
                         // Audio
-                        // ✅ Crossfade eliminado por completo (fuente de bugs
-                        // de sincronización): ya no aparece en Ajustes.
-                        settingsSection(icon: "waveform", title: Localization.localized("settings.audio"), color: AppTheme.accent) {
-                            settingsButton(title: Localization.localized("settings.equalizer"), subtitle: audioEngine.isEQEnabled ? "\(Localization.localized("equalizer.active")) (\(audioEngine.eqPreset.displayName))" : Localization.localized("equalizer.disabled"), icon: "slider.horizontal.3", color: AppTheme.accent) {
-                                showEqualizerSheet = true
-                            }
-                            settingsDivider
-                            // ✅ AUDIÓFILO: modo de audio (Default vs Measurement)
-                            settingsMenuButton(
-                                title: Localization.localized("settings.audioMode"),
-                                subtitle: audioSessionMode > 0 ? "Measurement (bit-perfect)" : "Default",
-                                icon: "waveform.badge.micrometer",
-                                color: .orange,
-                                options: ["Default", "Measurement (bit-perfect)"],
-                                selection: Binding(
-                                    get: { self.audioSessionMode },
-                                    set: { newValue in
-                                        Haptics.light()
-                                        self.audioSessionMode = newValue
-                                        audioEngine.setAudioSessionMode(newValue)
-                                        AppLog.info(.settings, "Modo de audio: \(newValue == 1 ? "Measurement" : "Default")")
-                                    }
-                                ),
-                                onChange: { newValue in
-                                    // Actualizar directamente sin verificación de cambio
-                                    Haptics.light()
-                                    self.audioSessionMode = newValue
-                                    audioEngine.setAudioSessionMode(newValue)
-                                }
-                            )
-                            settingsDivider
-                            // ✅ BUFFER I/O: control real sobre la latencia y la CPU
-                            // del motor. Con un DAC externo o en A11, 8 ms puede dar
-                            // glitches que 15/20 ms resuelven; en Bluetooth el enlace
-                            // manda y iOS ignora el valor. No altera la calidad: solo
-                            // cambia cada cuánto se sirve un buffer.
-                            settingsMenuButton(
-                                title: Localization.localized("settings.ioBuffer"),
-                                subtitle: ioBufferLabels[ioBufferIndex],
-                                icon: "timer",
-                                color: .teal,
-                                options: ioBufferLabels,
-                                selection: Binding(
-                                    get: { ioBufferIndex },
-                                    set: { newValue in
-                                        Haptics.light()
-                                        let ms = ioBufferValues[newValue]
-                                        self.ioBufferMs = ms
-                                        audioEngine.applyPreferredIOBufferDuration(ms: ms)
-                                        AppLog.info(.settings, "Buffer I/O: \(ms == 0 ? "Auto" : "\(ms) ms")")
-                                    }
-                                ),
-                                onChange: { newValue in
-                                    Haptics.light()
-                                    let ms = ioBufferValues[newValue]
-                                    self.ioBufferMs = ms
-                                    audioEngine.applyPreferredIOBufferDuration(ms: ms)
-                                }
-                            )
-                            settingsDivider
-                            settingsToggleRow(
-                                title: Localization.localized("settings.monoAudio"),
-                                subtitle: Localization.localized("settings.monoAudioSubtitle"),
-                                icon: "ear",
-                                color: .cyan,
-                                isOn: Binding(
-                                    get: { audioEngine.isMonoAudioEnabled },
-                                    set: { newValue in
-                                        if newValue != audioEngine.isMonoAudioEnabled {
-                                            Haptics.light()
-                                            audioEngine.toggleMonoAudio()
-                                            AppLog.info(.settings, "Audio mono: \(newValue ? "activado" : "desactivado")")
-                                        }
-                                    }
-                                )
-                            )
-                            settingsDivider
-                            // ✅ LIMITER: anti-distorsión universal
-                            settingsToggleRow(
-                                title: Localization.localized("settings.limiter"),
-                                subtitle: Localization.localized("settings.limiterSubtitle"),
-                                icon: "waveform.path",
-                                color: .purple,
-                                isOn: Binding(
-                                    get: { audioEngine.isLimiterEnabled },
-                                    set: { newValue in
-                                        if newValue != audioEngine.isLimiterEnabled {
-                                            Haptics.light()
-                                            audioEngine.toggleLimiter()
-                                        }
-                                    }
-                                )
-                            )
-                            // ✅ ELIMINADO el toggle "Optimización Bluetooth": su
-                            // única acción real era escribir un log (no forzaba
-                            // buffer ni tasa, porque en A2DP la latencia y el
-                            // reloj los impone el enlace) y además no se
-                            // persistía. Un interruptor que no cambia nada es
-                            // peor que no tenerlo. La implementación interna
-                            // sigue en AudioEngine por si se le da uso futuro.
-                        }
+                        AudioSettingsSection(
+                            audioEngine: audioEngine,
+                            showEqualizerSheet: $showEqualizerSheet
+                        )
 
                         // Apariencia
                         settingsSection(icon: "paintbrush.fill", title: Localization.localized("settings.appearance"), color: .pink) {
@@ -982,6 +864,140 @@ extension SettingsRowBuilding {
 // su nombre en runtime → EXC_BAD_ACCESS en la stack guard. Con las secciones
 // fuera, ningún tipo individual pasa de un par de niveles de anidación.
 // El contenido es idéntico: solo cambia dónde vive.
+
+/// Audio: ecualizador, modo de sesión, buffer de E/S, mono y limiter.
+/// ⚠️ Extraída del `body` padre: era la sección más anidada (dos pickers con
+/// closures de tres niveles) y contribuía al tipo gigante que desbordaba el
+/// demangler al abrir Ajustes.
+private struct AudioSettingsSection: View, SettingsRowBuilding {
+    @ObservedObject var audioEngine: AudioEngine
+    @ObservedObject var localization = Localization.shared
+    @Binding var showEqualizerSheet: Bool
+    // ✅ AUDIÓFILO: configuración del modo de audio
+    @AppStorage("com.aurora.audioSessionMode") private var audioSessionMode = 0 // 0 = default, 1 = measurement
+    // ✅ AUDIÓFILO: buffer de E/S preferido (0 = Auto). Lo lee AudioEngine al
+    // configurar la sesión y lo aplica en vivo `applyPreferredIOBufferDuration`.
+    @AppStorage("com.aurora.ioBufferMs") private var ioBufferMs = 0
+    /// ✅ BUFFER I/O: opciones del picker (0 = Auto) y el índice que corresponde
+    /// al valor guardado. Etiquetas localizadas para que el cambio de idioma se
+    /// vea al instante, como en Tema / Acento / Idioma.
+    private let ioBufferValues: [Int] = [0, 8, 15, 20]
+    private var ioBufferLabels: [String] {
+        [
+            Localization.localized("settings.ioBufferAuto"),
+            "8 ms",
+            "15 ms",
+            "20 ms"
+        ]
+    }
+    private var ioBufferIndex: Int {
+        ioBufferValues.firstIndex(of: ioBufferMs) ?? 0
+    }
+
+    var body: some View {
+        // ✅ Crossfade eliminado por completo (fuente de bugs
+        // de sincronización): ya no aparece en Ajustes.
+        settingsSection(icon: "waveform", title: Localization.localized("settings.audio"), color: AppTheme.accent) {
+            settingsButton(title: Localization.localized("settings.equalizer"), subtitle: audioEngine.isEQEnabled ? "\(Localization.localized("equalizer.active")) (\(audioEngine.eqPreset.displayName))" : Localization.localized("equalizer.disabled"), icon: "slider.horizontal.3", color: AppTheme.accent) {
+                showEqualizerSheet = true
+            }
+            settingsDivider
+            // ✅ AUDIÓFILO: modo de audio (Default vs Measurement)
+            settingsMenuButton(
+                title: Localization.localized("settings.audioMode"),
+                subtitle: audioSessionMode > 0 ? "Measurement (bit-perfect)" : "Default",
+                icon: "waveform.badge.micrometer",
+                color: .orange,
+                options: ["Default", "Measurement (bit-perfect)"],
+                selection: Binding(
+                    get: { self.audioSessionMode },
+                    set: { newValue in
+                        Haptics.light()
+                        self.audioSessionMode = newValue
+                        audioEngine.setAudioSessionMode(newValue)
+                        AppLog.info(.settings, "Modo de audio: \(newValue == 1 ? "Measurement" : "Default")")
+                    }
+                ),
+                onChange: { newValue in
+                    // Actualizar directamente sin verificación de cambio
+                    Haptics.light()
+                    self.audioSessionMode = newValue
+                    audioEngine.setAudioSessionMode(newValue)
+                }
+            )
+            settingsDivider
+            // ✅ BUFFER I/O: control real sobre la latencia y la CPU
+            // del motor. Con un DAC externo o en A11, 8 ms puede dar
+            // glitches que 15/20 ms resuelven; en Bluetooth el enlace
+            // manda y iOS ignora el valor. No altera la calidad: solo
+            // cambia cada cuánto se sirve un buffer.
+            settingsMenuButton(
+                title: Localization.localized("settings.ioBuffer"),
+                subtitle: ioBufferLabels[ioBufferIndex],
+                icon: "timer",
+                color: .teal,
+                options: ioBufferLabels,
+                selection: Binding(
+                    get: { ioBufferIndex },
+                    set: { newValue in
+                        Haptics.light()
+                        let ms = ioBufferValues[newValue]
+                        self.ioBufferMs = ms
+                        audioEngine.applyPreferredIOBufferDuration(ms: ms)
+                        AppLog.info(.settings, "Buffer I/O: \(ms == 0 ? "Auto" : "\(ms) ms")")
+                    }
+                ),
+                onChange: { newValue in
+                    Haptics.light()
+                    let ms = ioBufferValues[newValue]
+                    self.ioBufferMs = ms
+                    audioEngine.applyPreferredIOBufferDuration(ms: ms)
+                }
+            )
+            settingsDivider
+            settingsToggleRow(
+                title: Localization.localized("settings.monoAudio"),
+                subtitle: Localization.localized("settings.monoAudioSubtitle"),
+                icon: "ear",
+                color: .cyan,
+                isOn: Binding(
+                    get: { audioEngine.isMonoAudioEnabled },
+                    set: { newValue in
+                        if newValue != audioEngine.isMonoAudioEnabled {
+                            Haptics.light()
+                            audioEngine.toggleMonoAudio()
+                            AppLog.info(.settings, "Audio mono: \(newValue ? "activado" : "desactivado")")
+                        }
+                    }
+                )
+            )
+            settingsDivider
+            // ✅ LIMITER: anti-distorsión universal
+            settingsToggleRow(
+                title: Localization.localized("settings.limiter"),
+                subtitle: Localization.localized("settings.limiterSubtitle"),
+                icon: "waveform.path",
+                color: .purple,
+                isOn: Binding(
+                    get: { audioEngine.isLimiterEnabled },
+                    set: { newValue in
+                        if newValue != audioEngine.isLimiterEnabled {
+                            Haptics.light()
+                            audioEngine.toggleLimiter()
+                        }
+                    }
+                )
+            )
+            // ✅ ELIMINADO el toggle "Optimización Bluetooth": su
+            // única acción real era escribir un log (no forzaba
+            // buffer ni tasa, porque en A2DP la latencia y el
+            // reloj los impone el enlace) y además no se
+            // persistía. Un interruptor que no cambia nada es
+            // peor que no tenerlo. La implementación interna
+            // sigue en AudioEngine por si se le da uso futuro.
+        }
+    }
+}
 
 /// Rendimiento: contador de FPS e información técnica de la salida de audio.
 private struct PerformanceSettingsSection: View, SettingsRowBuilding {
