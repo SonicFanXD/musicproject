@@ -16,11 +16,9 @@ struct SettingsView: View, SettingsRowBuilding {
     /// .folders = picker de carpetas, .files = picker de canciones.
     private enum ImportMode { case folders, files }
     @State private var importMode: ImportMode = .folders
-    @ObservedObject private var theme = ThemeManager.shared
     // ✅ Observar el idioma: al cambiar, esta vista se re-renderiza al instante
+    // (las secciones observan por su cuenta el tema y el motor de audio).
     @ObservedObject private var localization = Localization.shared
-
-    // Configuraciones persistentes
 
     private let themeDefaultsKey = "com.aurora.uiTheme"
 
