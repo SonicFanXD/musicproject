@@ -2630,44 +2630,32 @@ class AudioEngine: NSObject, ObservableObject {
                 // después `resume()` solo hacía playerNode.play() sobre un
                 // nodo que ya "estaba reproduciendo" (no-op) — silencio
                 // seguía. Apple recomienda pausar explícitamente en este caso.
-                self.wasPlayingBeforeRouteChange = self.isPlaying
+                // ⚠️ NO dejar el flag en true: si quedara activo, la siguiente
+                // conexión de ruta (rama .newDeviceAvailable, más abajo o en la
+                // rama genérica) reanudaría una reproducción que el usuario ya
+                // no tiene activa. El único "estaba sonando" que debe contar es
+                // el de una ruta que se conecta CON reproducción en curso.
+                self.wasPlayingBeforeRouteChange = false
                 if self.isPlaying {
                     // ⛔️ No pause() a secas: suspendForRouteLoss() invalida la
                     // generación ANTES de detener el nodo → un completion
                     // de audio en el playerNode.
-                    let position = self.currentTime
                     self.suspendForRouteLoss()
-                    // ✅ FIX Lightning DAC: reanudar en otra ruta después de desconectar
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
-                        guard let self = self else { return }
-                        let route = AVAudioSession.sharedInstance().currentRoute.outputs.first
-                        // Si hay una ruta disponible y estaba reproduciendo, reanudar
-                        if route != nil && self.wasPlayingBeforeRouteChange {
-                            do {
-                                try self.startEngineSafely()
-                                self.anchorPlaybackPosition(position)
-                                if let file = self.audioFile {
-                                    self.scheduleFile(file, from: position, generation: self.scheduleGeneration)
-                                    self.scheduleAheadIfPossible()
-                                }
-                                self.resume()
-                                AppLog.info(.playback, "Dispositivo desconectado, reanudando en \(route?.portName ?? "?")")
-                            } catch {
-                                AppLog.error(.playback, error, context: "oldDeviceUnavailable: reanudar en nueva ruta")
-                            }
-                        }
-                    }
-                    // ✅ La suspensión ya se hizo ARRIBA (suspendForRouteLoss()
-                    // invalida la generación ANTES de detener el nodo, que es el
-                    // orden obligatorio). Aquí quedaba una SEGUNDA llamada
-                    // duplicada —resto de un merge mal resuelto, junto a la mitad
-                    // huérfana de un comentario— que repetía scheduleGeneration++,
-                    // engine.stop(), stopDisplayTimer(), updateNowPlayingInfo() y
-                    // saveState() en cada desconexión de ruta. Era idempotente (por
-                    // eso no se notaba en el audio), pero duplicaba trabajo y
-                    // enturbiaba el orden respecto a la reanudación programada
-                    // 0,2 s después. Eliminada.
-                    AppLog.info(.playback, "Audífonos/Bluetooth desconectados: suspendido sin salto de canción")
+                    // ✅ PAUSA COMO APPLE MUSIC (decisión de producto): al perder
+                    // la ruta NO se reanuda en la nueva salida. Aquí vivía un
+                    // DispatchQueue.main.asyncAfter(0.2) que reprogramaba el
+                    // archivo en la posición actual y llamaba a resume(), así que
+                    // desenchufar los auriculares hacía que la música siguiera
+                    // sonando por el ALTAVOZ del iPhone. Nació para "rescatar" el
+                    // Lightning DAC, pero quien desenchufa espera silencio: ahora
+                    // se suspende, la posición queda intacta y el play lo da el
+                    // usuario (que sí funciona, en la ruta activa en ese momento).
+                    // La reanudación automática al CONECTAR una ruta sigue
+                    // intacta en la rama .newDeviceAvailable.
+                    // ✅ Una sola suspensión por evento: la de arriba, que
+                    // invalida la generación ANTES de detener el nodo (el orden
+                    // obligatorio).
+                    AppLog.info(.playback, "Audífonos/Bluetooth desconectados: pausado sin salto de canción (no se reanuda en altavoz)")
                 }
             } else {
                 self.wasPlayingBeforeRouteChange = self.isPlaying
