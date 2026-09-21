@@ -20,6 +20,11 @@ struct ContentView: View {
         LibraryCategory(rawValue: selectedCategoryRaw) ?? .songs
     }
     @State private var searchText = ""
+    /// ✅ Texto con el que se filtran las listas: va 250 ms por detrás de
+    /// `searchText` para no re-filtrar la biblioteca en cada pulsación. El campo
+    /// sigue siendo inmediato (lo que escribes se ve al instante); lo que espera
+    /// es el FILTRADO.
+    @State private var debouncedSearchText = ""
     @FocusState private var searchFieldFocused: Bool
     // ✅ Manejo de ciclo de vida para detectar cambios en segundo plano
     @Environment(\.scenePhase) private var scenePhase
@@ -301,6 +306,22 @@ struct ContentView: View {
             }
             // ✅ INDEXACIÓN: sincronizar tarjeta grande / indicador compacto.
             syncFirstTimeIndexing()
+        }
+        // ✅ DEBOUNCE de la búsqueda (250 ms): antes el filtrado recorría la
+        // biblioteca ENTERA en cada pulsación (y con la consulta vacía incluso la
+        // re-ordenaba), síncrono en el hilo principal; con 2.000 canciones el
+        // teclado se resentía. Ahora se filtra UNA vez cuando el usuario deja de
+        // escribir y, mientras tanto, siguen viéndose los resultados anteriores
+        // (no se vacía la lista por teclear). Vaciar el campo con la X o con
+        // "Cancelar" sigue siendo inmediato.
+        .task(id: searchText) {
+            guard !searchText.isEmpty else {
+                debouncedSearchText = ""
+                return
+            }
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            guard !Task.isCancelled else { return }
+            debouncedSearchText = searchText
         }
     }
 
@@ -1084,7 +1105,7 @@ struct ContentView: View {
     }
 
     private var normalizedQuery: String {
-        searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        debouncedSearchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
 
     // ✅ BÚSQUEDA optimizada: el índice ya tiene las cadenas normalizadas
