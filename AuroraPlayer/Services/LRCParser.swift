@@ -203,16 +203,34 @@ struct LRCParser {
         return metadataPrefixes.contains { line.hasPrefix($0) }
     }
 
-    /// Extrae timestamp de línea [mm:ss.xx] en milisegundos
+    /// Extrae el timestamp de línea en milisegundos.
+    /// ✅ Formatos que aparecen en letras reales y ahora se aceptan todos:
+    /// - `[mm:ss]`, `[mm:ss.xx]`, `[mm:ss.xxx]`
+    /// - `[mm:ss,xx]` (coma decimal, habitual en archivos europeos)
+    /// - `[m:ss.xx]` (minutos de 1 a 3 dígitos → `[0:05.00]`)
+    /// - `[hh:mm:ss]` (tres campos separados por `:`)
     private static func extractLineTimestamp(_ line: String) -> Int? {
-        // ✅ Regex para [mm:ss.xx] o [mm:ss]
-        let pattern = "\\[(\\d{2}):(\\d{2})(?:\\.(\\d{2,3}))?\\]"
+        let nsLine = line as NSString
+        let fullRange = NSRange(location: 0, length: nsLine.length)
+
+        // ✅ h:mm:ss ANTES que mm:ss: en `[00:01:50]` el tercer campo son
+        // SEGUNDOS (1 min 50 s = 110 s), no centésimas. Sin esta prioridad se
+        // leería 1,5 s y toda la letra quedaría desplazada casi dos minutos.
+        if let hourRegex = try? NSRegularExpression(pattern: "\\[(\\d{1,3}):(\\d{1,2}):(\\d{1,2})\\]"),
+           let match = hourRegex.firstMatch(in: line, range: fullRange) {
+            let hours = Int(nsLine.substring(with: match.range(at: 1))) ?? 0
+            let minutes = Int(nsLine.substring(with: match.range(at: 2))) ?? 0
+            let seconds = Int(nsLine.substring(with: match.range(at: 3))) ?? 0
+            return ((hours * 3600) + (minutes * 60) + seconds) * 1000
+        }
+
+        let pattern = "\\[(\\d{1,3}):(\\d{1,2})(?:[.,](\\d{1,3}))?\\]"
         guard let regex = try? NSRegularExpression(pattern: pattern),
-              let match = regex.firstMatch(in: line, range: NSRange(line.startIndex..., in: line)) else {
+              let match = regex.firstMatch(in: line, range: fullRange) else {
             return nil
         }
 
-        return timestampMs(from: match, in: line as NSString)
+        return timestampMs(from: match, in: nsLine)
     }
 
     /// Convierte los grupos (mm, ss, fracción opcional) de un match a milisegundos
@@ -235,7 +253,8 @@ struct LRCParser {
         if fractionRange.location != NSNotFound {
             let fraction = text.substring(with: fractionRange)
             milliseconds = Int(fraction) ?? 0
-            multiplier = fraction.count == 3 ? 1 : 10
+            // ✅ 1 dígito = décimas (×100), 2 = centésimas (×10), 3 = milésimas (×1)
+            multiplier = fraction.count == 3 ? 1 : (fraction.count == 2 ? 10 : 100)
         }
 
         return (minutes * 60 * 1000) + (seconds * 1000) + (milliseconds * multiplier)
@@ -472,6 +491,19 @@ extension LRCParser {
         assert(offsetClampResult.count == 1, "Test 13 falló: Expected 1 line")
         assert(offsetClampResult[0].startMs == 0, "Test 13 falló: clamp a 0 (got \(offsetClampResult[0].startMs))")
         print("✅ Test 13 (Offset de metadata) passed")
+
+        // Test 14: formatos alternativos de timestamp
+        let altFormatLRC = """
+        [0:05.00]Minuto de un dígito
+        [00:10,50]Coma como separador decimal
+        [00:01:50]Tres campos = 1 min 50 s
+        """
+        let altResult = parse(altFormatLRC)
+        assert(altResult.count == 3, "Test 14 falló: Expected 3 líneas (got \(altResult.count))")
+        assert(altResult[0].startMs == 5000, "Test 14 falló: [0:05.00] (got \(altResult[0].startMs))")
+        assert(altResult[1].startMs == 10_500, "Test 14 falló: [00:10,50] (got \(altResult[1].startMs))")
+        assert(altResult[2].startMs == 110_000, "Test 14 falló: [00:01:50] deben ser 110s (got \(altResult[2].startMs))")
+        print("✅ Test 14 (Formatos alternativos de timestamp) passed")
 
         print("🎉 Todos los tests de LRCParser pasaron correctamente")
     }
