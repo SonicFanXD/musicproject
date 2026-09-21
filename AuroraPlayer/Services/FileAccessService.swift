@@ -1103,6 +1103,22 @@ class FileAccessService: ObservableObject {
                     } else {
                         AppLog.info(.library, "Indexación completada: \(sortedSongs.count) canciones (sin cambios) · RAM \(self.residentMemoryMB) MB")
                     }
+                    // ✅ VERIFICACIÓN DE COBERTURA (solo en rescan completo): aquí
+                    // `seenKeys` contiene TODOS los archivos soportados vistos en
+                    // disco y `songs` ya está publicado. En un escaneo incremental
+                    // o en la detección silenciosa el set se deja vacío a
+                    // propósito (sin poda), así que compararlo daría "vistos 0" y
+                    // un aviso falso. Si quedan archivos en disco que no acabaron
+                    // en la biblioteca, ese es exactamente el síntoma a ver.
+                    if shouldPrune, !seenKeys.isEmpty, self.pendingSongs.isEmpty {
+                        let diff = seenKeys.count - sortedSongs.count
+                        let ratio = Double(abs(diff)) / Double(max(1, seenKeys.count)) * 100
+                        if abs(diff) > 5 && ratio > 5 {
+                            AppLog.warning(.library, "Cobertura: \(seenKeys.count) archivos vistos en disco pero \(sortedSongs.count) en la biblioteca (delta \(diff), \(String(format: "%.1f", ratio))%)")
+                        } else {
+                            AppLog.info(.library, "Cobertura verificada: \(sortedSongs.count) canciones para \(seenKeys.count) archivos vistos en disco")
+                        }
+                    }
                     if !self.pendingSongs.isEmpty {
                         self.updateScanningState()
                     }
