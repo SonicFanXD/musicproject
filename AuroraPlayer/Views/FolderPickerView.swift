@@ -45,13 +45,8 @@ struct FolderPickerView: View {
                 ToolbarItem(placement: .principal) {
                     Text("Biblioteca")
                         .font(.system(size: 20, weight: .bold, design: .rounded))
-                        .foregroundStyle(
-                            LinearGradient(
-                                colors: [AppTheme.accent, AppTheme.accent.opacity(0.75)],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                        )
+                        // ✅ Acento de dos colores (antes un solo color con opacidad).
+                        .foregroundStyle(AppTheme.accentGradient)
                         .accessibilityLabel("Biblioteca")
                 }
 
@@ -72,7 +67,11 @@ struct FolderPickerView: View {
             }
             .onAppear {
                 withAnimation(.easeOut(duration: 0.5)) { appearAnimation = true }
-                withAnimation(.easeInOut(duration: 1.5).repeatForever(autoreverses: true)) { headerPulse = true }
+                // ✅ El anillo empieza a latir DESPUÉS de la entrada (0,25 s) para que
+                // el pulso no compita con la escala de aparición del icono.
+                withAnimation(.easeInOut(duration: 1.5).repeatForever(autoreverses: true).delay(0.25)) {
+                    headerPulse = true
+                }
             }
         }
     }
@@ -84,13 +83,7 @@ struct FolderPickerView: View {
             ZStack {
                 // ✅ Anillo pulsante con material de vidrio (estilo NowPlayingView)
                 Circle()
-                    .stroke(
-                        LinearGradient(
-                            colors: [AppTheme.accent.opacity(0.4), AppTheme.accent.opacity(0.1)],
-                            startPoint: .topLeading, endPoint: .bottomTrailing
-                        ),
-                        lineWidth: 2
-                    )
+                    .stroke(AppTheme.accentGradient(opacity: 0.45), lineWidth: 2)
                     .frame(width: 88, height: 88)
                     .scaleEffect(headerPulse ? 1.12 : 0.95)
                     .opacity(headerPulse ? 0.6 : 0.25)
@@ -111,12 +104,7 @@ struct FolderPickerView: View {
 
                 Image(systemName: "music.note.list")
                     .font(.system(size: 32, weight: .semibold))
-                    .foregroundStyle(
-                        LinearGradient(
-                            colors: [AppTheme.accent, AppTheme.accent.opacity(0.7)],
-                            startPoint: .top, endPoint: .bottom
-                        )
-                    )
+                    .foregroundStyle(AppTheme.accentGradient)
             }
             .opacity(appearAnimation ? 1 : 0)
             .scaleEffect(appearAnimation ? 1 : 0.7)
@@ -316,12 +304,12 @@ struct FolderPickerView: View {
                         ForEach(fileAccessService.folders) { folder in
                             HStack {
                                 ZStack {
-                                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                    RoundedRectangle(cornerRadius: 11, style: .continuous)
                                         .fill(AppTheme.accentGradient(opacity: 0.12))
-                                        .frame(width: 38, height: 38)
+                                        .frame(width: 40, height: 40)
 
                                     Image(systemName: "folder.fill")
-                                        .font(.system(size: 16, weight: .semibold))
+                                        .font(.system(size: 17, weight: .semibold))
                                         .foregroundStyle(AppTheme.accentGradient)
                                 }
 
@@ -377,12 +365,12 @@ struct FolderPickerView: View {
                         ForEach(fileAccessService.files) { file in
                             HStack {
                                 ZStack {
-                                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                    RoundedRectangle(cornerRadius: 11, style: .continuous)
                                         .fill(AppTheme.accentGradient(opacity: 0.12))
-                                        .frame(width: 38, height: 38)
+                                        .frame(width: 40, height: 40)
 
                                     Image(systemName: "music.note")
-                                        .font(.system(size: 16, weight: .semibold))
+                                        .font(.system(size: 17, weight: .semibold))
                                         .foregroundStyle(AppTheme.accentGradient)
                                 }
 
@@ -426,13 +414,22 @@ struct FolderPickerView: View {
             // Empty State
             if fileAccessService.folders.isEmpty && fileAccessService.files.isEmpty {
                 VStack(spacing: 12) {
-                    Image(systemName: "music.note")
-                        .font(.system(size: 40))
-                        .foregroundStyle(.tertiary)
+                    // ✅ Estado vacío con el icono del header (mismo lenguaje visual
+                    // que el resto: acento de dos colores sobre un disco suave).
+                    ZStack {
+                        Circle()
+                            .fill(AppTheme.accentGradient(opacity: 0.1))
+                            .frame(width: 72, height: 72)
+
+                        Image(systemName: "music.note")
+                            .font(.system(size: 30, weight: .medium))
+                            .foregroundStyle(AppTheme.accentGradient)
+                    }
+                    .padding(.bottom, 2)
 
                     Text("Tu biblioteca está vacía")
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(.secondary)
+                        .font(.headline)
+                        .foregroundStyle(.primary)
 
                     Text("Añade carpetas o archivos para empezar")
                         .font(.caption)
