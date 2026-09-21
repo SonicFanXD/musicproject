@@ -356,6 +356,9 @@ struct ContentView: View {
     // oculta) para que aparezca/desaparezca con un fade suave en vez de
     // insertarse/eliminarse como fila (lo que desplazaba la lista bruscamente).
     @State private var compactIndexingVisible = false
+    // ✅ Movimiento reducido (el mismo ajuste que usa el splash): con él activo
+    // la tarjeta de indexación entra y sale sin escala y con curva plana.
+    @AppStorage("com.aurora.reduceMotion") private var reduceMotion = false
 
     // ✅ TARJETA GRANDE solo en la PRIMERA indexación (biblioteca aún vacía):
     // - Primera vez: tarjeta grande en TODAS las categorías mientras escanea,
@@ -380,7 +383,7 @@ struct ContentView: View {
             // a la compacta). Solo se apaga al FINALIZAR el escaneo.
             if !scanning {
                 firstIndexingDone = true
-                withAnimation(.easeOut(duration: 0.45)) { firstTimeIndexing = false }
+                withAnimation(indexingCardAnimation) { firstTimeIndexing = false }
             }
             return
         }
@@ -391,7 +394,7 @@ struct ContentView: View {
             && fileAccessService.songs.isEmpty
             && fileAccessService.pendingSongsCount == 0
         if isFirstScanOfInstall {
-            withAnimation(.easeOut(duration: 0.3)) { firstTimeIndexing = true }
+            withAnimation(indexingCardAnimation) { firstTimeIndexing = true }
         }
     }
 
@@ -627,7 +630,7 @@ struct ContentView: View {
         // apareciendo debajo a medida que se indexa.
         if firstTimeIndexing {
             indexingProgressCard
-                .transition(.opacity)
+                .transition(indexingCardTransition)
                 .padding(.horizontal, 12)
                 .padding(.top, 8)
             if !currentFilteredSongs.isEmpty {
@@ -752,12 +755,11 @@ struct ContentView: View {
                     ZStack(alignment: .leading) {
                         Capsule().fill(Color.secondary.opacity(0.18))
                         Capsule()
-                            .fill(
-                                LinearGradient(
-                                    colors: [AppTheme.accent.opacity(0.8), AppTheme.accent],
-                                    startPoint: .leading, endPoint: .trailing
-                                )
-                            )
+                            // ✅ Gradiente de DOS colores (respeta el modo «acento desde
+                            // carátula»). Antes era un degradado de un solo acento, así
+                            // que la barra era el único elemento de la tarjeta que no
+                            // seguía la paleta.
+                            .fill(AppTheme.accentGradient(opacity: 0.95))
                             .frame(width: geo.size.width * indexingProgress)
                             .animation(.easeInOut(duration: 0.3), value: indexingProgress)
                             .shadow(color: AppTheme.accent.opacity(0.3), radius: 4, y: 0)
@@ -777,7 +779,7 @@ struct ContentView: View {
             }
             .padding(.horizontal, 8)
 
-            Text(Localization.localized("indexing.preparing"))
+            Text(indexingPhaseText)
                 .font(.system(size: 14))
                 .foregroundStyle(.secondary)
         }
@@ -803,7 +805,7 @@ struct ContentView: View {
             ProgressView()
                 .controlSize(.small)
                 .tint(AppTheme.accent)
-            Text("\(Localization.localized("indexing.processed")) \(fileAccessService.scanProcessed)/\(fileAccessService.scanTotal)")
+            Text("\(indexingPhaseText) \(fileAccessService.scanProcessed)/\(fileAccessService.scanTotal)")
                 .font(.system(size: 13, weight: .medium).monospacedDigit())
                 .foregroundStyle(.secondary)
             Spacer()
@@ -811,12 +813,7 @@ struct ContentView: View {
                 ZStack(alignment: .leading) {
                     Capsule().fill(Color.secondary.opacity(0.18))
                     Capsule()
-                        .fill(
-                            LinearGradient(
-                                colors: [AppTheme.accent.opacity(0.8), AppTheme.accent],
-                                startPoint: .leading, endPoint: .trailing
-                            )
-                        )
+                        .fill(AppTheme.accentGradient(opacity: 0.95))
                         .frame(width: max(0, geo.size.width * indexingProgress))
                         .animation(.easeInOut(duration: 0.25), value: indexingProgress)
                 }
@@ -838,6 +835,31 @@ struct ContentView: View {
         .clipped()
     }
 
+    // ✅ FASE real de la indexación, derivada de contadores que YA se publican
+    // (scanProcessed / scanTotal). Antes la tarjeta decía siempre «Preparando tu
+    // música…», incluso mientras leía metadatos o guardaba la caché. Al no
+    // introducir ningún @Published nuevo, los re-renders siguen siendo los
+    // mismos que antes.
+    private var indexingPhaseText: String {
+        if fileAccessService.scanProcessed <= 0 {
+            return Localization.localized("indexing.preparing")
+        }
+        if fileAccessService.scanProcessed < fileAccessService.scanTotal {
+            return Localization.localized("indexing.readingMetadata")
+        }
+        return Localization.localized("indexing.savingCache")
+    }
+
+    // ✅ Entrada/salida de la tarjeta: escala + fundido. Con movimiento reducido
+    // queda en un fundido simple (mismo criterio que el splash).
+    private var indexingCardTransition: AnyTransition {
+        reduceMotion ? .opacity : .scale(scale: 0.96).combined(with: .opacity)
+    }
+
+    private var indexingCardAnimation: Animation {
+        reduceMotion ? .easeOut(duration: 0.3) : .spring(response: 0.4, dampingFraction: 0.8)
+    }
+
     private var indexingProgress: Double {
         guard fileAccessService.scanTotal > 0 else { return 0 }
         return min(1.0, Double(fileAccessService.scanProcessed) / Double(fileAccessService.scanTotal))
@@ -849,7 +871,7 @@ struct ContentView: View {
         // ✅ PRIMERA INDEXACIÓN: tarjeta grande también en álbumes.
         if firstTimeIndexing {
             indexingProgressCard
-                .transition(.opacity)
+                .transition(indexingCardTransition)
                 .padding(.horizontal, 12)
                 .padding(.top, 8)
         }
@@ -895,7 +917,7 @@ struct ContentView: View {
         // ✅ PRIMERA INDEXACIÓN: tarjeta grande también en artistas.
         if firstTimeIndexing {
             indexingProgressCard
-                .transition(.opacity)
+                .transition(indexingCardTransition)
                 .padding(.horizontal, 12)
                 .padding(.top, 8)
         }

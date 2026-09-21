@@ -271,6 +271,8 @@ final class Localization: ObservableObject {
         "indexing.progress": [.spanish: "de", .english: "of"],
         "indexing.preparing": [.spanish: "Preparando tu música…", .english: "Preparing your music…"],
         "indexing.processed": [.spanish: "Indexando…", .english: "Indexing…"],
+        "indexing.readingMetadata": [.spanish: "Leyendo metadatos…", .english: "Reading metadata…"],
+        "indexing.savingCache": [.spanish: "Guardando caché…", .english: "Saving cache…"],
 
         // Actions
         "actions.addFolder": [.spanish: "Agregar carpeta de música", .english: "Add music folder"],
