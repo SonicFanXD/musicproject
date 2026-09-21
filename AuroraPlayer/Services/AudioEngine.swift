@@ -1798,22 +1798,83 @@ class AudioEngine: NSObject, ObservableObject {
         return repeatMode == .all
     }
 
+    /// Índice de la siguiente canción SIN comprometerla.
+    /// Pura, sin side effects. Usar para consultar "qué sigue" sin comprometer
+    /// la cola (la precarga, por ejemplo). Para avanzar de verdad —consumiendo
+    /// la cola manual y avanzando el puntero del aleatorio— usar
+    /// `computeNextIndex()`.
+    func peekNextIndex() -> Int? { peekNextTrack()?.index }
+
+    /// Núcleo puro del peek: devuelve el índice que tendrá la siguiente canción
+    /// y la URL que realmente va a sonar.
+    ///
+    /// Es un espejo de `computeNextIndex()` **sin mutar nada**: ni
+    /// `manualQueue.removeFirst()`, ni `playlist.insert(_:at:)`, ni
+    /// `shuffledPlaylist`/`shuffleIndex`. Los índices devueltos coinciden con
+    /// los que devolverá `computeNextIndex()` cuando llegue el momento real
+    /// (mientras la playlist y el índice actual no cambien entre medias), para
+    /// que la caché de precarga siga acertando.
+    private func peekNextTrack() -> (index: Int, url: URL)? {
+        // Rama 1 — cola manual: se insertará justo después de la actual. Ese es
+        // el índice que devolverá computeNextIndex() (`min(max(currentIndex+1,0),
+        // playlist.count)`), y la URL hay que leerla de la cola, porque la
+        // canción TODAVÍA no está en la playlist en este momento.
+        if let queued = manualQueue.first {
+            let insertionIndex = min(max(currentIndex + 1, 0), playlist.count)
+            return (insertionIndex, queued.url)
+        }
+
+        guard !playlist.isEmpty else { return nil }
+        // Con una sola canción, solo repeat (.all/.one) permite avanzar.
+        if playlist.count == 1 {
+            return (repeatMode == .all || repeatMode == .one) ? (0, playlist[0].url) : nil
+        }
+        if isShuffleEnabled {
+            // Espejo del camino real: si la lista mezclada está vigente, la
+            // siguiente es `shuffledPlaylist[shuffleIndex]` — se devuelve su
+            // índice en la playlist SIN avanzar el puntero.
+            if !shuffledPlaylist.isEmpty, shuffleIndex < shuffledPlaylist.count {
+                let nextSong = shuffledPlaylist[shuffleIndex]
+                if let idx = playlist.firstIndex(where: { $0.id == nextSong.id }) {
+                    return (idx, nextSong.url)
+                }
+            }
+            // Lista agotada o aún sin generar: computeNextIndex() regeneraría
+            // (mutación) y elegiría una canción al azar, así que no es predecible
+            // sin mutar. Devolver nil aquí solo significa "no precargar": la
+            // transición real abrirá el archivo en su momento.
+            return nil
+        }
+        // Secuencial
+        let next = currentIndex + 1
+        if next >= playlist.count {
+            return repeatMode == .all ? (0, playlist[0].url) : nil
+        }
+        return (next, playlist[next].url)
+    }
+
     /// ✅ PRECARGA de la siguiente canción en background: mientras suena la
     /// actual, abrimos el AVAudioFile de la siguiente para que, al terminar,
     /// el reinicio atómico de playCurrentSong() use el archivo ya "caliente"
     /// en vez de leerlo de disco — eliminando el grueso del hueco entre pistas.
 
     private func preloadNextSong() {
-        guard let index = computeNextIndex() else {
+        // ✅ FIX: consultar con la versión PURA del cálculo. Antes se usaba
+        // computeNextIndex(), que CONSUME la cola manual (removeFirst), inserta
+        // en la playlist y avanza el puntero del aleatorio — es decir, la simple
+        // PRECARGA alteraba la cola (una canción de la cola manual desaparecía
+        // de nextUpQueue sin sonar) y el orden del aleatorio.
+        guard let next = peekNextTrack() else {
             clearPreloadedNext()
             return
         }
+        let index = next.index
+        let url = next.url
         // Ya está precargada la misma siguiente → no volver a abrirla.
-        guard playlist[index].url != preloadedNextURL else { return }
+        guard url != preloadedNextURL else { return }
         preloadedNextIndex = index
-        preloadedNextURL = playlist[index].url
+        preloadedNextURL = url
         preloadedNextFile = nil
-        let url = playlist[index].url
 
         DispatchQueue.global(qos: .utility).async { [weak self] in
 
