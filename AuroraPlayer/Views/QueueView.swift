@@ -149,23 +149,22 @@ struct QueueView: View {
 
                         HStack(spacing: 2.5) {
                             ForEach(0..<3, id: \.self) { bar in
+                                // ✅ 3.0: constantes con tipo explícito — la expresión en
+                                // una sola línea desbordaba el verificador de tipos.
+                                let animating: Bool = DecorativeMotion.isAnimating(audioEngine.isPlaying)
+                                let barHeight: CGFloat = animating ? (bar % 2 == 0 ? 14 : 9) : 6
+                                let barAnimation: Animation? = DecorativeMotion.animation(
+                                    Animation.easeInOut(duration: 0.45 + Double(bar) * 0.12).repeatForever(autoreverses: true),
+                                    isActive: audioEngine.isPlaying
+                                )
                                 RoundedRectangle(cornerRadius: 1.5)
                                     .fill(LinearGradient(
                                         colors: [AppTheme.accent, AppTheme.accent.opacity(0.5)],
                                         startPoint: .top,
                                         endPoint: .bottom
                                     ))
-                                    .frame(width: 3, height: DecorativeMotion.isAnimating(audioEngine.isPlaying) ? (bar % 2 == 0 ? 14 : 9) : 6)
-                                    // ✅ BATERÍA: en pausa se retira la animación (antes el
-                                    // repeatForever seguía oscilando entre 6 y 14/9 pt).
-                                    .animation(
-                                        // ✅ 3.0: sin bucle decorativo al grabar pantalla.
-                                        DecorativeMotion.animation(
-                                            Animation.easeInOut(duration: 0.45 + Double(bar) * 0.12).repeatForever(autoreverses: true),
-                                            isActive: audioEngine.isPlaying
-                                        ),
-                                        value: DecorativeMotion.isAnimating(audioEngine.isPlaying)
-                                    )
+                                    .frame(width: 3, height: barHeight)
+                                    .animation(barAnimation, value: animating)
                             }
                         }
                     }

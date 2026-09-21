@@ -878,6 +878,17 @@ struct ContentView: View {
                         // ✅ 60fps: drawingGroup rasteriza las barras animadas
                         HStack(spacing: 2.5) {
                             ForEach(0..<3, id: \.self) { bar in
+                                // ✅ 3.0: el cálculo de la barra se separa en constantes
+                                // con tipo explícito. La expresión completa (ternarios +
+                                // DecorativeMotion) en una sola línea desbordaba al
+                                // verificador de tipos de Swift → "unable to type-check in
+                                // reasonable time".
+                                let animating: Bool = DecorativeMotion.isAnimating(audioEngine.isPlaying)
+                                let barHeight: CGFloat = animating ? (bar % 2 == 0 ? 12 : 7) : 4
+                                let barAnimation: Animation? = DecorativeMotion.animation(
+                                    Animation.easeInOut(duration: 0.4 + Double(bar) * 0.1).repeatForever(autoreverses: true),
+                                    isActive: audioEngine.isPlaying
+                                )
                                 RoundedRectangle(cornerRadius: 1)
                                     .fill(AppTheme.accentGradient)
                                     // ✅ El indicador ANIMA de verdad: la altura cambia
@@ -885,18 +896,8 @@ struct ContentView: View {
                                     // entre 4 y 12/7 pt (antes la animación no tenía
                                     // ninguna propiedad que cambiar → barras fijas).
                                     // ✅ BATERÍA: en pausa no hay bucle que animar.
-                                    .frame(
-                                        width: 2.5,
-                                        height: DecorativeMotion.isAnimating(audioEngine.isPlaying) ? (bar % 2 == 0 ? 12 : 7) : 4
-                                    )
-                                    .animation(
-                                        // ✅ 3.0: sin bucle decorativo al grabar pantalla.
-                                        DecorativeMotion.animation(
-                                            Animation.easeInOut(duration: 0.4 + Double(bar) * 0.1).repeatForever(autoreverses: true),
-                                            isActive: audioEngine.isPlaying
-                                        ),
-                                        value: DecorativeMotion.isAnimating(audioEngine.isPlaying)
-                                    )
+                                    .frame(width: 2.5, height: barHeight)
+                                    .animation(barAnimation, value: animating)
                             }
                         }
                         .drawingGroup()
