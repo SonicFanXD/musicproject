@@ -897,7 +897,7 @@ struct ContentView: View {
                                     )
                                     .animation(
                                         audioEngine.isPlaying
-                                            ? .easeInOut(duration: 0.4 + Double(bar) * 0.1).repeatForever(autoreverses: true)
+                                            ? Animation.easeInOut(duration: 0.4 + Double(bar) * 0.1).repeatForever(autoreverses: true)
                                             : nil,
                                         value: audioEngine.isPlaying
                                     )
@@ -1018,7 +1018,7 @@ struct ContentView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         } else {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(AppTheme.accentGradient(primaryOpacity: 0.15, secondaryOpacity: 0.05))
+                .fill(AppTheme.accentGradient(opacity: 0.15))
                 .frame(width: 48, height: 48)
                 .overlay {
                     Image(systemName: "music.note")
@@ -1674,7 +1674,7 @@ struct playlistLibraryCard: View {
                 } else {
                     ZStack {
                         RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .fill(AppTheme.accentGradient(primaryOpacity: 0.25, secondaryOpacity: 0.1))
+                            .fill(AppTheme.accentGradient(opacity: 0.25))
                             .frame(width: 140, height: 140)
                         Image(systemName: "music.note.list")
                             .font(.system(size: 35))

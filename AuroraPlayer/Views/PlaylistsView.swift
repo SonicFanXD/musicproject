@@ -159,7 +159,7 @@ struct PlaylistsView: View {
                         RoundedRectangle(cornerRadius: 18, style: .continuous)
                             // ✅ Mismo acento de dos colores que la card de la
                             // biblioteca (antes era un solo color con opacidad).
-                            .fill(AppTheme.accentGradient(primaryOpacity: 0.3, secondaryOpacity: 0.15))
+                            .fill(AppTheme.accentGradient(opacity: 0.3))
                             .frame(width: 150, height: 150)
 
                         Image(systemName: "music.note.list")
