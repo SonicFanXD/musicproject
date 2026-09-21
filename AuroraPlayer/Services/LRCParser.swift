@@ -10,8 +10,20 @@ import Foundation
 // - Líneas vacías, timestamps duplicados, saltos de línea
 // ✅ Optimizado para iPhone 8 Plus: sin allocations por línea, regex eficiente
 struct LRCParser {
-    /// Duración por defecto de la última línea si no hay siguiente.
-    private static let defaultLineDurationMs = 10_000
+    /// ✅ Duración de una línea cuando NO hay timings por palabra y tampoco hay
+    /// una siguiente línea de la que inferirla (o el hueco es ya un silencio).
+    private static let defaultLineDurationMs = 5_000
+    /// ✅ Duración de una palabra cuando el formato solo marca inicios (el LRC
+    /// híbrido `<mm:ss.xxx>` no trae `end`).
+    private static let defaultWordDurationMs = 400
+    /// ✅ Proporción del hueco hasta la siguiente línea que se considera voz:
+    /// el resto (~30%) es el silencio natural entre versos y NO debe formar
+    /// parte de la animación de relleno de la línea actual.
+    private static let spokenRatio = 0.7
+    /// ✅ Hueco a partir del cual dejamos de hablar de "silencio entre versos"
+    /// (intro instrumental, interludio, outro): la línea NO se estira hasta la
+    /// siguiente, termina con una duración razonable.
+    private static let largeGapMs = 15_000
 
     // MARK: - Parse completo de texto LRC
     /// Parsea el texto de letras y devuelve array de LyricsLine ordenado por startMs
@@ -63,7 +75,11 @@ struct LRCParser {
         let sorted = lines.sorted { ($0.startMs, $0.text) < ($1.startMs, $1.text) }
         return sorted.enumerated().map { index, line in
             let nextStartMs = index + 1 < sorted.count ? sorted[index + 1].startMs : nil
-            let endMs = nextStartMs ?? (line.startMs + defaultLineDurationMs)
+            // ✅ El fin de la línea es CUÁNDO TERMINA SU ÚLTIMA PALABRA, nunca
+            // cuándo empieza la siguiente. Antes `endMs = nextStartMs` estiraba
+            // la animación durante todo el hueco (30s de interludio = 30s de
+            // wipe). El hueco NO forma parte de la línea.
+            let endMs = estimatedEndMs(startMs: line.startMs, nextStartMs: nextStartMs, words: line.words)
 
             return LyricsLine(
                 id: index,
@@ -73,6 +89,62 @@ struct LRCParser {
                 words: closeWords(line.words, lineEndMs: endMs)
             )
         }
+    }
+
+    // MARK: - Fin REAL de una línea (nunca el inicio de la siguiente)
+    /// Calcula cuándo termina la línea a partir de lo que el formato SÍ sabe:
+    /// - Con timings por palabra: termina con la última palabra (su `end`
+    ///   explícito o, si el formato solo marca inicios, su duración estimada).
+    /// - Sin timings: `start + hueco × 0.7`, con un tope de 5s. Un hueco mayor
+    ///   de 15s es un silencio (intro/interludio) y no se extiende la línea.
+    /// - Sin siguiente línea: duración por defecto (5s).
+    /// ✅ El resultado nunca invade el inicio de la siguiente línea, así las
+    /// ventanas del motor de lyrics siguen sin solaparse.
+    static func estimatedEndMs(
+        startMs: Int,
+        nextStartMs: Int?,
+        words: [LyricWordToken] = []
+    ) -> Int {
+        if let lastWord = words.last {
+            let spoken = lastWord.endMs > lastWord.startMs
+                ? lastWord.endMs - lastWord.startMs
+                : averageWordDurationMs(words)
+            return clampEnd(lastWord.startMs + max(spoken, 1), from: startMs, nextStartMs: nextStartMs)
+        }
+
+        guard let nextStartMs, nextStartMs > startMs else {
+            return startMs + defaultLineDurationMs
+        }
+
+        let gap = nextStartMs - startMs
+        let duration = gap >= largeGapMs
+            ? defaultLineDurationMs
+            : Int((Double(gap) * spokenRatio).rounded())
+        return clampEnd(startMs + max(duration, 1), from: startMs, nextStartMs: nextStartMs)
+    }
+
+    /// Duración media de las palabras que el formato ya deja cerradas (en el LRC
+    /// híbrido cada palabra dura hasta el inicio de la siguiente).
+    private static func averageWordDurationMs(_ words: [LyricWordToken]) -> Int {
+        var total = 0
+        var counted = 0
+
+        for index in 0..<words.count where index + 1 < words.count {
+            let duration = words[index + 1].startMs - words[index].startMs
+            guard duration > 0 else { continue }
+            total += duration
+            counted += 1
+        }
+
+        guard counted > 0 else { return defaultWordDurationMs }
+        return total / counted
+    }
+
+    /// ✅ Nunca antes del inicio ni después del inicio de la siguiente línea.
+    private static func clampEnd(_ endMs: Int, from startMs: Int, nextStartMs: Int?) -> Int {
+        let minimum = startMs + 1
+        guard let nextStartMs, nextStartMs > startMs else { return max(endMs, minimum) }
+        return min(max(endMs, minimum), nextStartMs)
     }
 
     // MARK: - Helpers de parsing
@@ -255,7 +327,10 @@ extension LRCParser {
         """
         let gapResult = parse(gapLRC)
         assert(gapResult.count == 2, "Test 6 falló: Expected 2 lines")
-        assert(gapResult[0].endMs == 5000, "Test 6 falló: Gap endMs mismatch")
+        // ✅ 4s de hueco → la línea dura 2.8s (70%), NO hasta el inicio de la
+        // siguiente: el silencio entre versos queda fuera de la animación.
+        assert(gapResult[0].endMs == 3800, "Test 6 falló: Gap endMs mismatch (got \(gapResult[0].endMs))")
+        assert(gapResult[0].endMs < gapResult[1].startMs, "Test 6 falló: la línea invade la siguiente")
         print("✅ Test 6 (Gap entre líneas) passed")
 
         // Test 7: Líneas desordenadas → ids consecutivos en orden cronológico
@@ -276,9 +351,27 @@ extension LRCParser {
         assert(hybridResult[0].words[0].text == "Te-", "Test 8 falló: Word text mismatch")
         assert(hybridResult[0].words[0].startMs == 40, "Test 8 falló: Word start mismatch")
         assert(hybridResult[0].words[0].endMs == 412, "Test 8 falló: Word end mismatch")
-        assert(hybridResult[0].words[4].endMs == 2500, "Test 8 falló: Last word should close with line end")
+        assert(hybridResult[0].words[4].endMs == hybridResult[0].endMs, "Test 8 falló: Last word should close with line end")
+        assert(hybridResult[0].endMs < hybridResult[1].startMs, "Test 8 falló: la línea híbrida no debe extenderse hasta la siguiente")
+        assert(hybridResult[0].endMs >= 1097, "Test 8 falló: la línea no debe terminar antes de su última palabra")
         assert(classicResult[0].words.isEmpty, "Test 8 falló: LRC clásico no tiene palabras")
         print("✅ Test 8 (Timings por palabra) passed")
+
+        // Test 10: SILENCIO largo (interludio) → la línea NO se estira
+        let interludeLRC = """
+        [00:01.00]Última antes del interludio
+        [00:30.00]Primera después del interludio
+        """
+        let interludeResult = parse(interludeLRC)
+        assert(interludeResult.count == 2, "Test 10 falló: Expected 2 lines")
+        // ✅ 29s de hueco → duración razonable (5s), no 29s de wipe.
+        assert(interludeResult[0].endMs == 6000, "Test 10 falló: Expected 5s de duración (got \(interludeResult[0].endMs))")
+        assert(interludeResult[0].endMs < interludeResult[1].startMs, "Test 10 falló: la línea invade el interludio")
+        print("✅ Test 10 (Silencio largo no extiende la animación) passed")
+
+        // Test 11: última línea sin siguiente → duración por defecto acotada
+        assert(gapResult[1].endMs == 5000 + 5000, "Test 11 falló: Expected 5s para la última línea (got \(gapResult[1].endMs))")
+        print("✅ Test 11 (Última línea con duración por defecto) passed")
 
         // Test 9: TTML se delega a TTMLParser (namespace w3.org/ns/ttml)
         let ttml = """

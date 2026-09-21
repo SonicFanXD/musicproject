@@ -17,8 +17,6 @@ struct TTMLParser {
     /// visuales de un verso se fundían en una sola línea que envolvía por
     /// anchura → el relleno progresivo iluminaba ambas filas en paralelo.
     static let hardBreak: Character = "\u{0000}"
-    /// Duración por defecto de la última línea si el TTML no trae `end`.
-    private static let defaultLineDurationMs = 10_000
 
     // MARK: - Entrada
     /// Devuelve las líneas si `text` es un TTML válido; nil en cualquier otro caso.
@@ -62,7 +60,11 @@ struct TTMLParser {
         return sorted.enumerated().map { index, entry in
             let nextStartMs = index + 1 < sorted.count ? sorted[index + 1].beginMs : nil
             let explicitEndMs = entry.endMs ?? entry.words.last?.endMs
-            let endMs = explicitEndMs ?? nextStartMs ?? (entry.beginMs + defaultLineDurationMs)
+            // ✅ Sin `end` ni timings por palabra se reutiliza el MISMO estimador
+            // que el LRC: nunca se estira la línea hasta el inicio de la
+            // siguiente (un interludio de 30s no anima la línea 30s).
+            let endMs = explicitEndMs
+                ?? LRCParser.estimatedEndMs(startMs: entry.beginMs, nextStartMs: nextStartMs)
             let safeEndMs = max(endMs, entry.beginMs + 1)
 
             return LyricsLine(

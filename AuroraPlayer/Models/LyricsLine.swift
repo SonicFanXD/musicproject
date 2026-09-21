@@ -95,9 +95,18 @@ struct LyricsLine: Identifiable, Equatable {
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
 
-        // ✅ Caso normal (una sola fila): ventana completa de la línea.
+        // ✅ Caso normal (una sola fila): ventana de la línea.
         guard rowTexts.count > 1 else {
-            return [LyricVisualRow(text: rowTexts.first ?? text, startMs: startMs, endMs: safeEndMs)]
+            let rowText = rowTexts.first ?? text
+            // ✅ Con timings por palabra, la fila se rellena de la PRIMERA a la
+            // ÚLTIMA palabra: un intro instrumental no ilumina la letra antes de
+            // que suene, y el hueco posterior no la sigue iluminando.
+            if let firstWord = words.first,
+               let lastWord = words.last,
+               lastWord.endMs > firstWord.startMs {
+                return [LyricVisualRow(text: rowText, startMs: firstWord.startMs, endMs: lastWord.endMs)]
+            }
+            return [LyricVisualRow(text: rowText, startMs: startMs, endMs: safeEndMs)]
         }
 
         let totalCharacters = max(1, rowTexts.reduce(0) { $0 + $1.count })
