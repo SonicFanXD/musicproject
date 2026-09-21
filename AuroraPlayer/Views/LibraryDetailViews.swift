@@ -80,6 +80,27 @@ private struct DetailAccent {
     }
 }
 
+// MARK: - Offset de scroll compartido por las vistas de detalle
+/// Publica el minY del hero en el espacio "detailScroll". Se usa SOLO para
+/// transform/opacity del fondo del hero y para la opacidad del título de la
+/// barra: nunca para recalcular blur, sombras o materiales.
+private struct DetailScrollOffsetKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
+/// Progreso 0…1 del desplazamiento del hero (0 = sin desplazar, 1 = 180pt arriba).
+private func detailHeroProgress(for offset: CGFloat) -> CGFloat {
+    min(max(-min(offset, 0) / 180, 0), 1)
+}
+
+/// Opacidad del título de la barra: emerge cuando el hero está a punto de salir.
+private func detailTitleReveal(for progress: CGFloat) -> CGFloat {
+    min(max((progress - 0.5) / 0.4, 0), 1)
+}
+
 // MARK: - Album Detail (dise�o inmersivo premium con color de car�tula)
 struct AlbumDetailView: View {
     let album: Album
@@ -102,6 +123,9 @@ struct AlbumDetailView: View {
     // kHz mostrado es el de la MAYORÍA de canciones, y los bits el más común
     // entre esas canciones (ver computeMajorityQuality()).
     @State private var cachedQuality: (bits: Int, khz: Double)? = nil
+    // ✅ PARALLAX / BARRA EMERGENTE: offset vertical del scroll (0 = arriba del
+    // todo). Alimenta únicamente transform y opacidad del fondo del hero.
+    @State private var scrollOffset: CGFloat = 0
 
     // ✅ Acento de DOS colores: primario + secundario real de la carátula.
     // El secundario solo se usa con "Acento desde portada" activo.
@@ -154,6 +178,16 @@ struct AlbumDetailView: View {
         ScrollView {
             VStack(spacing: 0) {
                 heroSection
+                    // ✅ Rastreo del scroll: solo publica el minY del hero en el
+                    // espacio "detailScroll". Sin cálculos por frame.
+                    .background(
+                        GeometryReader { geometry in
+                            Color.clear.preference(
+                                key: DetailScrollOffsetKey.self,
+                                value: geometry.frame(in: .named("detailScroll")).minY
+                            )
+                        }
+                    )
                 actionButtons
                     .padding(.horizontal, 20).padding(.top, 12)
                 LazyVStack(spacing: 10) {
@@ -176,9 +210,24 @@ struct AlbumDetailView: View {
                 .padding(.bottom, 130)
             }
         }
+        .coordinateSpace(name: "detailScroll")
+        // ✅ Cuantizado a 1pt: el scroll repinta un par de veces menos por frame
+        // (una subida de 40pt ya no genera 40 renders).
+        .onPreferenceChange(DetailScrollOffsetKey.self) { offset in
+            if abs(offset - scrollOffset) > 1 { scrollOffset = offset }
+        }
         .background(AppBackground().ignoresSafeArea())
-        .navigationTitle(album.name)
         .navigationBarTitleDisplayMode(.inline)
+        // ✅ BARRERA EMERGENTE (estilo Apple Music): el título aparece solo
+        // cuando el hero ya casi salió de pantalla. Solo opacidad, sin recalculos.
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                Text(album.name)
+                    .font(.system(size: 17, weight: .semibold))
+                    .lineLimit(1)
+                    .opacity(detailTitleReveal(for: detailHeroProgress(for: scrollOffset)))
+            }
+        }
         // ? Sin banda gris: el hero inmersivo fluye bajo la barra de navegaci�n
         .toolbarBackground(.hidden, for: .navigationBar)
         .onAppear {
@@ -331,6 +380,12 @@ struct AlbumDetailView: View {
                     }
                 }
                 .frame(width: geometry.size.width, height: geometry.size.height + 80)
+                // ✅ PARALLAX BARATO: esta capa YA está rasterizada por el
+                // .drawingGroup() de abajo (el blur se calculó una sola vez en
+                // background), así que aquí solo se le aplican transform y
+                // opacidad — no se recalcula ni el blur ni ningún material.
+                .scaleEffect(1 + detailHeroProgress(for: scrollOffset) * 0.14)
+                .opacity(1 - detailHeroProgress(for: scrollOffset) * 0.55)
                 .clipped().ignoresSafeArea(edges: .top)
                 .drawingGroup() // ? Optimizaci�n GPU para 60fps
             }
@@ -620,6 +675,8 @@ struct ArtistDetailView: View {
     // El secundario solo se usa con "Acento desde portada" activo.
     @ObservedObject private var theme = ThemeManager.shared
     @State private var liveSecondaryColor: UIColor? = nil
+    // ✅ PARALLAX / BARRA EMERGENTE (mismo criterio que AlbumDetailView).
+    @State private var scrollOffset: CGFloat = 0
     private var totalDuration: TimeInterval { cachedTotalDuration }
     /// ✅ Acento de la vista, SIEMPRE de dos colores (mismo criterio que Album
     /// Detail): color del artista + su secundario con el modo portada activo;
@@ -659,6 +716,15 @@ struct ArtistDetailView: View {
         ScrollView {
             VStack(spacing: 0) {
                 artistHeroSection
+                    // ✅ Rastreo del scroll (mismo criterio que AlbumDetailView).
+                    .background(
+                        GeometryReader { geometry in
+                            Color.clear.preference(
+                                key: DetailScrollOffsetKey.self,
+                                value: geometry.frame(in: .named("detailScroll")).minY
+                            )
+                        }
+                    )
                 artistActionButtons
                     .padding(.horizontal, 20).padding(.top, 18)
                 if !albums.isEmpty {
@@ -693,9 +759,23 @@ struct ArtistDetailView: View {
                 .padding(.bottom, 130)
             }
         }
+        .coordinateSpace(name: "detailScroll")
+        // ✅ Cuantizado a 1pt: el scroll repinta un par de veces menos por frame
+        // (una subida de 40pt ya no genera 40 renders).
+        .onPreferenceChange(DetailScrollOffsetKey.self) { offset in
+            if abs(offset - scrollOffset) > 1 { scrollOffset = offset }
+        }
         .background(AppBackground().ignoresSafeArea())
-        .navigationTitle(artist.name)
         .navigationBarTitleDisplayMode(.inline)
+        // ✅ Barra emergente con el nombre del artista (mismo criterio que Album).
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                Text(artist.name)
+                    .font(.system(size: 17, weight: .semibold))
+                    .lineLimit(1)
+                    .opacity(detailTitleReveal(for: detailHeroProgress(for: scrollOffset)))
+            }
+        }
         // ? Sin banda gris (coherente con AlbumDetailView)
         .toolbarBackground(.hidden, for: .navigationBar)
         .onAppear {
@@ -823,6 +903,12 @@ struct ArtistDetailView: View {
                     }
                 }
                 .frame(width: geometry.size.width, height: geometry.size.height + 80)
+                // ✅ PARALLAX BARATO: esta capa YA está rasterizada por el
+                // .drawingGroup() de abajo (el blur se calculó una sola vez en
+                // background), así que aquí solo se le aplican transform y
+                // opacidad — no se recalcula ni el blur ni ningún material.
+                .scaleEffect(1 + detailHeroProgress(for: scrollOffset) * 0.14)
+                .opacity(1 - detailHeroProgress(for: scrollOffset) * 0.55)
                 .clipped().ignoresSafeArea(edges: .top)
                 .drawingGroup() // ? Optimizaci�n GPU para 60fps
             }
