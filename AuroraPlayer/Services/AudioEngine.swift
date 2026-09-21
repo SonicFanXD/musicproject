@@ -1964,6 +1964,13 @@ class AudioEngine: NSObject, ObservableObject {
         currentTime = clampedTime
         // ✅ RELOJ DE PARED: anclar la extrapolación en la posición buscada.
         anchorPlaybackPosition(clampedTime)
+        // ✅ FIX sincronización UI: publicar la posición YA en el reloj de las
+        // vistas. Sin esto, la barra de la app (PlayerBar/NowPlaying) seguía
+        // mostrando la posición previa al seek hasta el siguiente tick del
+        // timer de display (hasta 0,4 s; 3 s en segundo plano), mientras el
+        // lock screen/CC ya mostraban la nueva. Mismo patrón que ya usan
+        // suspendForRouteLoss() y commitChainedSong().
+        clock.time = clampedTime
         // ✅ Handle seek en lyrics line-by-line
         Task { @MainActor in
             lyricsViewModel.handleSeek()
