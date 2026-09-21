@@ -187,6 +187,9 @@ struct ContentView: View {
                                     .frame(width: 44, height: 44)
                                     .contentShape(Rectangle())
                             }
+                            // ✅ Mismo feedback de presión que los botones de
+                            // PlayerBar (el estilo ya existe en el proyecto).
+                            .buttonStyle(PressableButtonStyle(scale: 0.9))
 
                             Button {
                                 showSettings = true
@@ -197,6 +200,9 @@ struct ContentView: View {
                                     .frame(width: 44, height: 44)
                                     .contentShape(Rectangle())
                             }
+                            // ✅ Mismo feedback de presión que los botones de
+                            // PlayerBar (el estilo ya existe en el proyecto).
+                            .buttonStyle(PressableButtonStyle(scale: 0.9))
                         }
                     }
                 }
@@ -484,6 +490,10 @@ struct ContentView: View {
             Text(Localization.localized("app.name"))
                 .font(.system(size: 26, weight: .bold, design: .rounded))
                 .foregroundStyle(AppTheme.accentGradient)
+                // ✅ Profundidad mínima sobre el fondo: UNA sola sombra estática
+                // (se compone una vez, no por frame). Sin ella el nombre quedaba
+                // plano sobre el material.
+                .shadow(color: .black.opacity(0.16), radius: 6, y: 2)
                 .accessibilityLabel(Localization.localized("app.name"))
             Spacer()
         }
