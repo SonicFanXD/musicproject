@@ -545,6 +545,8 @@ struct NowPlayingView: View {
             .buttonStyle(.plain)
 
             // Next
+            // ✅ Al final de la cola se atenúa y deja de responder (mismo criterio
+            //    que la barra): el estado se ve antes de pulsar.
             Button {
                 Haptics.light()
                 audioEngine.playNext()
@@ -559,6 +561,8 @@ struct NowPlayingView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .opacity(audioEngine.hasNextTrack ? 1 : 0.4)
+            .disabled(!audioEngine.hasNextTrack)
 
             // Repeat
             Button {
