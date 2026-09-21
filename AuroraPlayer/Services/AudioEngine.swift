@@ -2650,11 +2650,16 @@ class AudioEngine: NSObject, ObservableObject {
                             }
                         }
                     }
-                    // obsoleto que se dispare en plena caída de la ruta no
-                    // puede llamar a playNext() (salto a la canción siguiente)
-                    // y publica rate 0 al lock screen/CC (nada de
-                    // "reproduciendo" con la barra congelada).
-                    self.suspendForRouteLoss()
+                    // ✅ La suspensión ya se hizo ARRIBA (suspendForRouteLoss()
+                    // invalida la generación ANTES de detener el nodo, que es el
+                    // orden obligatorio). Aquí quedaba una SEGUNDA llamada
+                    // duplicada —resto de un merge mal resuelto, junto a la mitad
+                    // huérfana de un comentario— que repetía scheduleGeneration++,
+                    // engine.stop(), stopDisplayTimer(), updateNowPlayingInfo() y
+                    // saveState() en cada desconexión de ruta. Era idempotente (por
+                    // eso no se notaba en el audio), pero duplicaba trabajo y
+                    // enturbiaba el orden respecto a la reanudación programada
+                    // 0,2 s después. Eliminada.
                     AppLog.info(.playback, "Audífonos/Bluetooth desconectados: suspendido sin salto de canción")
                 }
             } else {
