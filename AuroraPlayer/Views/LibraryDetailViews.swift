@@ -684,6 +684,8 @@ struct EqualizerBars: View {
     /// gastados para nada) porque la animación nunca se retiraba.
     let isPlaying: Bool
     @State private var animate = false
+    // ✅ 3.0: observar el modo captura para detener el latido al grabar pantalla.
+    @ObservedObject private var captureMode = CaptureModeManager.shared
 
     var body: some View {
         HStack(spacing: 2.5) {
@@ -694,10 +696,14 @@ struct EqualizerBars: View {
                     // la animación persiste (se re-aplica en cada cambio de @State)
                     // — antes, sin value:, iOS 16 la abandonaba al primer re-render
                     // y las barras del tema activo quedaban CONGELADAS.
-                    .frame(width: 2.5, height: animate ? (bar % 2 == 0 ? 13 : 8) : (bar % 2 == 0 ? 8 : 13))
+                    .frame(width: 2.5, height: DecorativeMotion.isAnimating(animate) ? (bar % 2 == 0 ? 13 : 8) : (bar % 2 == 0 ? 8 : 13))
                     .animation(
-                        animate ? Animation.easeInOut(duration: 0.5).repeatForever(autoreverses: true) : nil,
-                        value: animate
+                        // ✅ 3.0: sin bucle decorativo al grabar pantalla.
+                        DecorativeMotion.animation(
+                            Animation.easeInOut(duration: 0.5).repeatForever(autoreverses: true),
+                            isActive: animate
+                        ),
+                        value: DecorativeMotion.isAnimating(animate)
                     )
             }
         }

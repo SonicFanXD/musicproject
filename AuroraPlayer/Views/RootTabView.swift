@@ -12,6 +12,9 @@ struct RootTabView: View {
     @StateObject private var fileAccessService = FileAccessService()
     /// ✅ Observar el idioma: las etiquetas del tab bar cambian al instante.
     @ObservedObject private var localization = Localization.shared
+    // ✅ 3.0 MODO PRESENTACIÓN: mientras se graba la pantalla se oculta la barra
+    // de estado y se muestra una píldora "Grabando". No afecta al audio.
+    @ObservedObject private var captureMode = CaptureModeManager.shared
 
     /// ✅ La app abre en Biblioteca (donde abría siempre); Bienvenida queda a la
     /// izquierda y Ajustes a la derecha.
@@ -33,6 +36,9 @@ struct RootTabView: View {
             settingsTab
         }
         .tint(AppTheme.accent)
+        // ✅ Barra de estado oculta SOLO durante la grabación de pantalla (hora,
+        // batería y red fuera del vídeo). Al terminar, se restaura sola.
+        .statusBarHidden(captureMode.isScreenCaptured)
         // ✅ Tab bar con material: mismo lenguaje visual que el resto de la app.
         .toolbarBackground(.ultraThinMaterial, for: .tabBar)
         .toolbarBackground(.visible, for: .tabBar)
@@ -46,7 +52,23 @@ struct RootTabView: View {
                 splashOverlay
             }
         }
+        // ✅ Píldora de grabación: arriba a la derecha, sin bloquear toques.
+        .overlay(alignment: .topTrailing) {
+            if captureMode.isScreenCaptured {
+                recordingPill
+                    .padding(.top, 10)
+                    .padding(.trailing, 14)
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeInOut(duration: 0.3), value: captureMode.isScreenCaptured)
         .onAppear(perform: handleAppear)
+        // ✅ La grabación puede empezar con la app en segundo plano: al volver a
+        // primer plano se resincroniza el estado (y el log correspondiente).
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
+            captureMode.refreshCaptureState()
+        }
+
         .onChange(of: fileAccessService.isInitialLibraryLoaded) { loaded in
             if loaded { finishInitialLoad() }
         }
@@ -103,6 +125,29 @@ struct RootTabView: View {
     }
 
     // MARK: - Splash
+
+    // MARK: - Modo presentación
+
+    /// ✅ Píldora "● Grabando": solo visible mientras se graba la pantalla, con
+    /// material ultraThinMaterial y sin recibir toques.
+    private var recordingPill: some View {
+        HStack(spacing: 6) {
+            Circle()
+                .fill(AppTheme.accent)
+                .frame(width: 7, height: 7)
+
+            Text(Localization.localized("capture.recording"))
+                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                .foregroundStyle(.primary)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 7)
+        .background {
+            Capsule().fill(AnyShapeStyle(.ultraThinMaterial))
+        }
+        .overlay(Capsule().strokeBorder(.white.opacity(0.15), lineWidth: 0.5))
+        .allowsHitTesting(false)
+    }
 
     private var splashOverlay: some View {
         SplashView()

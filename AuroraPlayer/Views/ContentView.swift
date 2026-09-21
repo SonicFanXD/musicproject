@@ -12,6 +12,9 @@ struct ContentView: View {
     @ObservedObject var audioEngine: AudioEngine
     @ObservedObject var fileAccessService: FileAccessService
     @ObservedObject private var localization = Localization.shared
+    // ✅ 3.0: observar el modo captura para detener los indicadores decorativos
+    // (barras de "suena ahora") mientras se graba la pantalla.
+    @ObservedObject private var captureMode = CaptureModeManager.shared
 
     @State private var hasRestored = false
     @State private var showPlaylists = false
@@ -884,13 +887,15 @@ struct ContentView: View {
                                     // ✅ BATERÍA: en pausa no hay bucle que animar.
                                     .frame(
                                         width: 2.5,
-                                        height: audioEngine.isPlaying ? (bar % 2 == 0 ? 12 : 7) : 4
+                                        height: DecorativeMotion.isAnimating(audioEngine.isPlaying) ? (bar % 2 == 0 ? 12 : 7) : 4
                                     )
                                     .animation(
-                                        audioEngine.isPlaying
-                                            ? Animation.easeInOut(duration: 0.4 + Double(bar) * 0.1).repeatForever(autoreverses: true)
-                                            : nil,
-                                        value: audioEngine.isPlaying
+                                        // ✅ 3.0: sin bucle decorativo al grabar pantalla.
+                                        DecorativeMotion.animation(
+                                            Animation.easeInOut(duration: 0.4 + Double(bar) * 0.1).repeatForever(autoreverses: true),
+                                            isActive: audioEngine.isPlaying
+                                        ),
+                                        value: DecorativeMotion.isAnimating(audioEngine.isPlaying)
                                     )
                             }
                         }

@@ -32,10 +32,19 @@ final class VisualizerFrameRate: ObservableObject {
         ) { [weak self] _ in
             Task { @MainActor in self?.update() }
         }
+        // ✅ 3.0 MODO PRESENTACIÓN: al grabar pantalla el visualizador baja a 30 fps
+        // (grabación más limpia y menos GPU con el dispositivo ya ocupado grabando).
+        NotificationCenter.default.addObserver(
+            forName: UIScreen.capturedDidChangeNotification,
+            object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.update() }
+        }
     }
 
     private func update() {
-        if ProcessInfo.processInfo.isLowPowerModeEnabled {
+        // ✅ 3.0: la grabación de pantalla se trata como el bajo consumo (30 fps).
+        if ProcessInfo.processInfo.isLowPowerModeEnabled || CaptureModeManager.shared.isScreenCaptured {
             fps = 30
             return
         }

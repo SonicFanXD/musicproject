@@ -409,6 +409,8 @@ final class Localization: ObservableObject {
         "smart.playAll": [.spanish: "Reproducir", .english: "Play"],
 
         // 3.0: estadísticas de reproducción en playlists
+        // 3.0: modo presentación (grabación de pantalla) y capturas
+        "capture.recording": [.spanish: "Grabando", .english: "Recording"],
         "stats.plays": [.spanish: "reproducciones", .english: "plays"],
         "stats.playsSingular": [.spanish: "reproducción", .english: "play"],
         "stats.minutes": [.spanish: "min", .english: "min"],

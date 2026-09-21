@@ -348,6 +348,9 @@ struct PlaylistDetailView: View {
     @ObservedObject var audioEngine: AudioEngine
     // ✅ 3.0: estadísticas de reproducción en las filas (se desactivan desde Ajustes).
     @AppStorage("com.aurora.showPlaylistStats") private var showPlaylistStats = true
+    // ✅ 3.0: observar el modo captura para detener los indicadores decorativos
+    // mientras se graba la pantalla.
+    @ObservedObject private var captureMode = CaptureModeManager.shared
     @Environment(\.dismiss) private var dismiss
 
     @State private var showEditPlaylist = false
@@ -626,12 +629,14 @@ struct PlaylistDetailView: View {
                                     // reproducir (antes no había ninguna propiedad que
                                     // animar, así que el repeatForever quedaba inerte).
                                     // ✅ BATERÍA: en pausa se retira la animación.
-                                    .frame(width: 3, height: audioEngine.isPlaying ? (bar % 2 == 0 ? 14 : 9) : 6)
+                                    .frame(width: 3, height: DecorativeMotion.isAnimating(audioEngine.isPlaying) ? (bar % 2 == 0 ? 14 : 9) : 6)
                                     .animation(
-                                        audioEngine.isPlaying
-                                            ? Animation.easeInOut(duration: 0.45 + Double(bar) * 0.12).repeatForever(autoreverses: true)
-                                            : nil,
-                                        value: audioEngine.isPlaying
+                                        // ✅ 3.0: sin bucle decorativo al grabar pantalla.
+                                        DecorativeMotion.animation(
+                                            Animation.easeInOut(duration: 0.45 + Double(bar) * 0.12).repeatForever(autoreverses: true),
+                                            isActive: audioEngine.isPlaying
+                                        ),
+                                        value: DecorativeMotion.isAnimating(audioEngine.isPlaying)
                                     )
                             }
                         }

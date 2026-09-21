@@ -3,6 +3,9 @@ import UIKit
 
 struct QueueView: View {
     @ObservedObject var audioEngine: AudioEngine
+    // ✅ 3.0: observar el modo captura para detener los indicadores decorativos
+    // mientras se graba la pantalla.
+    @ObservedObject private var captureMode = CaptureModeManager.shared
     @Environment(\.dismiss) private var dismiss
 
     @State private var selectedTab: QueueTab = .nextUp
@@ -152,14 +155,16 @@ struct QueueView: View {
                                         startPoint: .top,
                                         endPoint: .bottom
                                     ))
-                                    .frame(width: 3, height: audioEngine.isPlaying ? (bar % 2 == 0 ? 14 : 9) : 6)
+                                    .frame(width: 3, height: DecorativeMotion.isAnimating(audioEngine.isPlaying) ? (bar % 2 == 0 ? 14 : 9) : 6)
                                     // ✅ BATERÍA: en pausa se retira la animación (antes el
                                     // repeatForever seguía oscilando entre 6 y 14/9 pt).
                                     .animation(
-                                        audioEngine.isPlaying
-                                            ? Animation.easeInOut(duration: 0.45 + Double(bar) * 0.12).repeatForever(autoreverses: true)
-                                            : nil,
-                                        value: audioEngine.isPlaying
+                                        // ✅ 3.0: sin bucle decorativo al grabar pantalla.
+                                        DecorativeMotion.animation(
+                                            Animation.easeInOut(duration: 0.45 + Double(bar) * 0.12).repeatForever(autoreverses: true),
+                                            isActive: audioEngine.isPlaying
+                                        ),
+                                        value: DecorativeMotion.isAnimating(audioEngine.isPlaying)
                                     )
                             }
                         }
