@@ -382,6 +382,14 @@ struct AudioQualityDetailView: View {
             detailRow(Localization.localized("quality.bitPerfect"), 
                       audioEngine.isBitPerfect ? Localization.localized("quality.bitPerfectYes") : Localization.localized("quality.bitPerfectNo"),
                       isHighlighted: audioEngine.isBitPerfect)
+
+            // ✅ Nota: explica POR QUÉ el indicador puede estar apagado (antes no
+            // había ninguna pista y parecía un fallo de la app).
+            if !audioEngine.isBitPerfect {
+                detailRow("ℹ️", Localization.localized("quality.bitPerfectHint"))
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
             
             // ✅ AUDIÓFILO: Codec Bluetooth (si aplica)
             if !audioEngine.bluetoothCodec.isEmpty {

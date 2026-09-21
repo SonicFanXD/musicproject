@@ -418,10 +418,16 @@ class AudioEngine: NSObject, ObservableObject {
     private var equalizerNode: AVAudioUnitEQ?
     @Published var isEQEnabled: Bool = false
     @Published var eqPreset: EQPreset = .flat
-    // ✅ LIMITER: atenuación fija anti-distorsión (comportamiento de la versión
-    // previa a la iteración de lyrics: SIN Audio Unit en la cadena, para que la
-    // señal no pase por ningún procesador dinámico).
-    @Published var isLimiterEnabled: Bool = true
+    // ✅ PROTECCIÓN ANTI-CLIPPING: atenuación fija anti-distorsión (SIN Audio
+    // Unit en la cadena, para que la señal no pase por ningún procesador
+    // dinámico). Aplica 0.99 (≈ -0.09 dB) sobre la salida.
+    // ✅ BIT-PERFECT: desactivada por defecto. Con la protección activa TODOS
+    // los samples salen escalados (x0.99), así que la ruta no puede ser
+    // bit-perfect aunque el resto de condiciones se cumplan: el usuario tenía
+    // que apagarla a mano para que el indicador se encendiera. La música a
+    // 0 dBFS no satura si nada añade ganancia, y el headroom del EQ sigue
+    // calculándose por separado, así que el valor por defecto es 1.0.
+    @Published var isLimiterEnabled: Bool = false
     // ✅ BLUETOOTH OPTIMIZATION: ajustes para mejorar calidad en BT
     @Published var isBluetoothOptimizationEnabled: Bool = false
     // ✅ Audio Mono: mezcla ambos canales en uno para usuarios con audífono único
@@ -971,7 +977,7 @@ class AudioEngine: NSObject, ObservableObject {
     func toggleLimiter() {
         isLimiterEnabled.toggle()
         updateEQBypassState()
-        AppLog.info(.playback, "Limiter: \(isLimiterEnabled ? "activado" : "desactivado")")
+        AppLog.info(.playback, "Protección anti-clipping: \(isLimiterEnabled ? "activada (base 0.99)" : "desactivada (base 1.0, bit-perfect posible)")")
     }
 
     /// ✅ BLUETOOTH OPTIMIZATION: activar optimizaciones para BT
@@ -1036,8 +1042,9 @@ class AudioEngine: NSObject, ObservableObject {
             }
             maxGain = max(single, pair)
         }
-        // ✅ NIVEL BASE: 1.0 cuando el limiter está desactivado (bit-perfect),
-        // 0.99 cuando está activo (mínima protección anti-clipping).
+        // ✅ NIVEL BASE: 1.0 cuando la protección anti-clipping está
+        // desactivada (por defecto → bit-perfect posible), 0.99 cuando está
+        // activa (mínima protección anti-clipping).
         // En Bluetooth el codificador AAC/SBC puede saturar con picos entre
         // muestras: ~1 dB de margen (0.89) evita clipping del codec.
         let base: Float = isBluetoothRoute ? 0.89 : (isLimiterEnabled ? 0.99 : 1.0)
