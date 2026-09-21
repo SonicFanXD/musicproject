@@ -21,25 +21,6 @@ struct SettingsView: View, SettingsRowBuilding {
     @ObservedObject private var localization = Localization.shared
 
     // Configuraciones persistentes
-    @AppStorage("com.aurora.reduceTransparency") private var reduceTransparency = false
-    @AppStorage("com.aurora.hapticIntensity") private var hapticIntensity: Double = 1.0
-    @AppStorage("com.aurora.showLyricsByDefault") private var showLyricsByDefault = false
-    @AppStorage("com.aurora.showVisualizerInBar") private var showVisualizerInBar = true
-    @AppStorage("com.aurora.compactPlayerBar") private var compactPlayerBar = false
-    // ✅ PARTE C: estilo de la barra de reproducción (0 = vidrio, 1 = sólido, 2 = compacto).
-    @AppStorage("com.aurora.playerBarStyle") private var playerBarStyle = 0
-    // ✅ PARTE C: reducir movimiento (accesibilidad + batería).
-    @AppStorage("com.aurora.reduceMotion") private var reduceMotion = false
-
-    /// ✅ ESTILO DE BARRA: etiquetas localizadas (se re-evalúan al cambiar de
-    /// idioma, como Tema / Acento / Idioma).
-    private var playerBarStyleLabels: [String] {
-        [
-            Localization.localized("settings.playerBarStyle.glass"),
-            Localization.localized("settings.playerBarStyle.solid"),
-            Localization.localized("settings.playerBarStyle.compact")
-        ]
-    }
 
     private let themeDefaultsKey = "com.aurora.uiTheme"
 
@@ -95,37 +76,7 @@ struct SettingsView: View, SettingsRowBuilding {
                         PlaybackSettingsSection(audioEngine: audioEngine)
                         
                         // ✅ Personalización avanzada
-                        settingsSection(icon: "wand.and.rays", title: Localization.localized("settings.customization"), color: .indigo) {
-                            settingsSliderRow(title: Localization.localized("settings.hapticIntensity"), value: $hapticIntensity, range: 0.0...1.0, step: 0.1, color: .mint, suffix: "")
-                            settingsDivider
-                            settingsToggleRow(title: Localization.localized("settings.showVisualizerInBar"), subtitle: Localization.localized("settings.showVisualizerInBarSubtitle"), icon: "waveform", color: AppTheme.accent, isOn: $showVisualizerInBar)
-                            settingsDivider
-                            settingsToggleRow(title: Localization.localized("settings.compactPlayerBar"), subtitle: Localization.localized("settings.compactPlayerBarSubtitle"), icon: "rectangle.compress.vertical", color: .gray, isOn: $compactPlayerBar)
-                            settingsDivider
-                            // ✅ ESTILO DE BARRA: vidrio (el de siempre), sólido
-                            // opaco (mismo aspecto sin material que rasterizar por
-                            // frame) o compacto (vidrio con la altura reducida).
-                            settingsMenuButton(
-                                title: Localization.localized("settings.playerBarStyle"),
-                                subtitle: playerBarStyleLabels[playerBarStyle],
-                                icon: "rectangle.topthird.inset.filled",
-                                color: .indigo,
-                                options: playerBarStyleLabels,
-                                selection: $playerBarStyle,
-                                onChange: { index in
-                                    playerBarStyle = index
-                                    AppLog.info(.settings, "Estilo de barra: \(playerBarStyleLabels[index])")
-                                }
-                            )
-                            settingsDivider
-                            settingsToggleRow(title: Localization.localized("settings.showLyricsByDefault"), subtitle: Localization.localized("settings.showLyricsByDefaultSubtitle"), icon: "quote.bubble", color: .blue, isOn: $showLyricsByDefault)
-                        }
-                        // ✅ LOGS TÉCNICOS: cambios de ajustes del usuario
-                        .onChange(of: reduceTransparency) { v in AppLog.info(.settings, "Reducir transparencia: \(v ? "activado" : "desactivado")") }
-                        .onChange(of: showVisualizerInBar) { v in AppLog.info(.settings, "Visualizador en barra: \(v ? "activado" : "desactivado")") }
-                        .onChange(of: compactPlayerBar) { v in AppLog.info(.settings, "Barra compacta: \(v ? "activado" : "desactivado")") }
-                        .onChange(of: showLyricsByDefault) { v in AppLog.info(.settings, "Letras por defecto: \(v ? "activado" : "desactivado")") }
-                        .onChange(of: reduceMotion) { v in AppLog.info(.settings, "Reducir movimiento: \(v ? "activado" : "desactivado")") }
+                        CustomizationSettingsSection()
 
                         // Rendimiento (info técnica)
                         PerformanceSettingsSection(audioEngine: audioEngine)
@@ -678,6 +629,9 @@ private struct AppearanceSettingsSection: View, SettingsRowBuilding {
                 }
             )
         }
+        // ✅ LOGS TÉCNICOS: cambios de ajustes del usuario
+        .onChange(of: reduceTransparency) { v in AppLog.info(.settings, "Reducir transparencia: \(v ? "activado" : "desactivado")") }
+        .onChange(of: reduceMotion) { v in AppLog.info(.settings, "Reducir movimiento: \(v ? "activado" : "desactivado")") }
     }
 }
 
@@ -812,6 +766,61 @@ private struct LibrarySettingsSection: View, SettingsRowBuilding {
             }
         }
         .onChange(of: scanOnlyNewSongs) { v in AppLog.info(.settings, "Escaneo solo nuevas: \(v ? "activado" : "desactivado")") }
+    }
+}
+
+/// Personalización avanzada: intensidad de hápticos, visualizador en la barra,
+/// estilo y altura de la barra, y letras por defecto.
+private struct CustomizationSettingsSection: View, SettingsRowBuilding {
+    @ObservedObject var localization = Localization.shared
+
+    @AppStorage("com.aurora.hapticIntensity") private var hapticIntensity: Double = 1.0
+    @AppStorage("com.aurora.showLyricsByDefault") private var showLyricsByDefault = false
+    @AppStorage("com.aurora.showVisualizerInBar") private var showVisualizerInBar = true
+    @AppStorage("com.aurora.compactPlayerBar") private var compactPlayerBar = false
+    // ✅ PARTE C: estilo de la barra de reproducción (0 = vidrio, 1 = sólido, 2 = compacto).
+    @AppStorage("com.aurora.playerBarStyle") private var playerBarStyle = 0
+
+    /// ✅ ESTILO DE BARRA: etiquetas localizadas (se re-evalúan al cambiar de
+    /// idioma, como Tema / Acento / Idioma).
+    private var playerBarStyleLabels: [String] {
+        [
+            Localization.localized("settings.playerBarStyle.glass"),
+            Localization.localized("settings.playerBarStyle.solid"),
+            Localization.localized("settings.playerBarStyle.compact")
+        ]
+    }
+
+    var body: some View {
+        settingsSection(icon: "wand.and.rays", title: Localization.localized("settings.customization"), color: .indigo) {
+            settingsSliderRow(title: Localization.localized("settings.hapticIntensity"), value: $hapticIntensity, range: 0.0...1.0, step: 0.1, color: .mint, suffix: "")
+            settingsDivider
+            settingsToggleRow(title: Localization.localized("settings.showVisualizerInBar"), subtitle: Localization.localized("settings.showVisualizerInBarSubtitle"), icon: "waveform", color: AppTheme.accent, isOn: $showVisualizerInBar)
+            settingsDivider
+            settingsToggleRow(title: Localization.localized("settings.compactPlayerBar"), subtitle: Localization.localized("settings.compactPlayerBarSubtitle"), icon: "rectangle.compress.vertical", color: .gray, isOn: $compactPlayerBar)
+            settingsDivider
+            // ✅ ESTILO DE BARRA: vidrio (el de siempre), sólido
+            // opaco (mismo aspecto sin material que rasterizar por
+            // frame) o compacto (vidrio con la altura reducida).
+            settingsMenuButton(
+                title: Localization.localized("settings.playerBarStyle"),
+                subtitle: playerBarStyleLabels[playerBarStyle],
+                icon: "rectangle.topthird.inset.filled",
+                color: .indigo,
+                options: playerBarStyleLabels,
+                selection: $playerBarStyle,
+                onChange: { index in
+                    playerBarStyle = index
+                    AppLog.info(.settings, "Estilo de barra: \(playerBarStyleLabels[index])")
+                }
+            )
+            settingsDivider
+            settingsToggleRow(title: Localization.localized("settings.showLyricsByDefault"), subtitle: Localization.localized("settings.showLyricsByDefaultSubtitle"), icon: "quote.bubble", color: .blue, isOn: $showLyricsByDefault)
+        }
+        // ✅ LOGS TÉCNICOS: cambios de ajustes del usuario
+        .onChange(of: showVisualizerInBar) { v in AppLog.info(.settings, "Visualizador en barra: \(v ? "activado" : "desactivado")") }
+        .onChange(of: compactPlayerBar) { v in AppLog.info(.settings, "Barra compacta: \(v ? "activado" : "desactivado")") }
+        .onChange(of: showLyricsByDefault) { v in AppLog.info(.settings, "Letras por defecto: \(v ? "activado" : "desactivado")") }
     }
 }
 
