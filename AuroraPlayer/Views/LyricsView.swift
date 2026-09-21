@@ -10,6 +10,8 @@ import SwiftUI
 // ✅ Una línea lógica puede tener VARIAS filas visuales (TTML <br/>): cada fila
 //    lleva su propia máscara y su propia ventana temporal, así el relleno
 //    avanza de arriba abajo (nunca en paralelo) y respeta los silencios.
+// ✅ Las filas que SwiftUI partiría por ANCHURA también se trocean (medición real
+//    con la fuente activa): el wipe avanza fila a fila, nunca en paralelo.
 // ✅ Sin temporizadores propios (ni en la vista ni en el modelo).
 // ✅ Auto-scroll suave con ScrollViewReader (solo cuando cambia la línea activa)
 // ✅ Colores ADAPTATIVOS (`.primary`): la app no fuerza modo oscuro, así que el
@@ -34,6 +36,10 @@ struct LyricsView: View {
     /// resto: el primero va SIN animación (la vista "nace" ya centrada) y los
     /// scrolleos durante la reproducción sí se animan.
     @State private var hasDoneInitialScroll = false
+
+    /// ✅ Padding horizontal del contenido de letras: el ancho ÚTIL para el texto
+    /// (y para el troceo por medición) es el ancho de la vista menos el doble.
+    private static let horizontalPadding: CGFloat = 24
 
     /// ✅ Centrado geométrico exacto: 40% de la pantalla de relleno arriba y
     /// abajo, de modo que la línea activa quede en el centro real de la vista.
@@ -127,25 +133,29 @@ struct LyricsView: View {
 
     // MARK: - Contenido de lyrics
     private var lyricsContentView: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                lyricsStack
-            }
-            // ✅ iOS 16 onChange clásico: scroll suave solo cuando cambia el target
-            .onChange(of: scrollRequest) { request in
-                scrollToActiveLine(request, proxy: proxy)
+        // ✅ El ancho real se mide aquí (UNA vez, no por fila) y se pasa a cada
+        // línea: el troceo por medición necesita saber cuánto texto cabe.
+        GeometryReader { geometry in
+            ScrollViewReader { proxy in
+                ScrollView {
+                    lyricsStack(contentWidth: geometry.size.width)
+                }
+                // ✅ iOS 16 onChange clásico: scroll suave solo cuando cambia el target
+                .onChange(of: scrollRequest) { request in
+                    scrollToActiveLine(request, proxy: proxy)
+                }
             }
         }
     }
 
     /// ✅ Relleno de 40% de pantalla antes y después: fuerza que la línea activa
     /// quede centrada de forma geométrica (no depende del tamaño de la lista).
-    private var lyricsStack: some View {
+    private func lyricsStack(contentWidth: CGFloat) -> some View {
         LazyVStack(alignment: .leading, spacing: 8) {
             Color.clear.frame(height: centeringInset)
 
             ForEach(viewModel.lyricsLines) { line in
-                lyricLineView(line: line)
+                lyricLineView(line: line, contentWidth: contentWidth)
                     .id(line.id)
                     .contentShape(Rectangle())
                     .onTapGesture {
@@ -155,7 +165,7 @@ struct LyricsView: View {
 
             Color.clear.frame(height: centeringInset)
         }
-        .padding(.horizontal, 24)
+        .padding(.horizontal, Self.horizontalPadding)
     }
 
     /// ✅ Scroll centrado y natural (spring 0.35s, damping 0.85, el tacto de
@@ -186,12 +196,15 @@ struct LyricsView: View {
     /// propósito: así la línea activa se centra también cuando el ScrollView
     /// nace en el mismo ciclo en que el parser publica `activeID` (con un solo
     /// onChange dentro del ScrollViewReader ese primer centrado se perdería).
-    private func lyricLineView(line: LyricsLine) -> some View {
+    private func lyricLineView(line: LyricsLine, contentWidth: CGFloat) -> some View {
         LyricLineView(
             line: line,
             isActive: viewModel.activeID == line.id,
             isPlaying: viewModel.isPlaying,
-            viewModel: viewModel
+            viewModel: viewModel,
+            // ✅ Ancho ÚTIL para el texto (sin el padding horizontal): es lo que
+            // se mide para trocear las filas que SwiftUI envolvería.
+            availableWidth: max(0, contentWidth - Self.horizontalPadding * 2)
         )
         // ✅ Solo las filas cuyo contenido ha cambiado vuelven a evaluar su body:
         // al cambiar de línea activa (o al hacer scroll) se evita re-evaluar todo
@@ -266,6 +279,120 @@ struct LyricsView: View {
     }
 }
 
+// MARK: - Troceo por medición real (filas que SwiftUI partiría por ancho)
+/// ✅ El modelo no conoce el ancho ni la fuente, así que una fila lógica larga
+/// (sin `<br/>`) la partía SwiftUI por anchura y la máscara —un solo rectángulo
+/// sobre el `Text` completo— iluminaba TODAS las líneas envueltas a la vez.
+/// Aquí se mide el texto con la fuente real y se trocea en filas de verdad: cada
+/// trozo se dibuja como `Text` propio con su ventana temporal (reparto
+/// proporcional al nº de caracteres), así el wipe avanza de arriba abajo.
+/// ✅ Si la medición se queda corta por milímetros, el peor caso es que ESE trozo
+/// envuelva dentro de sí mismo: nunca se recorta ni se pierde texto.
+private enum LyricRowSplitter {
+    /// Por debajo de este ancho no se intenta trocear (geometría aún sin medir).
+    private static let minimumUsableWidth: CGFloat = 40
+    /// ✅ Margen de seguridad: la medición con `UIFont` y el render de SwiftUI
+    /// pueden diferir en una fracción; trocear un 1,5% antes evita que un trozo
+    /// envuelva por sorpresa (peor caso: una palabra baja a la fila siguiente).
+    private static let safetyMargin: CGFloat = 0.985
+    /// ✅ Cacheado por (texto + fuente + ancho) para no medir en cada render.
+    private static let cache = NSCache<NSString, NSArray>()
+
+    static func split(_ text: String, fontSize: CGFloat, weight: UIFont.Weight, maxWidth: CGFloat) -> [String] {
+        guard !text.isEmpty, maxWidth >= minimumUsableWidth else { return [text] }
+
+        let key = "\(Int(fontSize.rounded()))|\(weight.rawValue)|\(Int(maxWidth.rounded()))|\(text)" as NSString
+        if let cached = cache.object(forKey: key) as? [String] { return cached }
+
+        let font = UIFont.systemFont(ofSize: fontSize, weight: weight)
+        let parts = wrap(text, font: font, maxWidth: maxWidth)
+        cache.setObject(parts as NSArray, forKey: key)
+        return parts
+    }
+
+    /// Reparto voraz por palabras (y por caracteres cuando no hay espacios, p. ej.
+    /// CJK). Una palabra sola más ancha que la fila se deja entera.
+    private static func wrap(_ text: String, font: UIFont, maxWidth: CGFloat) -> [String] {
+        var lines: [String] = []
+        var current = ""
+
+        for word in text.components(separatedBy: " ") {
+            let candidate = current.isEmpty ? word : current + " " + word
+            if current.isEmpty || width(of: candidate, font: font) <= maxWidth * safetyMargin {
+                current = candidate
+            } else {
+                lines.append(current)
+                current = word
+            }
+        }
+        if !current.isEmpty { lines.append(current) }
+
+        if lines.count == 1, let only = lines.first, width(of: only, font: font) > maxWidth * safetyMargin {
+            return splitByCharacter(only, font: font, maxWidth: maxWidth)
+        }
+        return lines.isEmpty ? [text] : lines
+    }
+
+    private static func splitByCharacter(_ text: String, font: UIFont, maxWidth: CGFloat) -> [String] {
+        var lines: [String] = []
+        var current = ""
+
+        for character in text {
+            let candidate = current + String(character)
+            if current.isEmpty || width(of: candidate, font: font) <= maxWidth * safetyMargin {
+                current = candidate
+            } else {
+                lines.append(current)
+                current = String(character)
+            }
+        }
+        if !current.isEmpty { lines.append(current) }
+        return lines.isEmpty ? [text] : lines
+    }
+
+    private static func width(of text: String, font: UIFont) -> CGFloat {
+        (text as NSString).size(withAttributes: [.font: font]).width
+    }
+}
+
+// MARK: - Filas reales (lógicas + troceo por medición)
+private enum LyricRowBuilder {
+    /// ✅ Cada trozo hereda un sub-rango de la ventana de su fila lógica, en
+    /// proporción al nº de caracteres (misma regla que el modelo cuando no hay
+    /// timings por palabra), así las ventanas quedan encadenadas y el trozo N+1
+    /// no empieza hasta que el N termina.
+    static func rows(
+        from logicalRows: [LyricVisualRow],
+        fontSize: CGFloat,
+        weight: UIFont.Weight,
+        maxWidth: CGFloat
+    ) -> [LyricVisualRow] {
+        var result: [LyricVisualRow] = []
+        result.reserveCapacity(logicalRows.count)
+
+        for row in logicalRows {
+            let parts = LyricRowSplitter.split(row.text, fontSize: fontSize, weight: weight, maxWidth: maxWidth)
+            guard parts.count > 1 else {
+                result.append(row)
+                continue
+            }
+
+            let span = Double(max(row.endMs - row.startMs, 1))
+            let totalCharacters = max(1, parts.reduce(0) { $0 + $1.count })
+            var charactersBefore = 0
+
+            for part in parts {
+                let start = row.startMs + Int((span * Double(charactersBefore) / Double(totalCharacters)).rounded())
+                let end = row.startMs + Int((span * Double(charactersBefore + part.count) / Double(totalCharacters)).rounded())
+                result.append(LyricVisualRow(text: part, startMs: start, endMs: max(end, start + 1)))
+                charactersBefore += part.count
+            }
+        }
+
+        return result
+    }
+}
+
 // MARK: - Línea individual con relleno progresivo (estilo Apple Music)
 // ✅ Struct (no clase) y sin envoltorios de tipo borrado: el cuerpo solo se
 //    re-evalúa cuando cambia el estado de activación; el TimelineView
@@ -278,6 +405,8 @@ private struct LyricLineView: View, Equatable {
     /// depender de que el padre se re-evalúe.
     let isPlaying: Bool
     let viewModel: LyricsViewModel
+    /// ✅ Ancho útil para el texto: el troceo por medición real depende de él.
+    let availableWidth: CGFloat
 
     /// ✅ Separación entre filas visuales de una misma línea lógica (también en
     /// la capa atenuada, para que el texto no salte al activarse la línea).
@@ -295,6 +424,7 @@ private struct LyricLineView: View, Equatable {
             && lhs.isPlaying == rhs.isPlaying
             && lhs.viewModel === rhs.viewModel
             && lhs.line == rhs.line
+            && lhs.availableWidth == rhs.availableWidth
     }
 
     private var fontSize: CGFloat {
@@ -306,9 +436,14 @@ private struct LyricLineView: View, Equatable {
     }
 
     var body: some View {
+        // ✅ Las filas REALES se calculan AQUÍ, fuera del TimelineView: el troceo
+        // por medición se paga una sola vez por línea (y queda cacheado), nunca
+        // por frame.
+        let rows = displayedRows
+
         Group {
             if isActive {
-                activeLine
+                activeLine(rows)
                     // ✅ Al ganar el foco, la capa brillante entra con el spring
                     // de la línea; al perderlo se funde hacia la capa atenuada
                     // (0.2s easeInOut) en vez de cambiar de golpe.
@@ -317,7 +452,7 @@ private struct LyricLineView: View, Equatable {
                         removal: .opacity.animation(.easeInOut(duration: 0.2))
                     ))
             } else {
-                dimmedRows
+                dimmedRows(rows)
                     // ✅ Profundidad MUY sutil (0.5pt), y SOLO en las líneas
                     // inactivas: la activa es la que pide frames a 60 Hz y no
                     // debe pagar ninguna pasada de blur. Si en el iPhone 8 Plus
@@ -340,31 +475,44 @@ private struct LyricLineView: View, Equatable {
         .spring(response: 0.4, dampingFraction: 0.75)
     }
 
+    /// ✅ Filas REALES de la línea (cacheado por texto+fuente+ancho): las lógicas
+    /// del modelo troceadas por medición. Una fila larga sin `<br/>` que SwiftUI
+    /// partiría en dos líneas se convierte en DOS filas con su propia ventana de
+    /// tiempo, así el relleno avanza de arriba abajo y no ilumina ambas a la vez.
+    private var displayedRows: [LyricVisualRow] {
+        LyricRowBuilder.rows(
+            from: line.visualRows,
+            fontSize: fontSize,
+            weight: isActive ? .bold : .regular,
+            maxWidth: availableWidth
+        )
+    }
+
     // MARK: Línea activa (relleno animado, fila a fila)
     /// ✅ Con reproducción activa se piden frames a 60 Hz; en pausa se dibuja el
     /// estado congelado una sola vez (sin gastar GPU/batería).
     @ViewBuilder
-    private var activeLine: some View {
+    private func activeLine(_ rows: [LyricVisualRow]) -> some View {
         if isPlaying {
             TimelineView(.animation) { _ in
-                activeRows
+                activeRows(rows)
             }
         } else {
-            activeRows
+            activeRows(rows)
         }
     }
 
     /// ✅ UN solo TimelineView para la línea completa: cada fila visual lleva su
     /// propia máscara y su propia ventana temporal, pero solo hay UNA
     /// suscripción de frames por línea activa (nunca una por fila).
-    private var activeRows: some View {
+    private func activeRows(_ rows: [LyricVisualRow]) -> some View {
         VStack(alignment: .leading, spacing: Self.rowSpacing) {
-            ForEach(line.visualRows.indices, id: \.self) { index in
+            ForEach(rows.indices, id: \.self) { index in
                 LyricFillText(
-                    text: line.visualRows[index].text,
+                    text: rows[index].text,
                     fontSize: fontSize,
                     fontWeight: fontWeight,
-                    progress: easedProgress(forRowIndex: index)
+                    progress: easedProgress(rows: rows, index: index)
                 )
                 // ✅ Las filas ya completadas (o aún sin empezar) tienen el mismo
                 // progreso frame a frame → no se redibujan; solo la fila que se
@@ -376,10 +524,10 @@ private struct LyricLineView: View, Equatable {
 
     /// ✅ Misma estructura de filas que la capa activa: el texto de una línea
     /// normal (una sola fila) se dibuja exactamente igual que antes.
-    private var dimmedRows: some View {
+    private func dimmedRows(_ rows: [LyricVisualRow]) -> some View {
         VStack(alignment: .leading, spacing: Self.rowSpacing) {
-            ForEach(line.visualRows.indices, id: \.self) { index in
-                Text(line.visualRows[index].text)
+            ForEach(rows.indices, id: \.self) { index in
+                Text(rows[index].text)
                     .font(.system(size: fontSize, weight: fontWeight))
                     .foregroundStyle(Color.primary.opacity(0.35))
             }
@@ -388,8 +536,7 @@ private struct LyricLineView: View, Equatable {
 
     /// ✅ Smoothstep (t·t·(3−2t)) POR FILA: cada fila se rellena en su propio
     /// rango, así la fila de arriba se completa antes de que empiece la de abajo.
-    private func easedProgress(forRowIndex index: Int) -> Double {
-        let rows = line.visualRows
+    private func easedProgress(rows: [LyricVisualRow], index: Int) -> Double {
         guard rows.indices.contains(index) else { return 0 }
 
         let raw = viewModel.fillProgress(
