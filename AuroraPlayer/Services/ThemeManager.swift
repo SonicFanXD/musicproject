@@ -222,6 +222,77 @@ final class ThemeManager: ObservableObject {
     }
 }
 
+/// ✅ TEMAS DE APARIENCIA: además de Sistema/Claro/Oscuro, tres temas
+/// "ambientales" con fondo propio. Cada modo define:
+///   1. un `colorScheme` forzado (textos, materiales y controles nativos
+///      siguen siendo legibles), y
+///   2. los DOS colores del fondo raíz (identidad de gradiente de dos colores).
+/// Los índices 0/1/2 conservan EXACTAMENTE el comportamiento anterior, así que
+/// la migración del tema guardado es simplemente "índice desconocido → Sistema".
+/// No se cambia la clave de @AppStorage ni se migran datos.
+enum AppThemeMode: Int, CaseIterable {
+    case system = 0
+    case light = 1
+    case dark = 2
+    case midnight = 3
+    case twilight = 4
+    case paper = 5
+
+    /// Clave persistida existente (`com.aurora.uiTheme`). NO cambiar.
+    static let storageKey = "com.aurora.uiTheme"
+
+    /// Índice guardado → modo válido. Cualquier valor desconocido cae en
+    /// `.system` (el mismo fallback que tenía la app antes de los temas nuevos).
+    static func mode(forStoredIndex index: Int) -> AppThemeMode {
+        AppThemeMode(rawValue: index) ?? .system
+    }
+
+    /// Esquema forzado. `nil` = sigue la apariencia del sistema (como antes).
+    var forcedColorScheme: ColorScheme? {
+        switch self {
+        case .system: return nil
+        case .light, .paper: return .light
+        case .dark, .midnight, .twilight: return .dark
+        }
+    }
+
+    /// Dos colores del fondo raíz (AppBackground y SplashView). En los modos del
+    /// sistema delega en los colores dinámicos → resultado idéntico al anterior.
+    var backgroundColors: [Color] {
+        switch self {
+        case .system, .light, .dark:
+            return [Color(UIColor.systemBackground), Color(UIColor.secondarySystemBackground)]
+        case .midnight:
+            // ✅ OLED: negro puro en ambos extremos (sin degradado perceptible).
+            return [Color(red: 0, green: 0, blue: 0), Color(red: 0, green: 0, blue: 0)]
+        case .twilight:
+            // ✅ #1a0f2e → #0f0518
+            return [
+                Color(red: 0.102, green: 0.059, blue: 0.180),
+                Color(red: 0.059, green: 0.020, blue: 0.094)
+            ]
+        case .paper:
+            // ✅ Blanco hueso #faf8f0 con un segundo tono apenas más cálido.
+            return [
+                Color(red: 0.980, green: 0.973, blue: 0.941),
+                Color(red: 0.945, green: 0.933, blue: 0.894)
+            ]
+        }
+    }
+
+    /// Clave de localización de la etiqueta del selector de tema.
+    var localizationKey: String {
+        switch self {
+        case .system: return "settings.theme.system"
+        case .light: return "settings.theme.light"
+        case .dark: return "settings.theme.dark"
+        case .midnight: return "settings.theme.midnight"
+        case .twilight: return "settings.theme.twilight"
+        case .paper: return "settings.theme.paper"
+        }
+    }
+}
+
 /// Acceso cómodo al acento actual desde cualquier vista.
 /// Se lee en cada render, así que reacciona al cambiar el ajuste.
 enum AppTheme {

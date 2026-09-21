@@ -40,12 +40,10 @@ struct SettingsView: View {
     // ✅ LOCALIZADOS: computados para reaccionar al cambio de idioma al
     // instante (antes eran `let` hardcodeados en español → el inglés no
     // se aplicaba en los pickers de Tema, Color de acento e Idioma).
+    // ✅ TEMAS 3.0: el selector se deriva de AppThemeMode, de modo que las
+    // etiquetas y su orden SIEMPRE coinciden con el índice persistido (0…5).
     private var themes: [String] {
-        [
-            Localization.localized("settings.theme.system"),
-            Localization.localized("settings.theme.light"),
-            Localization.localized("settings.theme.dark")
-        ]
+        AppThemeMode.allCases.map { Localization.localized($0.localizationKey) }
     }
     private var accents: [String] {
         [
@@ -73,7 +71,10 @@ struct SettingsView: View {
         self.fileAccessService = fileAccessService
 
         let savedTheme = UserDefaults.standard.integer(forKey: themeDefaultsKey)
-        _selectedThemeIndex = State(initialValue: savedTheme >= 0 && savedTheme < 3 ? savedTheme : 0)
+        // ✅ MIGRACIÓN SEGURA: 0/1/2 (Sistema/Claro/Oscuro) se leen igual que
+        // antes; los índices nuevos (3…5) y cualquier valor inválido se
+        // normalizan a un modo existente. No se toca la clave persistida.
+        _selectedThemeIndex = State(initialValue: AppThemeMode.mode(forStoredIndex: savedTheme).rawValue)
     }
 
     var body: some View {

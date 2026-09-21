@@ -1220,12 +1220,21 @@ struct SplashView: View {
     // isInitialLoad a false la vista sale del árbol y la animación se detiene
     // con ella (no queda ningún bucle en background).
     @State private var breathing = false
+    // ✅ TEMAS: el splash usa el mismo fondo raíz que AppBackground
+    // (Medianoche / Crepúsculo / Papel).
+    @AppStorage(AppThemeMode.storageKey) private var savedThemeIndex = 0
     @Environment(\.colorScheme) private var colorScheme
     
     var body: some View {
         ZStack {
-            // ✅ Fondo sólido que respeta el esquema de color
-            (colorScheme == .dark ? Color.black : Color(UIColor.systemBackground))
+            // ✅ Fondo raíz del tema actual (dos colores, como el resto de la
+            // identidad). En Sistema/Claro/Oscuro da el mismo resultado que el
+            // fondo sólido anterior porque delega en los colores dinámicos.
+            LinearGradient(
+                colors: AppThemeMode.mode(forStoredIndex: savedThemeIndex).backgroundColors,
+                startPoint: .top,
+                endPoint: .bottom
+            )
                 .ignoresSafeArea()
             
             // ✅ Efecto de resplandor sutil (sin AngularGradient problemático)
