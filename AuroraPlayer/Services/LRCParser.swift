@@ -256,8 +256,10 @@ struct LRCParser {
         // ✅ Eliminar timestamp de línea [mm:ss.xx]
         cleaned = cleaned.replacingOccurrences(of: "\\[\\d{2}:\\d{2}(?:\\.\\d{2,3})?\\]", with: "", options: .regularExpression)
 
-        // ✅ Eliminar timestamps de palabra <mm:ss.xxx>
-        cleaned = cleaned.replacingOccurrences(of: "<\\d{2}:\\d{2}\\.\\d{3}>", with: "", options: .regularExpression)
+        // ✅ Eliminar timestamps de palabra <mm:ss.xx(x)>: MISMO patrón que
+        // `extractWordTokens` (2 o 3 decimales). Hoy los de 2 dígitos también los
+        // quita el catch-all de abajo, así que esto es defensa en profundidad.
+        cleaned = cleaned.replacingOccurrences(of: "<\\d{2}:\\d{2}\\.\\d{2,3}>", with: "", options: .regularExpression)
 
         // ✅ Eliminar cualquier etiqueta HTML remanente
         cleaned = cleaned.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
@@ -385,6 +387,18 @@ extension LRCParser {
         assert(ttmlResult[0].startMs == 1000, "Test 9 falló: TTML timestamp mismatch")
         print("✅ Test 9 (TTML delegado) passed")
         
+        // Test 12: híbrido con fracción de 2 dígitos en los timings de palabra
+        // (<mm:ss.xx>, no solo <mm:ss.xxx>): las palabras se parsean Y el texto
+        // visible queda limpio (sin tags).
+        let shortFractionLRC = """
+        [00:10.00]<00:10.00>Hola <00:10.50>mundo
+        """
+        let shortFractionResult = parse(shortFractionLRC)
+        assert(shortFractionResult.count == 1, "Test 12 falló: Expected 1 line")
+        assert(shortFractionResult[0].displayText == "Hola mundo", "Test 12 falló: texto con tags: \(shortFractionResult[0].displayText)")
+        assert(shortFractionResult[0].words.count == 2, "Test 12 falló: Expected 2 word tokens")
+        print("✅ Test 12 (Híbrido con fracción de 2 dígitos) passed")
+
         print("🎉 Todos los tests de LRCParser pasaron correctamente")
     }
 }
