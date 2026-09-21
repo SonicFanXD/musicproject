@@ -31,6 +31,8 @@ struct SettingsView: View {
     @AppStorage("com.aurora.autoPlayOnStart") private var autoPlayOnStart = false
     @AppStorage("com.aurora.showVisualizerInBar") private var showVisualizerInBar = true
     @AppStorage("com.aurora.compactPlayerBar") private var compactPlayerBar = false
+    // ✅ PARTE C: estilo de la barra de reproducción (0 = vidrio, 1 = sólido, 2 = compacto).
+    @AppStorage("com.aurora.playerBarStyle") private var playerBarStyle = 0
     @AppStorage("com.aurora.language") private var selectedLanguage = 0 // 0 = español, 1 = inglés
     @AppStorage("com.aurora.showFPS") private var showFPS = false
     @AppStorage("com.aurora.scanOnlyNewSongs") private var scanOnlyNewSongs = true
@@ -62,6 +64,16 @@ struct SettingsView: View {
             "20 ms"
         ]
     }
+    /// ✅ ESTILO DE BARRA: etiquetas localizadas (se re-evalúan al cambiar de
+    /// idioma, como Tema / Acento / Idioma).
+    private var playerBarStyleLabels: [String] {
+        [
+            Localization.localized("settings.playerBarStyle.glass"),
+            Localization.localized("settings.playerBarStyle.solid"),
+            Localization.localized("settings.playerBarStyle.compact")
+        ]
+    }
+
     private var ioBufferIndex: Int {
         ioBufferValues.firstIndex(of: ioBufferMs) ?? 0
     }
@@ -406,6 +418,22 @@ struct SettingsView: View {
                             settingsToggleRow(title: Localization.localized("settings.showVisualizerInBar"), subtitle: Localization.localized("settings.showVisualizerInBarSubtitle"), icon: "waveform", color: AppTheme.accent, isOn: $showVisualizerInBar)
                             settingsDivider
                             settingsToggleRow(title: Localization.localized("settings.compactPlayerBar"), subtitle: Localization.localized("settings.compactPlayerBarSubtitle"), icon: "rectangle.compress.vertical", color: .gray, isOn: $compactPlayerBar)
+                            settingsDivider
+                            // ✅ ESTILO DE BARRA: vidrio (el de siempre), sólido
+                            // opaco (mismo aspecto sin material que rasterizar por
+                            // frame) o compacto (vidrio con la altura reducida).
+                            settingsMenuButton(
+                                title: Localization.localized("settings.playerBarStyle"),
+                                subtitle: playerBarStyleLabels[playerBarStyle],
+                                icon: "rectangle.topthird.inset.filled",
+                                color: .indigo,
+                                options: playerBarStyleLabels,
+                                selection: $playerBarStyle,
+                                onChange: { index in
+                                    playerBarStyle = index
+                                    AppLog.info(.settings, "Estilo de barra: \(playerBarStyleLabels[index])")
+                                }
+                            )
                             settingsDivider
                             settingsToggleRow(title: Localization.localized("settings.showLyricsByDefault"), subtitle: Localization.localized("settings.showLyricsByDefaultSubtitle"), icon: "quote.bubble", color: .blue, isOn: $showLyricsByDefault)
                         }

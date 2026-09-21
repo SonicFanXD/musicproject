@@ -19,8 +19,32 @@ struct PlayerBar: View {
     // ✅ Esquinas del artwork sincronizadas con el ajuste de Apariencia
     @AppStorage("com.aurora.artworkCorner") private var artworkCorner: Double = 22
     @AppStorage("com.aurora.compactPlayerBar") private var compactPlayerBar = false
+    // ✅ ESTILO DE BARRA (Ajustes → Personalización): 0 = vidrio (el de siempre),
+    // 1 = sólido opaco (mismo aspecto, sin material que rasterizar por frame),
+    // 2 = compacto (vidrio con la altura reducida). No cambia ni el orden de los
+    // controles ni el scrub: solo la superficie y la altura.
+    @AppStorage("com.aurora.playerBarStyle") private var playerBarStyle = 0
     // ✅ Ajuste "Visualizador en barra" (antes no se aplicaba)
     @AppStorage("com.aurora.showVisualizerInBar") private var showVisualizerInBar = true
+
+    /// ✅ Altura reducida si el ajuste clásico está activo O si el estilo elegido
+    /// es "compacto".
+    private var isCompactBar: Bool { compactPlayerBar || playerBarStyle == 2 }
+
+    /// ✅ Superficie de la cápsula según el estilo (vidrio ⇄ opaco).
+    private var barSurface: AnyShapeStyle {
+        playerBarStyle == 1
+            ? AnyShapeStyle(Color(UIColor.secondarySystemBackground))
+            : AnyShapeStyle(.ultraThinMaterial)
+    }
+
+    /// ✅ Superficie de los círculos de control (un escalón más claro que la barra
+    /// para que sigan leyéndose como botones cuando el fondo es opaco).
+    private var controlSurface: AnyShapeStyle {
+        playerBarStyle == 1
+            ? AnyShapeStyle(Color(UIColor.tertiarySystemBackground))
+            : AnyShapeStyle(.ultraThinMaterial)
+    }
 
     // ✅ Observar ThemeManager para que los cambios de acento (manual o desde carátula)
     // se apliquen instantáneamente sin necesidad de cambiar de canción.
@@ -152,7 +176,7 @@ struct PlayerBar: View {
                                 .foregroundStyle(fileAccessService.isLiked(song) ? .red : .secondary)
                                 .frame(width: 38, height: 38)
                                 .background {
-                                    Circle().fill(AnyShapeStyle(.ultraThinMaterial))
+                                    Circle().fill(controlSurface)
                                         .frame(width: 38, height: 38)
                                 }
                                 .contentShape(Circle())
@@ -171,7 +195,7 @@ struct PlayerBar: View {
                                     .foregroundStyle(.primary)
                                     .frame(width: 42, height: 42)
                                     .background {
-                                        Circle().fill(AnyShapeStyle(.ultraThinMaterial))
+                                        Circle().fill(controlSurface)
                                     }
                                     .contentShape(Circle())
                                     .scaleEffect(playButtonScale)
@@ -218,7 +242,7 @@ struct PlayerBar: View {
                                         .font(.system(size: 16, weight: .bold))
                                         .foregroundStyle(.white)
                                 }
-                                .frame(width: compactPlayerBar ? 40 : 44, height: compactPlayerBar ? 40 : 44)
+                                .frame(width: isCompactBar ? 40 : 44, height: isCompactBar ? 40 : 44)
                                 .shadow(color: artworkDominantColor.opacity(0.4), radius: 10, x: 0, y: 4)
                                 .scaleEffect(playButtonScale)
                                 .contentShape(Circle())
@@ -239,7 +263,7 @@ struct PlayerBar: View {
                                     .foregroundStyle(.primary)
                                     .frame(width: 42, height: 42)
                                     .background {
-                                        Circle().fill(AnyShapeStyle(.ultraThinMaterial))
+                                        Circle().fill(controlSurface)
                                     }
                                     .contentShape(Circle())
                             }
@@ -251,7 +275,7 @@ struct PlayerBar: View {
                     }
                     .padding(.leading, 14)
                     .padding(.trailing, 10)
-                    .padding(.top, compactPlayerBar ? 8 : 12)
+                    .padding(.top, isCompactBar ? 8 : 12)
                     .padding(.bottom, 4)
 
                     // ✅ BARRA AISLADA: única subvista que observa el reloj (0.4s).
@@ -266,7 +290,7 @@ struct PlayerBar: View {
                 .background {
                     // ✅ Esquinas muy redondeadas (34pt) con material premium (estilo NowPlayingView)
                     RoundedRectangle(cornerRadius: 34, style: .continuous)
-                        .fill(AnyShapeStyle(.ultraThinMaterial))
+                        .fill(barSurface)
                         .shadow(color: .black.opacity(0.18), radius: 20, x: 0, y: 8)
                     // Borde sutil superior para profundidad
                     RoundedRectangle(cornerRadius: 34, style: .continuous)
@@ -360,6 +384,10 @@ private struct PlayerScrubBar: View {
 
     @ObservedObject private var theme = ThemeManager.shared
     @AppStorage("com.aurora.compactPlayerBar") private var compactPlayerBar = false
+    // ✅ Mismo estilo que la barra: el "compacto" también adelgaza el scrub.
+    @AppStorage("com.aurora.playerBarStyle") private var playerBarStyle = 0
+
+    private var isCompactBar: Bool { compactPlayerBar || playerBarStyle == 2 }
 
     // ✅ Scrub optimizado: preview local a 60fps, seek real solo al soltar
     @State private var isScrubbing = false
@@ -417,14 +445,14 @@ private struct PlayerScrubBar: View {
                 // ✅ Track con material de vidrio (estilo NowPlayingView)
                 Capsule()
                     .fill(Color.secondary.opacity(0.2))
-                    .frame(height: compactPlayerBar ? 3 : 4)
+                    .frame(height: isCompactBar ? 3 : 4)
 
                 // ✅ Progreso con gradiente del color dominante del artwork
                 Capsule()
                     .fill(
                         accentGradient(start: .leading, end: .trailing, primaryOpacity: 0.8, secondaryOpacity: 1)
                     )
-                    .frame(width: max(4, geometry.size.width * progress), height: compactPlayerBar ? 3 : 4)
+                    .frame(width: max(4, geometry.size.width * progress), height: isCompactBar ? 3 : 4)
                     .shadow(color: artworkDominantColor.opacity(0.4), radius: 4, x: 0, y: 0)
 
                 // ✅ Indicador de posición al hacer scrub
@@ -436,7 +464,7 @@ private struct PlayerScrubBar: View {
                         .shadow(color: .black.opacity(0.25), radius: 6, x: 0, y: 3)
                 }
             }
-            .frame(height: compactPlayerBar ? 3 : 4)
+            .frame(height: isCompactBar ? 3 : 4)
             // ✅ FIX: el área táctil era enorme (maxHeight infinity +
             // padding 14) y robaba los toques del artwork/título,
             // impidiendo abrir NowPlayingView tras reanudar la app.
@@ -468,7 +496,7 @@ private struct PlayerScrubBar: View {
             )
         }
         .frame(maxWidth: .infinity)
-        .frame(height: (compactPlayerBar ? 3 : 4) + 12)
+        .frame(height: (isCompactBar ? 3 : 4) + 12)
         .padding(.horizontal, 18)
         .padding(.bottom, 8)
     }
