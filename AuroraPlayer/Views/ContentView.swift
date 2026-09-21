@@ -236,6 +236,11 @@ struct ContentView: View {
                 }
                 .sheet(isPresented: $showFolderPicker) {
                     FolderPickerView(fileAccessService: fileAccessService)
+                        // ✅ La hoja ocupaba toda la pantalla para algo que es una
+                        // acción corta: ahora abre a media altura y se puede
+                        // arrastrar a pantalla completa si hay muchas carpetas.
+                        .presentationDetents([.medium, .large])
+                        .presentationDragIndicator(.visible)
                 }
                 .onChange(of: fileAccessService.isInitialLibraryLoaded) { loaded in
                     if loaded {
