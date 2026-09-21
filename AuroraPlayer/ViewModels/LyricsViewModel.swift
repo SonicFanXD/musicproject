@@ -126,7 +126,18 @@ final class LyricsViewModel: ObservableObject {
     /// Recalcula la línea activa inmediatamente después de un seek
     @MainActor
     func handleSeek() {
-        anchorClock(at: audioEngine?.currentTime ?? clockTime)
+        syncToCurrentTime()
+    }
+
+    /// ✅ Sincroniza el estado con el tiempo REAL de reproducción. Se llama al
+    /// ENTRAR en la vista de letras y al cambiar de canción, para que la línea
+    /// activa esté calculada antes del primer frame (si el usuario entra en el
+    /// minuto 2:30, la vista nace ya centrada en esa línea y no se ve ningún
+    /// scroll de arranque).
+    @MainActor
+    func syncToCurrentTime() {
+        guard let audioEngine else { return }
+        anchorClock(at: audioEngine.currentTime)
         refreshActiveLine()
     }
 

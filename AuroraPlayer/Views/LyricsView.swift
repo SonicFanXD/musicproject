@@ -18,7 +18,20 @@ struct LyricsView: View {
     @ObservedObject var viewModel: LyricsViewModel
     @Environment(\.dismiss) private var dismiss
 
-    @State private var scrollTarget: Int? = nil
+    /// ✅ Petición de centrado: el `token` garantiza que SwiftUI reciba un
+    /// cambio aunque la línea destino sea la misma (al cambiar de canción), así
+    /// el re-centrado nunca se pierde.
+    private struct ScrollRequest: Equatable {
+        let lineID: Int
+        let token: Int
+    }
+
+    @State private var scrollRequest: ScrollRequest?
+    @State private var scrollToken: Int = 0
+    /// ✅ Distingue el PRIMER centrado (al entrar o al cambiar de canción) del
+    /// resto: el primero va SIN animación (la vista "nace" ya centrada) y los
+    /// scrolleos durante la reproducción sí se animan.
+    @State private var hasDoneInitialScroll = false
 
     /// ✅ Centrado geométrico exacto: 40% de la pantalla de relleno arriba y
     /// abajo, de modo que la línea activa quede en el centro real de la vista.
@@ -46,11 +59,39 @@ struct LyricsView: View {
         }
         .onAppear {
             parseLyricsIfNeeded()
+            // ✅ Centrado inmediato, sin animación: la línea activa ya está en el
+            // centro en el primer frame.
+            syncScrollToActiveLine()
         }
         // ✅ iOS 16 onChange clásico: scroll solo cuando cambia la línea activa
         .onChange(of: viewModel.activeID) { newID in
-            scrollTarget = newID
+            guard let newID else { return }
+            requestScroll(to: newID)
         }
+        // ✅ Cambio de canción con la vista abierta: re-parsear y re-centrar sin
+        // animación, como si la vista acabara de nacer.
+        .onChange(of: song?.id) { _ in
+            parseLyricsIfNeeded()
+            syncScrollToActiveLine()
+        }
+    }
+
+    // MARK: - Centrado de la línea activa
+    /// Centra la línea activa SIN animación (entrada a la vista / cambio de
+    /// canción). Resetea la petición para poder re-centrar aunque la línea
+    /// destino coincida con la anterior.
+    private func syncScrollToActiveLine() {
+        hasDoneInitialScroll = false
+        scrollRequest = nil
+        guard let activeID = viewModel.activeID else { return }
+        requestScroll(to: activeID)
+    }
+
+    /// Pide un centrado. El token hace que la petición siempre sea distinta de la
+    /// anterior (y que un scroll a la MISMA línea no se descarte).
+    private func requestScroll(to lineID: Int) {
+        scrollToken += 1
+        scrollRequest = ScrollRequest(lineID: lineID, token: scrollToken)
     }
 
     // MARK: - Header
@@ -89,8 +130,8 @@ struct LyricsView: View {
                 lyricsStack
             }
             // ✅ iOS 16 onChange clásico: scroll suave solo cuando cambia el target
-            .onChange(of: scrollTarget) { target in
-                scrollToActiveLine(target, proxy: proxy)
+            .onChange(of: scrollRequest) { request in
+                scrollToActiveLine(request, proxy: proxy)
             }
         }
     }
@@ -119,17 +160,28 @@ struct LyricsView: View {
     /// al cambiar de línea activa. Cuanto más corto es el solape entre la
     /// animación del scroll y el wipe a 60 fps de la línea entrante, menos
     /// tirones se ven en la transición.
-    private func scrollToActiveLine(_ target: Int?, proxy: ScrollViewProxy) {
-        guard let target = target else { return }
+    /// ✅ El PRIMER centrado (entrada / cambio de canción) va sin animación: el
+    /// usuario no ve la letra "llegar" desde la primera línea.
+    private func scrollToActiveLine(_ request: ScrollRequest?, proxy: ScrollViewProxy) {
+        guard let request else { return }
 
-        withAnimation(.easeInOut(duration: 0.25)) {
-            proxy.scrollTo(target, anchor: .center)
+        if hasDoneInitialScroll {
+            withAnimation(.easeInOut(duration: 0.25)) {
+                proxy.scrollTo(request.lineID, anchor: .center)
+            }
+        } else {
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                proxy.scrollTo(request.lineID, anchor: .center)
+            }
+            hasDoneInitialScroll = true
         }
     }
 
     // MARK: - Línea individual
-    /// ✅ El scroll se hace en DOS fases (activeID → scrollTarget → scrollTo) a
-    /// propósito: así la primera línea se centra también cuando el ScrollView
+    /// ✅ El scroll se hace en DOS fases (activeID → scrollRequest → scrollTo) a
+    /// propósito: así la línea activa se centra también cuando el ScrollView
     /// nace en el mismo ciclo en que el parser publica `activeID` (con un solo
     /// onChange dentro del ScrollViewReader ese primer centrado se perdería).
     private func lyricLineView(line: LyricsLine) -> some View {
@@ -203,6 +255,9 @@ struct LyricsView: View {
         let lyrics = song.lyrics
         if !lyrics.isEmpty {
             viewModel.parseLyrics(lyrics)
+            // ✅ La línea activa se fija con el tiempo REAL de reproducción antes
+            // del primer centrado (entrar en el minuto 2:30 no muestra la línea 1).
+            viewModel.syncToCurrentTime()
         } else {
             viewModel.clearLyrics()
         }
