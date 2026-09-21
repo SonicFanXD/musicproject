@@ -209,7 +209,11 @@ struct NowPlayingView: View {
                         // ✅ MEJORADO: AudioVisualizer ya rasteriza internamente
                         // con .drawingGroup() y maneja la atenuación al pausar.
                         // Nada de animaciones raras de escala aquí.
-                        AudioVisualizer(audioEngine: audioEngine, tintColor: extractedColor)
+                        AudioVisualizer(
+                            audioEngine: audioEngine,
+                            tintColor: extractedColor,
+                            secondaryTintColor: extractedSecondaryColor
+                        )
                             .frame(height: isCompactScreen ? 32 : 48)
                             .padding(.horizontal, 36)
                     }

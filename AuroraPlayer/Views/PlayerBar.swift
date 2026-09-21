@@ -120,7 +120,14 @@ struct PlayerBar: View {
                             // ✅ Visualizador compacto junto al título (cambia con isPlaying,
                             // no con cada tick de reloj)
                             if showVisualizerInBar {
-                                AudioVisualizer(audioEngine: audioEngine)
+                                // ✅ Paleta de dos colores de la barra (respeta el
+                                // modo "acento desde portada"; antes usaba el acento
+                                // por defecto aunque el resto de la barra no).
+                                AudioVisualizer(
+                                    audioEngine: audioEngine,
+                                    tintColor: accentPair.primary,
+                                    secondaryTintColor: accentPair.secondary
+                                )
                                     .frame(width: 18, height: 14)
                                     // ✅ iOS 16 compatible: animar opacidad con value: isPlaying
                                     // (audioEngine es ObservedObject → re-renderiza al cambiar)
