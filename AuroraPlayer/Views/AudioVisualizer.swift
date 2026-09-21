@@ -2,6 +2,7 @@ import SwiftUI
 import AVFoundation
 import QuartzCore
 import UIKit
+import Combine
 
 // MARK: - Optimizador de batería para el visualizador
 // ✅ Ajusta dinámicamente el frame rate del visualizador según el estado de
@@ -13,7 +14,12 @@ import UIKit
 @MainActor
 final class VisualizerFrameRate: ObservableObject {
     static let shared = VisualizerFrameRate()
+    /// ✅ 3.0: 60 nominal · 30 fair/serious o bajo consumo · **0 = apagado** en
+    /// crítico. El valor 0 lo interpretan los visualizadores como "suelta el
+    /// CADisplayLink" (0 en `preferredFramesPerSecond` significa "máxima
+    /// frecuencia", así que no sirve como apagado por sí solo).
     @Published private(set) var fps: Int = 60
+    private var thermalCancellable: AnyCancellable?
 
     private init() {
         update()
@@ -26,10 +32,9 @@ final class VisualizerFrameRate: ObservableObject {
         ) { [weak self] _ in
             Task { @MainActor in self?.update() }
         }
-        NotificationCenter.default.addObserver(
-            forName: ProcessInfo.thermalStateDidChangeNotification,
-            object: nil, queue: .main
-        ) { [weak self] _ in
+        // ✅ 3.0: la térmica la decide ThermalManager (una sola fuente de verdad,
+        // y así este visualizador se actualiza DESPUÉS de que el nivel cambie).
+        thermalCancellable = ThermalManager.shared.$level.sink { [weak self] _ in
             Task { @MainActor in self?.update() }
         }
         // ✅ 3.0 MODO PRESENTACIÓN: al grabar pantalla el visualizador baja a 30 fps
@@ -43,17 +48,13 @@ final class VisualizerFrameRate: ObservableObject {
     }
 
     private func update() {
-        // ✅ 3.0: la grabación de pantalla se trata como el bajo consumo (30 fps).
-        if ProcessInfo.processInfo.isLowPowerModeEnabled || CaptureModeManager.shared.isScreenCaptured {
-            fps = 30
-            return
-        }
-        switch ProcessInfo.processInfo.thermalState {
-        case .fair, .serious, .critical:
-            fps = 30
-        default:
-            fps = 60
-        }
+        // ✅ 3.0: el objetivo base lo pone la térmica (60 / 30 / apagado).
+        let thermalFPS = ThermalManager.shared.visualizerFPS
+        // ✅ Bajo consumo y grabación de pantalla NUNCA suben el objetivo: ponen el
+        // techo en 30 fps, y si el calor ya pedía apagado, sigue apagado.
+        let capped = ProcessInfo.processInfo.isLowPowerModeEnabled
+            || CaptureModeManager.shared.isScreenCaptured
+        fps = capped ? min(thermalFPS, 30) : thermalFPS
     }
 }
 
@@ -129,10 +130,10 @@ struct AudioVisualizer: View {
                 isVisible = false
             }
         }
-        // ✅ Batería: adapta los fps en tiempo real (60↔30) al cambiar el estado
-        // de bajo consumo/térmico, sin reiniciar el CADisplayLink.
+        // ✅ Batería: adapta los fps en tiempo real (60↔30↔apagado) al cambiar el
+        // estado de bajo consumo/térmico, sin reiniciar el CADisplayLink.
         .onReceive(frameRate.$fps) { fps in
-            displayLink?.preferredFramesPerSecond = fps
+            applyFrameRate(fps)
         }
         // ✅ CRÍTICO - BATERÍA: detener el visualizador cuando la app pasa a
         // segundo plano para ahorrar CPU/GPU. Reanudar al volver a primer plano.
@@ -144,6 +145,20 @@ struct AudioVisualizer: View {
                 isVisible = true
                 startVisualization()
             }
+        }
+    }
+
+    /// ✅ 3.0: 0 significa "apagado" (estado térmico crítico). Al bajar la
+    /// temperatura se reanuda solo, sin reiniciar la app ni el motor de audio.
+    private func applyFrameRate(_ fps: Int) {
+        guard fps > 0 else {
+            stopVisualization()
+            return
+        }
+        if let link = displayLink {
+            link.preferredFramesPerSecond = fps
+        } else if isVisible && audioEngine.isPlaying {
+            startVisualization()
         }
     }
 
@@ -243,10 +258,10 @@ struct CircularAudioVisualizer: View {
                 stopVisualization()
             }
         }
-        // ✅ Batería: adapta los fps en tiempo real (60↔30) al cambiar el estado
-        // de bajo consumo/térmico, sin reiniciar el CADisplayLink.
+        // ✅ Batería: adapta los fps en tiempo real (60↔30↔apagado) al cambiar el
+        // estado de bajo consumo/térmico, sin reiniciar el CADisplayLink.
         .onReceive(frameRate.$fps) { fps in
-            displayLink?.preferredFramesPerSecond = fps
+            applyFrameRate(fps)
         }
         // ✅ CRÍTICO - BATERÍA: detener el visualizador cuando la app pasa a
         // segundo plano para ahorrar CPU/GPU. Reanudar al volver a primer plano.
@@ -258,6 +273,20 @@ struct CircularAudioVisualizer: View {
                 isVisible = true
                 startVisualization()
             }
+        }
+    }
+
+    /// ✅ 3.0: 0 significa "apagado" (estado térmico crítico). Al bajar la
+    /// temperatura se reanuda solo, sin reiniciar la app ni el motor de audio.
+    private func applyFrameRate(_ fps: Int) {
+        guard fps > 0 else {
+            stopVisualization()
+            return
+        }
+        if let link = displayLink {
+            link.preferredFramesPerSecond = fps
+        } else if isVisible && audioEngine.isPlaying {
+            startVisualization()
         }
     }
 

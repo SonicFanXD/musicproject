@@ -27,6 +27,9 @@ struct PlayerBar: View {
     @ObservedObject private var theme = ThemeManager.shared
     // ✅ 3.0: observar el modo captura para detener el halo al grabar pantalla.
     @ObservedObject private var captureMode = CaptureModeManager.shared
+    // ✅ 3.0: y el estado térmico, para detener el halo cuando el equipo ya va
+    // justo (serious/critical). El audio NO se toca.
+    @ObservedObject private var thermal = ThermalManager.shared
     // ✅ CRÍTICO - BATERÍA: observar scenePhase para detener animaciones en segundo plano
     @Environment(\.scenePhase) private var scenePhase
 
@@ -45,9 +48,13 @@ struct PlayerBar: View {
     /// comentario que prometía detener la animación), así que el `repeatForever`
     /// seguía consumiendo CPU/GPU en segundo plano.
     /// ✅ 3.0: además de reproducir y estar en primer plano, el halo se detiene
-    /// mientras se graba la pantalla (animación decorativa, sin valor en vídeo).
+    /// mientras se graba la pantalla (animación decorativa, sin valor en vídeo) y
+    /// cuando el dispositivo está caliente.
     private var isHaloAnimating: Bool {
-        audioEngine.isPlaying && scenePhase != .background && DecorativeMotion.isAllowed
+        audioEngine.isPlaying
+            && scenePhase != .background
+            && DecorativeMotion.isAllowed
+            && !thermal.shouldReduceVisualEffects
     }
 
     /// ✅ Par de colores del acento (SIEMPRE dos): con "Acento desde portada" usa
