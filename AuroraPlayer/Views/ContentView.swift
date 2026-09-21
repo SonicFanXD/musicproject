@@ -177,23 +177,9 @@ struct ContentView: View {
                 }
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbarBackground(.hidden, for: .navigationBar)
-                .toolbar {
-                    // ✅ 3.0: el botón de Ajustes se eliminó (Ajustes ya es una
-                    // pestaña del tab bar). El de Playlists se retira en la fase
-                    // de limpieza, cuando la creación de listas viva dentro de la
-                    // propia categoría Playlists.
-                    ToolbarItem(placement: .navigationBarTrailing) {
-                        Button {
-                            showPlaylists = true
-                        } label: {
-                            Image(systemName: "music.note.list")
-                                .foregroundStyle(AppTheme.accentGradient)
-                                .font(.system(size: 16, weight: .medium))
-                                .frame(width: 44, height: 44)
-                                .contentShape(Rectangle())
-                        }
-                    }
-                }
+                // ✅ 3.0: SIN toolbar. El botón de Ajustes pasó al tab bar y el de
+                // Playlists a la cabecera de su propia categoría (que es donde se
+                // crean y consultan las listas).
                 .sheet(isPresented: $showPlaylists) {
                     PlaylistsView(fileAccessService: fileAccessService, audioEngine: audioEngine)
                 }
@@ -781,6 +767,10 @@ struct ContentView: View {
     @ViewBuilder
     private var playlistsSection: some View {
         let playlists = fileAccessService.playlists
+        // ✅ 3.0: la creación de listas vive DENTRO de su categoría (antes colgaba
+        // del botón de la toolbar). Se reutiliza el mismo sheet de siempre
+        // (PlaylistsView), sin duplicar interfaz ni funcionalidad.
+        playlistsHeader
         if playlists.isEmpty {
             ContentUnavailableLibraryView(
                 icon: "music.note.list",
@@ -804,6 +794,41 @@ struct ContentView: View {
             }
             .padding(.vertical, 16)
         }
+    }
+
+    // ✅ Cabecera de la categoría Playlists: título + botón de crear lista. Es el
+    // único punto de entrada para crear una lista (con listas y sin ellas), en el
+    // lugar que ocupaba el botón retirado de la toolbar.
+    private var playlistsHeader: some View {
+        HStack(spacing: 12) {
+            Text(Localization.localized("library.playlists"))
+                .font(.system(size: 20, weight: .bold, design: .rounded))
+                .foregroundStyle(.primary)
+
+            Spacer()
+
+            Button {
+                Haptics.light()
+                showPlaylists = true
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "plus")
+                        .font(.system(size: 12, weight: .bold))
+                    Text(Localization.localized("playlists.createPlaylist"))
+                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                }
+                .foregroundStyle(.white)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 9)
+                .background {
+                    Capsule().fill(AppTheme.accentGradient)
+                }
+                .shadow(color: AppTheme.accent.opacity(0.3), radius: 8, y: 4)
+            }
+            .buttonStyle(PressableButtonStyle(scale: 0.95))
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 14)
     }
 
     @ViewBuilder
