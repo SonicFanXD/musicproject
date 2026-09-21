@@ -433,7 +433,8 @@ struct PlaylistDetailView: View {
             // Artwork con marco sutil
             ZStack {
                 if let artwork = playlist.artwork {
-                    Image(uiImage: artwork)
+                    // ✅ ANTI-JETSAM: hero de 220pt → miniatura de 440px cacheada.
+                    Image(uiImage: AppTheme.thumbnail(from: artwork, size: CGSize(width: 440, height: 440)))
                         .resizable()
                         .interpolation(.high)
                         .scaledToFill()
@@ -556,7 +557,10 @@ struct PlaylistDetailView: View {
             GeometryReader { geometry in
                 Group {
                     if let artwork = playlist.artwork {
-                        Image(uiImage: artwork)
+                        // ✅ ANTI-JETSAM: el fondo va desenfocado a 44pt, así que
+                        // se decodifica una miniatura de 400px en vez de la
+                        // carátula completa (≈2.4MB) en cada re-render del header.
+                        Image(uiImage: AppTheme.thumbnail(from: artwork, size: CGSize(width: 400, height: 400)))
                             .resizable()
                             .scaledToFill()
                             .blur(radius: 44)

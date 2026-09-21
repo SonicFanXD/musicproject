@@ -1553,7 +1553,10 @@ private func albumListRow(_ album: Album) -> some View {
     HStack(spacing: 14) {
         Group {
             if let artwork = album.artwork {
-                Image(uiImage: artwork)
+                // ✅ ANTI-JETSAM: la fila muestra 52pt pero decodificaba los 768px
+                // completos (≈2.4MB) por fila durante el scroll. Miniatura de
+                // 104px (52pt @2x) cacheada, igual que la fila de canciones.
+                Image(uiImage: AppTheme.thumbnail(from: artwork, size: CGSize(width: 104, height: 104)))
                     .resizable().interpolation(.high).scaledToFill()
                     .frame(width: 52, height: 52)
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
@@ -1595,7 +1598,8 @@ private func artistListRow(_ artist: Artist) -> some View {
     HStack(spacing: 14) {
         Group {
             if let artwork = artist.artwork {
-                Image(uiImage: artwork)
+                // ✅ ANTI-JETSAM: mismo caso que la fila de álbumes (52pt @2x).
+                Image(uiImage: AppTheme.thumbnail(from: artwork, size: CGSize(width: 104, height: 104)))
                     .resizable().interpolation(.high).scaledToFill()
                     .frame(width: 52, height: 52)
                     .clipShape(Circle())
@@ -1667,7 +1671,8 @@ struct playlistLibraryCard: View {
         VStack(alignment: .leading, spacing: 10) {
             Group {
                 if let artwork = playlist.artwork {
-                    Image(uiImage: artwork)
+                    // ✅ ANTI-JETSAM: card de 140pt → miniatura de 280px cacheada.
+                    Image(uiImage: AppTheme.thumbnail(from: artwork, size: CGSize(width: 280, height: 280)))
                         .resizable().scaledToFill()
                         .frame(width: 140, height: 140)
                         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))

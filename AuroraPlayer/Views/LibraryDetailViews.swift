@@ -228,7 +228,9 @@ struct AlbumDetailView: View {
             // de offscreen rendering por frame en A11; visualmente equivalente).
             Group {
                 if let artwork = album.artwork {
-                    Image(uiImage: artwork)
+                    // ✅ ANTI-JETSAM: 200pt de display → miniatura de 400px
+                    // cacheada en vez de decodificar la carátula completa.
+                    Image(uiImage: AppTheme.thumbnail(from: artwork, size: CGSize(width: 400, height: 400)))
                         .resizable().interpolation(.high).scaledToFill()
                         .frame(width: 200, height: 200)
                         .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
@@ -727,7 +729,8 @@ struct ArtistDetailView: View {
             // ? Avatar del artista con animaci�n y efectos mejorados
             Group {
                 if let artwork = artist.artwork {
-                    Image(uiImage: artwork)
+                    // ✅ ANTI-JETSAM: avatar de 170pt → miniatura de 340px.
+                    Image(uiImage: AppTheme.thumbnail(from: artwork, size: CGSize(width: 340, height: 340)))
                         .resizable().interpolation(.high).scaledToFill()
                         .frame(width: 170, height: 170)
                         .clipShape(Circle())
@@ -910,7 +913,8 @@ struct ArtistAlbumCard: View {
         VStack(alignment: .leading, spacing: 10) {
             Group {
                 if let artwork = album.artwork {
-                    Image(uiImage: artwork)
+                    // ✅ ANTI-JETSAM: card de 150pt → miniatura de 300px.
+                    Image(uiImage: AppTheme.thumbnail(from: artwork, size: CGSize(width: 300, height: 300)))
                         .resizable().scaledToFill()
                         .frame(width: 150, height: 150)
                         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
