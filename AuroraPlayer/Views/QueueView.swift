@@ -137,7 +137,7 @@ struct QueueView: View {
                         VStack(alignment: .leading, spacing: 3) {
                             Text(current.title)
                                 .font(.system(size: 16, weight: .semibold, design: .rounded))
-                                .foregroundStyle(AppTheme.accent).lineLimit(1)
+                                .foregroundStyle(AppTheme.accentGradient).lineLimit(1)
                             Text(current.displaySubtitle)
                                 .font(.system(size: 13)).foregroundStyle(.secondary).lineLimit(1)
                         }
@@ -163,7 +163,7 @@ struct QueueView: View {
                     .padding(12)
                     .background {
                         RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .fill(AppTheme.accent.opacity(0.1))
+                            .fill(AppTheme.accentGradient(opacity: 0.1))
                     }
                     .overlay {
                         RoundedRectangle(cornerRadius: 14, style: .continuous)
@@ -331,7 +331,7 @@ struct QueueView: View {
 
                 Image(systemName: "play.circle.fill")
                     .font(.system(size: 26))
-                    .foregroundStyle(AppTheme.accent)
+                    .foregroundStyle(AppTheme.accentGradient)
             }
             .padding(.horizontal, 14).padding(.vertical, 12)
             .background {

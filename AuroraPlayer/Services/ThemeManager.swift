@@ -112,21 +112,29 @@ final class ThemeManager: ObservableObject {
     /// ✅ Gradiente de dos colores universal para todos los elementos
     /// Si hay dos colores de carátula, usa gradiente con más contraste
     var resolvedAccentGradient: LinearGradient {
+        resolvedAccentGradient(opacity: 1)
+    }
+
+    /// ✅ Gradiente con opacidad aplicada a CADA color. Necesario porque en
+    /// iOS 16 `LinearGradient.opacity(_:)` devuelve una View y no un ShapeStyle
+    /// (no compila dentro de `.fill(...)`). El degradado es más tenue pero
+    /// conserva el efecto de dos colores en fondos, chips y barras.
+    func resolvedAccentGradient(opacity: Double) -> LinearGradient {
         if accentFromArtwork, let primary = artworkAccentColor, let secondary = artworkSecondaryColor {
             return LinearGradient(
-                colors: [primary, secondary],
+                colors: [primary.opacity(opacity), secondary.opacity(opacity)],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
         } else if accentFromArtwork, let c = artworkAccentColor {
             return LinearGradient(
-                colors: [c, c.opacity(0.4)],
+                colors: [c.opacity(opacity), c.opacity(opacity * 0.4)],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
         }
         return LinearGradient(
-            colors: [accent, accent.opacity(0.4)],
+            colors: [accent.opacity(opacity), accent.opacity(opacity * 0.4)],
             startPoint: .topLeading,
             endPoint: .bottomTrailing
         )
@@ -222,6 +230,11 @@ enum AppTheme {
     
     /// ✅ Gradiente de dos colores universal para elementos que lo soportan
     static var accentGradient: LinearGradient { ThemeManager.shared.resolvedAccentGradient }
+
+    /// ✅ Variante con opacidad (para fondos, bordes y barras con alpha).
+    static func accentGradient(opacity: Double) -> LinearGradient {
+        ThemeManager.shared.resolvedAccentGradient(opacity: opacity)
+    }
 
     /// ✅ Acento como UIColor: reemplaza los antiguos fallbacks
     /// `UIColor.systemPurple` hardcodeados (no respetaban el ajuste).

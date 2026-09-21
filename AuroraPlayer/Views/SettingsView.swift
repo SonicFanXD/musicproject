@@ -478,7 +478,7 @@ struct SettingsView: View {
             ZStack {
                 // ✅ Círculo con tinte suave (sin blur: cero re-muestreo en scroll)
                 Circle()
-                    .fill(AppTheme.accent.opacity(0.12))
+                    .fill(AppTheme.accentGradient(opacity: 0.12))
                     .frame(width: 88, height: 88)
                     .overlay {
                         Circle()

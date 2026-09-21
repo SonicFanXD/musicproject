@@ -57,7 +57,7 @@ struct PlaylistsView: View {
                         showCreatePlaylist = true
                     } label: {
                         Image(systemName: "plus")
-                            .foregroundStyle(AppTheme.accent)
+                            .foregroundStyle(AppTheme.accentGradient)
                             .frame(width: 44, height: 44) // Bigger invisible touch target
                             .contentShape(Rectangle())
                     }
@@ -230,12 +230,12 @@ struct PlaylistsView: View {
                         VStack(spacing: 16) {
                             ZStack {
                                 Circle()
-                                    .fill(AppTheme.accent.opacity(0.16))
+                                    .fill(AppTheme.accentGradient(opacity: 0.16))
                                     .frame(width: 70, height: 70)
 
                                 Image(systemName: "plus.circle.fill")
                                     .font(.system(size: 28, weight: .semibold))
-                                    .foregroundStyle(AppTheme.accent)
+                                    .foregroundStyle(AppTheme.accentGradient)
                             }
 
                             Text(Localization.localized("playlists.newPlaylist"))
@@ -543,11 +543,11 @@ struct PlaylistDetailView: View {
                     } label: {
                         Image(systemName: "shuffle")
                             .font(.system(size: 17, weight: .semibold))
-                            .foregroundStyle(AppTheme.accent)
+                            .foregroundStyle(AppTheme.accentGradient)
                             .frame(width: 52, height: 52)
                             .background {
                                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                    .fill(AppTheme.accent.opacity(0.14))
+                                    .fill(AppTheme.accentGradient(opacity: 0.14))
                             }
                             .frame(width: 60, height: 60) // Bigger invisible touch target
                             .contentShape(Rectangle())
@@ -682,7 +682,7 @@ struct PlaylistDetailView: View {
         .padding(.vertical, 12)
         .background {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(isCurrent ? AppTheme.accent.opacity(0.1) : Color.secondary.opacity(0.05))
+                .fill(AnyShapeStyle(isCurrent ? AnyShapeStyle(AppTheme.accentGradient(opacity: 0.1)) : AnyShapeStyle(Color.secondary.opacity(0.05))))
         }
         .overlay {
             if isCurrent {

@@ -155,12 +155,12 @@ struct FolderPickerView: View {
                 HStack {
                     ZStack {
                         RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .fill(AppTheme.accent.opacity(0.12))
+                            .fill(AppTheme.accentGradient(opacity: 0.12))
                             .frame(width: 44, height: 44)
 
                         Image(systemName: "folder.fill")
                             .font(.system(size: 18, weight: .semibold))
-                            .foregroundStyle(AppTheme.accent)
+                            .foregroundStyle(AppTheme.accentGradient)
                     }
 
                     VStack(alignment: .leading, spacing: 2) {
@@ -196,12 +196,12 @@ struct FolderPickerView: View {
                 HStack {
                     ZStack {
                         RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .fill(AppTheme.accent.opacity(0.12))
+                            .fill(AppTheme.accentGradient(opacity: 0.12))
                             .frame(width: 44, height: 44)
 
                         Image(systemName: "music.note")
                             .font(.system(size: 18, weight: .semibold))
-                            .foregroundStyle(AppTheme.accent)
+                            .foregroundStyle(AppTheme.accentGradient)
                     }
 
                     VStack(alignment: .leading, spacing: 2) {
@@ -305,7 +305,7 @@ struct FolderPickerView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
                         Image(systemName: "folder.fill")
-                            .foregroundStyle(AppTheme.accent)
+                            .foregroundStyle(AppTheme.accentGradient)
 
                         Text("Carpetas")
                             .font(.headline)
@@ -317,12 +317,12 @@ struct FolderPickerView: View {
                             HStack {
                                 ZStack {
                                     RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                        .fill(AppTheme.accent.opacity(0.12))
+                                        .fill(AppTheme.accentGradient(opacity: 0.12))
                                         .frame(width: 38, height: 38)
 
                                     Image(systemName: "folder.fill")
                                         .font(.system(size: 16, weight: .semibold))
-                                        .foregroundStyle(AppTheme.accent)
+                                        .foregroundStyle(AppTheme.accentGradient)
                                 }
 
                                 VStack(alignment: .leading, spacing: 2) {
@@ -366,7 +366,7 @@ struct FolderPickerView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
                         Image(systemName: "music.note")
-                            .foregroundStyle(AppTheme.accent)
+                            .foregroundStyle(AppTheme.accentGradient)
 
                         Text("Archivos individuales")
                             .font(.headline)
@@ -378,12 +378,12 @@ struct FolderPickerView: View {
                             HStack {
                                 ZStack {
                                     RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                        .fill(AppTheme.accent.opacity(0.12))
+                                        .fill(AppTheme.accentGradient(opacity: 0.12))
                                         .frame(width: 38, height: 38)
 
                                     Image(systemName: "music.note")
                                         .font(.system(size: 16, weight: .semibold))
-                                        .foregroundStyle(AppTheme.accent)
+                                        .foregroundStyle(AppTheme.accentGradient)
                                 }
 
                                 VStack(alignment: .leading, spacing: 2) {

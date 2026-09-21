@@ -922,7 +922,7 @@ struct ContentView: View {
         .background {
                 if isCurrent {
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(AppTheme.accent.opacity(0.08))
+                        .fill(AppTheme.accentGradient(opacity: 0.08))
                         .overlay(
                             RoundedRectangle(cornerRadius: 16, style: .continuous)
                                 .strokeBorder(AppTheme.accent.opacity(0.2), lineWidth: 0.5)
@@ -1018,7 +1018,7 @@ struct ContentView: View {
                 .overlay {
                     Image(systemName: "music.note")
                         .font(.system(size: 16, weight: .medium))
-                        .foregroundStyle(AppTheme.accent.opacity(0.6))
+                        .foregroundStyle(AppTheme.accentGradient(opacity: 0.6))
                 }
         }
     }
@@ -1628,7 +1628,7 @@ struct ContentUnavailableLibraryView: View {
     var body: some View {
         VStack(spacing: 16) {
             ZStack {
-                Circle().fill(AppTheme.accent.opacity(0.1)).frame(width: 80, height: 80)
+                Circle().fill(AppTheme.accentGradient(opacity: 0.1)).frame(width: 80, height: 80)
                 Image(systemName: icon)
                     .font(.system(size: 36, weight: .semibold))
                     .foregroundStyle(AppTheme.accentGradient)

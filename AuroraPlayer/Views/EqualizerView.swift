@@ -53,12 +53,12 @@ struct EqualizerView: View {
         HStack(spacing: 16) {
             ZStack {
                 Circle()
-                    .fill(AppTheme.accent.opacity(0.15))
+                    .fill(AppTheme.accentGradient(opacity: 0.15))
                     .frame(width: 50, height: 50)
 
                 Image(systemName: "slider.horizontal.3")
                     .font(.system(size: 20, weight: .semibold))
-                    .foregroundStyle(AppTheme.accent)
+                    .foregroundStyle(AppTheme.accentGradient)
             }
 
             VStack(alignment: .leading, spacing: 4) {
@@ -108,7 +108,7 @@ struct EqualizerView: View {
                                 .padding(.vertical, 10)
                                 .background {
                                     RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                        .fill(audioEngine.eqPreset == preset && audioEngine.isEQEnabled ? AppTheme.accent : Color.secondary.opacity(0.12))
+                                        .fill(AnyShapeStyle(audioEngine.eqPreset == preset && audioEngine.isEQEnabled ? AnyShapeStyle(AppTheme.accentGradient) : AnyShapeStyle(Color.secondary.opacity(0.12))))
                                 }
                         }
                         .buttonStyle(PressableButtonStyle(scale: 0.92))

@@ -111,14 +111,14 @@ struct AudioQualityDetailView: View {
     private var headerCard: some View {
         VStack(spacing: 14) {
             ZStack {
-                // ✅ 60fps: Círculo sólido con color (sin gradiente costoso)
+                // ✅ 60fps: gradiente ESTÁTICO (se rasteriza UNA vez, no por frame)
                 Circle()
-                    .fill(AppTheme.accent.opacity(0.15))
+                    .fill(AppTheme.accentGradient(opacity: 0.15))
                     .frame(width: 88, height: 88)
 
                 // ✅ 60fps: Anillo simple sin animación (eliminado repeatForever)
                 Circle()
-                    .stroke(AppTheme.accent.opacity(0.4), lineWidth: 2)
+                    .stroke(AppTheme.accentGradient(opacity: 0.4), lineWidth: 2)
                     .frame(width: 76, height: 76)
 
                 // ✅ 60fps: Círculo interior sólido (sin material costoso)
@@ -128,7 +128,7 @@ struct AudioQualityDetailView: View {
                     .overlay(
                         Image(systemName: "waveform.circle.fill")
                             .font(.system(size: 28, weight: .medium))
-                            .foregroundStyle(AppTheme.accent)
+                            .foregroundStyle(AppTheme.accentGradient)
                     )
             }
             .drawingGroup() // ✅ Rasteriza todo el ZStack en GPU
@@ -174,7 +174,7 @@ struct AudioQualityDetailView: View {
                             .foregroundStyle(.secondary)
                         Text(dacReadout(for: song))
                             .font(.system(size: 19, weight: .bold, design: .rounded).monospacedDigit())
-                            .foregroundStyle(AppTheme.accent)
+                            .foregroundStyle(AppTheme.accentGradient)
                             .lineLimit(1)
                             .minimumScaleFactor(0.7)
                     }
@@ -546,7 +546,7 @@ struct AudioQualityDetailView: View {
         .padding(.horizontal, 18).padding(.vertical, 14)
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(isHighlighted ? AppTheme.accent.opacity(0.1) : Color(UIColor.tertiarySystemBackground).opacity(0.4))
+                .fill(AnyShapeStyle(isHighlighted ? AnyShapeStyle(AppTheme.accentGradient(opacity: 0.1)) : AnyShapeStyle(Color(UIColor.tertiarySystemBackground).opacity(0.4))))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
