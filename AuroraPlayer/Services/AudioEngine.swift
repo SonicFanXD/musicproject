@@ -2717,6 +2717,12 @@ class AudioEngine: NSObject, ObservableObject {
         info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = currentTime
 
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+        // ✅ SINCRONIZACIÓN (iOS 13+): fijar también el estado explícito de
+        // reproducción. Con solo el rate (1.0/0.0), tras una interrupción o una
+        // pausa desde el Centro de Control el sistema podía mostrar el botón del
+        // lock screen en el estado contrario al real.
+        // `publishNowPlayingInfo()` ya se ejecuta en el hilo principal.
+        MPNowPlayingInfoCenter.default().playbackState = isPlaying ? .playing : .paused
     }
 
     private func setupRemoteCommandCenter() {
