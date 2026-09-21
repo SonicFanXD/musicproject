@@ -42,7 +42,6 @@ struct SettingsView: View, SettingsRowBuilding {
     // ✅ PARTE C: reducir movimiento (accesibilidad + batería).
     @AppStorage("com.aurora.reduceMotion") private var reduceMotion = false
     @AppStorage("com.aurora.language") private var selectedLanguage = 0 // 0 = español, 1 = inglés
-    @AppStorage("com.aurora.showFPS") private var showFPS = false
     @AppStorage("com.aurora.scanOnlyNewSongs") private var scanOnlyNewSongs = true
     // ✅ AUDIÓFILO: configuración del modo de audio
     @AppStorage("com.aurora.audioSessionMode") private var audioSessionMode = 0 // 0 = default, 1 = measurement
@@ -532,22 +531,9 @@ struct SettingsView: View, SettingsRowBuilding {
                         .onChange(of: showLyricsByDefault) { v in AppLog.info(.settings, "Letras por defecto: \(v ? "activado" : "desactivado")") }
                         .onChange(of: showPlayingIndicator) { v in AppLog.info(.settings, "Ondas en la canción actual: \(v ? "activado" : "desactivado")") }
                         .onChange(of: reduceMotion) { v in AppLog.info(.settings, "Reducir movimiento: \(v ? "activado" : "desactivado")") }
-                        .onChange(of: showFPS) { v in
-                            AppLog.info(.settings, "Contador FPS: \(v ? "activado" : "desactivado")")
-                            FPSOverlayController.shared.setEnabled(v)
-                        }
 
                         // Rendimiento (info técnica)
-                        settingsSection(icon: "gauge.open.with.needle", title: Localization.localized("settings.performance"), color: .indigo) {
-                            settingsToggleRow(title: Localization.localized("settings.showFPS"), subtitle: Localization.localized("settings.showFPSSubtitle"), icon: "speedometer", color: .green, isOn: $showFPS)
-                            settingsDivider
-                            settingsInfoRow(title: Localization.localized("settings.audioOutput"), value: audioEngine.audioQualityInfo.isEmpty ? "\(Int(audioEngine.outputSampleRate / 1000)) kHz · \(audioEngine.outputChannelCount)" : audioEngine.audioQualityInfo, icon: "speaker.wave.2.fill", color: .indigo)
-                            settingsDivider
-                            settingsInfoRow(title: Localization.localized("settings.playbackRoute"), value: audioEngine.routeDisplay, icon: "airplayaudio", color: .blue)
-                            settingsDivider
-                            // ✅ Modelo comercial real (ej. "iPhone 13 Pro") en vez de "iPhone"
-                            settingsInfoRow(title: Localization.localized("settings.device"), value: audioEngine.deviceModelName, icon: "iphone", color: .gray)
-                        }
+                        PerformanceSettingsSection(audioEngine: audioEngine)
 
                         // Estadísticas
                         StatsSettingsSection(fileAccessService: fileAccessService)
@@ -996,6 +982,33 @@ extension SettingsRowBuilding {
 // su nombre en runtime → EXC_BAD_ACCESS en la stack guard. Con las secciones
 // fuera, ningún tipo individual pasa de un par de niveles de anidación.
 // El contenido es idéntico: solo cambia dónde vive.
+
+/// Rendimiento: contador de FPS e información técnica de la salida de audio.
+private struct PerformanceSettingsSection: View, SettingsRowBuilding {
+    @ObservedObject var audioEngine: AudioEngine
+    @ObservedObject var localization = Localization.shared
+    /// ✅ El ajuste viaja con su efecto: el overlay de FPS se activa desde aquí
+    /// (antes vivía en la cadena de `onChange` del padre).
+    @AppStorage("com.aurora.showFPS") private var showFPS = false
+
+    var body: some View {
+        settingsSection(icon: "gauge.open.with.needle", title: Localization.localized("settings.performance"), color: .indigo) {
+            settingsToggleRow(title: Localization.localized("settings.showFPS"), subtitle: Localization.localized("settings.showFPSSubtitle"), icon: "speedometer", color: .green, isOn: $showFPS)
+            settingsDivider
+            settingsInfoRow(title: Localization.localized("settings.audioOutput"), value: audioEngine.audioQualityInfo.isEmpty ? "\(Int(audioEngine.outputSampleRate / 1000)) kHz · \(audioEngine.outputChannelCount)" : audioEngine.audioQualityInfo, icon: "speaker.wave.2.fill", color: .indigo)
+            settingsDivider
+            settingsInfoRow(title: Localization.localized("settings.playbackRoute"), value: audioEngine.routeDisplay, icon: "airplayaudio", color: .blue)
+            settingsDivider
+            // ✅ Modelo comercial real (ej. "iPhone 13 Pro") en vez de "iPhone"
+            settingsInfoRow(title: Localization.localized("settings.device"), value: audioEngine.deviceModelName, icon: "iphone", color: .gray)
+        }
+        // ✅ LOGS TÉCNICOS: el cambio del contador aplica el overlay al instante.
+        .onChange(of: showFPS) { v in
+            AppLog.info(.settings, "Contador FPS: \(v ? "activado" : "desactivado")")
+            FPSOverlayController.shared.setEnabled(v)
+        }
+    }
+}
 
 /// Estadísticas de la biblioteca (incluye las canciones en indexación).
 private struct StatsSettingsSection: View, SettingsRowBuilding {
