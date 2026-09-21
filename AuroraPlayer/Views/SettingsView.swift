@@ -65,8 +65,10 @@ struct SettingsView: View {
     private let themeDefaultsKey = "com.aurora.uiTheme"
 
     private var appVersion: String {
-        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "2.1.0"
-        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "21"
+        // ✅ 3.0: el respaldo se alinea con la versión real del Info.plist (solo se
+        // usa si el bundle no expone las claves, que no es el caso normal).
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "3.0.0"
+        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "30"
         return "\(version) (\(build))"
     }
 
