@@ -90,8 +90,6 @@ class AudioEngine: NSObject, ObservableObject {
             if isShuffleEnabled != oldValue {
                 UserDefaults.standard.set(isShuffleEnabled, forKey: "com.aurora.shuffleEnabled")
                 UserDefaults.standard.synchronize()
-                // Publica el modo al sistema (lock screen / Centro de Control)
-                syncRemoteModeCommands()
             }
         }
     }
@@ -110,8 +108,6 @@ class AudioEngine: NSObject, ObservableObject {
             if repeatMode != oldValue {
                 UserDefaults.standard.set(repeatMode.rawValue, forKey: "com.aurora.repeatMode")
                 UserDefaults.standard.synchronize()
-                // Publica el modo al sistema (lock screen / Centro de Control)
-                syncRemoteModeCommands()
             }
         }
     }
@@ -2764,83 +2760,6 @@ class AudioEngine: NSObject, ObservableObject {
             self.seek(to: posEvent.positionTime)
             return .success
         }
-        // ✅ COMANDOS REMOTOS DE MODO (iOS 7.1+): repetición y aleatorio desde el
-        // lock screen / Centro de Control / CarPlay.
-        // API verificada contra el SDK de MediaPlayer: el comando se obtiene con
-        // `changeRepeatModeCommand` / `changeShuffleModeCommand`, el estado actual
-        // vive en `currentRepeatType` / `currentShuffleType` y el evento los
-        // expone en `repeatType` / `shuffleType`. (NO existe
-        // `MPRemoteCommandCenter.repeatCommand`, ni `supportedRepeatTypes`.)
-        center.changeRepeatModeCommand.addTarget { [weak self] event in
-            guard let self = self,
-                  let modeEvent = event as? MPChangeRepeatModeCommandEvent else { return .commandFailed }
-            guard self.applyRemoteRepeatType(modeEvent.repeatType) else { return .commandFailed }
-            // Confirmar al sistema el estado realmente aplicado (no el pedido).
-            self.syncRemoteModeCommands()
-            return .success
-        }
-        center.changeShuffleModeCommand.addTarget { [weak self] event in
-            guard let self = self,
-                  let modeEvent = event as? MPChangeShuffleModeCommandEvent else { return .commandFailed }
-            guard self.applyRemoteShuffleType(modeEvent.shuffleType) else { return .commandFailed }
-            self.syncRemoteModeCommands()
-            return .success
-        }
-        // Estado inicial de ambos botones.
-        syncRemoteModeCommands()
-    }
-
-    // MARK: - Comandos remotos de modo (repetición / aleatorio)
-
-    /// Publica en el sistema el modo de repetición y aleatorio actuales. El
-    /// lock screen y el Centro de Control leen `currentRepeatType` y
-    /// `currentShuffleType` para dibujar el estado de sus botones.
-    /// Se debe llamar en el hilo principal.
-    private func syncRemoteModeCommands() {
-        let center = MPRemoteCommandCenter.shared()
-        center.changeRepeatModeCommand.currentRepeatType = mpRepeatType(from: repeatMode)
-        center.changeShuffleModeCommand.currentShuffleType = isShuffleEnabled ? .items : .off
-    }
-
-    /// Traduce el modo de repetición de la app al del sistema.
-    private func mpRepeatType(from mode: RepeatMode) -> MPRepeatType {
-        switch mode {
-        case .off: return .off
-        case .all: return .all
-        case .one: return .one
-        }
-    }
-
-    /// Aplica el modo de repetición pedido desde el sistema.
-    /// Devuelve `false` si el valor no es reconocido.
-    private func applyRemoteRepeatType(_ type: MPRepeatType) -> Bool {
-        let target: RepeatMode
-        switch type {
-        case .off: target = .off
-        case .all: target = .all
-        case .one: target = .one
-        @unknown default: return false
-        }
-        if target != repeatMode { repeatMode = target }
-        AppLog.info(.playback, "Repetición (remoto): \(target.rawValue)")
-        return true
-    }
-
-    /// Aplica el modo aleatorio pedido desde el sistema. La app solo conoce dos
-    /// estados (activado/desactivado), así que `.items` (canciones) y
-    /// `.collections` (álbumes) se mapean a "activado".
-    /// Devuelve `false` si el valor no es reconocido.
-    private func applyRemoteShuffleType(_ type: MPShuffleType) -> Bool {
-        switch type {
-        case .off:
-            if isShuffleEnabled { toggleShuffle() }
-        case .items, .collections:
-            if !isShuffleEnabled { toggleShuffle() }
-        @unknown default:
-            return false
-        }
-        AppLog.info(.playback, "Aleatorio (remoto): \(isShuffleEnabled ? "activado" : "desactivado")")
-        return true
     }
 
     private func saveState() {
