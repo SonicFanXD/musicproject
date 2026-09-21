@@ -95,25 +95,7 @@ struct SettingsView: View, SettingsRowBuilding {
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(.hidden, for: .navigationBar)
             .toolbar {
-                ToolbarItem(placement: .principal) {
-                    Text(Localization.localized("settings.title"))
-                        .font(.system(size: 20, weight: .bold, design: .rounded))
-                        .foregroundStyle(
-                            LinearGradient(
-                                colors: [AppTheme.accent, AppTheme.accent.opacity(0.75)],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                        )
-                        .accessibilityLabel(Localization.localized("settings.title"))
-                }
-
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(Localization.localized("actions.done")) { dismiss() }
-                        .foregroundStyle(AppTheme.accent)
-                        .frame(width: 44, height: 44)
-                        .contentShape(Rectangle())
-                }
+                SettingsToolbar(onDone: { dismiss() })
             }
             .sheet(isPresented: $showLogs) {
                 LogsView()
@@ -526,6 +508,35 @@ extension SettingsRowBuilding {
 // su nombre en runtime → EXC_BAD_ACCESS en la stack guard. Con las secciones
 // fuera, ningún tipo individual pasa de un par de niveles de anidación.
 // El contenido es idéntico: solo cambia dónde vive.
+
+/// Barra de navegación de Ajustes: título con degradado y botón "Listo".
+/// ⚠️ Extraída (como el resto de secciones) para que el tipo del `body` padre
+/// deje de anidar closures dentro de `.toolbar`.
+private struct SettingsToolbar: ToolbarContent {
+    let onDone: () -> Void
+
+    var body: some ToolbarContent {
+        ToolbarItem(placement: .principal) {
+            Text(Localization.localized("settings.title"))
+                .font(.system(size: 20, weight: .bold, design: .rounded))
+                .foregroundStyle(
+                    LinearGradient(
+                        colors: [AppTheme.accent, AppTheme.accent.opacity(0.75)],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
+                .accessibilityLabel(Localization.localized("settings.title"))
+        }
+
+        ToolbarItem(placement: .navigationBarTrailing) {
+            Button(Localization.localized("actions.done")) { onDone() }
+                .foregroundStyle(AppTheme.accent)
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }
+    }
+}
 
 /// Apariencia: tema, acento, esquinas, transparencia, movimiento, idioma y
 /// tamaño de portada. Cada ajuste viaja con la sub-vista; el índice de tema
