@@ -1355,7 +1355,10 @@ struct SplashView: View {
                 
                 // ✅ Logo con animación de escala y opacidad suave
                 ZStack {
-                    // Halo pulsante exterior
+                    // ✅ DOBLE halo con ciclos DESFASADOS (1,25 s el externo, 0,85 s
+                    // el interno): dos respiraciones que no coinciden se leen como
+                    // algo orgánico, mientras que un solo pulso se lee como un
+                    // metrónomo. Siguen siendo solo scale + opacity (GPU).
                     Circle()
                         .fill(
                             RadialGradient(
@@ -1365,14 +1368,30 @@ struct SplashView: View {
                                     Color.clear
                                 ],
                                 center: .center,
-                                startRadius: 30,
-                                endRadius: 80
+                                startRadius: 40,
+                                endRadius: 105
                             )
                         )
-                        .frame(width: 160, height: 160)
-                        .scaleEffect(pulseScale * (breathing ? 1.04 : 0.97))
-                        .opacity(pulseOpacity)
-                        .animation(.easeInOut(duration: 0.75).repeatForever(autoreverses: true), value: breathing)
+                        .frame(width: 170, height: 170)
+                        .scaleEffect(pulseScale * (breathing ? 1.05 : 0.98))
+                        .opacity(pulseOpacity * (breathing ? 1.0 : 0.85))
+                        .animation(.easeInOut(duration: 1.25).repeatForever(autoreverses: true), value: breathing)
+
+                    // Halo INTERNO: radio corto, algo más opaco y más rápido → el
+                    // núcleo del logo respira con su propio tiempo.
+                    Circle()
+                        .fill(
+                            RadialGradient(
+                                colors: [AppTheme.accent.opacity(0.2), Color.clear],
+                                center: .center,
+                                startRadius: 18,
+                                endRadius: 62
+                            )
+                        )
+                        .frame(width: 120, height: 120)
+                        .scaleEffect(pulseScale * (breathing ? 1.02 : 0.95))
+                        .opacity(pulseOpacity * (breathing ? 0.85 : 1.0))
+                        .animation(.easeInOut(duration: 0.85).repeatForever(autoreverses: true), value: breathing)
                     
                     // Círculo del logo
                     Circle()
@@ -1414,26 +1433,32 @@ struct SplashView: View {
                 
                 Spacer().frame(height: 32)
                 
-                // ✅ Título con animación de slide hacia arriba
+                // ✅ Título con STAGGER por letra (30 ms): cada glifo sube y
+                // aparece por su cuenta, en cascada, que es lo que hace premium a
+                // la entrada (antes entraba el bloque entero de golpe).
+                // La rampa texto → acento se conserva, pero calculada por letra:
+                // un `LinearGradient` sobre un HStack se resuelve por glifo y
+                // reiniciaría la rampa en cada uno (se leería como un arcoíris).
                 VStack(spacing: 12) {
-                    Text("Aurora Player")
-                        .font(.system(size: 28, weight: .bold, design: .rounded))
-                        .foregroundStyle(
-                            LinearGradient(
-                                colors: [
-                                    colorScheme == .dark ? .white : Color(UIColor.label),
-                                    AppTheme.accent
-                                ],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                        )
-                    
+                    HStack(spacing: 0) {
+                        ForEach(Array(titleLetters.enumerated()), id: \.offset) { index, letter in
+                            Text(letter)
+                                .font(.system(size: 28, weight: .bold, design: .rounded))
+                                .foregroundStyle(titleRampColor(at: index))
+                                .opacity(titleOpacity)
+                                .offset(y: titleOffset)
+                                .animation(
+                                    .spring(response: 0.6, dampingFraction: 0.8)
+                                        .delay(0.25 + Double(index) * 0.03),
+                                    value: titleOpacity
+                                )
+                        }
+                    }
+
                     // ✅ Indicador de progreso personalizado
                     LoadingDots()
+                        .opacity(titleOpacity)
                 }
-                .opacity(titleOpacity)
-                .offset(y: titleOffset)
                 
                 Spacer()
             }
@@ -1444,17 +1469,17 @@ struct SplashView: View {
             // rebote sutil en lugar de frenar en seco. El retardo del título y
             // del halo es el mismo de antes, así que la duración total del
             // splash no cambia.
-            withAnimation(.spring(response: 0.7, dampingFraction: 0.75)) {
+            withAnimation(.spring(response: 0.65, dampingFraction: 0.72)) {
                 logoScale = 1.0
                 logoOpacity = 1.0
             }
 
-            withAnimation(.spring(response: 0.7, dampingFraction: 0.75).delay(0.25)) {
+            withAnimation(.spring(response: 0.65, dampingFraction: 0.72).delay(0.25)) {
                 titleOffset = 0
                 titleOpacity = 1.0
             }
 
-            withAnimation(.spring(response: 0.7, dampingFraction: 0.75).delay(0.4)) {
+            withAnimation(.spring(response: 0.65, dampingFraction: 0.72).delay(0.4)) {
                 pulseScale = 1.12
                 pulseOpacity = 1.0
             }
@@ -1462,6 +1487,39 @@ struct SplashView: View {
             // ✅ Y después respira en bucle mientras el splash siga visible.
             breathing = true
         }
+        .onDisappear {
+            // ✅ El latido es `repeatForever`: al salir del árbol la vista muere y
+            // el bucle se detiene con ella, pero durante la TRANSICIÓN CRUZADA
+            // (0,4 s) el splash sigue vivo — aquí se apaga de forma explícita.
+            breathing = false
+        }
+    }
+
+    /// ✅ Letras del título, una por glifo, para el stagger de entrada.
+    private var titleLetters: [String] {
+        "Aurora Player".map { String($0) }
+    }
+
+    /// ✅ Color de cada letra: interpolación lineal de la MISMA rampa que usaba
+    /// el gradiente del título (texto → acento del tema, que puede venir de la
+    /// portada). Se calcula por letra y no con un gradiente para que la rampa no
+    /// se reinicie en cada glifo.
+    private func titleRampColor(at index: Int) -> Color {
+        let count = titleLetters.count
+        let t = count > 1 ? CGFloat(index) / CGFloat(count - 1) : 0
+        let base = colorScheme == .dark ? UIColor.white : UIColor.label
+
+        var r1: CGFloat = 0, g1: CGFloat = 0, b1: CGFloat = 0, a1: CGFloat = 0
+        base.getRed(&r1, green: &g1, blue: &b1, alpha: &a1)
+
+        var r2: CGFloat = 0, g2: CGFloat = 0, b2: CGFloat = 0, a2: CGFloat = 0
+        UIColor(AppTheme.accent).getRed(&r2, green: &g2, blue: &b2, alpha: &a2)
+
+        return Color(
+            red: Double(r1 + (r2 - r1) * t),
+            green: Double(g1 + (g2 - g1) * t),
+            blue: Double(b1 + (b2 - b1) * t)
+        )
     }
 }
 
@@ -1477,12 +1535,14 @@ struct LoadingDots: View {
                     .frame(width: 6, height: 6)
                     .scaleEffect(animating ? 1.0 : 0.5)
                     .opacity(animating ? 1.0 : 0.4)
-                    // ✅ autoreverses: el punto late (0,5 s) en vez de saltar de
-                    // golpe al reanudar el ciclo; stagger de 0,12 s entre puntos.
+                    // ✅ autoreverses: el punto late en vez de saltar de golpe al
+                    // reanudar el ciclo. 0,55 s de ciclo y 0,14 s de desfase: con
+                    // el 0,5/0,12 anterior los tres puntos se sincronizaban por
+                    // momentos y el latido se leía como un parpadeo.
                     .animation(
-                        .easeInOut(duration: 0.5)
+                        .easeInOut(duration: 0.55)
                             .repeatForever(autoreverses: true)
-                            .delay(Double(index) * 0.12),
+                            .delay(Double(index) * 0.14),
                         value: animating
                     )
             }
