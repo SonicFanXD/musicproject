@@ -21,21 +21,13 @@ struct SettingsView: View, SettingsRowBuilding {
     @ObservedObject private var localization = Localization.shared
 
     // Configuraciones persistentes
-    @AppStorage("com.aurora.showVisualizer") private var showVisualizer = true
-    @AppStorage("com.aurora.enableHaptics") private var enableHaptics = true
-    @AppStorage("com.aurora.keepScreenOn") private var keepScreenOn = false
     @AppStorage("com.aurora.reduceTransparency") private var reduceTransparency = false
     @AppStorage("com.aurora.hapticIntensity") private var hapticIntensity: Double = 1.0
     @AppStorage("com.aurora.showLyricsByDefault") private var showLyricsByDefault = false
-    @AppStorage("com.aurora.autoPlayOnStart") private var autoPlayOnStart = false
     @AppStorage("com.aurora.showVisualizerInBar") private var showVisualizerInBar = true
     @AppStorage("com.aurora.compactPlayerBar") private var compactPlayerBar = false
     // ✅ PARTE C: estilo de la barra de reproducción (0 = vidrio, 1 = sólido, 2 = compacto).
     @AppStorage("com.aurora.playerBarStyle") private var playerBarStyle = 0
-    // ✅ PARTE C: ondas de la canción actual en las listas.
-    @AppStorage("com.aurora.showPlayingIndicator") private var showPlayingIndicator = true
-    // ✅ PARTE C: velocidad del auto-scroll de las letras (0 = lenta, 1 = normal, 2 = rápida).
-    @AppStorage("com.aurora.lyricsScrollSpeed") private var lyricsScrollSpeed = 1
     // ✅ PARTE C: reducir movimiento (accesibilidad + batería).
     @AppStorage("com.aurora.reduceMotion") private var reduceMotion = false
 
@@ -46,15 +38,6 @@ struct SettingsView: View, SettingsRowBuilding {
             Localization.localized("settings.playerBarStyle.glass"),
             Localization.localized("settings.playerBarStyle.solid"),
             Localization.localized("settings.playerBarStyle.compact")
-        ]
-    }
-
-    /// ✅ VELOCIDAD DE LETRAS: etiquetas localizadas.
-    private var lyricsSpeedLabels: [String] {
-        [
-            Localization.localized("settings.lyricsSpeed.slow"),
-            Localization.localized("settings.lyricsSpeed.normal"),
-            Localization.localized("settings.lyricsSpeed.fast")
         ]
     }
 
@@ -109,41 +92,7 @@ struct SettingsView: View, SettingsRowBuilding {
                         ArtworkAccentSettingsSection()
 
                         // Reproducción
-                        settingsSection(icon: "dial.max.fill", title: Localization.localized("settings.playback"), color: .orange) {
-                            settingsToggleRow(title: Localization.localized("settings.visualizer"), subtitle: Localization.localized("settings.visualizerSubtitle"), icon: "waveform.path.ecg", color: .pink, isOn: $showVisualizer)
-                            settingsDivider
-                            settingsToggleRow(title: Localization.localized("settings.haptics"), subtitle: Localization.localized("settings.hapticsSubtitle"), icon: "iphone.radiowaves.left.and.right", color: .mint, isOn: $enableHaptics)
-                            settingsDivider
-                            settingsToggleRow(title: Localization.localized("settings.keepScreenOn"), subtitle: Localization.localized("settings.keepScreenOnSubtitle"), icon: "sun.max.fill", color: .yellow, isOn: $keepScreenOn)
-                            settingsDivider
-                            settingsToggleRow(title: Localization.localized("settings.autoPlayOnStart"), subtitle: Localization.localized("settings.autoPlayOnStartSubtitle"), icon: "play.circle", color: .green, isOn: $autoPlayOnStart)
-                            settingsDivider
-                            // ✅ VELOCIDAD DEL SCROLL DE LETRAS: solo el muelle del
-                            // auto-scroll de LyricsView (0,5 / 0,35 / 0,2 s).
-                            settingsMenuButton(
-                                title: Localization.localized("settings.lyricsScrollSpeed"),
-                                subtitle: lyricsSpeedLabels[lyricsScrollSpeed],
-                                icon: "text.line.first.and.arrowtriangle.forward",
-                                color: .blue,
-                                options: lyricsSpeedLabels,
-                                selection: $lyricsScrollSpeed,
-                                onChange: { index in
-                                    lyricsScrollSpeed = index
-                                    AppLog.info(.settings, "Velocidad de letras: \(lyricsSpeedLabels[index])")
-                                }
-                            )
-                            settingsDivider
-                            // ✅ ONDAS EN LA CANCIÓN ACTUAL: apagado, la fila que
-                            // suena se marca solo con el título en color de acento
-                            // (útil si las barras animadas distraen en listas largas).
-                            settingsToggleRow(
-                                title: Localization.localized("settings.showPlayingIndicator"),
-                                subtitle: Localization.localized("settings.showPlayingIndicatorSubtitle"),
-                                icon: "waveform",
-                                color: AppTheme.accent,
-                                isOn: $showPlayingIndicator
-                            )
-                        }
+                        PlaybackSettingsSection(audioEngine: audioEngine)
                         
                         // ✅ Personalización avanzada
                         settingsSection(icon: "wand.and.rays", title: Localization.localized("settings.customization"), color: .indigo) {
@@ -171,21 +120,11 @@ struct SettingsView: View, SettingsRowBuilding {
                             settingsDivider
                             settingsToggleRow(title: Localization.localized("settings.showLyricsByDefault"), subtitle: Localization.localized("settings.showLyricsByDefaultSubtitle"), icon: "quote.bubble", color: .blue, isOn: $showLyricsByDefault)
                         }
-                        // ✅ Sincronización en vivo con el engine (antes solo
-                        // se aplicaba al reiniciar ContentView)
-                        .onChange(of: keepScreenOn) { newValue in
-                            audioEngine.isKeepScreenOnEnabled = newValue
-                            AppLog.info(.settings, "Mantener pantalla encendida: \(newValue ? "activado" : "desactivado")")
-                        }
                         // ✅ LOGS TÉCNICOS: cambios de ajustes del usuario
-                        .onChange(of: showVisualizer) { v in AppLog.info(.settings, "Visualizador: \(v ? "activado" : "desactivado")") }
-                        .onChange(of: enableHaptics) { v in AppLog.info(.settings, "Haptics: \(v ? "activado" : "desactivado")") }
-                        .onChange(of: autoPlayOnStart) { v in AppLog.info(.settings, "Reproducir al iniciar: \(v ? "activado" : "desactivado")") }
                         .onChange(of: reduceTransparency) { v in AppLog.info(.settings, "Reducir transparencia: \(v ? "activado" : "desactivado")") }
                         .onChange(of: showVisualizerInBar) { v in AppLog.info(.settings, "Visualizador en barra: \(v ? "activado" : "desactivado")") }
                         .onChange(of: compactPlayerBar) { v in AppLog.info(.settings, "Barra compacta: \(v ? "activado" : "desactivado")") }
                         .onChange(of: showLyricsByDefault) { v in AppLog.info(.settings, "Letras por defecto: \(v ? "activado" : "desactivado")") }
-                        .onChange(of: showPlayingIndicator) { v in AppLog.info(.settings, "Ondas en la canción actual: \(v ? "activado" : "desactivado")") }
                         .onChange(of: reduceMotion) { v in AppLog.info(.settings, "Reducir movimiento: \(v ? "activado" : "desactivado")") }
 
                         // Rendimiento (info técnica)
@@ -873,6 +812,81 @@ private struct LibrarySettingsSection: View, SettingsRowBuilding {
             }
         }
         .onChange(of: scanOnlyNewSongs) { v in AppLog.info(.settings, "Escaneo solo nuevas: \(v ? "activado" : "desactivado")") }
+    }
+}
+
+/// Reproducción: visualizador, hápticos, pantalla encendida, autoplay, velocidad
+/// de letras y ondas de la fila actual. Se lleva sus ajustes y sus efectos, incluida
+/// la sincronización de la pantalla encendida con el motor.
+private struct PlaybackSettingsSection: View, SettingsRowBuilding {
+    @ObservedObject var audioEngine: AudioEngine
+    @ObservedObject var localization = Localization.shared
+
+    @AppStorage("com.aurora.showVisualizer") private var showVisualizer = true
+    @AppStorage("com.aurora.enableHaptics") private var enableHaptics = true
+    @AppStorage("com.aurora.keepScreenOn") private var keepScreenOn = false
+    @AppStorage("com.aurora.autoPlayOnStart") private var autoPlayOnStart = false
+    // ✅ PARTE C: ondas de la canción actual en las listas.
+    @AppStorage("com.aurora.showPlayingIndicator") private var showPlayingIndicator = true
+    // ✅ PARTE C: velocidad del auto-scroll de las letras (0 = lenta, 1 = normal, 2 = rápida).
+    @AppStorage("com.aurora.lyricsScrollSpeed") private var lyricsScrollSpeed = 1
+
+    /// ✅ VELOCIDAD DE LETRAS: etiquetas localizadas.
+    private var lyricsSpeedLabels: [String] {
+        [
+            Localization.localized("settings.lyricsSpeed.slow"),
+            Localization.localized("settings.lyricsSpeed.normal"),
+            Localization.localized("settings.lyricsSpeed.fast")
+        ]
+    }
+
+    var body: some View {
+        settingsSection(icon: "dial.max.fill", title: Localization.localized("settings.playback"), color: .orange) {
+            settingsToggleRow(title: Localization.localized("settings.visualizer"), subtitle: Localization.localized("settings.visualizerSubtitle"), icon: "waveform.path.ecg", color: .pink, isOn: $showVisualizer)
+            settingsDivider
+            settingsToggleRow(title: Localization.localized("settings.haptics"), subtitle: Localization.localized("settings.hapticsSubtitle"), icon: "iphone.radiowaves.left.and.right", color: .mint, isOn: $enableHaptics)
+            settingsDivider
+            settingsToggleRow(title: Localization.localized("settings.keepScreenOn"), subtitle: Localization.localized("settings.keepScreenOnSubtitle"), icon: "sun.max.fill", color: .yellow, isOn: $keepScreenOn)
+            settingsDivider
+            settingsToggleRow(title: Localization.localized("settings.autoPlayOnStart"), subtitle: Localization.localized("settings.autoPlayOnStartSubtitle"), icon: "play.circle", color: .green, isOn: $autoPlayOnStart)
+            settingsDivider
+            // ✅ VELOCIDAD DEL SCROLL DE LETRAS: solo el muelle del
+            // auto-scroll de LyricsView (0,5 / 0,35 / 0,2 s).
+            settingsMenuButton(
+                title: Localization.localized("settings.lyricsScrollSpeed"),
+                subtitle: lyricsSpeedLabels[lyricsScrollSpeed],
+                icon: "text.line.first.and.arrowtriangle.forward",
+                color: .blue,
+                options: lyricsSpeedLabels,
+                selection: $lyricsScrollSpeed,
+                onChange: { index in
+                    lyricsScrollSpeed = index
+                    AppLog.info(.settings, "Velocidad de letras: \(lyricsSpeedLabels[index])")
+                }
+            )
+            settingsDivider
+            // ✅ ONDAS EN LA CANCIÓN ACTUAL: apagado, la fila que
+            // suena se marca solo con el título en color de acento
+            // (útil si las barras animadas distraen en listas largas).
+            settingsToggleRow(
+                title: Localization.localized("settings.showPlayingIndicator"),
+                subtitle: Localization.localized("settings.showPlayingIndicatorSubtitle"),
+                icon: "waveform",
+                color: AppTheme.accent,
+                isOn: $showPlayingIndicator
+            )
+        }
+        // ✅ Sincronización en vivo con el engine (antes solo
+        // se aplicaba al reiniciar ContentView)
+        .onChange(of: keepScreenOn) { newValue in
+            audioEngine.isKeepScreenOnEnabled = newValue
+            AppLog.info(.settings, "Mantener pantalla encendida: \(newValue ? "activado" : "desactivado")")
+        }
+        // ✅ LOGS TÉCNICOS: cambios de ajustes del usuario
+        .onChange(of: showVisualizer) { v in AppLog.info(.settings, "Visualizador: \(v ? "activado" : "desactivado")") }
+        .onChange(of: enableHaptics) { v in AppLog.info(.settings, "Haptics: \(v ? "activado" : "desactivado")") }
+        .onChange(of: autoPlayOnStart) { v in AppLog.info(.settings, "Reproducir al iniciar: \(v ? "activado" : "desactivado")") }
+        .onChange(of: showPlayingIndicator) { v in AppLog.info(.settings, "Ondas en la canción actual: \(v ? "activado" : "desactivado")") }
     }
 }
 
