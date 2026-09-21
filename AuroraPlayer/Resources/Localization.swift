@@ -150,6 +150,10 @@ final class Localization: ObservableObject {
 
         // Búsqueda y ordenamiento
         "search.prompt": [.spanish: "Buscar en tu biblioteca", .english: "Search your library"],
+        "search.promptSongs": [.spanish: "Buscar canciones", .english: "Search songs"],
+        "search.promptAlbums": [.spanish: "Buscar álbumes", .english: "Search albums"],
+        "search.promptArtists": [.spanish: "Buscar artistas", .english: "Search artists"],
+        "search.promptPlaylists": [.spanish: "Buscar listas", .english: "Search playlists"],
         "sort.option.title": [.spanish: "Título", .english: "Title"],
         "sort.option.artist": [.spanish: "Artista", .english: "Artist"],
         "sort.option.album": [.spanish: "Álbum", .english: "Album"],

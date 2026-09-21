@@ -404,12 +404,49 @@ struct ContentView: View {
 
     // ✅ Buscador INLINE con look nativo (lupa + fondo secondarySystemBackground).
     // Sustituye a .searchable del NavigationStack sin pelear con la navBar.
+    /// ✅ Placeholder por categoría: el campo decía siempre "Buscar en tu
+    /// biblioteca" aunque estuvieras en Álbumes, Artistas o Listas.
+    private var searchPlaceholderKey: String {
+        switch selectedCategory {
+        case .songs: return "search.promptSongs"
+        case .albums: return "search.promptAlbums"
+        case .artists: return "search.promptArtists"
+        case .playlists: return "search.promptPlaylists"
+        }
+    }
+
     private var searchFieldInline: some View {
+        HStack(spacing: 8) {
+            searchField
+            if !searchText.isEmpty {
+                // ✅ Botón "Cancelar" nativo (antes solo había una X DENTRO del
+                // campo): limpia, suelta el foco y devuelve el campo a su ancho.
+                Button(Localization.localized("actions.cancel")) {
+                    Haptics.light()
+                    searchText = ""
+                    searchFieldFocused = false
+                }
+                .font(.system(size: 15, weight: .medium))
+                .foregroundStyle(AppTheme.accent)
+                .buttonStyle(.plain)
+                .transition(.opacity.combined(with: .move(edge: .trailing)))
+            }
+        }
+        .animation(.easeOut(duration: 0.2), value: searchText.isEmpty)
+    }
+
+    private var searchField: some View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 15, weight: .medium))
-                .foregroundStyle(.secondary)
-            TextField(Localization.localized("search.prompt"), text: $searchText)
+                // ✅ Con texto, la lupa se enciende con el acento de dos colores:
+                // el campo "en uso" se distingue de un vistazo.
+                .foregroundStyle(
+                    searchText.isEmpty
+                        ? AnyShapeStyle(.secondary)
+                        : AnyShapeStyle(AppTheme.accentGradient)
+                )
+            TextField(Localization.localized(searchPlaceholderKey), text: $searchText)
                 .textFieldStyle(.plain)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
@@ -431,6 +468,14 @@ struct ContentView: View {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(Color(UIColor.secondarySystemBackground))
         }
+        // ✅ El foco no se veía por ningún lado: ahora el borde se enciende con
+        // el acento (1,5pt, estático: no recompone el campo por frame).
+        .overlay {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(AppTheme.accentGradient, lineWidth: 1.5)
+                .opacity(searchFieldFocused ? 1 : 0)
+        }
+        .animation(.easeOut(duration: 0.2), value: searchFieldFocused)
         .contentShape(Rectangle())
         .onTapGesture {
             searchFieldFocused = true
