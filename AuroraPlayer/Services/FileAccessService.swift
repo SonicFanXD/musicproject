@@ -670,8 +670,22 @@ class FileAccessService: ObservableObject {
     private func scanSingleFile(_ url: URL, silent: Bool = false) {
         let generation = scanGeneration
         if !silent { isScanning = true }
-        // ✅ La URL suelta también cuenta como "vista en disco" para la poda.
+        // ✅ La URL suelta también cuenta como "vista en disco" para la poda,
+        // PERO solo si el archivo sigue existiendo. Antes la clave se marcaba
+        // antes de comprobar nada: un archivo borrado fuera de la app cuyo
+        // bookmark todavía resolvía y concedía acceso quedaba marcado como
+        // "visto" en cada escaneo, así que la poda diferencial lo conservaba
+        // para siempre (canción fantasma que nunca desaparecía de la biblioteca).
         let key = Self.libraryKey(for: url)
+        // Se distingue "borrado" de "existe pero no se pudo leer": eliminar una
+        // canción por un fallo de lectura transitorio sería peor que conservarla.
+        let fileOnDisk = FileManager.default.fileExists(atPath: url.path)
+        guard fileOnDisk else {
+            // Archivo ausente: NO se marca como visto (para que la poda del
+            // rescan lo elimine) y no se registra ningún lote.
+            if !silent { updateScanningState() }
+            return
+        }
         DispatchQueue.main.async { [weak self] in
             guard let self, generation == self.scanGeneration else { return }
             self.seenOnDiskKeys.insert(key)
@@ -683,7 +697,13 @@ class FileAccessService: ObservableObject {
         if indexedSongKeys.contains(key) {
             let knownDate = songs.first(where: { Self.libraryKey(for: $0.url) == key })?.fileModificationDate
             let diskDate = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
-            guard let knownDate, let diskDate, diskDate > knownDate else { return }
+            guard let knownDate, let diskDate, diskDate > knownDate else {
+                // Sin cambios en disco: no hay nada que indexar, pero SÍ hay que
+                // devolver el estado del spinner (antes, un archivo suelto ya
+                // indexado y sin cambios dejaba isScanning en true para siempre).
+                if !silent { updateScanningState() }
+                return
+            }
             registerMetadataBatch([url], generation: generation, silent: silent, modifiedKeys: [key])
             return
         }
