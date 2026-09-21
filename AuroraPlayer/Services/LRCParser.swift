@@ -43,6 +43,11 @@ struct LRCParser {
         // ✅ Split por líneas para procesamiento eficiente
         let rawLines = text.components(separatedBy: .newlines)
 
+        // ✅ OFFSET del metadata ([offset:+500] o [offset:±mm:ss]): se lee ANTES
+        // de nada y se suma a TODOS los timestamps, palabras incluidas. Es lo que
+        // usan las letras que van desincronizadas un pelín respecto al audio.
+        let offsetMs = extractOffset(rawLines)
+
         for rawLine in rawLines {
             let trimmed = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmed.isEmpty else { continue }
@@ -52,8 +57,10 @@ struct LRCParser {
                 continue
             }
 
-            // ✅ Extraer timestamp de línea [mm:ss.xx]
-            guard let startMs = extractLineTimestamp(trimmed) else { continue }
+            // ✅ Extraer timestamp de línea [mm:ss.xx] y aplicarle el offset (nunca
+            // negativo: antes del segundo 0 no hay nada que resaltar)
+            guard let rawStartMs = extractLineTimestamp(trimmed) else { continue }
+            let startMs = max(0, rawStartMs + offsetMs)
 
             // ✅ Extraer texto completo (limpiando timestamps de palabra <...>)
             let cleanText = extractCleanText(trimmed)
@@ -65,7 +72,7 @@ struct LRCParser {
                 text: cleanText,
                 startMs: startMs,
                 endMs: startMs + defaultLineDurationMs,
-                words: extractWordTokens(trimmed)
+                words: shift(extractWordTokens(trimmed), by: offsetMs)
             ))
         }
 
@@ -148,6 +155,47 @@ struct LRCParser {
     }
 
     // MARK: - Helpers de parsing
+
+    /// ✅ OFFSET del metadata LRC. Formatos aceptados:
+    /// - `[offset:+500]` / `[offset:-250]` → milisegundos (estándar LRC)
+    /// - `[offset:+00:30]` / `[offset:-1:05]` → mm:ss
+    /// El signo se aplica tal cual: positivo adelanta la letra (se suma a los
+    /// timestamps), que es la convención de los reproductores LRC. Devuelve 0 si
+    /// no hay offset o si el valor no es parseable.
+    private static func extractOffset(_ lines: [String]) -> Int {
+        for line in lines {
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            guard trimmed.hasPrefix("[offset:") else { continue }
+            let raw = trimmed.dropFirst("[offset:".count).prefix { $0 != "]" }
+                .trimmingCharacters(in: .whitespaces)
+            guard !raw.isEmpty else { return 0 }
+
+            let sign = raw.hasPrefix("-") ? -1 : 1
+            let digits = raw.drop { $0 == "+" || $0 == "-" || $0 == " " }
+
+            if digits.contains(":") {
+                let parts = digits.split(separator: ":")
+                guard parts.count == 2, let minutes = Int(parts[0]), let seconds = Int(parts[1]) else { return 0 }
+                return sign * (minutes * 60_000 + seconds * 1_000)
+            }
+            guard let milliseconds = Int(digits) else { return 0 }
+            return sign * milliseconds
+        }
+        return 0
+    }
+
+    /// Desplaza los timings de palabra con el mismo offset que la línea, para que
+    /// el karaoke de datos siga cuadrando con el texto.
+    private static func shift(_ words: [LyricWordToken], by offsetMs: Int) -> [LyricWordToken] {
+        guard offsetMs != 0 else { return words }
+        return words.map {
+            LyricWordToken(
+                text: $0.text,
+                startMs: max(0, $0.startMs + offsetMs),
+                endMs: max(0, $0.endMs + offsetMs)
+            )
+        }
+    }
 
     /// Detecta si una línea es metadatos (no lyrics)
     private static func isMetadataLine(_ line: String) -> Bool {
@@ -398,6 +446,32 @@ extension LRCParser {
         assert(shortFractionResult[0].displayText == "Hola mundo", "Test 12 falló: texto con tags: \(shortFractionResult[0].displayText)")
         assert(shortFractionResult[0].words.count == 2, "Test 12 falló: Expected 2 word tokens")
         print("✅ Test 12 (Híbrido con fracción de 2 dígitos) passed")
+
+        // Test 13: OFFSET del metadata (milisegundos y mm:ss, con signo y clamp)
+        let offsetMsLRC = """
+        [offset:+1500]
+        [00:10.00]Línea con offset
+        """
+        let offsetMsResult = parse(offsetMsLRC)
+        assert(offsetMsResult.count == 1, "Test 13 falló: Expected 1 line")
+        assert(offsetMsResult[0].startMs == 11500, "Test 13 falló: offset en ms (got \(offsetMsResult[0].startMs))")
+
+        let offsetMinSecLRC = """
+        [offset:-00:02]
+        [00:10.00]Línea con offset negativo
+        """
+        let offsetMinSecResult = parse(offsetMinSecLRC)
+        assert(offsetMinSecResult.count == 1, "Test 13 falló: Expected 1 line")
+        assert(offsetMinSecResult[0].startMs == 8000, "Test 13 falló: offset mm:ss (got \(offsetMinSecResult[0].startMs))")
+
+        let offsetClampLRC = """
+        [offset:-00:30]
+        [00:10.00]No debe quedar negativo
+        """
+        let offsetClampResult = parse(offsetClampLRC)
+        assert(offsetClampResult.count == 1, "Test 13 falló: Expected 1 line")
+        assert(offsetClampResult[0].startMs == 0, "Test 13 falló: clamp a 0 (got \(offsetClampResult[0].startMs))")
+        print("✅ Test 13 (Offset de metadata) passed")
 
         print("🎉 Todos los tests de LRCParser pasaron correctamente")
     }
