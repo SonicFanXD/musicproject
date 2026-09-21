@@ -200,9 +200,6 @@ struct ContentView: View {
                             .buttonStyle(PressableButtonStyle(scale: 0.9))
 
                             Button {
-                                // ⚠️ DIAGNÓSTICO TEMPORAL (crash al abrir Ajustes):
-                                // marca de entrada. Se retira al localizar la causa.
-                                AppLog.debug(.interface, "[ContentView] gear pulsado → presentar Ajustes")
                                 showSettings = true
                             } label: {
                                 Image(systemName: "gearshape.fill")
