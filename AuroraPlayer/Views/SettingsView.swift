@@ -106,35 +106,7 @@ struct SettingsView: View, SettingsRowBuilding {
                         // (NowPlaying, álbumes, artistas, PlayerBar, tint global UIKit).
                         // Un solo ajuste activa/desactiva la detección de colores en
                         // TODAS las vistas simultáneamente.
-                        settingsSection(icon: "swatchpalette.fill", title: Localization.localized("settings.artworkAccent"), color: .purple) {
-                            settingsToggleRow(
-                                title: Localization.localized("settings.artworkAccentToggle"),
-                                subtitle: Localization.localized("settings.artworkAccentSubtitle"),
-                                icon: "paintpalette.fill",
-                                color: .purple,
-                                isOn: Binding(
-                                    get: { theme.accentFromArtwork },
-                                    set: { theme.accentFromArtwork = $0 }
-                                )
-                            )
-                            settingsDivider
-                            // ✅ Indicador del color activo (extraído de la portada)
-                            HStack(spacing: 12) {
-                                Circle()
-                                    .fill(theme.artworkAccentColor ?? theme.accent)
-                                    .frame(width: 28, height: 28)
-                                    .overlay(
-                                        Circle()
-                                            .stroke(Color.primary.opacity(0.15), lineWidth: 1)
-                                    )
-                                    .shadow(color: (theme.artworkAccentColor ?? theme.accent).opacity(0.4), radius: 4, y: 2)
-                                Text(Localization.localized("settings.artworkAccentActive"))
-                                    .font(.system(size: 14, weight: .medium, design: .rounded))
-                                    .foregroundStyle(.secondary)
-                                Spacer()
-                            }
-                            .padding(.vertical, 4)
-                        }
+                        ArtworkAccentSettingsSection()
 
                         // Reproducción
                         settingsSection(icon: "dial.max.fill", title: Localization.localized("settings.playback"), color: .orange) {
@@ -901,6 +873,44 @@ private struct LibrarySettingsSection: View, SettingsRowBuilding {
             }
         }
         .onChange(of: scanOnlyNewSongs) { v in AppLog.info(.settings, "Escaneo solo nuevas: \(v ? "activado" : "desactivado")") }
+    }
+}
+
+/// Acento desde portada: un solo ajuste activa la detección de color en toda la app.
+private struct ArtworkAccentSettingsSection: View, SettingsRowBuilding {
+    @ObservedObject var theme = ThemeManager.shared
+    @ObservedObject var localization = Localization.shared
+
+    var body: some View {
+        settingsSection(icon: "swatchpalette.fill", title: Localization.localized("settings.artworkAccent"), color: .purple) {
+            settingsToggleRow(
+                title: Localization.localized("settings.artworkAccentToggle"),
+                subtitle: Localization.localized("settings.artworkAccentSubtitle"),
+                icon: "paintpalette.fill",
+                color: .purple,
+                isOn: Binding(
+                    get: { theme.accentFromArtwork },
+                    set: { theme.accentFromArtwork = $0 }
+                )
+            )
+            settingsDivider
+            // ✅ Indicador del color activo (extraído de la portada)
+            HStack(spacing: 12) {
+                Circle()
+                    .fill(theme.artworkAccentColor ?? theme.accent)
+                    .frame(width: 28, height: 28)
+                    .overlay(
+                        Circle()
+                            .stroke(Color.primary.opacity(0.15), lineWidth: 1)
+                    )
+                    .shadow(color: (theme.artworkAccentColor ?? theme.accent).opacity(0.4), radius: 4, y: 2)
+                Text(Localization.localized("settings.artworkAccentActive"))
+                    .font(.system(size: 14, weight: .medium, design: .rounded))
+                    .foregroundStyle(.secondary)
+                Spacer()
+            }
+            .padding(.vertical, 4)
+        }
     }
 }
 
