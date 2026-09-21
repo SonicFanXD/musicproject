@@ -30,6 +30,8 @@ struct LogsView: View {
     // Timer para refrescar la vista en vivo mientras se registran nuevos eventos
     let timer = Timer.publish(every: 2.0, on: .main, in: .common).autoconnect()
     @State private var refreshTick = 0
+    /// ✅ Última entrada vista: evita re-renderizar cuando no ha llegado nada.
+    @State private var lastSeenEntryID: UUID?
 
     // ✅ Mensajes expandibles: ids de entradas con mensaje desplegado
     @State private var expandedIDs = Set<UUID>()
@@ -142,7 +144,15 @@ struct LogsView: View {
                 ActivityShareSheet(items: [item.url])
             }
             .onReceive(timer) { _ in
-                refreshTick += 1 // fuerza re-render para logs en vivo
+                // ✅ BATERÍA: repinta solo si de verdad entró un log nuevo (antes
+                // forzaba un re-render del árbol cada 2 s aunque no hubiera nada
+                // que mostrar). Se compara por id y no por número de entradas
+                // porque el buffer tiene un tope: al llenarse, el contador se
+                // queda fijo aunque sigan entrando líneas.
+                let newest = AppLog.entries.last?.id
+                guard newest != lastSeenEntryID else { return }
+                lastSeenEntryID = newest
+                refreshTick += 1
             }
         }
     }
