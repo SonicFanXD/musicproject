@@ -220,6 +220,9 @@ struct PlayerBar: View {
                             .accessibilityLabel(Localization.localized("accessibility.playPause"))
 
                             // ✅ Next con material de vidrio (estilo NowPlayingView)
+                            // ✅ Al final de la cola el botón se atenúa y deja de
+                            //    responder: el estado se ve antes de pulsar, en vez
+                            //    de descubrir en silencio que no había siguiente.
                             Button {
                                 Haptics.light()
                                 audioEngine.playNext()
@@ -234,6 +237,8 @@ struct PlayerBar: View {
                                     .contentShape(Circle())
                             }
                             .buttonStyle(PressableButtonStyle(scale: 0.85))
+                            .opacity(audioEngine.hasNextTrack ? 1 : 0.4)
+                            .disabled(!audioEngine.hasNextTrack)
                             .accessibilityLabel(Localization.localized("accessibility.nextSong"))
                         }
                     }
