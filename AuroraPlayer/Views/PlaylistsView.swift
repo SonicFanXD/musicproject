@@ -346,6 +346,8 @@ struct PlaylistDetailView: View {
     let playlist: Playlist
     @ObservedObject var fileAccessService: FileAccessService
     @ObservedObject var audioEngine: AudioEngine
+    // ✅ 3.0: estadísticas de reproducción en las filas (se desactivan desde Ajustes).
+    @AppStorage("com.aurora.showPlaylistStats") private var showPlaylistStats = true
     @Environment(\.dismiss) private var dismiss
 
     @State private var showEditPlaylist = false
@@ -651,6 +653,16 @@ struct PlaylistDetailView: View {
                             .font(.system(size: 13))
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
+
+                        // ✅ 3.0: "12 reproducciones · 47 min". Solo aparece si la
+                        // canción tiene historial, así las listas recién creadas se
+                        // ven exactamente igual que antes.
+                        if let stats = statsLine(for: song) {
+                            Text(stats)
+                                .font(.system(size: 11, weight: .medium).monospacedDigit())
+                                .foregroundStyle(.tertiary)
+                                .lineLimit(1)
+                        }
                     }
 
                     Spacer()
@@ -688,6 +700,17 @@ struct PlaylistDetailView: View {
                     .strokeBorder(AppTheme.accent.opacity(0.25), lineWidth: 1)
             }
         }
+    }
+
+    /// ✅ 3.0: "12 reproducciones · 47 min" SOLO en playlists (esta vista y las
+    /// automáticas de Bienvenida). La biblioteca principal y los detalles de
+    /// álbum/artista no las muestran.
+    private func statsLine(for song: Song) -> String? {
+        guard showPlaylistStats else { return nil }
+        return Localization.playStats(
+            plays: fileAccessService.playCount(for: song.id),
+            seconds: fileAccessService.playTime(for: song.id)
+        )
     }
 
     private var editPlaylistSheet: some View {

@@ -407,6 +407,13 @@ final class Localization: ObservableObject {
         "welcome.emptyTitle": [.spanish: "Tu biblioteca está lista para empezar", .english: "Your library is ready to go"],
         "welcome.emptyMessage": [.spanish: "Añade una carpeta con tu música para comenzar", .english: "Add a folder with your music to get started"],
         "smart.playAll": [.spanish: "Reproducir", .english: "Play"],
+
+        // 3.0: estadísticas de reproducción en playlists
+        "stats.plays": [.spanish: "reproducciones", .english: "plays"],
+        "stats.playsSingular": [.spanish: "reproducción", .english: "play"],
+        "stats.minutes": [.spanish: "min", .english: "min"],
+        "settings.showPlaylistStats": [.spanish: "Mostrar estadísticas en playlists", .english: "Show stats in playlists"],
+        "settings.showPlaylistStatsSubtitle": [.spanish: "Reproducciones y tiempo escuchado en tus listas", .english: "Plays and listening time inside playlists"],
         "settings.smartShuffleSubtitle": [.spanish: "Prioriza canciones que escuchas menos", .english: "Prioritizes songs you listen to less"],
         "settings.accent.purple": [.spanish: "Morado (predeterminado)", .english: "Purple (default)"],
         "settings.accent.blue": [.spanish: "Azul Aurora", .english: "Aurora Blue"],
@@ -451,6 +458,23 @@ final class Localization: ObservableObject {
         "quality.accessibility.queue": [.spanish: "Cola de reproducción", .english: "Playback queue"],
         "quality.accessibility.airplay": [.spanish: "AirPlay", .english: "AirPlay"],
     ]
+
+    /// ✅ 3.0: resumen de estadísticas para las filas de playlists
+    /// ("12 reproducciones · 47 min"). Devuelve nil cuando la canción aún no
+    /// tiene ninguna reproducción ni tiempo escuchado, para no dejar una línea
+    /// vacía en la fila.
+    static func playStats(plays: Int, seconds: TimeInterval) -> String? {
+        var parts: [String] = []
+        if plays > 0 {
+            let unit = localized(plays == 1 ? "stats.playsSingular" : "stats.plays")
+            parts.append("\(plays) \(unit)")
+        }
+        let minutes = Int((seconds / 60).rounded())
+        if minutes > 0 {
+            parts.append("\(minutes) \(localized("stats.minutes"))")
+        }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
 
     static func localized(_ key: String) -> String {
         if let langStrings = strings[key], let translation = langStrings[Localization.shared.currentLanguage] {

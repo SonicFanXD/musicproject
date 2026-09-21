@@ -10,6 +10,8 @@ struct SmartPlaylistDetailView: View {
     @ObservedObject var fileAccessService: FileAccessService
     // ✅ Observar el idioma: los textos cambian al instante.
     @ObservedObject private var localization = Localization.shared
+    // ✅ 3.0: estadísticas en las filas (se desactivan desde Ajustes).
+    @AppStorage("com.aurora.showPlaylistStats") private var showPlaylistStats = true
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -144,6 +146,13 @@ struct SmartPlaylistDetailView: View {
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
+
+                    if let stats = statsLine(for: song) {
+                        Text(stats)
+                            .font(.system(size: 11, weight: .medium).monospacedDigit())
+                            .foregroundStyle(.tertiary)
+                            .lineLimit(1)
+                    }
                 }
 
                 Spacer(minLength: 8)
@@ -212,5 +221,15 @@ struct SmartPlaylistDetailView: View {
     private func playAll() {
         guard let first = songs.first else { return }
         audioEngine.play(song: first, from: songs)
+    }
+
+    /// ✅ 3.0: "12 reproducciones · 47 min" SOLO en playlists (aquí y en las del
+    /// usuario). La biblioteca y los detalles de álbum/artista no las muestran.
+    private func statsLine(for song: Song) -> String? {
+        guard showPlaylistStats else { return nil }
+        return Localization.playStats(
+            plays: fileAccessService.playCount(for: song.id),
+            seconds: fileAccessService.playTime(for: song.id)
+        )
     }
 }

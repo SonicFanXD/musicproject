@@ -30,6 +30,9 @@ struct SettingsView: View {
     @AppStorage("com.aurora.autoPlayOnStart") private var autoPlayOnStart = false
     // ✅ 3.0: shuffle ponderado por hábitos (el motor lee la misma clave).
     @AppStorage("com.aurora.smartShuffle") private var smartShuffle = false
+    // ✅ 3.0: estadísticas de reproducción en las filas de playlists (activado por
+    // defecto; la biblioteca principal nunca las muestra).
+    @AppStorage("com.aurora.showPlaylistStats") private var showPlaylistStats = true
     @AppStorage("com.aurora.showVisualizerInBar") private var showVisualizerInBar = true
     @AppStorage("com.aurora.compactPlayerBar") private var compactPlayerBar = false
     @AppStorage("com.aurora.language") private var selectedLanguage = 0 // 0 = español, 1 = inglés
@@ -371,6 +374,9 @@ struct SettingsView: View {
                             settingsToggleRow(title: Localization.localized("settings.compactPlayerBar"), subtitle: Localization.localized("settings.compactPlayerBarSubtitle"), icon: "rectangle.compress.vertical", color: .gray, isOn: $compactPlayerBar)
                             settingsDivider
                             settingsToggleRow(title: Localization.localized("settings.showLyricsByDefault"), subtitle: Localization.localized("settings.showLyricsByDefaultSubtitle"), icon: "quote.bubble", color: .blue, isOn: $showLyricsByDefault)
+                            settingsDivider
+                            // ✅ 3.0: solo afecta a las playlists (propias y automáticas).
+                            settingsToggleRow(title: Localization.localized("settings.showPlaylistStats"), subtitle: Localization.localized("settings.showPlaylistStatsSubtitle"), icon: "chart.bar.fill", color: .teal, isOn: $showPlaylistStats)
                         }
                         // ✅ Sincronización en vivo con el engine (antes solo
                         // se aplicaba al reiniciar ContentView)
