@@ -272,23 +272,13 @@ struct SettingsView: View {
                                     }
                                 )
                             )
-                            settingsDivider
-                            // ✅ BLUETOOTH OPTIMIZATION: mejorar calidad en BT
-                            settingsToggleRow(
-                                title: Localization.localized("settings.bluetoothOptimization"),
-                                subtitle: Localization.localized("settings.bluetoothOptimizationSubtitle"),
-                                icon: "antenna.radiowaves.left.and.right",
-                                color: .blue,
-                                isOn: Binding(
-                                    get: { audioEngine.isBluetoothOptimizationEnabled },
-                                    set: { newValue in
-                                        if newValue != audioEngine.isBluetoothOptimizationEnabled {
-                                            Haptics.light()
-                                            audioEngine.toggleBluetoothOptimization()
-                                        }
-                                    }
-                                )
-                            )
+                            // ✅ ELIMINADO el toggle "Optimización Bluetooth": su
+                            // única acción real era escribir un log (no forzaba
+                            // buffer ni tasa, porque en A2DP la latencia y el
+                            // reloj los impone el enlace) y además no se
+                            // persistía. Un interruptor que no cambia nada es
+                            // peor que no tenerlo. La implementación interna
+                            // sigue en AudioEngine por si se le da uso futuro.
                         }
 
                         // Apariencia
