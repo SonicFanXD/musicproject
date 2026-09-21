@@ -38,6 +38,14 @@ struct PlayerBar: View {
         return theme.accent
     }
 
+    /// ✅ BATERÍA: el halo del botón de play solo late con la app en primer plano.
+    /// El `.onChange(of: scenePhase)` que había antes estaba VACÍO (con un
+    /// comentario que prometía detener la animación), así que el `repeatForever`
+    /// seguía consumiendo CPU/GPU en segundo plano.
+    private var isHaloAnimating: Bool {
+        audioEngine.isPlaying && scenePhase != .background
+    }
+
     /// ✅ Par de colores del acento (SIEMPRE dos): con "Acento desde portada" usa
     /// el color dominante de la carátula + su secundario REAL; con el modo
     /// desactivado, el acento manual con su segunda parada al 40% (mismo criterio
@@ -182,27 +190,22 @@ struct PlayerBar: View {
                                             textSafeAccentGradient()
                                         )
 
-                                    // ✅ Halo animado cuando reproduce
+                                    // ✅ Halo animado cuando reproduce Y solo en primer plano.
+                                    // La escala y la opacidad dependen de la MISMA condición que la
+                                    // animación: al pausar o al pasar a segundo plano hay una
+                                    // transacción real que sustituye al bucle (sin eso, retirar el
+                                    // `repeatForever` no detenía nada).
                                     Circle()
                                         .stroke(accentGradient(primaryOpacity: 0.5, secondaryOpacity: 0.35), lineWidth: 2)
-                                        .scaleEffect(audioEngine.isPlaying ? 1.15 : 1.0)
-                                        .opacity(audioEngine.isPlaying ? 1.0 : 0)
+                                        .scaleEffect(isHaloAnimating ? 1.15 : 1.0)
+                                        .opacity(isHaloAnimating ? 1.0 : 0)
                                         .animation(
-                                            audioEngine.isPlaying
-                                                ? .easeInOut(duration: 0.8).repeatForever(autoreverses: true)
-                                                : .easeOut(duration: 0.15),
-                                            value: audioEngine.isPlaying
+                                            isHaloAnimating
+                                                ? Animation.easeInOut(duration: 0.8).repeatForever(autoreverses: true)
+                                                : Animation.easeOut(duration: 0.15),
+                                            value: isHaloAnimating
                                         )
                                         .drawingGroup()
-                                        // ✅ CRÍTICO - BATERÍA: detener la animación cuando la app pasa a
-                                        // segundo plano para ahorrar CPU/GPU. La animación repeatForever
-                                        // consume recursos incluso cuando no es visible.
-                                        .onChange(of: scenePhase) { newPhase in
-                                            if newPhase == .background {
-                                                // Detener animación explícitamente usando value control
-                                                // Esto anula la animación repeatForever
-                                            }
-                                        }
 
                                     Image(systemName: audioEngine.isPlaying ? "pause.fill" : "play.fill")
                                         .font(.system(size: 16, weight: .bold))
