@@ -12,7 +12,8 @@ struct AuroraPlayerApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            // ✅ 3.0: la raíz es el tab bar (Bienvenida · Biblioteca · Ajustes).
+            RootTabView()
                 // ✅ ELIMINADO .id(theme.accentIndex): forzar re-creación de
                 // toda la jerarquía causaba bugs visuales (parpadeos, reset
                 // de scroll, pérdida de estado). .tint() por sí solo propaga

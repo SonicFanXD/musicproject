@@ -377,6 +377,14 @@ final class Localization: ObservableObject {
         "settings.theme.midnight": [.spanish: "Medianoche", .english: "Midnight"],
         "settings.theme.twilight": [.spanish: "Crepúsculo", .english: "Twilight"],
         "settings.theme.paper": [.spanish: "Papel", .english: "Paper"],
+
+        // 3.0: tab bar inferior y pestaña Bienvenida
+        "tab.welcome": [.spanish: "Bienvenida", .english: "Welcome"],
+        "tab.library": [.spanish: "Biblioteca", .english: "Library"],
+        "tab.settings": [.spanish: "Ajustes", .english: "Settings"],
+        "welcome.title": [.spanish: "Bienvenida", .english: "Welcome"],
+        "welcome.comingSoon": [.spanish: "Próximamente", .english: "Coming soon"],
+        "welcome.comingSoonMessage": [.spanish: "Estamos preparando esta pantalla. Mientras tanto, añade tu carpeta de música.", .english: "We are building this screen. Meanwhile, add your music folder."],
         "settings.accent.purple": [.spanish: "Morado (predeterminado)", .english: "Purple (default)"],
         "settings.accent.blue": [.spanish: "Azul Aurora", .english: "Aurora Blue"],
         "settings.accent.emerald": [.spanish: "Esmeralda", .english: "Emerald"],

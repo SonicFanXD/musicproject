@@ -1,17 +1,19 @@
 import SwiftUI
 
-// ✅ FIX header: ContentView ya no usa NavigationStack. El header float
-// con el nombre de la app se renderiza como parte del layout. La navegación
-// (songs → artista/detalle) se maneja con sheets, eliminando la barra
-// de navegación y su división visual con el fondo.
+// ✅ 3.0: ContentView es el contenido de la pestaña BIBLIOTECA del tab bar
+// inferior (RootTabView aporta el motor y la biblioteca compartidos).
+// El header float con el nombre de la app se renderiza como parte del layout;
+// el NavigationStack se conserva porque los NavigationLink de álbumes,
+// artistas y playlists siguen empujando sus vistas de detalle.
 struct ContentView: View {
-    @StateObject private var audioEngine = AudioEngine()
-    @StateObject private var fileAccessService = FileAccessService()
+    // ✅ 3.0: servicios INYECTADOS por RootTabView (dueño único del motor y de
+    // la biblioteca). Antes eran @StateObject propios de esta vista: con el tab
+    // bar habría creado instancias duplicadas (dos sesiones de audio).
+    @ObservedObject var audioEngine: AudioEngine
+    @ObservedObject var fileAccessService: FileAccessService
     @ObservedObject private var localization = Localization.shared
 
     @State private var hasRestored = false
-    @State private var isInitialLoad = true
-    @State private var showSettings = false
     @State private var showPlaylists = false
     @State private var showFolderPicker = false
 
@@ -176,32 +178,21 @@ struct ContentView: View {
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbarBackground(.hidden, for: .navigationBar)
                 .toolbar {
+                    // ✅ 3.0: el botón de Ajustes se eliminó (Ajustes ya es una
+                    // pestaña del tab bar). El de Playlists se retira en la fase
+                    // de limpieza, cuando la creación de listas viva dentro de la
+                    // propia categoría Playlists.
                     ToolbarItem(placement: .navigationBarTrailing) {
-                        HStack(spacing: 6) {
-                            Button {
-                                showPlaylists = true
-                            } label: {
-                                Image(systemName: "music.note.list")
-                                    .foregroundStyle(AppTheme.accentGradient)
-                                    .font(.system(size: 16, weight: .medium))
-                                    .frame(width: 44, height: 44)
-                                    .contentShape(Rectangle())
-                            }
-
-                            Button {
-                                showSettings = true
-                            } label: {
-                                Image(systemName: "gearshape.fill")
-                                    .foregroundStyle(AppTheme.accentGradient)
-                                    .font(.system(size: 16, weight: .medium))
-                                    .frame(width: 44, height: 44)
-                                    .contentShape(Rectangle())
-                            }
+                        Button {
+                            showPlaylists = true
+                        } label: {
+                            Image(systemName: "music.note.list")
+                                .foregroundStyle(AppTheme.accentGradient)
+                                .font(.system(size: 16, weight: .medium))
+                                .frame(width: 44, height: 44)
+                                .contentShape(Rectangle())
                         }
                     }
-                }
-                .sheet(isPresented: $showSettings) {
-                    SettingsView(audioEngine: audioEngine, fileAccessService: fileAccessService)
                 }
                 .sheet(isPresented: $showPlaylists) {
                     PlaylistsView(fileAccessService: fileAccessService, audioEngine: audioEngine)
@@ -213,15 +204,6 @@ struct ContentView: View {
                     // ✅ INDEXACIÓN: decidir tarjeta grande vs indicador compacto.
                     syncFirstTimeIndexing()
                     maybeAutoResume()
-                    if fileAccessService.isInitialLibraryLoaded {
-                        withAnimation(.easeOut(duration: 0.3)) { isInitialLoad = false }
-                    }
-                }
-                .task {
-                    try? await Task.sleep(nanoseconds: 8_000_000_000)
-                    if isInitialLoad {
-                        withAnimation(.easeOut(duration: 0.3)) { isInitialLoad = false }
-                    }
                 }
                 .sheet(isPresented: $showFolderPicker) {
                     FolderPickerView(fileAccessService: fileAccessService)
@@ -234,9 +216,6 @@ struct ContentView: View {
                         // biblioteca terminó de cargar DESPUÉS del onAppear, el
                         // restore recién ocurrió aquí — reintentar el auto-resume.
                         maybeAutoResume()
-                        withAnimation(.easeOut(duration: 0.3)) {
-                            isInitialLoad = false
-                        }
                     }
                 }
                 .onChange(of: audioEngine.currentSong?.id) { _ in
@@ -274,19 +253,6 @@ struct ContentView: View {
                 }
             }
 
-            if isInitialLoad {
-                SplashView()
-                    // ✅ Salida premium: la escala mínima acompaña al fundido (la
-                    // duración la marca el withAnimation del llamador, que no se
-                    // toca para no alterar la duración total del splash).
-                    .transition(.scale(scale: 0.96).combined(with: .opacity))
-                    .zIndex(1)
-            }
-        }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            PlayerBar(audioEngine: audioEngine, fileAccessService: fileAccessService, clock: audioEngine.clock)
-                .padding(.horizontal, 10)
-                .padding(.bottom, 6)
         }
         .animation(.easeInOut(duration: 0.35), value: fileAccessService.isScanning)
         .onChange(of: fileAccessService.isScanning) { scanning in
@@ -1216,9 +1182,9 @@ struct SplashView: View {
     @State private var pulseScale: CGFloat = 1.0
     @State private var pulseOpacity: Double = 0
     // ✅ Halo "respirable": ciclo corto (≈1,5 s con autoreverses) y amplitud
-    // mínima. Vive solo mientras el splash está en pantalla: al pasar
-    // isInitialLoad a false la vista sale del árbol y la animación se detiene
-    // con ella (no queda ningún bucle en background).
+    // mínima. Vive solo mientras el splash está en pantalla: cuando RootTabView
+    // retira el splash, la vista sale del árbol y la animación se detiene con
+    // ella (no queda ningún bucle en background).
     @State private var breathing = false
     // ✅ TEMAS: el splash usa el mismo fondo raíz que AppBackground
     // (Medianoche / Crepúsculo / Papel).

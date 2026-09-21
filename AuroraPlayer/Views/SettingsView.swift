@@ -4,7 +4,6 @@ import UniformTypeIdentifiers
 struct SettingsView: View {
     @ObservedObject var audioEngine: AudioEngine
     @ObservedObject var fileAccessService: FileAccessService
-    @Environment(\.dismiss) private var dismiss
 
     @State private var showImporter = false
     @State private var showLogs = false
@@ -78,7 +77,11 @@ struct SettingsView: View {
     }
 
     var body: some View {
-        NavigationStack {
+        // ✅ 3.0: Ajustes es una PESTAÑA a pantalla completa, no un sheet, así que
+        // ya no necesita su propio NavigationStack ni barra de navegación (el
+        // título y la versión los aporta headerSection). `Group` conserva el
+        // mismo contenido y layout.
+        Group {
             ZStack {
                 AppBackground()
 
@@ -418,29 +421,6 @@ struct SettingsView: View {
                     .padding(.horizontal, 20).padding(.top, 8).padding(.bottom, 30)
                 }
                 .scrollIndicators(.hidden)
-            }
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(.hidden, for: .navigationBar)
-            .toolbar {
-                ToolbarItem(placement: .principal) {
-                    Text(Localization.localized("settings.title"))
-                        .font(.system(size: 20, weight: .bold, design: .rounded))
-                        .foregroundStyle(
-                            LinearGradient(
-                                colors: [AppTheme.accent, AppTheme.accent.opacity(0.75)],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                        )
-                        .accessibilityLabel(Localization.localized("settings.title"))
-                }
-
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(Localization.localized("actions.done")) { dismiss() }
-                        .foregroundStyle(AppTheme.accent)
-                        .frame(width: 44, height: 44)
-                        .contentShape(Rectangle())
-                }
             }
             .sheet(isPresented: $showLogs) {
                 LogsView()
