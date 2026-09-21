@@ -1772,6 +1772,32 @@ class AudioEngine: NSObject, ObservableObject {
         return next
     }
 
+    /// ¿Hay una canción siguiente que el motor pueda reproducir ahora mismo?
+    /// Réplica de `computeNextIndex()` **sin efectos secundarios**: NO consume
+    /// la cola manual, NO inserta en la playlist y NO modifica `shuffleIndex`.
+    /// Lo usan los comandos remotos (lock screen / Centro de Control) para
+    /// responder `.noSuchContent` en lugar de `.success` cuando un "siguiente"
+    /// no haría absolutamente nada.
+    ///
+    /// Nota sobre el aleatorio: con 2+ canciones, `computeNextIndex()` regenera
+    /// `shuffledPlaylist` cuando se agota (rama en la que solo devuelve nil si la
+    /// lista mezclada queda vacía), así que siempre hay siguiente — igual que
+    /// hace Apple Music al saltar en modo aleatorio.
+    var hasNextTrack: Bool {
+        // Una canción ya programada por adelantado (gapless) sonará sí o sí al
+        // terminar la actual, incluso si el estado de la playlist cambia después.
+        if chainedAheadSong != nil { return true }
+        // La cola manual siempre tiene contenido pendiente.
+        if !manualQueue.isEmpty { return true }
+        guard !playlist.isEmpty else { return false }
+        // Con una sola canción, solo repeat (.all/.one) permite avanzar.
+        if playlist.count == 1 { return repeatMode == .all || repeatMode == .one }
+        if isShuffleEnabled { return true }
+        // Secuencial: queda algo por delante, o repeat-all vuelve al principio.
+        if currentIndex + 1 < playlist.count { return true }
+        return repeatMode == .all
+    }
+
     /// ✅ PRECARGA de la siguiente canción en background: mientras suena la
     /// actual, abrimos el AVAudioFile de la siguiente para que, al terminar,
     /// el reinicio atómico de playCurrentSong() use el archivo ya "caliente"
@@ -2748,7 +2774,13 @@ class AudioEngine: NSObject, ObservableObject {
             return .success
         }
         center.nextTrackCommand.addTarget { [weak self] _ in
-            self?.playNext()
+            // ✅ Honestidad con el sistema: si no hay siguiente (fin de la
+            // playlist sin repeat), responder `.noSuchContent` en lugar de
+            // `.success` para que iOS no dé por hecho un salto que no ocurrió.
+            // `hasNextTrack` es una comprobación SIN efectos secundarios, así que
+            // puede consultarse en cada pulsación sin tocar el estado.
+            guard let self = self, self.hasNextTrack else { return .noSuchContent }
+            self.playNext()
             return .success
         }
         center.previousTrackCommand.addTarget { [weak self] _ in
