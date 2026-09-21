@@ -216,6 +216,8 @@ final class Localization: ObservableObject {
         "quality.bitPerfectYes": [.spanish: "Sí (sin remuestreo)", .english: "Yes (no resampling)"],
         "quality.bitPerfectNo": [.spanish: "No (remuestreado)", .english: "No (resampled)"],
         "quality.bitPerfectHint": [.spanish: "Para bit-perfect: salida por cable (jack/DAC USB), sin EQ ni mono activos y protección anti-clipping desactivada.", .english: "For bit-perfect: wired output (jack/USB DAC), no EQ or mono active, and anti-clipping protection off."],
+        "quality.audiophile": [.spanish: "Audiófilo", .english: "Audiophile"],
+        "quality.hiResSuffix": [.spanish: "Hi-Res", .english: "Hi-Res"],
         "quality.bluetoothCodec": [.spanish: "Codec Bluetooth", .english: "Bluetooth Codec"],
         "quality.usbDAC": [.spanish: "DAC USB", .english: "USB DAC"],
         "quality.sessionMode": [.spanish: "Modo de sesión", .english: "Session Mode"],

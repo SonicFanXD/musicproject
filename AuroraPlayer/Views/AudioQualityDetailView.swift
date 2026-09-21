@@ -377,7 +377,7 @@ struct AudioQualityDetailView: View {
 
     // MARK: - Información Audiófila
     private var audiophileInfoSection: some View {
-        settingsSection(title: "Audiófilo", icon: "waveform.circle") {
+        settingsSection(title: Localization.localized("quality.audiophile"), icon: "waveform.circle") {
             // ✅ AUDIÓFILO: Indicador Bit-Perfect
             detailRow(Localization.localized("quality.bitPerfect"), 
                       audioEngine.isBitPerfect ? Localization.localized("quality.bitPerfectYes") : Localization.localized("quality.bitPerfectNo"),
@@ -437,7 +437,7 @@ struct AudioQualityDetailView: View {
     private var sampleRateLabel: String {
         guard let song = song, song.sampleRate > 0 else { return "—" }
         let base = AlbumDetailView.khzLabel(song.sampleRate)
-        return song.sampleRate > 48000 ? "\(base) (Hi-Res)" : base
+        return song.sampleRate > 48000 ? "\(base) (\(Localization.localized("quality.hiResSuffix")))" : base
     }
 
     private var channelsLabel: String {
