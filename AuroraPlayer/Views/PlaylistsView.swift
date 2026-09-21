@@ -157,16 +157,9 @@ struct PlaylistsView: View {
                 } else {
                     ZStack {
                         RoundedRectangle(cornerRadius: 18, style: .continuous)
-                            .fill(
-                                LinearGradient(
-                                    colors: [
-                                        AppTheme.accent.opacity(0.3),
-                                        AppTheme.accent.opacity(0.15)
-                                    ],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                            )
+                            // ✅ Mismo acento de dos colores que la card de la
+                            // biblioteca (antes era un solo color con opacidad).
+                            .fill(AppTheme.accentGradient(primaryOpacity: 0.3, secondaryOpacity: 0.15))
                             .frame(width: 150, height: 150)
 
                         Image(systemName: "music.note.list")

@@ -853,8 +853,10 @@ struct ContentView: View {
                     artworkView(for: song)
                     
                     VStack(alignment: .leading, spacing: 3) {
+                        // ✅ Jerarquía: el título sube a 16 (la fila de álbum/artista
+                        // también) para separarse mejor del subtítulo de 12.
                         Text(song.displayName)
-                            .font(.system(size: 15, weight: .semibold, design: .rounded))
+                            .font(.system(size: 16, weight: .semibold, design: .rounded))
                             .foregroundStyle(isCurrent ? AppTheme.accent : .primary)
                             .lineLimit(1)
                         
@@ -883,14 +885,20 @@ struct ContentView: View {
                         HStack(spacing: 2.5) {
                             ForEach(0..<3, id: \.self) { bar in
                                 RoundedRectangle(cornerRadius: 1)
-                                    .fill(LinearGradient(
-                                        colors: [AppTheme.accent, AppTheme.accent.opacity(0.5)],
-                                        startPoint: .top,
-                                        endPoint: .bottom
-                                    ))
-                                    .frame(width: 2.5, height: bar % 2 == 0 ? 12 : 7)
+                                    .fill(AppTheme.accentGradient)
+                                    // ✅ El indicador ANIMA de verdad: la altura cambia
+                                    // al reproducir y el repeatForever la hace oscilar
+                                    // entre 4 y 12/7 pt (antes la animación no tenía
+                                    // ninguna propiedad que cambiar → barras fijas).
+                                    // ✅ BATERÍA: en pausa no hay bucle que animar.
+                                    .frame(
+                                        width: 2.5,
+                                        height: audioEngine.isPlaying ? (bar % 2 == 0 ? 12 : 7) : 4
+                                    )
                                     .animation(
-                                        .easeInOut(duration: 0.4 + Double(bar) * 0.1).repeatForever(autoreverses: true),
+                                        audioEngine.isPlaying
+                                            ? .easeInOut(duration: 0.4 + Double(bar) * 0.1).repeatForever(autoreverses: true)
+                                            : nil,
                                         value: audioEngine.isPlaying
                                     )
                             }
@@ -1010,13 +1018,7 @@ struct ContentView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         } else {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: [AppTheme.accent.opacity(0.15), AppTheme.accent.opacity(0.05)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
+                .fill(AppTheme.accentGradient(primaryOpacity: 0.15, secondaryOpacity: 0.05))
                 .frame(width: 48, height: 48)
                 .overlay {
                     Image(systemName: "music.note")
@@ -1569,7 +1571,7 @@ private func albumListRow(_ album: Album) -> some View {
 
         VStack(alignment: .leading, spacing: 3) {
             Text(album.name)
-                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                .font(.system(size: 16, weight: .semibold, design: .rounded))
                 .foregroundStyle(.primary).lineLimit(1)
             Text(album.artist)
                 .font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
@@ -1610,7 +1612,7 @@ private func artistListRow(_ artist: Artist) -> some View {
 
         VStack(alignment: .leading, spacing: 3) {
             Text(artist.name)
-                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                .font(.system(size: 16, weight: .semibold, design: .rounded))
                 .foregroundStyle(.primary).lineLimit(1)
             // ✅ Solo canciones: artist.albums agrupa discos y es caro de calcular
             // por fila en cada render (el detalle del artista sí muestra álbumes).
@@ -1672,12 +1674,7 @@ struct playlistLibraryCard: View {
                 } else {
                     ZStack {
                         RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .fill(
-                                LinearGradient(
-                                    colors: [AppTheme.accent.opacity(0.25), AppTheme.accent.opacity(0.1)],
-                                    startPoint: .topLeading, endPoint: .bottomTrailing
-                                )
-                            )
+                            .fill(AppTheme.accentGradient(primaryOpacity: 0.25, secondaryOpacity: 0.1))
                             .frame(width: 140, height: 140)
                         Image(systemName: "music.note.list")
                             .font(.system(size: 35))
@@ -1688,7 +1685,7 @@ struct playlistLibraryCard: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(playlist.name)
-                    .font(.system(size: 14, weight: .semibold, design: .rounded))
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
                     .foregroundStyle(.primary).lineLimit(1)
                 Text(localizedSongCount(playlist.songIDs.count))
                     .font(.system(size: 12)).foregroundStyle(.secondary)
