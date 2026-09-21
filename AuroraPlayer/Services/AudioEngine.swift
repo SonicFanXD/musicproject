@@ -114,6 +114,10 @@ class AudioEngine: NSObject, ObservableObject {
     @Published var playbackQueue: [Song] = []
     @Published var nextUpQueue: [Song] = []
     @Published var playHistory: [Song] = []
+    /// ✅ 3.0: aviso de "canción iniciada" para el tracking de estadísticas.
+    /// Lo asigna RootTabView (dueño de FileAccessService). Opcional: si nadie lo
+    /// conecta, no hay ningún coste ni cambio de comportamiento.
+    var onSongStarted: ((Song) -> Void)?
 
     // MARK: - Cola de reproducción interna
     private var playlist: [Song] = []
@@ -2451,6 +2455,13 @@ class AudioEngine: NSObject, ObservableObject {
     }
 
     private func addToHistory(_ song: Song) {
+        // ✅ 3.0 HOOK DE ESTADÍSTICAS: único punto por el que pasan las TRES rutas
+        // de arranque real (engine AVAudioEngine, gapless encadenado y respaldo
+        // AVPlayer). restoreState() NO pasa por aquí, así que restaurar la última
+        // canción al abrir la app no cuenta como reproducción. Se avisa ANTES del
+        // filtro de repetición consecutiva (reproducir la misma canción otra vez
+        // sí es una reproducción nueva). Sin llamador asignado, coste cero.
+        onSongStarted?(song)
         if let last = playHistory.first, last.id == song.id { return }
         playHistory.insert(song, at: 0)
         if playHistory.count > 50 { playHistory = Array(playHistory.prefix(50)) }

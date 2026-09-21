@@ -46,9 +46,26 @@ struct RootTabView: View {
                 splashOverlay
             }
         }
-        .onAppear(perform: finishInitialLoadIfLoaded)
+        .onAppear(perform: handleAppear)
         .onChange(of: fileAccessService.isInitialLibraryLoaded) { loaded in
             if loaded { finishInitialLoad() }
+        }
+        // ✅ 3.0 ESTADÍSTICAS: el reloj de reproducción (0,4 s en primer plano)
+        // alimenta el tiempo escuchado REAL. Se observa como publisher —no como
+        // estado— para que RootTabView no se re-renderice en cada tick, y el
+        // trabajo pesado (volcado a disco) solo ocurre cada ~15 s.
+        .onReceive(audioEngine.clock.$time) { _ in
+            fileAccessService.accumulateListeningTick(
+                songID: audioEngine.currentSong?.id,
+                isPlaying: audioEngine.isPlaying
+            )
+        }
+        .onReceive(audioEngine.$isPlaying) { playing in
+            // ✅ Al pausar, el reloj deja de emitir ticks: se vuelca lo acumulado
+            // para no perder el último tramo escuchado.
+            if !playing {
+                fileAccessService.accumulateListeningTick(songID: nil, isPlaying: false)
+            }
         }
         .task { await splashFallback() }
     }
@@ -94,9 +111,21 @@ struct RootTabView: View {
             .transition(.scale(scale: 0.96).combined(with: .opacity))
     }
 
-    private func finishInitialLoadIfLoaded() {
+    private func handleAppear() {
+        connectPlaybackTracking()
         guard fileAccessService.isInitialLibraryLoaded else { return }
         finishInitialLoad()
+    }
+
+    // MARK: - Tracking de reproducciones (3.0)
+
+    /// ✅ El motor solo AVISA de que una canción empezó; las estadísticas viven
+    /// en FileAccessService (dueño de playCounts/playTimes/lastPlayedDates), así
+    /// que la conexión se hace aquí, donde ambos existen.
+    private func connectPlaybackTracking() {
+        audioEngine.onSongStarted = { [fileAccessService] song in
+            fileAccessService.recordPlayStarted(songID: song.id)
+        }
     }
 
     private func finishInitialLoad() {
