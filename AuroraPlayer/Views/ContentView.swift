@@ -276,7 +276,10 @@ struct ContentView: View {
 
             if isInitialLoad {
                 SplashView()
-                    .transition(.opacity)
+                    // ✅ Salida premium: la escala mínima acompaña al fundido (la
+                    // duración la marca el withAnimation del llamador, que no se
+                    // toca para no alterar la duración total del splash).
+                    .transition(.scale(scale: 0.96).combined(with: .opacity))
                     .zIndex(1)
             }
         }
@@ -1210,6 +1213,11 @@ struct SplashView: View {
     @State private var titleOpacity: Double = 0
     @State private var pulseScale: CGFloat = 1.0
     @State private var pulseOpacity: Double = 0
+    // ✅ Halo "respirable": ciclo corto (≈1,5 s con autoreverses) y amplitud
+    // mínima. Vive solo mientras el splash está en pantalla: al pasar
+    // isInitialLoad a false la vista sale del árbol y la animación se detiene
+    // con ella (no queda ningún bucle en background).
+    @State private var breathing = false
     @Environment(\.colorScheme) private var colorScheme
     
     var body: some View {
@@ -1250,8 +1258,9 @@ struct SplashView: View {
                             )
                         )
                         .frame(width: 160, height: 160)
-                        .scaleEffect(pulseScale)
+                        .scaleEffect(pulseScale * (breathing ? 1.04 : 0.97))
                         .opacity(pulseOpacity)
+                        .animation(.easeInOut(duration: 0.75).repeatForever(autoreverses: true), value: breathing)
                     
                     // Círculo del logo
                     Circle()
@@ -1284,13 +1293,8 @@ struct SplashView: View {
                     // Icono principal
                     Image(systemName: "music.note")
                         .font(.system(size: 44, weight: .light))
-                        .foregroundStyle(
-                            LinearGradient(
-                                colors: [AppTheme.accent, AppTheme.accent.opacity(0.7)],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
-                        )
+                        // ✅ Mismo acento de dos colores que el resto de la app.
+                        .foregroundStyle(AppTheme.accentGradient)
                         .shadow(color: AppTheme.accent.opacity(0.3), radius: 8, y: 4)
                 }
                 .scaleEffect(logoScale)
@@ -1324,23 +1328,27 @@ struct SplashView: View {
         }
         .allowsHitTesting(false)
         .onAppear {
-            // ✅ Animación del logo
-            withAnimation(.easeOut(duration: 0.6)) {
+            // ✅ Entrada con spring (antes easeOut 0.6): el logo "asienta" con un
+            // rebote sutil en lugar de frenar en seco. El retardo del título y
+            // del halo es el mismo de antes, así que la duración total del
+            // splash no cambia.
+            withAnimation(.spring(response: 0.7, dampingFraction: 0.75)) {
                 logoScale = 1.0
                 logoOpacity = 1.0
             }
-            
-            // ✅ Animación del título (con delay)
-            withAnimation(.easeOut(duration: 0.5).delay(0.25)) {
+
+            withAnimation(.spring(response: 0.7, dampingFraction: 0.75).delay(0.25)) {
                 titleOffset = 0
                 titleOpacity = 1.0
             }
-            
-            // ✅ Animación de pulso del halo
-            withAnimation(.easeInOut(duration: 1.2).delay(0.4)) {
-                pulseScale = 1.15
+
+            withAnimation(.spring(response: 0.7, dampingFraction: 0.75).delay(0.4)) {
+                pulseScale = 1.12
                 pulseOpacity = 1.0
             }
+
+            // ✅ Y después respira en bucle mientras el splash siga visible.
+            breathing = true
         }
     }
 }
@@ -1357,10 +1365,12 @@ struct LoadingDots: View {
                     .frame(width: 6, height: 6)
                     .scaleEffect(animating ? 1.0 : 0.5)
                     .opacity(animating ? 1.0 : 0.4)
+                    // ✅ autoreverses: el punto late (0,5 s) en vez de saltar de
+                    // golpe al reanudar el ciclo; stagger de 0,12 s entre puntos.
                     .animation(
-                        .easeInOut(duration: 0.6)
-                            .repeatForever()
-                            .delay(Double(index) * 0.15),
+                        .easeInOut(duration: 0.5)
+                            .repeatForever(autoreverses: true)
+                            .delay(Double(index) * 0.12),
                         value: animating
                     )
             }
