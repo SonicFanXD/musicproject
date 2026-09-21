@@ -616,7 +616,7 @@ struct AlbumSongRow: View {
             action()
         } label: {
             HStack(spacing: 14) {
-                if isCurrent {
+                if isCurrent && showPlayingIndicator {
                     EqualizerBars(color: tintColor, isPlaying: isPlaying)
                 } else {
                     Text("\(index + 1)")
