@@ -385,6 +385,14 @@ final class Localization: ObservableObject {
         "welcome.title": [.spanish: "Bienvenida", .english: "Welcome"],
         "welcome.comingSoon": [.spanish: "Próximamente", .english: "Coming soon"],
         "welcome.comingSoonMessage": [.spanish: "Estamos preparando esta pantalla. Mientras tanto, añade tu carpeta de música.", .english: "We are building this screen. Meanwhile, add your music folder."],
+
+        // 3.0: playlists automáticas (calculadas al vuelo)
+        "smart.topPlayed": [.spanish: "Lo más escuchado", .english: "Most played"],
+        "smart.discoveries": [.spanish: "Descubrimientos", .english: "Discoveries"],
+        "smart.sleep": [.spanish: "Para dormir", .english: "For sleep"],
+        "smart.dailyMix": [.spanish: "Mezcla diaria", .english: "Daily mix"],
+        "smart.weeklyMix": [.spanish: "Mezcla semanal", .english: "Weekly mix"],
+        "smart.empty": [.spanish: "Todavía no hay canciones para esta mezcla", .english: "No songs for this mix yet"],
         "settings.accent.purple": [.spanish: "Morado (predeterminado)", .english: "Purple (default)"],
         "settings.accent.blue": [.spanish: "Azul Aurora", .english: "Aurora Blue"],
         "settings.accent.emerald": [.spanish: "Esmeralda", .english: "Emerald"],
