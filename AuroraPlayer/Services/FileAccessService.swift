@@ -587,14 +587,15 @@ class FileAccessService: ObservableObject {
                 // para que un archivo problemático no detenga toda la carpeta
                 let values = try? fileURL.resourceValues(forKeys: Set(keys))
                 if values?.isDirectory == true { continue }
-                // ✅ FIX subcarpetas: si es directorio, escanear recursivamente
-                if values?.isDirectory == true {
-                    DispatchQueue.global(qos: .utility).async { [weak self] in
-                        self?.scanFolder(fileURL, silent: silent)
-                    }
-                    continue
-                }
-                
+                // ✅ El enumerador YA es recursivo (no se le pasa
+                // .skipsSubdirectoryDescendants): las subcarpetas se recorren en
+                // este mismo bucle y sus archivos entran a `seenKeys` igual que
+                // los de la raíz. Aquí había un segundo
+                // `if values?.isDirectory == true { scanFolder(...) }` que era
+                // código muerto (venía después del `continue` de la línea de
+                // arriba) y que, de haber sido alcanzable, habría duplicado el
+                // recorrido recursivo completo de cada subcarpeta.
+
                 guard self.supportedExtensions.contains(fileURL.pathExtension.lowercased()) else { continue }
 
                 fileCount += 1
@@ -757,6 +758,15 @@ class FileAccessService: ObservableObject {
             await MainActor.run {
                 guard self.scanGeneration == generation else { return }
                 self.silentProcessed += batch.urls.count
+                // ✅ Mismo diagnóstico agregado que en la vía normal (1 línea por
+                // lote, solo si hay lossless sin profundidad).
+                let suspiciousDepth = foundSongs.filter {
+                    ["flac", "wav", "wave", "aiff", "aif"].contains($0.url.pathExtension.lowercased())
+                        && $0.bitDepth == 0
+                }.count
+                if suspiciousDepth > 0 {
+                    AppLog.debug(.metadata, "Lote silencioso de \(batch.urls.count) archivos: \(suspiciousDepth) lossless con bitDepth 0")
+                }
                 // ✅ FIX metadata editada: las claves de batch.modifiedKeys son
                 // ACTUALIZACIONES (canción ya indexada, tag editado): se aceptan
                 // y CONSERVAN su `id` original — si cambiara, la canción saldría
@@ -876,6 +886,17 @@ class FileAccessService: ObservableObject {
                     return
                 }
                 self.scanProcessed += batch.urls.count
+                // ✅ BITDEPTH AGREGADO: una sola línea por lote en lugar de una por
+                // archivo. Solo cuenta extensiones que DEBEN traer profundidad
+                // (FLAC/WAV/AIFF): en MP3/AAC el 0 es legítimo (lossy) y generar
+                // ruido por lote haría inútil el diagnóstico.
+                let suspiciousDepth = foundSongs.filter {
+                    ["flac", "wav", "wave", "aiff", "aif"].contains($0.url.pathExtension.lowercased())
+                        && $0.bitDepth == 0
+                }.count
+                if suspiciousDepth > 0 {
+                    AppLog.debug(.metadata, "Lote de \(batch.urls.count) archivos: \(suspiciousDepth) lossless con bitDepth 0 (revisar inferBitDepth)")
+                }
                 // ✅ Segunda barrera anti-duplicados (misma clave normalizada que
                 // registerMetadataBatch): dos lotes en vuelo pueden traer la
                 // misma canción antes de que el otro la registre.
@@ -1339,8 +1360,12 @@ class FileAccessService: ObservableObject {
                     ext: url.pathExtension,
                     sampleRate: sampleRate
                 )
-                // ✅ DEBUG: Log para verificar extracción de bitDepth
-                AppLog.debug(.metadata, "Archivo: \(url.lastPathComponent) - bitDepth extraído: \(bitDepth) (raw: \(fileBits))")
+                // ✅ Diagnóstico de bitDepth: el log de verificación del fix
+                // fd5cddf se movió al cierre de cada LOTE (ver
+                // registerMetadataBatch). Aquí se escribía UNA línea a disco por
+                // archivo — 1 300+ escrituras por indexación completa, y el
+                // buffer de 800 entradas se llenaba de ruido y desalojaba las
+                // líneas útiles antes de poder leerlas.
             }
         }
         // ✅ LOSSLESS → profundidad real; LOSSY (MP3/AAC, bitDepth 0) →
