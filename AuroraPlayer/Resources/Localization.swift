@@ -103,7 +103,9 @@ final class Localization: ObservableObject {
 
             // Acerca de / About
             "settings.subtitle": [.spanish: "Configura Aurora Player a tu gusto", .english: "Customize Aurora Player"],
-            "settings.description": [.spanish: "Reproductor de música Hi-Fi optimizado para iOS con soporte de alta fidelidad, ecualizador de 10 bandas, crossfade ajustable y gestión avanzada de carpetas locales.", .english: "Hi-Fi music player optimized for iOS with high-fidelity support, 10-band equalizer, adjustable crossfade and advanced local folder management."],
+            // ✅ Copy actualizada: se eliminó la mención al crossfade (ajuste ya
+            // retirado) y se refleja lo que hace hoy la app.
+            "settings.description": [.spanish: "Reproductor Hi-Fi para iOS con reproducción sin remuestreo por cable cuando el hardware lo permite. Soporta FLAC, ALAC, WAV y AIFF, ecualizador de 10 bandas, gestión de carpetas locales, letras sincronizadas en formato TTML y acento dinámico extraído de la portada.", .english: "Hi-Fi player for iOS with cable playback free of resampling whenever the hardware allows it. Supports FLAC, ALAC, WAV and AIFF, a 10-band equalizer, local folder management, TTML synchronized lyrics and a dynamic accent extracted from the artwork."],
             "settings.version": [.spanish: "Versión", .english: "Version"],
             "settings.build": [.spanish: "Build", .english: "Build"],
             "settings.logs": [.spanish: "Registros", .english: "Logs"],

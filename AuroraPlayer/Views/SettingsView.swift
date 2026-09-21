@@ -539,11 +539,12 @@ struct SettingsView: View {
         }
     }
 
-    /// ✅ "v2.2.0 (22)": leído del bundle, sin keys nuevas de Localización.
+    /// ✅ "Versión 2.2.0 · Build 22": leído del bundle y localizado con las
+    /// keys que ya existían (settings.version / settings.build).
     private var appVersionLabel: String {
         let short = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—"
         let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "—"
-        return "v\(short) (\(build))"
+        return "\(Localization.localized("settings.version")) \(short) · \(Localization.localized("settings.build")) \(build)"
     }
 
     // MARK: - Section Builder (diseño premium estilo NowPlayingView)
