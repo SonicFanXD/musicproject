@@ -225,13 +225,16 @@ struct ContentView: View {
                     syncFirstTimeIndexing()
                     maybeAutoResume()
                     if fileAccessService.isInitialLibraryLoaded {
-                        withAnimation(.easeOut(duration: 0.3)) { isInitialLoad = false }
+                        // ✅ 0,4 s easeInOut: la cruzada se siente continua (0,3 s
+                        // se quedaba corta y 0,5 s se sentía lenta — el estándar
+                        // de una transición de app).
+                        withAnimation(.easeInOut(duration: 0.4)) { isInitialLoad = false }
                     }
                 }
                 .task {
                     try? await Task.sleep(nanoseconds: 8_000_000_000)
                     if isInitialLoad {
-                        withAnimation(.easeOut(duration: 0.3)) { isInitialLoad = false }
+                        withAnimation(.easeInOut(duration: 0.4)) { isInitialLoad = false }
                     }
                 }
                 .sheet(isPresented: $showFolderPicker) {
@@ -250,7 +253,7 @@ struct ContentView: View {
                         // biblioteca terminó de cargar DESPUÉS del onAppear, el
                         // restore recién ocurrió aquí — reintentar el auto-resume.
                         maybeAutoResume()
-                        withAnimation(.easeOut(duration: 0.3)) {
+                        withAnimation(.easeInOut(duration: 0.4)) {
                             isInitialLoad = false
                         }
                     }
@@ -288,14 +291,27 @@ struct ContentView: View {
                         .transition(.opacity)
                     }
                 }
+                // ✅ B.2 — TRANSICIÓN CRUZADA: la biblioteca entra con fundido y
+                // una micro-escala MIENTRAS el splash sale. Es solo transform +
+                // opacidad (GPU) y la biblioteca ya está maquetada detrás del
+                // splash opaco, así que no hay salto de layout ni frame negro
+                // entre las dos.
+                .scaleEffect(isInitialLoad ? 0.98 : 1.0)
+                .opacity(isInitialLoad ? 0 : 1)
             }
 
             if isInitialLoad {
                 SplashView()
-                    // ✅ Salida premium: la escala mínima acompaña al fundido (la
-                    // duración la marca el withAnimation del llamador, que no se
-                    // toca para no alterar la duración total del splash).
-                    .transition(.scale(scale: 0.96).combined(with: .opacity))
+                    // ✅ Salida: el splash crece un 5% mientras se funde (antes se
+                    // encogía, que se lee como "se cierra" en vez de como
+                    // profundidad). La duración la marca el withAnimation del
+                    // llamador.
+                    .transition(
+                        .asymmetric(
+                            insertion: .opacity,
+                            removal: .scale(scale: 1.05).combined(with: .opacity)
+                        )
+                    )
                     .zIndex(1)
             }
         }
