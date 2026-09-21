@@ -25,6 +25,27 @@ struct LRCParser {
     /// siguiente, termina con una duración razonable.
     private static let largeGapMs = 15_000
 
+    // MARK: - Expresiones regulares precompiladas
+    // ✅ PERF (#7): se compilan UNA vez al cargar el tipo. Antes se construía una
+    // NSRegularExpression por CADA línea del archivo (y tres más dentro de
+    // extractCleanText, que además pasaba por el motor de regex de String), así
+    // que un archivo de 100 líneas pagaba ~400 compilaciones por parseo.
+    private static let hourTimestampRegex = try? NSRegularExpression(
+        pattern: "\\[(\\d{1,3}):(\\d{1,2}):(\\d{1,2})\\]"
+    )
+    private static let lineTimestampRegex = try? NSRegularExpression(
+        pattern: "\\[(\\d{1,3}):(\\d{1,2})(?:[.,](\\d{1,3}))?\\]"
+    )
+    private static let wordTimestampRegex = try? NSRegularExpression(
+        pattern: "<(\\d{2}):(\\d{2})\\.(\\d{2,3})>"
+    )
+    /// Solo para limpiar el texto visible (mismo formato de línea que el parser)
+    private static let lineTagRegex = try? NSRegularExpression(
+        pattern: "\\[\\d{1,3}:\\d{1,2}(?:[.,]\\d{1,3})?\\]"
+    )
+    /// Cualquier etiqueta remanente (`<...>`)
+    private static let htmlTagRegex = try? NSRegularExpression(pattern: "<[^>]+>")
+
     // MARK: - Parse completo de texto LRC
     /// Parsea el texto de letras y devuelve array de LyricsLine ordenado por startMs
     /// - Parameter text: Texto crudo (TTML, LRC clásico o híbrido)
@@ -216,7 +237,7 @@ struct LRCParser {
         // ✅ h:mm:ss ANTES que mm:ss: en `[00:01:50]` el tercer campo son
         // SEGUNDOS (1 min 50 s = 110 s), no centésimas. Sin esta prioridad se
         // leería 1,5 s y toda la letra quedaría desplazada casi dos minutos.
-        if let hourRegex = try? NSRegularExpression(pattern: "\\[(\\d{1,3}):(\\d{1,2}):(\\d{1,2})\\]"),
+        if let hourRegex = hourTimestampRegex,
            let match = hourRegex.firstMatch(in: line, range: fullRange) {
             let hours = Int(nsLine.substring(with: match.range(at: 1))) ?? 0
             let minutes = Int(nsLine.substring(with: match.range(at: 2))) ?? 0
@@ -224,8 +245,7 @@ struct LRCParser {
             return ((hours * 3600) + (minutes * 60) + seconds) * 1000
         }
 
-        let pattern = "\\[(\\d{1,3}):(\\d{1,2})(?:[.,](\\d{1,3}))?\\]"
-        guard let regex = try? NSRegularExpression(pattern: pattern),
+        guard let regex = lineTimestampRegex,
               let match = regex.firstMatch(in: line, range: fullRange) else {
             return nil
         }
@@ -265,8 +285,7 @@ struct LRCParser {
     /// pinta karaoke por palabra. El último token queda con end == start y se
     /// cierra con el fin real de la línea en `closeWords`.
     private static func extractWordTokens(_ line: String) -> [LyricWordToken] {
-        let pattern = "<(\\d{2}):(\\d{2})\\.(\\d{2,3})>"
-        guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
+        guard let regex = wordTimestampRegex else { return [] }
 
         let text = line as NSString
         let matches = regex.matches(in: line, range: NSRange(location: 0, length: text.length))
@@ -320,16 +339,14 @@ struct LRCParser {
     private static func extractCleanText(_ line: String) -> String {
         var cleaned = line
 
-        // ✅ Eliminar timestamp de línea [mm:ss.xx]
-        cleaned = cleaned.replacingOccurrences(of: "\\[\\d{2}:\\d{2}(?:\\.\\d{2,3})?\\]", with: "", options: .regularExpression)
-
-        // ✅ Eliminar timestamps de palabra <mm:ss.xx(x)>: MISMO patrón que
-        // `extractWordTokens` (2 o 3 decimales). Hoy los de 2 dígitos también los
-        // quita el catch-all de abajo, así que esto es defensa en profundidad.
-        cleaned = cleaned.replacingOccurrences(of: "<\\d{2}:\\d{2}\\.\\d{2,3}>", with: "", options: .regularExpression)
-
-        // ✅ Eliminar cualquier etiqueta HTML remanente
-        cleaned = cleaned.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
+        // ✅ Con las regex ya compiladas (antes se usaba el motor de regex de
+        // String, que compila de nuevo en cada llamada). El orden importa: primero
+        // el timestamp de línea, luego el de palabra y por último el catch-all.
+        for candidate in [lineTagRegex, wordTimestampRegex, htmlTagRegex] {
+            guard let regex = candidate else { continue }
+            let range = NSRange(location: 0, length: (cleaned as NSString).length)
+            cleaned = regex.stringByReplacingMatches(in: cleaned, range: range, withTemplate: "")
+        }
 
         return cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
     }
