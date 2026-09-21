@@ -28,16 +28,39 @@ struct AudioQualityDetailView: View {
         }
         .onAppear {
             withAnimation(.easeOut(duration: 0.35)) { appearAnimation = true }
-            // ✅ OPTIMIZACIÓN: Cargar valores de disco UNA VEZ en background.
-            if let song = song {
-                let path = song.url.path
-                DispatchQueue.global(qos: .userInitiated).async {
-                    let size = (try? FileManager.default.attributesOfItem(atPath: path)[.size] as? Int) ?? 0
-                    DispatchQueue.main.async {
-                        self.cachedFileSize = size
-                        self.cachedDuration = song.duration
-                    }
-                }
+            loadFileMetadata()
+        }
+        // ✅ Cambio de canción con la vista abierta: en NowPlaying se presenta como
+        // overlay, así que la canción puede cambiar sin cerrarla. Sin esto, el
+        // "Tamaño de archivo" y el "Bitrate estimado" seguían siendo los de la
+        // canción anterior (el dato se cargaba SOLO en `onAppear`).
+        .onChange(of: song?.id) { _ in
+            loadFileMetadata()
+        }
+    }
+
+    /// ✅ Lee el tamaño real del archivo en background (una vez por canción).
+    /// ✅ Limpia el valor anterior ANTES de leer: mientras carga se muestra “—”
+    /// en vez del dato de la canción que ya no suena.
+    private func loadFileMetadata() {
+        guard let song else {
+            cachedFileSize = 0
+            cachedDuration = 0
+            return
+        }
+
+        cachedFileSize = 0
+        cachedDuration = song.duration
+
+        let path = song.url.path
+        let url = song.url
+        DispatchQueue.global(qos: .userInitiated).async {
+            let size = (try? FileManager.default.attributesOfItem(atPath: path)[.size] as? Int) ?? 0
+            DispatchQueue.main.async {
+                // ✅ Solo aplicar si sigue siendo la misma canción: una lectura lenta
+                // no debe pisar los datos de la que está sonando ahora.
+                guard self.song?.url == url else { return }
+                self.cachedFileSize = size
             }
         }
     }
