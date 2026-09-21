@@ -411,6 +411,7 @@ final class Localization: ObservableObject {
         // 3.0: estadísticas de reproducción en playlists
         // 3.0: modo presentación (grabación de pantalla) y capturas
         "capture.recording": [.spanish: "Grabando", .english: "Recording"],
+        "capture.screenshotSaved": [.spanish: "Captura guardada", .english: "Screenshot saved"],
         "stats.plays": [.spanish: "reproducciones", .english: "plays"],
         "stats.playsSingular": [.spanish: "reproducción", .english: "play"],
         "stats.minutes": [.spanish: "min", .english: "min"],

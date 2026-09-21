@@ -22,6 +22,11 @@ struct RootTabView: View {
     /// ✅ El splash se dibuja por ENCIMA de todo (tab bar y PlayerBar incluidos)
     /// hasta que la biblioteca termina de cargar.
     @State private var isInitialLoad = true
+    /// ✅ 3.0: confirmación breve tras una captura de pantalla del sistema.
+    @State private var showScreenshotToast = false
+    /// ✅ Evita que dos capturas seguidas se oculten la una a la otra: solo el
+    /// temporizador de la última captura puede retirar el toast.
+    @State private var screenshotToastToken = 0
 
     enum AppTab: Hashable {
         case welcome
@@ -52,17 +57,15 @@ struct RootTabView: View {
                 splashOverlay
             }
         }
-        // ✅ Píldora de grabación: arriba a la derecha, sin bloquear toques.
-        .overlay(alignment: .topTrailing) {
-            if captureMode.isScreenCaptured {
-                recordingPill
-                    .padding(.top, 10)
-                    .padding(.trailing, 14)
-                    .transition(.opacity)
-            }
-        }
+        // ✅ Modo presentación: píldora "Grabando" (arriba a la derecha) y toast
+        // de captura (arriba al centro), ambos sin recibir toques.
+        .overlay(alignment: .top) { topOverlays }
         .animation(.easeInOut(duration: 0.3), value: captureMode.isScreenCaptured)
         .onAppear(perform: handleAppear)
+        // ✅ 3.0: el sistema avisa cuando el usuario captura la pantalla.
+        .onReceive(CaptureModeManager.shared.screenshotPublisher) { _ in
+            showScreenshotToastBriefly()
+        }
         // ✅ La grabación puede empezar con la app en segundo plano: al volver a
         // primer plano se resincroniza el estado (y el log correspondiente).
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
@@ -127,6 +130,61 @@ struct RootTabView: View {
     // MARK: - Splash
 
     // MARK: - Modo presentación
+
+    /// ✅ Capa superior: el toast de captura va centrado y la píldora de grabación
+    /// a la derecha. Si coinciden, se apilan sin solaparse.
+    @ViewBuilder
+    private var topOverlays: some View {
+        VStack(spacing: 8) {
+            if showScreenshotToast {
+                screenshotToast
+                    .transition(.opacity)
+            }
+            if captureMode.isScreenCaptured {
+                recordingPill
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                    .transition(.opacity)
+            }
+        }
+        .padding(.top, 10)
+        .padding(.horizontal, 14)
+    }
+
+    /// ✅ Toast "Captura guardada": card pequeña, material, sin bloquear toques.
+    private var screenshotToast: some View {
+        HStack(spacing: 7) {
+            Image(systemName: "camera.fill")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(AppTheme.accent)
+
+            Text(Localization.localized("capture.screenshotSaved"))
+                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                .foregroundStyle(.primary)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 7)
+        .background {
+            Capsule().fill(AnyShapeStyle(.ultraThinMaterial))
+        }
+        .overlay(Capsule().strokeBorder(.white.opacity(0.15), lineWidth: 0.5))
+        .allowsHitTesting(false)
+    }
+
+    /// ✅ Muestra el toast 2 s. Cada captura reinicia el contador, así dos
+    /// capturas seguidas no se pisan (la primera no retira el toast de la segunda).
+    @MainActor
+    private func showScreenshotToastBriefly() {
+        screenshotToastToken += 1
+        let token = screenshotToastToken
+
+        withAnimation(.easeInOut(duration: 0.3)) { showScreenshotToast = true }
+
+        Task {
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            guard token == screenshotToastToken else { return }
+            withAnimation(.easeInOut(duration: 0.3)) { showScreenshotToast = false }
+        }
+    }
 
     /// ✅ Píldora "● Grabando": solo visible mientras se graba la pantalla, con
     /// material ultraThinMaterial y sin recibir toques.
