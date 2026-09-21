@@ -14,6 +14,9 @@ import SwiftUI
 //    con la fuente activa): el wipe avanza fila a fila, nunca en paralelo.
 // ✅ Sin temporizadores propios (ni en la vista ni en el modelo).
 // ✅ Auto-scroll suave con ScrollViewReader (solo cuando cambia la línea activa)
+// ✅ Sin línea activa (intro instrumental / outro) se centra la primera o la
+//    última línea como "activa provisional": la vista nunca nace mostrando la
+//    franja vacía del relleno de centrado con las letras abajo.
 // ✅ Colores ADAPTATIVOS (`.primary`): la app no fuerza modo oscuro, así que el
 //    texto blanco fijo era invisible sobre el fondo claro en modo claro.
 // ✅ Render 100% por código, sin assets
@@ -41,10 +44,20 @@ struct LyricsView: View {
     /// (y para el troceo por medición) es el ancho de la vista menos el doble.
     private static let horizontalPadding: CGFloat = 24
 
-    /// ✅ Centrado geométrico exacto: 40% de la pantalla de relleno arriba y
-    /// abajo, de modo que la línea activa quede en el centro real de la vista.
-    private var centeringInset: CGFloat {
-        UIScreen.main.bounds.height * 0.4
+    /// ✅ Centrado geométrico exacto: el relleno vertical debe ser al menos MEDIA
+    /// ALTURA del área visible. Con menos, `scrollTo(anchor: .center)` no puede
+    /// alcanzar el centro de las PRIMERAS y ÚLTIMAS líneas (el scroll se queda
+    /// clavado en el borde del contenido). El 40 % de `UIScreen.main` se quedaba
+    /// corto: en el 8 Plus son 294 pt frente a los 346 pt que exige un área
+    /// visible de 692 pt, así que la línea 0 aterrizaba ~30-65 pt por encima del
+    /// centro y, sin scroll inicial, el relleno se veía como una franja vacía
+    /// arriba con las letras en la mitad inferior.
+    /// ✅ Se mide el área REAL de scroll (ya sin el header), no la pantalla: el
+    /// centrado queda exacto en cualquier dispositivo y tamaño de ventana.
+    private func centeringInset(viewportHeight: CGFloat) -> CGFloat {
+        // Red de seguridad: si la geometría todavía no está medida (0), se
+        // conserva el valor anterior para no dejar el contenido sin relleno.
+        viewportHeight > 0 ? viewportHeight / 2 : UIScreen.main.bounds.height * 0.4
     }
 
     var body: some View {
@@ -92,11 +105,30 @@ struct LyricsView: View {
     /// Centra la línea activa SIN animación (entrada a la vista / cambio de
     /// canción). Resetea la petición para poder re-centrar aunque la línea
     /// destino coincida con la anterior.
+    /// ✅ SIN línea activa (intro instrumental antes de la primera letra, o
+    /// canción ya terminada) se centra la PRIMERA o la ÚLTIMA línea como si fuera
+    /// la activa provisional: antes se salía sin pedir ningún scroll, la lista
+    /// nacía en su posición natural y el relleno de centrado se veía como una
+    /// franja vacía arriba con las letras pegadas abajo.
     private func syncScrollToActiveLine() {
         hasDoneInitialScroll = false
         scrollRequest = nil
-        guard let activeID = viewModel.activeID else { return }
-        requestScroll(to: activeID)
+        if let activeID = viewModel.activeID {
+            requestScroll(to: activeID)
+        } else if let fallbackID = centeringFallbackLineID() {
+            requestScroll(to: fallbackID)
+        }
+    }
+
+    /// ✅ Línea provisional que se centra mientras no hay línea activa: la primera
+    /// si la reproducción todavía no la ha alcanzado (intro), la última si ya
+    /// pasó todas (outro). Mismo criterio que Apple Music.
+    private func centeringFallbackLineID() -> Int? {
+        let lines = viewModel.lyricsLines
+        guard let first = lines.first, let last = lines.last else { return nil }
+
+        let timeMs = Int(((viewModel.audioEngine?.currentTime ?? 0) * 1000).rounded())
+        return timeMs < first.startMs ? first.id : last.id
     }
 
     /// Pide un centrado. El token hace que la petición siempre sea distinta de la
@@ -142,7 +174,10 @@ struct LyricsView: View {
         GeometryReader { geometry in
             ScrollViewReader { proxy in
                 ScrollView {
-                    lyricsStack(contentWidth: geometry.size.width)
+                    // ✅ La altura del área de scroll (ya descontado el header) es
+                    // la que define el relleno de centrado: no se depende de la
+                    // pantalla completa.
+                    lyricsStack(contentWidth: geometry.size.width, viewportHeight: geometry.size.height)
                 }
                 // ✅ iOS 16 onChange clásico: scroll suave solo cuando cambia el target
                 .onChange(of: scrollRequest) { request in
@@ -152,11 +187,15 @@ struct LyricsView: View {
         }
     }
 
-    /// ✅ Relleno de 40% de pantalla antes y después: fuerza que la línea activa
-    /// quede centrada de forma geométrica (no depende del tamaño de la lista).
-    private func lyricsStack(contentWidth: CGFloat) -> some View {
-        LazyVStack(alignment: .leading, spacing: 8) {
-            Color.clear.frame(height: centeringInset)
+    /// ✅ Relleno de media altura visible antes y después: fuerza que la línea
+    /// centrada lo esté de forma geométrica (no depende del tamaño de la lista) y
+    /// deja margen suficiente para centrar también la PRIMERA y la ÚLTIMA.
+    private func lyricsStack(contentWidth: CGFloat, viewportHeight: CGFloat) -> some View {
+        // ✅ Media altura visible arriba y abajo → la primera y la última línea
+        // pueden quedar centradas de verdad (no solo las de en medio).
+        let inset = centeringInset(viewportHeight: viewportHeight)
+        return LazyVStack(alignment: .leading, spacing: 8) {
+            Color.clear.frame(height: inset)
 
             ForEach(viewModel.lyricsLines) { line in
                 lyricLineView(line: line, contentWidth: contentWidth)
@@ -167,7 +206,7 @@ struct LyricsView: View {
                     }
             }
 
-            Color.clear.frame(height: centeringInset)
+            Color.clear.frame(height: inset)
         }
         .padding(.horizontal, Self.horizontalPadding)
     }
