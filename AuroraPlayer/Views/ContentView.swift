@@ -545,7 +545,26 @@ struct ContentView: View {
             }
             .padding(.horizontal, 16)
         }
+        // ✅ Los chips que quedan fuera del borde se desvanecen en vez de cortarse
+        // a hueso: en un iPhone de 375pt no caben las 4 categorías y no había
+        // ninguna pista de que hubiera más (el scroll horizontal no se ve). Es una
+        // máscara ESTÁTICA sobre una tira de ~48pt: no anima ni recompone nada.
+        .mask(
+            LinearGradient(
+                stops: [
+                    .init(color: .clear, location: 0),
+                    .init(color: .black, location: 0.04),
+                    .init(color: .black, location: 0.9),
+                    .init(color: .clear, location: 1)
+                ],
+                startPoint: .leading,
+                endPoint: .trailing
+            )
+        )
         .padding(.vertical, 10)
+        // ✅ Mismo tacto que la transición del contenido (spring 0.32/0.88): antes
+        // el chip seleccionado cambiaba de golpe, sin acompañar al contenido.
+        .animation(.spring(response: 0.32, dampingFraction: 0.88), value: selectedCategoryRaw)
     }
 
     // ✅ Header flotante con nombre de la app integrado al fondo del contenido.
