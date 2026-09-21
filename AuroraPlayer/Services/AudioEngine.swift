@@ -300,7 +300,7 @@ class AudioEngine: NSObject, ObservableObject {
               let fmt = chainedAheadFormat,
               chainedAheadToken != 0 else {
             stopDisplayTimer()
-            chainGaplessPlayNext()
+            fadeOutThenChainNext()
             return
         }
         let promotedToken = chainedAheadToken
@@ -343,6 +343,36 @@ class AudioEngine: NSObject, ObservableObject {
         currentIndex = index
         playCurrentSong()
         return true
+    }
+
+    /// ✅ A.1 — FADE DE SALIDA antes del reinicio atómico.
+    /// `playCurrentSong()` hace `playerNode.stop()` + `engine.stop()`, y ese
+    /// stop descarga el buffer de salida YA renderizado: lo que aún no había
+    /// salido por el hardware (unos ms en cableado, hasta ~250 ms por Bluetooth)
+    /// se pierde de golpe, y con señal cerca del final eso se oye como corte
+    /// seco (y chasquido). Bajar el mixer a 0 en 25 ms y esperar ese tramo deja
+    /// el corte en silencio: 25 ms es el punto donde ya no se percibe el corte y
+    /// todavía no suena a fade intencionado. La espera es obligatoria — la rampa
+    /// necesita renderizarse. `playCurrentSong` devuelve el volumen a 1 al
+    /// arrancar la siguiente.
+    private func fadeOutThenChainNext() {
+        guard isPlaying, !isUsingFallback, engine.isRunning else {
+            chainGaplessPlayNext()
+            return
+        }
+        rampMixerVolume(to: 0, duration: 0.025)
+        let generation = scheduleGeneration
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) { [weak self] in
+            // Si en esos 30 ms entró un seek, un stop o un cambio de canción,
+            // esa acción manda: no reprogramar nada por detrás.
+            guard let self, self.scheduleGeneration == generation else { return }
+            let wasPlaying = self.isPlaying
+            self.chainGaplessPlayNext()
+            // Si el usuario pausó dentro de la ventana, la siguiente queda
+            // cargada en 0:00 y en pausa (antes el nodo se quedaba con la cola
+            // vacía y "play" volvía a sonar en silencio).
+            if !wasPlaying { self.pause() }
+        }
     }
     
    
