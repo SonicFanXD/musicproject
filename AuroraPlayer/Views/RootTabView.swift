@@ -73,7 +73,7 @@ struct RootTabView: View {
     // MARK: - Pestañas
 
     private var welcomeTab: some View {
-        WelcomeView(fileAccessService: fileAccessService)
+        WelcomeView(audioEngine: audioEngine, fileAccessService: fileAccessService)
             .tabItem { Label(Localization.localized("tab.welcome"), systemImage: "sparkles") }
             .tag(AppTab.welcome)
     }
