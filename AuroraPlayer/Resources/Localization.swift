@@ -393,6 +393,8 @@ final class Localization: ObservableObject {
         "smart.dailyMix": [.spanish: "Mezcla diaria", .english: "Daily mix"],
         "smart.weeklyMix": [.spanish: "Mezcla semanal", .english: "Weekly mix"],
         "smart.empty": [.spanish: "Todavía no hay canciones para esta mezcla", .english: "No songs for this mix yet"],
+        "settings.smartShuffle": [.spanish: "Shuffle inteligente", .english: "Smart shuffle"],
+        "settings.smartShuffleSubtitle": [.spanish: "Prioriza canciones que escuchas menos", .english: "Prioritizes songs you listen to less"],
         "settings.accent.purple": [.spanish: "Morado (predeterminado)", .english: "Purple (default)"],
         "settings.accent.blue": [.spanish: "Azul Aurora", .english: "Aurora Blue"],
         "settings.accent.emerald": [.spanish: "Esmeralda", .english: "Emerald"],

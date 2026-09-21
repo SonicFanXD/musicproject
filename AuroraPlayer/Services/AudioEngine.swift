@@ -119,6 +119,34 @@ class AudioEngine: NSObject, ObservableObject {
     /// conecta, no hay ningún coste ni cambio de comportamiento.
     var onSongStarted: ((Song) -> Void)?
 
+    /// ✅ 3.0 SHUFFLE INTELIGENTE: peso de cada canción según hábitos. Lo calcula
+    /// FileAccessService (que tiene playCounts/lastPlayedDates/liked) y lo
+    /// inyecta RootTabView. Si es nil, el orden vuelve a ser aleatorio puro.
+    var shuffleWeightProvider: ((Song) -> Double)?
+
+    /// ✅ 3.0: shuffle ponderado por hábitos. Lee la MISMA clave que escribe el
+    /// toggle de Ajustes (`com.aurora.smartShuffle`) y solo en el momento de
+    /// GENERAR el orden, así que no necesita observación reactiva. Se hace con
+    /// UserDefaults directo —igual que `isShuffleEnabled`— para no importar
+    /// SwiftUI en el motor de audio (este archivo solo usa Foundation/AVFoundation).
+    private var smartShuffleEnabled: Bool {
+        UserDefaults.standard.bool(forKey: "com.aurora.smartShuffle")
+    }
+
+    /// ✅ 3.0: genera el orden del aleatorio. Con el shuffle inteligente activo,
+    /// cada canción recibe su peso + un azar pequeño (0…1) y se ordena de mayor a
+    /// menor: primero lo que escuchas menos, lo que hace mucho que no suena y lo
+    /// que te gusta. Sin el toggle (o sin proveedor) → `shuffled()` clásico.
+    private func makeShuffleOrder(_ source: [Song]) -> [Song] {
+        guard smartShuffleEnabled, let weightProvider = shuffleWeightProvider else {
+            return source.shuffled()
+        }
+        return source
+            .map { song in (song: song, weight: weightProvider(song) + Double.random(in: 0...1)) }
+            .sorted { $0.weight > $1.weight }
+            .map { $0.song }
+    }
+
     // MARK: - Cola de reproducción interna
     private var playlist: [Song] = []
     private var originalPlaylist: [Song] = []
@@ -1217,7 +1245,9 @@ class AudioEngine: NSObject, ObservableObject {
                     ? songPlaylist
                     : playlist
                 let current = playlist[currentIndex]
-                playlist.shuffle()
+                // ✅ 3.0: el orden lo genera makeShuffleOrder (ponderado si el
+                // shuffle inteligente está activo; aleatorio puro si no).
+                playlist = makeShuffleOrder(playlist)
                 if let newIndex = playlist.firstIndex(where: { $0.id == current.id }) {
                     playlist.remove(at: newIndex)
                     playlist.insert(current, at: 0)
@@ -1773,7 +1803,8 @@ class AudioEngine: NSObject, ObservableObject {
             // ✅ MEJORA: usar lista mezclada en lugar de RNG cada vez
             if shuffledPlaylist.isEmpty || shuffleIndex >= shuffledPlaylist.count {
                 // Regenerar lista mezclada cuando se agota
-                shuffledPlaylist = playlist.shuffled()
+                // ✅ 3.0: ponderada por hábitos si el shuffle inteligente está activo.
+                shuffledPlaylist = makeShuffleOrder(playlist)
                 shuffleIndex = 0
                 // ✅ CRÍTICO - ESTABILIDAD: verificar que la lista mezclada no quede vacía
                 // después de remover la canción actual. Si la playlist tiene solo 1 canción
@@ -1798,7 +1829,7 @@ class AudioEngine: NSObject, ObservableObject {
             guard shuffleIndex < shuffledPlaylist.count else {
                 // Lista agotada, reiniciar con repeat-all o nil si no hay repeat
                 if repeatMode == .all {
-                    shuffledPlaylist = playlist.shuffled()
+                    shuffledPlaylist = makeShuffleOrder(playlist)
                     shuffleIndex = 0
                     return playlist.firstIndex(where: { $0.id == shuffledPlaylist[0].id })
                 }
@@ -2036,10 +2067,12 @@ class AudioEngine: NSObject, ObservableObject {
         if isShuffleEnabled {
             originalPlaylist = playlist
             // ✅ MEJORA: inicializar lista mezclada nueva
-            shuffledPlaylist = playlist.shuffled()
+            // ✅ 3.0: el orden lo genera makeShuffleOrder (ponderado si el shuffle
+            // inteligente está activo; aleatorio puro si no).
+            shuffledPlaylist = makeShuffleOrder(playlist)
             shuffleIndex = 0
             let current = playlist[currentIndex]
-            playlist.shuffle()
+            playlist = makeShuffleOrder(playlist)
             if let newIndex = playlist.firstIndex(where: { $0.id == current.id }) {
                 playlist.remove(at: newIndex)
                 playlist.insert(current, at: 0)

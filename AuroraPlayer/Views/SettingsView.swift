@@ -28,6 +28,8 @@ struct SettingsView: View {
     @AppStorage("com.aurora.hapticIntensity") private var hapticIntensity: Double = 1.0
     @AppStorage("com.aurora.showLyricsByDefault") private var showLyricsByDefault = false
     @AppStorage("com.aurora.autoPlayOnStart") private var autoPlayOnStart = false
+    // ✅ 3.0: shuffle ponderado por hábitos (el motor lee la misma clave).
+    @AppStorage("com.aurora.smartShuffle") private var smartShuffle = false
     @AppStorage("com.aurora.showVisualizerInBar") private var showVisualizerInBar = true
     @AppStorage("com.aurora.compactPlayerBar") private var compactPlayerBar = false
     @AppStorage("com.aurora.language") private var selectedLanguage = 0 // 0 = español, 1 = inglés
@@ -353,6 +355,11 @@ struct SettingsView: View {
                             settingsToggleRow(title: Localization.localized("settings.keepScreenOn"), subtitle: Localization.localized("settings.keepScreenOnSubtitle"), icon: "sun.max.fill", color: .yellow, isOn: $keepScreenOn)
                             settingsDivider
                             settingsToggleRow(title: Localization.localized("settings.autoPlayOnStart"), subtitle: Localization.localized("settings.autoPlayOnStartSubtitle"), icon: "play.circle", color: .green, isOn: $autoPlayOnStart)
+                            settingsDivider
+                            // ✅ 3.0: el orden aleatorio deja de ser puro azar y
+                            // prioriza lo que suena menos (mismos hábitos que las
+                            // playlists automáticas).
+                            settingsToggleRow(title: Localization.localized("settings.smartShuffle"), subtitle: Localization.localized("settings.smartShuffleSubtitle"), icon: "shuffle", color: .purple, isOn: $smartShuffle)
                         }
                         
                         // ✅ Personalización avanzada

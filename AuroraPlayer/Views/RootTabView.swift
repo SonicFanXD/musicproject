@@ -126,6 +126,11 @@ struct RootTabView: View {
         audioEngine.onSongStarted = { [fileAccessService] song in
             fileAccessService.recordPlayStarted(songID: song.id)
         }
+        // ✅ 3.0: el peso del shuffle inteligente lo calcula FileAccessService
+        // (dueño de playCounts/lastPlayedDates/liked); el motor solo ordena.
+        audioEngine.shuffleWeightProvider = { [fileAccessService] song in
+            fileAccessService.smartShuffleWeight(for: song)
+        }
     }
 
     private func finishInitialLoad() {
