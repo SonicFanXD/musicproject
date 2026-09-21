@@ -856,7 +856,9 @@ struct ContentView: View {
                 } label: {
                     albumListRow(album)
                 }
-                .buttonStyle(.plain)
+                // ✅ Feedback de presión también al abrir un álbum (antes el toque
+                // no producía ninguna respuesta visual).
+                .buttonStyle(PressableButtonStyle(scale: 0.98))
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
             }
@@ -900,7 +902,8 @@ struct ContentView: View {
                 } label: {
                     artistListRow(artist)
                 }
-                .buttonStyle(.plain)
+                // ✅ Feedback de presión también al abrir un artista.
+                .buttonStyle(PressableButtonStyle(scale: 0.98))
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
             }
@@ -1006,7 +1009,9 @@ struct ContentView: View {
                     }
                 }
             }
-            .buttonStyle(.plain)
+            // ✅ Mismo feedback de presión que el resto de la app (antes la fila
+            // no respondía al toque hasta que navegaba).
+            .buttonStyle(PressableButtonStyle(scale: 0.98))
             
             Button {
                 Haptics.light()
@@ -1021,17 +1026,22 @@ struct ContentView: View {
                     .frame(width: 36, height: 36)
                     .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(PressableButtonStyle(scale: 0.9))
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
         .background {
                 if isCurrent {
+                    // ✅ La canción en curso se marca con acento 0.12 (antes 0.08,
+                    // que sobre el fondo de la app quedaba casi invisible) y borde
+                    // 0.3. Sigue siendo relleno OPACO + borde fino: NO se añade
+                    // sombra, porque en una lista de cientos de filas cada sombra
+                    // es una pasada offscreen más y en A11 eso se paga en frames.
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(AppTheme.accentGradient(opacity: 0.08))
+                        .fill(AppTheme.accentGradient(opacity: 0.12))
                         .overlay(
                             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                .strokeBorder(AppTheme.accent.opacity(0.2), lineWidth: 0.5)
+                                .strokeBorder(AppTheme.accent.opacity(0.3), lineWidth: 0.5)
                         )
                 } else {
                     // ✅ 60fps: color OPACO (no material blur) — en listas largas
