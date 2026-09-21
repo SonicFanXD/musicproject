@@ -37,6 +37,10 @@ struct SettingsView: View {
     @AppStorage("com.aurora.showPlayingIndicator") private var showPlayingIndicator = true
     // ✅ PARTE C: tamaño de la portada en Now Playing (0 = pequeña, 1 = media, 2 = grande).
     @AppStorage("com.aurora.nowPlayingArtSize") private var nowPlayingArtSize = 1
+    // ✅ PARTE C: velocidad del auto-scroll de las letras (0 = lenta, 1 = normal, 2 = rápida).
+    @AppStorage("com.aurora.lyricsScrollSpeed") private var lyricsScrollSpeed = 1
+    // ✅ PARTE C: reducir movimiento (accesibilidad + batería).
+    @AppStorage("com.aurora.reduceMotion") private var reduceMotion = false
     @AppStorage("com.aurora.language") private var selectedLanguage = 0 // 0 = español, 1 = inglés
     @AppStorage("com.aurora.showFPS") private var showFPS = false
     @AppStorage("com.aurora.scanOnlyNewSongs") private var scanOnlyNewSongs = true
@@ -84,6 +88,15 @@ struct SettingsView: View {
             Localization.localized("settings.artSize.small"),
             Localization.localized("settings.artSize.medium"),
             Localization.localized("settings.artSize.large")
+        ]
+    }
+
+    /// ✅ VELOCIDAD DE LETRAS: etiquetas localizadas.
+    private var lyricsSpeedLabels: [String] {
+        [
+            Localization.localized("settings.lyricsSpeed.slow"),
+            Localization.localized("settings.lyricsSpeed.normal"),
+            Localization.localized("settings.lyricsSpeed.fast")
         ]
     }
 
@@ -371,6 +384,18 @@ struct SettingsView: View {
                             settingsDivider
                             settingsToggleRow(title: Localization.localized("settings.reduceTransparency"), subtitle: Localization.localized("settings.reduceTransparencySubtitle"), icon: "circle.slash", color: .gray, isOn: $reduceTransparency)
                             settingsDivider
+                            // ✅ REDUCIR MOVIMIENTO: accesibilidad (sensibilidad al
+                            // movimiento) y, de paso, menos trabajo de GPU: splash sin
+                            // stagger ni bucle de halo, transiciones de letra sin
+                            // rebote y visualizador sin CADisplayLink.
+                            settingsToggleRow(
+                                title: Localization.localized("settings.reduceMotion"),
+                                subtitle: Localization.localized("settings.reduceMotionSubtitle"),
+                                icon: "figure.walk.motion",
+                                color: .orange,
+                                isOn: $reduceMotion
+                            )
+                            settingsDivider
                             settingsMenuButton(title: Localization.localized("settings.language"), subtitle: languages[selectedLanguage], icon: "globe", color: .blue, options: languages, selection: $selectedLanguage) { index in
                                 selectedLanguage = index
                                 // ✅ Aplicar el idioma al instante en toda la app
@@ -438,6 +463,21 @@ struct SettingsView: View {
                             settingsDivider
                             settingsToggleRow(title: Localization.localized("settings.autoPlayOnStart"), subtitle: Localization.localized("settings.autoPlayOnStartSubtitle"), icon: "play.circle", color: .green, isOn: $autoPlayOnStart)
                             settingsDivider
+                            // ✅ VELOCIDAD DEL SCROLL DE LETRAS: solo el muelle del
+                            // auto-scroll de LyricsView (0,5 / 0,35 / 0,2 s).
+                            settingsMenuButton(
+                                title: Localization.localized("settings.lyricsScrollSpeed"),
+                                subtitle: lyricsSpeedLabels[lyricsScrollSpeed],
+                                icon: "text.line.first.and.arrowtriangle.forward",
+                                color: .blue,
+                                options: lyricsSpeedLabels,
+                                selection: $lyricsScrollSpeed,
+                                onChange: { index in
+                                    lyricsScrollSpeed = index
+                                    AppLog.info(.settings, "Velocidad de letras: \(lyricsSpeedLabels[index])")
+                                }
+                            )
+                            settingsDivider
                             // ✅ ONDAS EN LA CANCIÓN ACTUAL: apagado, la fila que
                             // suena se marca solo con el título en color de acento
                             // (útil si las barras animadas distraen en listas largas).
@@ -491,6 +531,7 @@ struct SettingsView: View {
                         .onChange(of: compactPlayerBar) { v in AppLog.info(.settings, "Barra compacta: \(v ? "activado" : "desactivado")") }
                         .onChange(of: showLyricsByDefault) { v in AppLog.info(.settings, "Letras por defecto: \(v ? "activado" : "desactivado")") }
                         .onChange(of: showPlayingIndicator) { v in AppLog.info(.settings, "Ondas en la canción actual: \(v ? "activado" : "desactivado")") }
+                        .onChange(of: reduceMotion) { v in AppLog.info(.settings, "Reducir movimiento: \(v ? "activado" : "desactivado")") }
                         .onChange(of: showFPS) { v in
                             AppLog.info(.settings, "Contador FPS: \(v ? "activado" : "desactivado")")
                             FPSOverlayController.shared.setEnabled(v)

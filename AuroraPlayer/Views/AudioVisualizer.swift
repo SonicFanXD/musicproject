@@ -66,6 +66,10 @@ struct AudioVisualizer: View {
     // cuando la app pasa a segundo plano, incluso si la vista sigue visible
     // (ej. NowPlaying abierto antes de bloquear la pantalla).
     @Environment(\.scenePhase) private var scenePhase
+    // ✅ REDUCIR MOVIMIENTO (Ajustes → Apariencia): barras estáticas. No se crea
+    // el CADisplayLink, así que no se pide ni un frame por segundo mientras el
+    // visualizador está en pantalla: es ahorro real de CPU/GPU, no solo estético.
+    @AppStorage("com.aurora.reduceMotion") private var reduceMotion = false
 
     /// ✅ Gradiente de las barras: se construye UNA vez por render (antes cada
     /// barra creaba el suyo, idéntico, en cada frame) y usa los DOS colores.
@@ -117,6 +121,12 @@ struct AudioVisualizer: View {
             isVisible = false
             stopVisualization()
         }
+        // ✅ Aplicar "reducir movimiento" al instante si el usuario lo toca con el
+        // visualizador en pantalla (startVisualization ya se encarga de parar el
+        // anterior y de congelarlo o reanudarlo).
+        .onChange(of: reduceMotion) { _ in
+            startVisualization()
+        }
         .onChange(of: audioEngine.isPlaying) { isPlaying in
             if isPlaying {
                 isVisible = true
@@ -146,8 +156,27 @@ struct AudioVisualizer: View {
         }
     }
 
+    /// ✅ Perfil fijo (campana suave) para el modo de movimiento reducido: se lee
+    /// como un visualizador "congelado", no como barras planas. `fileprivate`
+    /// porque el anillo (`CircularAudioVisualizer`) usa el mismo perfil.
+    fileprivate static func staticProfile(count: Int) -> [CGFloat] {
+        (0..<count).map { index in
+            let t = Double(index) / Double(max(count - 1, 1))
+            return CGFloat(0.18 + 0.34 * (1 - pow(t * 2 - 1, 2)))
+        }
+    }
+
     private func startVisualization() {
         stopVisualization()
+
+        // ✅ REDUCIR MOVIMIENTO: barras estáticas y SIN display link (ni un frame).
+        if reduceMotion {
+            let profile = Self.staticProfile(count: smoothedAmplitudes.count)
+            smoothedAmplitudes = profile
+            amplitudes = profile
+            return
+        }
+
         displayLink = CADisplayLink(target: VisualizerLinkTarget { [self] in
             updateAmplitudes()
         }, selector: #selector(VisualizerLinkTarget.fire(displayLink:)))
@@ -208,6 +237,9 @@ struct CircularAudioVisualizer: View {
     @State private var phase: Double = 0
     // ✅ CRÍTICO - BATERÍA: observar scenePhase para detener en segundo plano
     @Environment(\.scenePhase) private var scenePhase
+    // ✅ REDUCIR MOVIMIENTO: mismo criterio que el visualizador de barras — sin
+    // CADisplayLink, el anillo queda con un perfil fijo y no consume frames.
+    @AppStorage("com.aurora.reduceMotion") private var reduceMotion = false
 
     var body: some View {
         // ✅ Un solo gradiente por render (y de dos colores).
@@ -238,6 +270,11 @@ struct CircularAudioVisualizer: View {
             isVisible = false
             stopVisualization()
         }
+        // ✅ Aplicar "reducir movimiento" al instante si se toca con el anillo en
+        // pantalla (startVisualization para el anterior y lo congela o reanuda).
+        .onChange(of: reduceMotion) { _ in
+            startVisualization()
+        }
         .onChange(of: audioEngine.isPlaying) { isPlaying in
             if isPlaying {
                 isVisible = true
@@ -267,6 +304,14 @@ struct CircularAudioVisualizer: View {
 
     private func startVisualization() {
         stopVisualization()
+
+        // ✅ REDUCIR MOVIMIENTO: anillo estático y SIN display link.
+        if reduceMotion {
+            let profile = AudioVisualizer.staticProfile(count: amplitudes.count)
+            amplitudes = profile
+            return
+        }
+
         displayLink = CADisplayLink(target: VisualizerLinkTarget { [self] in
             updateCircularAmplitudes()
         }, selector: #selector(VisualizerLinkTarget.fire(displayLink:)))

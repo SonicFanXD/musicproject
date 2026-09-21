@@ -1349,6 +1349,9 @@ struct SplashView: View {
     // isInitialLoad a false la vista sale del árbol y la animación se detiene
     // con ella (no queda ningún bucle en background).
     @State private var breathing = false
+    // ✅ REDUCIR MOVIMIENTO (Ajustes → Apariencia): la entrada se hace sin
+    // stagger, sin rebote y sin el bucle del halo (fundido simple).
+    @AppStorage("com.aurora.reduceMotion") private var reduceMotion = false
     @Environment(\.colorScheme) private var colorScheme
     
     var body: some View {
@@ -1467,8 +1470,10 @@ struct SplashView: View {
                                 .opacity(titleOpacity)
                                 .offset(y: titleOffset)
                                 .animation(
-                                    .spring(response: 0.6, dampingFraction: 0.8)
-                                        .delay(0.25 + Double(index) * 0.03),
+                                    reduceMotion
+                                        ? .easeOut(duration: 0.25)
+                                        : .spring(response: 0.6, dampingFraction: 0.8)
+                                            .delay(0.25 + Double(index) * 0.03),
                                     value: titleOpacity
                                 )
                         }
@@ -1488,23 +1493,24 @@ struct SplashView: View {
             // rebote sutil en lugar de frenar en seco. El retardo del título y
             // del halo es el mismo de antes, así que la duración total del
             // splash no cambia.
-            withAnimation(.spring(response: 0.65, dampingFraction: 0.72)) {
+            withAnimation(reduceMotion ? .easeOut(duration: 0.3) : .spring(response: 0.65, dampingFraction: 0.72)) {
                 logoScale = 1.0
                 logoOpacity = 1.0
             }
 
-            withAnimation(.spring(response: 0.65, dampingFraction: 0.72).delay(0.25)) {
+            withAnimation(reduceMotion ? .easeOut(duration: 0.3) : .spring(response: 0.65, dampingFraction: 0.72).delay(0.25)) {
                 titleOffset = 0
                 titleOpacity = 1.0
             }
 
-            withAnimation(.spring(response: 0.65, dampingFraction: 0.72).delay(0.4)) {
+            withAnimation(reduceMotion ? .easeOut(duration: 0.3) : .spring(response: 0.65, dampingFraction: 0.72).delay(0.4)) {
                 pulseScale = 1.12
                 pulseOpacity = 1.0
             }
 
             // ✅ Y después respira en bucle mientras el splash siga visible.
-            breathing = true
+            // Con movimiento reducido no arranca el bucle: cero frames de más.
+            breathing = !reduceMotion
         }
         .onDisappear {
             // ✅ El latido es `repeatForever`: al salir del árbol la vista muere y

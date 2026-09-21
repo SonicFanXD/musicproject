@@ -26,6 +26,10 @@ struct LyricsView: View {
     // ✅ Observado para que los textos se re-rendericen al cambiar de idioma en vivo.
     @ObservedObject private var localization = Localization.shared
     @Environment(\.dismiss) private var dismiss
+    // ✅ VELOCIDAD DEL SCROLL (Ajustes → Reproducción): 0 = lenta, 1 = normal (la
+    // de Apple Music), 2 = rápida. Solo cambia el muelle del auto-scroll; el
+    // relleno por frame sigue igual.
+    @AppStorage("com.aurora.lyricsScrollSpeed") private var lyricsScrollSpeed = 1
 
     /// ✅ Petición de centrado: el `token` garantiza que SwiftUI reciba un
     /// cambio aunque la línea destino sea la misma (al cambiar de canción), así
@@ -224,6 +228,17 @@ struct LyricsView: View {
         .padding(.horizontal, Self.horizontalPadding)
     }
 
+    /// ✅ Respuesta del muelle según el ajuste de velocidad (0,5 / 0,35 / 0,2 s).
+    /// El damping se mantiene en 0.85: es lo que da el tacto "sin rebote" de
+    /// Apple Music en los tres casos.
+    private var scrollSpringResponse: Double {
+        switch lyricsScrollSpeed {
+        case 0: return 0.5
+        case 2: return 0.2
+        default: return 0.35
+        }
+    }
+
     /// ✅ Scroll centrado y natural (spring 0.35s, damping 0.85, el tacto de
     /// Apple Music) al cambiar de línea activa. Cuanto más corto es el solape
     /// entre la animación del scroll y el wipe a 60 fps de la línea entrante,
@@ -234,7 +249,7 @@ struct LyricsView: View {
         guard let request else { return }
 
         if hasDoneInitialScroll {
-            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+            withAnimation(.spring(response: scrollSpringResponse, dampingFraction: 0.85)) {
                 proxy.scrollTo(request.lineID, anchor: .center)
             }
         } else {
@@ -508,6 +523,10 @@ private struct LyricLineView: View, Equatable {
     let viewModel: LyricsViewModel
     /// ✅ Ancho útil para el texto: el troceo por medición real depende de él.
     let availableWidth: CGFloat
+    // ✅ REDUCIR MOVIMIENTO (Ajustes → Apariencia): sin "pop" de escala y sin
+    // muelle — la línea activa entra con un fundido corto. Los usuarios con
+    // sensibilidad al movimiento lo piden y además ahorra animaciones por evento.
+    @AppStorage("com.aurora.reduceMotion") private var reduceMotion = false
 
     /// ✅ Separación entre filas visuales de una misma línea lógica (también en
     /// la capa atenuada, para que el texto no salte al activarse la línea).
@@ -568,14 +587,14 @@ private struct LyricLineView: View, Equatable {
         .padding(.vertical, 12)
         // ✅ "Pop" premium al cambiar de línea: las inactivas "respiran" algo
         // más pequeñas (0.96) y la activa recupera la escala completa.
-        .scaleEffect(isActive ? 1.0 : 0.96)
+        .scaleEffect(reduceMotion ? 1.0 : (isActive ? 1.0 : 0.96))
         .animation(lineActivation, value: isActive)
     }
 
     /// ✅ Spring del cambio de línea (activación de la capa brillante y pop de
     /// escala). El wipe a 60 fps NO lo usa: el TimelineView interpola por frame.
     private var lineActivation: Animation {
-        .spring(response: 0.4, dampingFraction: 0.75)
+        reduceMotion ? .easeInOut(duration: 0.2) : .spring(response: 0.4, dampingFraction: 0.75)
     }
 
     /// ✅ Filas REALES de la línea (cacheado por texto+fuente+ancho): las lógicas
