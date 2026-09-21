@@ -31,6 +31,10 @@ struct NowPlayingView: View {
     @State private var showAlbumDetail = false
     @State private var artworkScale: CGFloat = 1.0
     @State private var extractedColor: Color = AppTheme.accent
+    // ✅ Segundo color dominante de la carátula (solo con "Acento desde
+    // portada" activo). Alimenta los gradientes de DOS colores, igual que en
+    // PlayerBar y en Album/Artist detail.
+    @State private var extractedSecondaryColor: Color?
     // ✅ Guardamos el UIColor dominante crudo para calcular contraste
     // ✅ FIX: usar accentUIColor en vez de systemPurple hardcodeado
     @State private var extractedUIColor: UIColor = AppTheme.accentUIColor
@@ -58,6 +62,78 @@ struct NowPlayingView: View {
 
     // ✅ Contraste: si el color dominante es claro → texto oscuro; si es oscuro → texto blanco
     private var playIconColor: Color { AppTheme.contrastingText(on: extractedUIColor) }
+
+    // MARK: - Acento de DOS colores (mismo criterio que PlayerBar/Album/Artist)
+    /// ✅ Par de colores del acento de ESTA canción (SIEMPRE dos): con "Acento
+    /// desde portada", el dominante de la carátula + su secundario real; con el
+    /// modo desactivado, el acento manual con su segunda parada al 40% (mismo
+    /// criterio que `AppTheme.accentGradient`).
+    private var accentPair: (primary: Color, secondary: Color) {
+        if ThemeManager.shared.accentFromArtwork {
+            return (extractedColor, extractedSecondaryColor ?? extractedColor.opacity(0.7))
+        }
+        return (AppTheme.accent, AppTheme.accent.opacity(0.4))
+    }
+
+    /// ✅ Gradiente de DOS colores con opacidad por parada: sustituye los
+    /// antiguos `[color, color.opacity(x)]`, que eran de un solo color.
+    private func accentGradient(
+        start: UnitPoint = .topLeading,
+        end: UnitPoint = .bottomTrailing,
+        primaryOpacity: Double = 1,
+        secondaryOpacity: Double = 1
+    ) -> LinearGradient {
+        let pair = accentPair
+        return LinearGradient(
+            colors: [pair.primary.opacity(primaryOpacity), pair.secondary.opacity(secondaryOpacity)],
+            startPoint: start,
+            endPoint: end
+        )
+    }
+
+    /// ✅ Superficies con GLIFO BLANCO encima (botón de play y cápsulas de estado
+    /// activo): si el secundario difiere MUCHO en brillo del primario, se
+    /// conserva su TONO pero se ancla su BRILLO al del primario. El degradado
+    /// sigue siendo de dos colores reales y la legibilidad del icono blanco
+    /// queda igual que antes de este cambio.
+    private func textSafeAccentGradient(primaryOpacity: Double = 1, secondaryOpacity: Double = 1) -> LinearGradient {
+        let pair = accentPair
+        var secondaryStop = pair.secondary
+        var h1: CGFloat = 0, s1: CGFloat = 0, b1: CGFloat = 0, a1: CGFloat = 1
+        var h2: CGFloat = 0, s2: CGFloat = 0, b2: CGFloat = 0, a2: CGFloat = 1
+        if UIColor(pair.primary).getHue(&h1, saturation: &s1, brightness: &b1, alpha: &a1),
+           UIColor(pair.secondary).getHue(&h2, saturation: &s2, brightness: &b2, alpha: &a2),
+           abs(b1 - b2) > 0.3 {
+            secondaryStop = Color(UIColor(hue: h2, saturation: s2, brightness: b1, alpha: a2))
+        }
+        return LinearGradient(
+            colors: [pair.primary.opacity(primaryOpacity), secondaryStop.opacity(secondaryOpacity)],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+    }
+
+    /// ✅ Secundario de la carátula de la canción actual. El clustering se hace
+    /// en segundo plano (nunca en el hilo principal) y queda en la caché
+    /// compartida con ThemeManager, así que no se repite al volver a la vista.
+    private func loadSecondaryArtworkColorIfNeeded() {
+        guard ThemeManager.shared.accentFromArtwork,
+              let artwork = audioEngine.currentSong?.artwork,
+              let songID = audioEngine.currentSong?.id else { return }
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            let dominant = AppTheme.cachedDominantColor(from: artwork, key: songID.uuidString)
+            let secondary = dominant.flatMap {
+                AppTheme.cachedSecondaryDominantColor(from: artwork, key: songID.uuidString, primary: $0)
+            }
+            guard let secondary else { return }
+            DispatchQueue.main.async {
+                withAnimation(.easeInOut(duration: 0.3)) {
+                    self.extractedSecondaryColor = AppTheme.readableColor(from: secondary)
+                }
+            }
+        }
+    }
 
     // ✅ NUEVO: resoluciones para el menú de 3 puntos (artista/álbum actuales)
     private var currentArtist: Artist? {
@@ -141,6 +217,7 @@ struct NowPlayingView: View {
                         audioEngine: audioEngine,
                         clock: clock,
                         extractedColor: extractedColor,
+                        extractedSecondaryColor: extractedSecondaryColor,
                         extractedUIColor: extractedUIColor,
                         playIconColor: playIconColor,
                         isCompactScreen: isCompactScreen
@@ -296,13 +373,7 @@ struct NowPlayingView: View {
             } else {
                 ZStack {
                     RoundedRectangle(cornerRadius: CGFloat(artworkCorner), style: .continuous)
-                        .fill(
-                            LinearGradient(
-                                colors: [extractedColor.opacity(0.3), extractedColor.opacity(0.1)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
+                        .fill(accentGradient(primaryOpacity: 0.3, secondaryOpacity: 0.1))
                         .frame(width: artworkSize, height: artworkSize)
 
                     Image(systemName: "music.note")
@@ -367,7 +438,7 @@ struct NowPlayingView: View {
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
                     .background {
-                        Capsule().fill(extractedColor.opacity(0.2))
+                        Capsule().fill(accentGradient(primaryOpacity: 0.2, secondaryOpacity: 0.2))
                     }
                     .overlay {
                         Capsule().strokeBorder(playIconColor.opacity(0.15), lineWidth: 0.5)
@@ -414,7 +485,9 @@ struct NowPlayingView: View {
             } label: {
                 ZStack {
                     Capsule()
-                        .fill(audioEngine.isShuffleEnabled ? extractedColor.opacity(0.45) : Color.clear)
+                        .fill(audioEngine.isShuffleEnabled
+                              ? AnyShapeStyle(textSafeAccentGradient(primaryOpacity: 0.45, secondaryOpacity: 0.45))
+                              : AnyShapeStyle(Color.clear))
                         .frame(width: isCompactScreen ? 42 : 46, height: isCompactScreen ? 30 : 36)
 
                     Image(systemName: "shuffle")
@@ -456,7 +529,7 @@ struct NowPlayingView: View {
                 }
             } label: {
                 ZStack {
-                    Circle().fill(extractedColor).frame(width: isCompactScreen ? 62 : 72, height: isCompactScreen ? 62 : 72)
+                    Circle().fill(textSafeAccentGradient()).frame(width: isCompactScreen ? 62 : 72, height: isCompactScreen ? 62 : 72)
                     // ✅ El icono cambia instantáneamente (sin .id() ni transición
                     // de reemplazo — recreaba la vista entera y se sentía lento en
                     // A11); solo un breve fade de 0.1s suaviza el cambio visual.
@@ -494,7 +567,9 @@ struct NowPlayingView: View {
             } label: {
                 ZStack {
                     Capsule()
-                        .fill(audioEngine.repeatMode != .off ? extractedColor.opacity(0.45) : Color.clear)
+                        .fill(audioEngine.repeatMode != .off
+                              ? AnyShapeStyle(textSafeAccentGradient(primaryOpacity: 0.45, secondaryOpacity: 0.45))
+                              : AnyShapeStyle(Color.clear))
                         .frame(width: isCompactScreen ? 42 : 46, height: isCompactScreen ? 30 : 36)
 
                     Image(systemName: repeatIcon)
@@ -528,7 +603,9 @@ struct NowPlayingView: View {
             } label: {
                 ZStack {
                     Capsule()
-                        .fill(audioEngine.isEQEnabled ? extractedColor.opacity(0.25) : Color.clear)
+                        .fill(audioEngine.isEQEnabled
+                              ? AnyShapeStyle(accentGradient(primaryOpacity: 0.25, secondaryOpacity: 0.25))
+                              : AnyShapeStyle(Color.clear))
                         .frame(width: capsuleWidth, height: capsuleHeight)
 
                     Image(systemName: "slider.horizontal.3")
@@ -548,7 +625,9 @@ struct NowPlayingView: View {
             } label: {
                 ZStack {
                     Capsule()
-                        .fill(audioEngine.currentSong?.lyrics.isEmpty == false ? extractedColor.opacity(0.25) : Color.clear)
+                        .fill(audioEngine.currentSong?.lyrics.isEmpty == false
+                              ? AnyShapeStyle(accentGradient(primaryOpacity: 0.25, secondaryOpacity: 0.25))
+                              : AnyShapeStyle(Color.clear))
                         .frame(width: capsuleWidth, height: capsuleHeight)
 
                     Image(systemName: audioEngine.currentSong?.lyrics.isEmpty == false ? "quote.bubble.fill" : "quote.bubble")
@@ -568,7 +647,9 @@ struct NowPlayingView: View {
             } label: {
                 ZStack {
                     Capsule()
-                        .fill(audioEngine.nextUpQueue.isEmpty ? Color.clear : extractedColor.opacity(0.25))
+                        .fill(audioEngine.nextUpQueue.isEmpty
+                              ? AnyShapeStyle(Color.clear)
+                              : AnyShapeStyle(accentGradient(primaryOpacity: 0.25, secondaryOpacity: 0.25)))
                         .frame(width: capsuleWidth, height: capsuleHeight)
 
                     Image(systemName: "list.bullet")
@@ -588,7 +669,9 @@ struct NowPlayingView: View {
             ZStack {
                 // Botón visual (icono + resaltado si la salida es AirPlay)
                 Capsule()
-                    .fill(audioEngine.outputPortType == AVAudioSession.Port.airPlay.rawValue ? extractedColor.opacity(0.25) : Color.clear)
+                    .fill(audioEngine.outputPortType == AVAudioSession.Port.airPlay.rawValue
+                          ? AnyShapeStyle(accentGradient(primaryOpacity: 0.25, secondaryOpacity: 0.25))
+                          : AnyShapeStyle(Color.clear))
                     .frame(width: capsuleWidth, height: capsuleHeight)
 
                 Image(systemName: "airplayaudio")
@@ -770,11 +853,13 @@ private func extractColorFromArtwork() {
         // controla el acento de portada en TODOS los entornos.
         guard ThemeManager.shared.accentFromArtwork else {
             extractedColor = AppTheme.accent
+            extractedSecondaryColor = nil
             return
         }
 
         guard let artwork = audioEngine.currentSong?.artwork, let songID = audioEngine.currentSong?.id else {
             extractedColor = AppTheme.accent
+            extractedSecondaryColor = nil
             return
         }
 
@@ -782,9 +867,13 @@ private func extractColorFromArtwork() {
         if let cached = AppTheme.cachedDominantColor(from: artwork, key: songID.uuidString) {
             extractedColor = AppTheme.readableColor(from: cached)
             extractedUIColor = cached
+            // ✅ Segundo color de la carátula (gradiente de dos colores).
+            extractedSecondaryColor = nil
+            loadSecondaryArtworkColorIfNeeded()
             return
         }
         extractedColor = AppTheme.accent
+        extractedSecondaryColor = nil
     }
 }
 
@@ -796,6 +885,9 @@ private struct ProgressScrubView: View {
     @ObservedObject var audioEngine: AudioEngine
     @ObservedObject var clock: PlaybackClock
     let extractedColor: Color
+    /// ✅ Segundo color de la carátula: hace que la barra también sea de dos
+    /// colores (leading → trailing), como el track del PlayerBar.
+    let extractedSecondaryColor: Color?
     let extractedUIColor: UIColor
     let playIconColor: Color
     let isCompactScreen: Bool
@@ -835,7 +927,7 @@ private struct ProgressScrubView: View {
                     RoundedRectangle(cornerRadius: 5, style: .continuous)
                         .fill(
                             LinearGradient(
-                                colors: [extractedColor.opacity(0.85), extractedColor],
+                                colors: [extractedColor.opacity(0.85), extractedSecondaryColor ?? extractedColor],
                                 startPoint: .leading,
                                 endPoint: .trailing
                             )
