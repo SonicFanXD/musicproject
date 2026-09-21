@@ -33,6 +33,10 @@ struct SettingsView: View {
     @AppStorage("com.aurora.compactPlayerBar") private var compactPlayerBar = false
     // ✅ PARTE C: estilo de la barra de reproducción (0 = vidrio, 1 = sólido, 2 = compacto).
     @AppStorage("com.aurora.playerBarStyle") private var playerBarStyle = 0
+    // ✅ PARTE C: ondas de la canción actual en las listas.
+    @AppStorage("com.aurora.showPlayingIndicator") private var showPlayingIndicator = true
+    // ✅ PARTE C: tamaño de la portada en Now Playing (0 = pequeña, 1 = media, 2 = grande).
+    @AppStorage("com.aurora.nowPlayingArtSize") private var nowPlayingArtSize = 1
     @AppStorage("com.aurora.language") private var selectedLanguage = 0 // 0 = español, 1 = inglés
     @AppStorage("com.aurora.showFPS") private var showFPS = false
     @AppStorage("com.aurora.scanOnlyNewSongs") private var scanOnlyNewSongs = true
@@ -71,6 +75,15 @@ struct SettingsView: View {
             Localization.localized("settings.playerBarStyle.glass"),
             Localization.localized("settings.playerBarStyle.solid"),
             Localization.localized("settings.playerBarStyle.compact")
+        ]
+    }
+
+    /// ✅ TAMAÑO DE PORTADA: etiquetas localizadas.
+    private var artSizeLabels: [String] {
+        [
+            Localization.localized("settings.artSize.small"),
+            Localization.localized("settings.artSize.medium"),
+            Localization.localized("settings.artSize.large")
         ]
     }
 
@@ -364,6 +377,21 @@ struct SettingsView: View {
                                 Localization.shared.currentLanguage = Localization.Language(rawValue: index) ?? .spanish
                                 AppLog.info(.settings, "Idioma: \(languages[index])")
                             }
+                            settingsDivider
+                            // ✅ TAMAÑO DE PORTADA: mueve el tope y el factor de
+                            // altura, así que se ve distinto también en el 8 Plus.
+                            settingsMenuButton(
+                                title: Localization.localized("settings.nowPlayingArtSize"),
+                                subtitle: artSizeLabels[nowPlayingArtSize],
+                                icon: "photo",
+                                color: .teal,
+                                options: artSizeLabels,
+                                selection: $nowPlayingArtSize,
+                                onChange: { index in
+                                    nowPlayingArtSize = index
+                                    AppLog.info(.settings, "Tamaño de portada: \(artSizeLabels[index])")
+                                }
+                            )
                         }
 
                         // ✅ Acento de portada: control unificado para todo el entorno
@@ -409,6 +437,17 @@ struct SettingsView: View {
                             settingsToggleRow(title: Localization.localized("settings.keepScreenOn"), subtitle: Localization.localized("settings.keepScreenOnSubtitle"), icon: "sun.max.fill", color: .yellow, isOn: $keepScreenOn)
                             settingsDivider
                             settingsToggleRow(title: Localization.localized("settings.autoPlayOnStart"), subtitle: Localization.localized("settings.autoPlayOnStartSubtitle"), icon: "play.circle", color: .green, isOn: $autoPlayOnStart)
+                            settingsDivider
+                            // ✅ ONDAS EN LA CANCIÓN ACTUAL: apagado, la fila que
+                            // suena se marca solo con el título en color de acento
+                            // (útil si las barras animadas distraen en listas largas).
+                            settingsToggleRow(
+                                title: Localization.localized("settings.showPlayingIndicator"),
+                                subtitle: Localization.localized("settings.showPlayingIndicatorSubtitle"),
+                                icon: "waveform",
+                                color: AppTheme.accent,
+                                isOn: $showPlayingIndicator
+                            )
                         }
                         
                         // ✅ Personalización avanzada
@@ -451,6 +490,7 @@ struct SettingsView: View {
                         .onChange(of: showVisualizerInBar) { v in AppLog.info(.settings, "Visualizador en barra: \(v ? "activado" : "desactivado")") }
                         .onChange(of: compactPlayerBar) { v in AppLog.info(.settings, "Barra compacta: \(v ? "activado" : "desactivado")") }
                         .onChange(of: showLyricsByDefault) { v in AppLog.info(.settings, "Letras por defecto: \(v ? "activado" : "desactivado")") }
+                        .onChange(of: showPlayingIndicator) { v in AppLog.info(.settings, "Ondas en la canción actual: \(v ? "activado" : "desactivado")") }
                         .onChange(of: showFPS) { v in
                             AppLog.info(.settings, "Contador FPS: \(v ? "activado" : "desactivado")")
                             FPSOverlayController.shared.setEnabled(v)

@@ -21,6 +21,10 @@ struct NowPlayingView: View {
     @AppStorage("com.aurora.reduceTransparency") private var reduceTransparency = false
     // ✅ Ajuste "Mostrar letras" (antes no se aplicaba)
     @AppStorage("com.aurora.showLyricsByDefault") private var showLyricsByDefault = false
+    // ✅ Tamaño de la portada (Ajustes → Apariencia): 0 = pequeña, 1 = media (la
+    // de siempre), 2 = grande. Solo cambia el tamaño EN PANTALLA: la imagen se
+    // sigue cargando entera, no se remuestrea ni se pierde resolución.
+    @AppStorage("com.aurora.nowPlayingArtSize") private var nowPlayingArtSize = 1
 
     @State private var showLyrics = false
     @State private var showEqualizer = false
@@ -59,8 +63,26 @@ struct NowPlayingView: View {
         let screenHeight = UIScreen.main.bounds.height
         // ✅ MEJORADO: Portada más grande y mejor centrada
         let maxByWidth = screenWidth - 40
-        let maxByHeight = screenHeight * (isCompactScreen ? 0.32 : 0.42)
-        return min(340, maxByWidth, maxByHeight)
+        // ✅ TAMAÑO ELEGIBLE: el ajuste mueve el TOPE y el factor de altura. Con
+        // el factor fijo, en el 8 Plus (736 pt de alto) las tres opciones caían en
+        // el mismo valor porque la altura era lo que recortaba la portada; así las
+        // tres se ven distintas también ahí. La opción "media" mantiene EXACTAMENTE
+        // el cálculo anterior (0.32 en pantalla compacta, 0.42 en el resto).
+        let baseHeightFactor: CGFloat = isCompactScreen ? 0.32 : 0.42
+        let cap: CGFloat
+        let heightFactor: CGFloat
+        switch nowPlayingArtSize {
+        case 0:
+            cap = 280
+            heightFactor = baseHeightFactor * 0.8
+        case 2:
+            cap = 400
+            heightFactor = baseHeightFactor * 1.25
+        default:
+            cap = 340
+            heightFactor = baseHeightFactor
+        }
+        return min(cap, maxByWidth, screenHeight * heightFactor)
     }
 
     // ✅ Contraste: si el color dominante es claro → texto oscuro; si es oscuro → texto blanco

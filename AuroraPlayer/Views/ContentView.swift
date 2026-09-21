@@ -16,6 +16,9 @@ struct ContentView: View {
     @State private var showFolderPicker = false
 
     @AppStorage("com.aurora.selectedCategory") private var selectedCategoryRaw = LibraryCategory.songs.rawValue
+    // ✅ Ajuste "Ondas en la canción actual": apagado, la fila que suena se marca
+    // solo con el título en color de acento (sin barras animadas).
+    @AppStorage("com.aurora.showPlayingIndicator") private var showPlayingIndicator = true
     private var selectedCategory: LibraryCategory {
         LibraryCategory(rawValue: selectedCategoryRaw) ?? .songs
     }
@@ -999,7 +1002,7 @@ struct ContentView: View {
                     
                     Spacer(minLength: 10)
                     
-                    if isCurrent {
+                    if isCurrent && showPlayingIndicator {
                         // ✅ 60fps: drawingGroup rasteriza las barras animadas
                         HStack(spacing: 2.5) {
                             ForEach(0..<3, id: \.self) { bar in
