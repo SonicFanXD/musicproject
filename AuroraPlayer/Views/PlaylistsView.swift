@@ -619,16 +619,17 @@ struct PlaylistDetailView: View {
                         HStack(spacing: 3) {
                             ForEach(0..<3, id: \.self) { bar in
                                 RoundedRectangle(cornerRadius: 1.5)
-                                    .fill(LinearGradient(
-                                        colors: [AppTheme.accent, AppTheme.accent.opacity(0.5)],
-                                        startPoint: .top,
-                                        endPoint: .bottom
-                                    ))
-                                    .frame(width: 3, height: bar % 2 == 0 ? 14 : 9)
+                                    .fill(AppTheme.accentGradient)
+                                    // ✅ El indicador ANIMA de verdad: la altura cambia al
+                                    // reproducir (antes no había ninguna propiedad que
+                                    // animar, así que el repeatForever quedaba inerte).
+                                    // ✅ BATERÍA: en pausa se retira la animación.
+                                    .frame(width: 3, height: audioEngine.isPlaying ? (bar % 2 == 0 ? 14 : 9) : 6)
                                     .animation(
-                                        .easeInOut(duration: 0.45 + Double(bar) * 0.12)
-                                            .repeatForever(autoreverses: true),
-                                        value: isCurrent
+                                        audioEngine.isPlaying
+                                            ? Animation.easeInOut(duration: 0.45 + Double(bar) * 0.12).repeatForever(autoreverses: true)
+                                            : nil,
+                                        value: audioEngine.isPlaying
                                     )
                             }
                         }

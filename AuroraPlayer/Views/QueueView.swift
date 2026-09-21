@@ -153,8 +153,12 @@ struct QueueView: View {
                                         endPoint: .bottom
                                     ))
                                     .frame(width: 3, height: audioEngine.isPlaying ? (bar % 2 == 0 ? 14 : 9) : 6)
+                                    // ✅ BATERÍA: en pausa se retira la animación (antes el
+                                    // repeatForever seguía oscilando entre 6 y 14/9 pt).
                                     .animation(
-                                        .easeInOut(duration: 0.45 + Double(bar) * 0.12).repeatForever(autoreverses: true),
+                                        audioEngine.isPlaying
+                                            ? Animation.easeInOut(duration: 0.45 + Double(bar) * 0.12).repeatForever(autoreverses: true)
+                                            : nil,
                                         value: audioEngine.isPlaying
                                     )
                             }

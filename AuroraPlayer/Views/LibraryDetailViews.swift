@@ -164,7 +164,7 @@ struct AlbumDetailView: View {
                         }
                     } else {
                         ForEach(Array(cachedSongs.enumerated()), id: \.element.id) { index, song in
-                            AlbumSongRow(song: song, index: index, isCurrent: audioEngine.currentSong?.id == song.id, tintColor: tintColor) {
+                            AlbumSongRow(song: song, index: index, isCurrent: audioEngine.currentSong?.id == song.id, isPlaying: audioEngine.isPlaying, tintColor: tintColor) {
                                 audioEngine.play(song: song, from: cachedSongs)
                             }
                         }
@@ -423,7 +423,7 @@ struct AlbumDetailView: View {
                 // repetición volvía a empezar el mismo disco en vez de seguir
                 // con el siguiente. Ahora al tocar una canción se reproduce
                 // todo el álbum en corrido desde esa posición.
-                AlbumSongRow(song: song, index: index, isCurrent: audioEngine.currentSong?.id == song.id, tintColor: tintColor) {
+                AlbumSongRow(song: song, index: index, isCurrent: audioEngine.currentSong?.id == song.id, isPlaying: audioEngine.isPlaying, tintColor: tintColor) {
                     audioEngine.play(song: song, from: cachedSongs)
                 }
             }
@@ -492,6 +492,9 @@ struct AlbumSongRow: View {
     let song: Song
     let index: Int
     let isCurrent: Bool
+    /// ✅ Estado de reproducción para que el indicador de "suena ahora" solo
+    /// anime mientras suena de verdad (ver EqualizerBars).
+    let isPlaying: Bool
     let tintColor: Color
     let action: () -> Void
 
@@ -502,7 +505,7 @@ struct AlbumSongRow: View {
         } label: {
             HStack(spacing: 14) {
                 if isCurrent {
-                    EqualizerBars(color: tintColor)
+                    EqualizerBars(color: tintColor, isPlaying: isPlaying)
                 } else {
                     Text("\(index + 1)")
                         .font(.system(size: 14, weight: .medium).monospacedDigit())
@@ -550,6 +553,10 @@ struct AlbumSongRow: View {
 // MARK: - Equalizer Bars (animaci�n optimizada sin bloqueo de hilo)
 struct EqualizerBars: View {
     let color: Color
+    /// ✅ BATERÍA: el latido solo corre mientras hay reproducción. Antes el
+    /// repeatForever seguía oscilando con la música en pausa (frames, CPU y GPU
+    /// gastados para nada) porque la animación nunca se retiraba.
+    let isPlaying: Bool
     @State private var animate = false
 
     var body: some View {
@@ -563,14 +570,17 @@ struct EqualizerBars: View {
                     // y las barras del tema activo quedaban CONGELADAS.
                     .frame(width: 2.5, height: animate ? (bar % 2 == 0 ? 13 : 8) : (bar % 2 == 0 ? 8 : 13))
                     .animation(
-                        .easeInOut(duration: 0.5).repeatForever(autoreverses: true),
+                        animate ? Animation.easeInOut(duration: 0.5).repeatForever(autoreverses: true) : nil,
                         value: animate
                     )
             }
         }
         .frame(width: 24)
         .onAppear {
-            animate = true
+            animate = isPlaying
+        }
+        .onChange(of: isPlaying) { playing in
+            animate = playing
         }
     }
 }
@@ -673,7 +683,7 @@ struct ArtistDetailView: View {
                 LazyVStack(spacing: 10) {
                     sectionHeader(icon: "music.note.list", title: Localization.localized("details.songs"), accent: accent)
                     ForEach(Array(cachedSongs.enumerated()), id: \.element.id) { index, song in
-                        ArtistSongRow(song: song, index: index, isCurrent: audioEngine.currentSong?.id == song.id, tintColor: tintColor) {
+                        ArtistSongRow(song: song, index: index, isCurrent: audioEngine.currentSong?.id == song.id, isPlaying: audioEngine.isPlaying, tintColor: tintColor) {
                             audioEngine.play(song: song, from: cachedSongs)
                         }
                     }
@@ -955,6 +965,9 @@ struct ArtistSongRow: View {
     let song: Song
     let index: Int
     let isCurrent: Bool
+    /// ✅ Estado de reproducción para que el indicador de "suena ahora" solo
+    /// anime mientras suena de verdad (ver EqualizerBars).
+    let isPlaying: Bool
     let tintColor: Color
     let action: () -> Void
 
@@ -965,7 +978,7 @@ struct ArtistSongRow: View {
         } label: {
             HStack(spacing: 14) {
                 if isCurrent {
-                    EqualizerBars(color: tintColor)
+                    EqualizerBars(color: tintColor, isPlaying: isPlaying)
                 } else {
                     Text("\(index + 1)")
                         .font(.system(size: 14, weight: .medium).monospacedDigit())
