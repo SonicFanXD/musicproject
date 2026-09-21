@@ -38,6 +38,55 @@ struct PlayerBar: View {
         return theme.accent
     }
 
+    /// ✅ Par de colores del acento (SIEMPRE dos): con "Acento desde portada" usa
+    /// el color dominante de la carátula + su secundario REAL; con el modo
+    /// desactivado, el acento manual con su segunda parada al 40% (mismo criterio
+    /// que `AppTheme.accentGradient`).
+    private var accentPair: (primary: Color, secondary: Color) {
+        if theme.accentFromArtwork, let artworkColor = theme.artworkAccentColor {
+            return (artworkColor, theme.artworkSecondaryColor ?? artworkColor.opacity(0.7))
+        }
+        return (theme.accent, theme.accent.opacity(0.4))
+    }
+
+    /// ✅ Gradiente de DOS colores con opacidad por parada: sustituye los antiguos
+    /// `[color, color.opacity(x)]`, que eran de un solo color.
+    private func accentGradient(
+        start: UnitPoint = .topLeading,
+        end: UnitPoint = .bottomTrailing,
+        primaryOpacity: Double = 1,
+        secondaryOpacity: Double = 1
+    ) -> LinearGradient {
+        let pair = accentPair
+        return LinearGradient(
+            colors: [pair.primary.opacity(primaryOpacity), pair.secondary.opacity(secondaryOpacity)],
+            startPoint: start,
+            endPoint: end
+        )
+    }
+
+    /// ✅ Superficies con GLIFO BLANCO encima (botón de play): mismo criterio que
+    /// Album/Artist detail — si el secundario de la carátula difiere MUCHO en
+    /// brillo del primario, se conserva su TONO pero se ancla su brillo al del
+    /// primario. El degradado sigue siendo de dos colores reales y la legibilidad
+    /// del icono blanco queda igual que antes de este cambio.
+    private func textSafeAccentGradient() -> LinearGradient {
+        let pair = accentPair
+        var secondaryStop = pair.secondary
+        var h1: CGFloat = 0, s1: CGFloat = 0, b1: CGFloat = 0, a1: CGFloat = 1
+        var h2: CGFloat = 0, s2: CGFloat = 0, b2: CGFloat = 0, a2: CGFloat = 1
+        if UIColor(pair.primary).getHue(&h1, saturation: &s1, brightness: &b1, alpha: &a1),
+           UIColor(pair.secondary).getHue(&h2, saturation: &s2, brightness: &b2, alpha: &a2),
+           abs(b1 - b2) > 0.3 {
+            secondaryStop = Color(UIColor(hue: h2, saturation: s2, brightness: b1, alpha: a2))
+        }
+        return LinearGradient(
+            colors: [pair.primary, secondaryStop],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+    }
+
     var body: some View {
         Group {
             if let song = audioEngine.currentSong {
@@ -126,19 +175,16 @@ struct PlayerBar: View {
                                 }
                             } label: {
                                 ZStack {
-                                    // ✅ Círculo con gradiente del color dominante
+                                    // ✅ Círculo con gradiente de DOS colores del
+                                    // acento (portada: dominante + secundario real)
                                     Circle()
                                         .fill(
-                                            LinearGradient(
-                                                colors: [artworkDominantColor, artworkDominantColor.opacity(0.85)],
-                                                startPoint: .topLeading,
-                                                endPoint: .bottomTrailing
-                                            )
+                                            textSafeAccentGradient()
                                         )
 
                                     // ✅ Halo animado cuando reproduce
                                     Circle()
-                                        .stroke(artworkDominantColor.opacity(0.4), lineWidth: 2)
+                                        .stroke(accentGradient(primaryOpacity: 0.5, secondaryOpacity: 0.35), lineWidth: 2)
                                         .scaleEffect(audioEngine.isPlaying ? 1.15 : 1.0)
                                         .opacity(audioEngine.isPlaying ? 1.0 : 0)
                                         .animation(
@@ -257,11 +303,8 @@ struct PlayerBar: View {
                     // ✅ Indicador de reproducción con color dinámico del artwork
                     RoundedRectangle(cornerRadius: CGFloat(artworkCorner * (14.0 / 22.0)), style: .continuous)
                         .stroke(
-                            LinearGradient(
-                                colors: [artworkDominantColor.opacity(0.6), artworkDominantColor.opacity(0.3)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            ).opacity(audioEngine.isPlaying ? 1.0 : 0.0),
+                            accentGradient(primaryOpacity: 0.6, secondaryOpacity: 0.45)
+                                .opacity(audioEngine.isPlaying ? 1.0 : 0.0),
                             lineWidth: 2
                         )
                         .animation(.easeInOut(duration: 0.35), value: audioEngine.isPlaying)
@@ -274,11 +317,7 @@ struct PlayerBar: View {
             ZStack {
                 RoundedRectangle(cornerRadius: CGFloat(artworkCorner * (14.0 / 22.0)), style: .continuous)
                     .fill(
-                        LinearGradient(
-                            colors: [artworkDominantColor.opacity(0.32), artworkDominantColor.opacity(0.15)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
+                        accentGradient(primaryOpacity: 0.32, secondaryOpacity: 0.18)
                     )
                     .frame(width: 48, height: 48)
                     .shadow(color: artworkDominantColor.opacity(0.2), radius: 6, x: 0, y: 3)
@@ -332,6 +371,31 @@ private struct PlayerScrubBar: View {
         return theme.accent
     }
 
+    /// ✅ Par de colores del acento (SIEMPRE dos): dominante + secundario real de
+    /// la carátula con "Acento desde portada"; acento manual + su segunda parada
+    /// al 40% si el modo está desactivado.
+    private var accentPair: (primary: Color, secondary: Color) {
+        if theme.accentFromArtwork, let artworkColor = theme.artworkAccentColor {
+            return (artworkColor, theme.artworkSecondaryColor ?? artworkColor.opacity(0.7))
+        }
+        return (theme.accent, theme.accent.opacity(0.4))
+    }
+
+    /// ✅ Gradiente de DOS colores (track de progreso).
+    private func accentGradient(
+        start: UnitPoint,
+        end: UnitPoint,
+        primaryOpacity: Double = 1,
+        secondaryOpacity: Double = 1
+    ) -> LinearGradient {
+        let pair = accentPair
+        return LinearGradient(
+            colors: [pair.primary.opacity(primaryOpacity), pair.secondary.opacity(secondaryOpacity)],
+            startPoint: start,
+            endPoint: end
+        )
+    }
+
     var body: some View {
         GeometryReader { geometry in
             ZStack(alignment: .leading) {
@@ -343,11 +407,7 @@ private struct PlayerScrubBar: View {
                 // ✅ Progreso con gradiente del color dominante del artwork
                 Capsule()
                     .fill(
-                        LinearGradient(
-                            colors: [artworkDominantColor.opacity(0.8), artworkDominantColor],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        )
+                        accentGradient(start: .leading, end: .trailing, primaryOpacity: 0.8, secondaryOpacity: 1)
                     )
                     .frame(width: max(4, geometry.size.width * progress), height: compactPlayerBar ? 3 : 4)
                     .shadow(color: artworkDominantColor.opacity(0.4), radius: 4, x: 0, y: 0)
