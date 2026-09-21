@@ -1046,22 +1046,44 @@ class AudioEngine: NSObject, ObservableObject {
         // Asegurar que el cambio se aplique al playback activo sin perder posición
         if wasProcessing != willProcess, isPlaying, playerNode.isPlaying, let file = audioFile {
             // Reiniciar reproducción desde la posición actual para que el EQ se aplique de inmediato
-            // ⚠️ CRÍTICO: incrementar scheduleGeneration ANTES de stop() para que el completion
-            // handler del segmento anterior quede obsoleto y NO dispare playNext()
-            scheduleGeneration += 1
+            // ✅ A.4: este reinicio hacía `playerNode.stop()` en seco. Como el
+            // buffer de salida ya está renderizado, cortar así se oye como clic
+            // (y además retrocedía unos ms al reprogramar desde una posición
+            // capturada antes del corte). Ahora se baja el mixer en 25 ms ANTES
+            // de cortar y se sube de nuevo al reprogramar: el archivo y la
+            // posición son los mismos, así que la rampa no se percibe, solo tapa
+            // la discontinuidad. La espera es imprescindible: la rampa necesita
+            // renderizarse antes del stop.
             let currentPosition = currentTime
-            playerNode.stop()
-            // playerNode.stop() descarta cualquier canción pre-encadenada.
-            clearChainedAhead()
-            // ✅ Mantener consistencia del reloj de display tras re-programar desde currentPosition
-            anchorPlaybackPosition(currentPosition)
+            let generation = scheduleGeneration
+            rampMixerVolume(to: 0, duration: 0.025)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) { [weak self] in
+                guard let self else { return }
+                // Cualquier acción que haya entrado en esos 30 ms (seek, stop,
+                // cambio de canción) manda: devolver el volumen y no tocar el nodo.
+                guard self.scheduleGeneration == generation, self.isPlaying else {
+                    self.rampMixerVolume(to: 1, duration: 0.03)
+                    return
+                }
+                // ⚠️ CRÍTICO: incrementar scheduleGeneration ANTES de stop() para
+                // que el completion handler del segmento anterior quede obsoleto
+                // y NO dispare playNext()
+                self.scheduleGeneration += 1
+                self.playerNode.stop()
+                // playerNode.stop() descarta cualquier canción pre-encadenada.
+                self.clearChainedAhead()
+                // ✅ Mantener consistencia del reloj de display tras re-programar desde currentPosition
+                self.anchorPlaybackPosition(currentPosition)
 
-            // Reprogramar en el siguiente runloop para evitar glitches de audio
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.02) { [weak self] in
-                guard let self = self, self.isPlaying else { return }
-                self.scheduleFile(file, from: currentPosition)
-                self.playerNode.play()
-                self.scheduleAheadIfPossible()
+                // Reprogramar en el siguiente runloop para evitar glitches de audio
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.02) { [weak self] in
+                    guard let self, self.isPlaying else { return }
+                    self.scheduleFile(file, from: currentPosition)
+                    self.playerNode.play()
+                    // ✅ A.4: subir el volumen de vuelta (el fade-out lo dejó a 0).
+                    self.rampMixerVolume(to: 1, duration: 0.03)
+                    self.scheduleAheadIfPossible()
+                }
             }
         }
 
