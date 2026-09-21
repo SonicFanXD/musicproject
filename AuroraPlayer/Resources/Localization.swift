@@ -202,6 +202,8 @@ final class Localization: ObservableObject {
         "settings.showFPSSubtitle": [.spanish: "Contador de frames en tiempo real", .english: "Real-time frame counter"],
         "settings.audioMode": [.spanish: "Modo de audio", .english: "Audio Mode"],
         "settings.audioModeSubtitle": [.spanish: "Measurement desactiva procesamiento del sistema", .english: "Measurement disables system processing"],
+        "settings.ioBuffer": [.spanish: "Buffer de audio", .english: "Audio buffer"],
+        "settings.ioBufferAuto": [.spanish: "Auto (recomendado)", .english: "Auto (recommended)"],
         "settings.limiter": [.spanish: "Protección anti-clipping", .english: "Anti-clipping protection"],
         "settings.limiterSubtitle": [.spanish: "Atenúa 0,09 dB para evitar saturación. Desactivada, la salida por cable puede ser bit-perfect", .english: "Attenuates 0.09 dB to prevent clipping. When off, wired output can be bit-perfect"],
         "settings.bluetoothOptimization": [.spanish: "Optimización Bluetooth", .english: "Bluetooth Optimization"],

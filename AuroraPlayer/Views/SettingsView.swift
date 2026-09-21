@@ -36,6 +36,9 @@ struct SettingsView: View {
     @AppStorage("com.aurora.scanOnlyNewSongs") private var scanOnlyNewSongs = true
     // ✅ AUDIÓFILO: configuración del modo de audio
     @AppStorage("com.aurora.audioSessionMode") private var audioSessionMode = 0 // 0 = default, 1 = measurement
+    // ✅ AUDIÓFILO: buffer de E/S preferido (0 = Auto). Lo lee AudioEngine al
+    // configurar la sesión y lo aplica en vivo `applyPreferredIOBufferDuration`.
+    @AppStorage("com.aurora.ioBufferMs") private var ioBufferMs = 0
 
     // ✅ LOCALIZADOS: computados para reaccionar al cambio de idioma al
     // instante (antes eran `let` hardcodeados en español → el inglés no
@@ -47,6 +50,22 @@ struct SettingsView: View {
             Localization.localized("settings.theme.dark")
         ]
     }
+    /// ✅ BUFFER I/O: opciones del picker (0 = Auto) y el índice que corresponde
+    /// al valor guardado. Etiquetas localizadas para que el cambio de idioma se
+    /// vea al instante, como en Tema / Acento / Idioma.
+    private let ioBufferValues: [Int] = [0, 8, 15, 20]
+    private var ioBufferLabels: [String] {
+        [
+            Localization.localized("settings.ioBufferAuto"),
+            "8 ms",
+            "15 ms",
+            "20 ms"
+        ]
+    }
+    private var ioBufferIndex: Int {
+        ioBufferValues.firstIndex(of: ioBufferMs) ?? 0
+    }
+
     private var accents: [String] {
         [
             Localization.localized("settings.accent.purple"),
@@ -236,6 +255,35 @@ struct SettingsView: View {
                                     Haptics.light()
                                     self.audioSessionMode = newValue
                                     audioEngine.setAudioSessionMode(newValue)
+                                }
+                            )
+                            settingsDivider
+                            // ✅ BUFFER I/O: control real sobre la latencia y la CPU
+                            // del motor. Con un DAC externo o en A11, 8 ms puede dar
+                            // glitches que 15/20 ms resuelven; en Bluetooth el enlace
+                            // manda y iOS ignora el valor. No altera la calidad: solo
+                            // cambia cada cuánto se sirve un buffer.
+                            settingsMenuButton(
+                                title: Localization.localized("settings.ioBuffer"),
+                                subtitle: ioBufferLabels[ioBufferIndex],
+                                icon: "timer",
+                                color: .teal,
+                                options: ioBufferLabels,
+                                selection: Binding(
+                                    get: { ioBufferIndex },
+                                    set: { newValue in
+                                        Haptics.light()
+                                        let ms = ioBufferValues[newValue]
+                                        self.ioBufferMs = ms
+                                        audioEngine.applyPreferredIOBufferDuration(ms: ms)
+                                        AppLog.info(.settings, "Buffer I/O: \(ms == 0 ? "Auto" : "\(ms) ms")")
+                                    }
+                                ),
+                                onChange: { newValue in
+                                    Haptics.light()
+                                    let ms = ioBufferValues[newValue]
+                                    self.ioBufferMs = ms
+                                    audioEngine.applyPreferredIOBufferDuration(ms: ms)
                                 }
                             )
                             settingsDivider

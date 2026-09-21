@@ -883,12 +883,22 @@ class AudioEngine: NSObject, ObservableObject {
                 options: options
             )
 
-            // ✅ Mejor calidad con latencia mínima: probamos buffers cortos en
-            // orden descendente con fallback robusto. iOS 16 en A11 (iPhone 8)
-            // devuelve error -50 (paramErr) con 0.02, así que vamos bajando
-            // hasta encontrar el menor soportado por el hardware/DAC actual.
-            // ✅ OPTIMIZACIÓN: buffers de 8-10ms para menor latencia sin glitches
-            let bufferDurations: [TimeInterval] = [0.008, 0.01, 0.015, 0.02]
+            // ✅ BUFFER I/O PREFERIDO (Ajustes → Audio). 0 = Auto: se prueban
+            // buffers cortos en orden descendente con fallback robusto — iOS 16
+            // en A11 (iPhone 8) devuelve error -50 (paramErr) con 0.02, así que se
+            // va bajando hasta encontrar el menor soportado por el hardware/DAC.
+            // Con un valor explícito del usuario se pide ESE primero (y si el
+            // hardware no lo da, el sondeo de respaldo sigue existiendo).
+            // Es una preferencia de LATENCIA/CPU: cambia cada cuánto se sirve un
+            // buffer, nunca el contenido de las muestras.
+            let preferredIOBufferMs = UserDefaults.standard.integer(forKey: "com.aurora.ioBufferMs")
+            let bufferDurations: [TimeInterval]
+            if preferredIOBufferMs > 0 {
+                let requested = TimeInterval(preferredIOBufferMs) / 1000
+                bufferDurations = [requested, 0.015, 0.02, 0.008, 0.01]
+            } else {
+                bufferDurations = [0.008, 0.01, 0.015, 0.02]
+            }
             // ✅ DIAGNÓSTICO: se guarda el último valor PEDIDO para poder compararlo
             // con el CONCEDIDO (setPreferredIOBufferDuration no falla cuando el
             // hardware no lo soporta: redondea en silencio al más cercano).
@@ -1602,6 +1612,28 @@ class AudioEngine: NSObject, ObservableObject {
             }
         }
         scheduleStep(0)
+    }
+
+    /// ✅ BUFFER I/O PREFERIDO — aplicado en vivo desde Ajustes → Audio.
+    /// `setPreferredIOBufferDuration` es una PREFERENCIA: iOS la resuelve en el
+    /// siguiente ciclo de I/O y la ignora si el hardware no la soporta, así que
+    /// no hace falta reiniciar el motor ni reconstruir el grafo — y no afecta a
+    /// la calidad: solo cambia cada cuánto se sirve un buffer (latencia y CPU).
+    /// `ms == 0` devuelve el control a iOS (sondeo Auto de la configuración de
+    /// sesión).
+    func applyPreferredIOBufferDuration(ms: Int) {
+        let session = AVAudioSession.sharedInstance()
+        guard ms > 0 else {
+            AppLog.info(.settings, "Buffer I/O: Auto (lo decide iOS)")
+            return
+        }
+        let requested = TimeInterval(ms) / 1000
+        do {
+            try session.setPreferredIOBufferDuration(requested)
+            AppLog.info(.settings, String(format: "Buffer I/O pedido en vivo: %d ms (concedido: %.2f ms, latencia: %.1f ms)", ms, session.ioBufferDuration * 1000, session.outputLatency * 1000))
+        } catch {
+            AppLog.warning(.settings, "Buffer I/O de \(ms) ms no soportado: \(error.localizedDescription) — se aplicará el sondeo de respaldo al reconfigurar la sesión")
+        }
     }
 
     /// ✅ BIT-PERFECT: tras una INTERRUPCIÓN (llamada, Siri, otra app) o un
