@@ -561,15 +561,10 @@ struct SettingsView: View, SettingsRowBuilding {
                         }
 
                         // Avanzado
-                        settingsSection(icon: "wrench.and.screwdriver.fill", title: Localization.localized("settings.advanced"), color: .orange) {
-                            settingsButton(title: Localization.localized("settings.logs"), subtitle: Localization.localized("settings.logsSubtitle"), icon: "doc.text.magnifyingglass", color: .gray) {
-                                showLogs = true
-                            }
-                            settingsDivider
-                            settingsButton(title: Localization.localized("settings.about"), subtitle: "Aurora Player v\(appVersion)", icon: "info.circle.fill", color: .blue) {
-                                showAbout = true
-                            }
-                        }
+                        AdvancedSettingsSection(
+                            onShowLogs: { showLogs = true },
+                            onShowAbout: { showAbout = true }
+                        )
                     }
                     .padding(.horizontal, 20).padding(.top, 8).padding(.bottom, 30)
                 }
@@ -998,6 +993,41 @@ extension SettingsRowBuilding {
         Divider()
             .opacity(0.1)
             .padding(.leading, 60)
+    }
+}
+
+// MARK: - Secciones extraídas del body
+//
+// ✅ Cada sección es su PROPIO tipo con su propio `body`. Motivo: el tipo
+// genérico del `body` de SettingsView era tan profundo (closures anidadas por
+// cada picker/ForEach) que el demangler de Swift desbordaba la pila al resolver
+// su nombre en runtime → EXC_BAD_ACCESS en la stack guard. Con las secciones
+// fuera, ningún tipo individual pasa de un par de niveles de anidación.
+// El contenido es idéntico: solo cambia dónde vive.
+
+/// Avanzado (registros + acerca de).
+private struct AdvancedSettingsSection: View, SettingsRowBuilding {
+    @ObservedObject var localization = Localization.shared
+
+    let onShowLogs: () -> Void
+    let onShowAbout: () -> Void
+
+    private var appVersion: String {
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "2.1.0"
+        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "21"
+        return "\(version) (\(build))"
+    }
+
+    var body: some View {
+        settingsSection(icon: "wrench.and.screwdriver.fill", title: Localization.localized("settings.advanced"), color: .orange) {
+            settingsButton(title: Localization.localized("settings.logs"), subtitle: Localization.localized("settings.logsSubtitle"), icon: "doc.text.magnifyingglass", color: .gray) {
+                onShowLogs()
+            }
+            settingsDivider
+            settingsButton(title: Localization.localized("settings.about"), subtitle: "Aurora Player v\(appVersion)", icon: "info.circle.fill", color: .blue) {
+                onShowAbout()
+            }
+        }
     }
 }
 
