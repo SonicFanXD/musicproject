@@ -549,16 +549,8 @@ struct SettingsView: View, SettingsRowBuilding {
                             settingsInfoRow(title: Localization.localized("settings.device"), value: audioEngine.deviceModelName, icon: "iphone", color: .gray)
                         }
 
-                        // Estadísticas (✅ incluye canciones en proceso de indexación)
-                        let totalSongs = fileAccessService.songs.count + fileAccessService.pendingSongsCount
-                        let isIndexing = fileAccessService.isScanning || fileAccessService.pendingSongsCount > 0
-                        settingsSection(icon: "chart.bar.fill", title: Localization.localized("settings.stats"), color: .green) {
-                            statRow(title: Localization.localized("library.songs"), value: isIndexing ? "\(totalSongs)+" : "\(totalSongs)")
-                            settingsDivider
-                            statRow(title: Localization.localized("library.albums"), value: "\(fileAccessService.albums.count)")
-                            settingsDivider
-                            statRow(title: Localization.localized("library.artists"), value: "\(fileAccessService.artists.count)")
-                        }
+                        // Estadísticas
+                        StatsSettingsSection(fileAccessService: fileAccessService)
 
                         // Avanzado
                         AdvancedSettingsSection(
@@ -1004,6 +996,25 @@ extension SettingsRowBuilding {
 // su nombre en runtime → EXC_BAD_ACCESS en la stack guard. Con las secciones
 // fuera, ningún tipo individual pasa de un par de niveles de anidación.
 // El contenido es idéntico: solo cambia dónde vive.
+
+/// Estadísticas de la biblioteca (incluye las canciones en indexación).
+private struct StatsSettingsSection: View, SettingsRowBuilding {
+    @ObservedObject var fileAccessService: FileAccessService
+    @ObservedObject var localization = Localization.shared
+
+    var body: some View {
+        // ✅ Incluye canciones en proceso de indexación.
+        let totalSongs = fileAccessService.songs.count + fileAccessService.pendingSongsCount
+        let isIndexing = fileAccessService.isScanning || fileAccessService.pendingSongsCount > 0
+        settingsSection(icon: "chart.bar.fill", title: Localization.localized("settings.stats"), color: .green) {
+            statRow(title: Localization.localized("library.songs"), value: isIndexing ? "\(totalSongs)+" : "\(totalSongs)")
+            settingsDivider
+            statRow(title: Localization.localized("library.albums"), value: "\(fileAccessService.albums.count)")
+            settingsDivider
+            statRow(title: Localization.localized("library.artists"), value: "\(fileAccessService.artists.count)")
+        }
+    }
+}
 
 /// Avanzado (registros + acerca de).
 private struct AdvancedSettingsSection: View, SettingsRowBuilding {
