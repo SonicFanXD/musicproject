@@ -241,8 +241,19 @@ class AudioEngine: NSObject, ObservableObject {
             clearPreloadedNext()
             file = cached
         } else {
-            guard let opened = try? AVAudioFile(forReading: url) else { return }
-            file = opened
+            do {
+                file = try AVAudioFile(forReading: url)
+            } catch {
+                // ✅ A.2: antes este fallo salía en silencio (`try?` + return): la
+                // transición caía al reinicio atómico sin dejar rastro del motivo.
+                // Un ÚNICO reintento 50 ms después cubre el caso típico (el
+                // archivo todavía se está copiando o bajando, p. ej. desde
+                // iCloud). La reproducción no se bloquea nunca: si el reintento
+                // también falla, la transición la resuelve el reinicio atómico
+                // con su fade (A.1).
+                retryChainAfterOpenFailure(index: index, url: url, error: error)
+                return
+            }
         }
 
         let fmt = file.processingFormat
@@ -276,6 +287,31 @@ class AudioEngine: NSObject, ObservableObject {
         }
     }
 
+    /// ✅ A.2 — Reintento ÚNICO del encadenado cuando `AVAudioFile` no se pudo
+    /// abrir. Si el segundo intento funciona, el archivo se deja en la caché de
+    /// precarga para que `scheduleAheadIfPossible()` lo consuma sin volver a
+    /// tocar el disco. Solo se loguea el SEGUNDO fallo (el primero es normal si
+    /// el archivo aún se está escribiendo) para no llenar el registro.
+    private func retryChainAfterOpenFailure(index: Int, url: URL, error: Error) {
+        let generation = scheduleGeneration
+        let firstFailure = error.localizedDescription
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+            guard let self,
+                  self.scheduleGeneration == generation,
+                  self.isPlaying, !self.isStopping,
+                  self.chainedAheadIndex == nil else { return }
+            do {
+                let file = try AVAudioFile(forReading: url)
+                self.preloadedNextIndex = index
+                self.preloadedNextURL = url
+                self.preloadedNextFile = file
+                self.scheduleAheadIfPossible()
+            } catch {
+                AppLog.warning(.playback, "Encadenado imposible para '\(url.lastPathComponent)': \(error.localizedDescription) (primer intento: \(firstFailure))")
+            }
+        }
+    }
+
     /// Se llama cuando el segmento ACTIVO (el que se supone está sonando)
     /// terminó de verdad. Puede venir del completion handler real o del
     /// watchdog (red de seguridad) — el chequeo de token asegura que solo
@@ -300,7 +336,7 @@ class AudioEngine: NSObject, ObservableObject {
               let fmt = chainedAheadFormat,
               chainedAheadToken != 0 else {
             stopDisplayTimer()
-            chainGaplessPlayNext()
+            fadeOutThenChainNext()
             return
         }
         let promotedToken = chainedAheadToken
@@ -343,6 +379,36 @@ class AudioEngine: NSObject, ObservableObject {
         currentIndex = index
         playCurrentSong()
         return true
+    }
+
+    /// ✅ A.1 — FADE DE SALIDA antes del reinicio atómico.
+    /// `playCurrentSong()` hace `playerNode.stop()` + `engine.stop()`, y ese
+    /// stop descarga el buffer de salida YA renderizado: lo que aún no había
+    /// salido por el hardware (unos ms en cableado, hasta ~250 ms por Bluetooth)
+    /// se pierde de golpe, y con señal cerca del final eso se oye como corte
+    /// seco (y chasquido). Bajar el mixer a 0 en 25 ms y esperar ese tramo deja
+    /// el corte en silencio: 25 ms es el punto donde ya no se percibe el corte y
+    /// todavía no suena a fade intencionado. La espera es obligatoria — la rampa
+    /// necesita renderizarse. `playCurrentSong` devuelve el volumen a 1 al
+    /// arrancar la siguiente.
+    private func fadeOutThenChainNext() {
+        guard isPlaying, !isUsingFallback, engine.isRunning else {
+            chainGaplessPlayNext()
+            return
+        }
+        rampMixerVolume(to: 0, duration: 0.025)
+        let generation = scheduleGeneration
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) { [weak self] in
+            // Si en esos 30 ms entró un seek, un stop o un cambio de canción,
+            // esa acción manda: no reprogramar nada por detrás.
+            guard let self, self.scheduleGeneration == generation else { return }
+            let wasPlaying = self.isPlaying
+            self.chainGaplessPlayNext()
+            // Si el usuario pausó dentro de la ventana, la siguiente queda
+            // cargada en 0:00 y en pausa (antes el nodo se quedaba con la cola
+            // vacía y "play" volvía a sonar en silencio).
+            if !wasPlaying { self.pause() }
+        }
     }
     
    
@@ -817,12 +883,22 @@ class AudioEngine: NSObject, ObservableObject {
                 options: options
             )
 
-            // ✅ Mejor calidad con latencia mínima: probamos buffers cortos en
-            // orden descendente con fallback robusto. iOS 16 en A11 (iPhone 8)
-            // devuelve error -50 (paramErr) con 0.02, así que vamos bajando
-            // hasta encontrar el menor soportado por el hardware/DAC actual.
-            // ✅ OPTIMIZACIÓN: buffers de 8-10ms para menor latencia sin glitches
-            let bufferDurations: [TimeInterval] = [0.008, 0.01, 0.015, 0.02]
+            // ✅ BUFFER I/O PREFERIDO (Ajustes → Audio). 0 = Auto: se prueban
+            // buffers cortos en orden descendente con fallback robusto — iOS 16
+            // en A11 (iPhone 8) devuelve error -50 (paramErr) con 0.02, así que se
+            // va bajando hasta encontrar el menor soportado por el hardware/DAC.
+            // Con un valor explícito del usuario se pide ESE primero (y si el
+            // hardware no lo da, el sondeo de respaldo sigue existiendo).
+            // Es una preferencia de LATENCIA/CPU: cambia cada cuánto se sirve un
+            // buffer, nunca el contenido de las muestras.
+            let preferredIOBufferMs = UserDefaults.standard.integer(forKey: "com.aurora.ioBufferMs")
+            let bufferDurations: [TimeInterval]
+            if preferredIOBufferMs > 0 {
+                let requested = TimeInterval(preferredIOBufferMs) / 1000
+                bufferDurations = [requested, 0.015, 0.02, 0.008, 0.01]
+            } else {
+                bufferDurations = [0.008, 0.01, 0.015, 0.02]
+            }
             // ✅ DIAGNÓSTICO: se guarda el último valor PEDIDO para poder compararlo
             // con el CONCEDIDO (setPreferredIOBufferDuration no falla cuando el
             // hardware no lo soporta: redondea en silencio al más cercano).
@@ -980,22 +1056,44 @@ class AudioEngine: NSObject, ObservableObject {
         // Asegurar que el cambio se aplique al playback activo sin perder posición
         if wasProcessing != willProcess, isPlaying, playerNode.isPlaying, let file = audioFile {
             // Reiniciar reproducción desde la posición actual para que el EQ se aplique de inmediato
-            // ⚠️ CRÍTICO: incrementar scheduleGeneration ANTES de stop() para que el completion
-            // handler del segmento anterior quede obsoleto y NO dispare playNext()
-            scheduleGeneration += 1
+            // ✅ A.4: este reinicio hacía `playerNode.stop()` en seco. Como el
+            // buffer de salida ya está renderizado, cortar así se oye como clic
+            // (y además retrocedía unos ms al reprogramar desde una posición
+            // capturada antes del corte). Ahora se baja el mixer en 25 ms ANTES
+            // de cortar y se sube de nuevo al reprogramar: el archivo y la
+            // posición son los mismos, así que la rampa no se percibe, solo tapa
+            // la discontinuidad. La espera es imprescindible: la rampa necesita
+            // renderizarse antes del stop.
             let currentPosition = currentTime
-            playerNode.stop()
-            // playerNode.stop() descarta cualquier canción pre-encadenada.
-            clearChainedAhead()
-            // ✅ Mantener consistencia del reloj de display tras re-programar desde currentPosition
-            anchorPlaybackPosition(currentPosition)
+            let generation = scheduleGeneration
+            rampMixerVolume(to: 0, duration: 0.025)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) { [weak self] in
+                guard let self else { return }
+                // Cualquier acción que haya entrado en esos 30 ms (seek, stop,
+                // cambio de canción) manda: devolver el volumen y no tocar el nodo.
+                guard self.scheduleGeneration == generation, self.isPlaying else {
+                    self.rampMixerVolume(to: 1, duration: 0.03)
+                    return
+                }
+                // ⚠️ CRÍTICO: incrementar scheduleGeneration ANTES de stop() para
+                // que el completion handler del segmento anterior quede obsoleto
+                // y NO dispare playNext()
+                self.scheduleGeneration += 1
+                self.playerNode.stop()
+                // playerNode.stop() descarta cualquier canción pre-encadenada.
+                self.clearChainedAhead()
+                // ✅ Mantener consistencia del reloj de display tras re-programar desde currentPosition
+                self.anchorPlaybackPosition(currentPosition)
 
-            // Reprogramar en el siguiente runloop para evitar glitches de audio
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.02) { [weak self] in
-                guard let self = self, self.isPlaying else { return }
-                self.scheduleFile(file, from: currentPosition)
-                self.playerNode.play()
-                self.scheduleAheadIfPossible()
+                // Reprogramar en el siguiente runloop para evitar glitches de audio
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.02) { [weak self] in
+                    guard let self, self.isPlaying else { return }
+                    self.scheduleFile(file, from: currentPosition)
+                    self.playerNode.play()
+                    // ✅ A.4: subir el volumen de vuelta (el fade-out lo dejó a 0).
+                    self.rampMixerVolume(to: 1, duration: 0.03)
+                    self.scheduleAheadIfPossible()
+                }
             }
         }
 
@@ -1463,8 +1561,16 @@ class AudioEngine: NSObject, ObservableObject {
     }
 
     /// Identidad del formato conectado al graph (sample rate + canales + EQ)
+    /// ✅ Identidad del FORMATO de stream, no del grafo. El EQ queda fuera a
+    /// propósito: `equalizerNode` se crea UNA vez en `setupEqualizer()` y nunca
+    /// vuelve a nil — encender o apagar el ecualizador solo cambia `bypass`, que
+    /// no altera el formato de las muestras (el nodo procesa, no remuestrea).
+    /// Incluirlo era un componente constante que solo podía descartar el
+    /// encadenado por un motivo falso: la decisión de procesar es del EQ, no del
+    /// formato, y quien reconstruye el grafo de verdad es `reconnectPlayerNode`
+    /// (que consulta `equalizerNode` directamente para insertarlo o no).
     private func formatKey(_ format: AVAudioFormat) -> String {
-        "\(format.sampleRate)-\(format.channelCount)-\(equalizerNode != nil)"
+        "\(format.sampleRate)-\(format.channelCount)"
     }
 
     // MARK: - Controles básicos y otros métodos requeridos
@@ -1506,6 +1612,28 @@ class AudioEngine: NSObject, ObservableObject {
             }
         }
         scheduleStep(0)
+    }
+
+    /// ✅ BUFFER I/O PREFERIDO — aplicado en vivo desde Ajustes → Audio.
+    /// `setPreferredIOBufferDuration` es una PREFERENCIA: iOS la resuelve en el
+    /// siguiente ciclo de I/O y la ignora si el hardware no la soporta, así que
+    /// no hace falta reiniciar el motor ni reconstruir el grafo — y no afecta a
+    /// la calidad: solo cambia cada cuánto se sirve un buffer (latencia y CPU).
+    /// `ms == 0` devuelve el control a iOS (sondeo Auto de la configuración de
+    /// sesión).
+    func applyPreferredIOBufferDuration(ms: Int) {
+        let session = AVAudioSession.sharedInstance()
+        guard ms > 0 else {
+            AppLog.info(.settings, "Buffer I/O: Auto (lo decide iOS)")
+            return
+        }
+        let requested = TimeInterval(ms) / 1000
+        do {
+            try session.setPreferredIOBufferDuration(requested)
+            AppLog.info(.settings, String(format: "Buffer I/O pedido en vivo: %d ms (concedido: %.2f ms, latencia: %.1f ms)", ms, session.ioBufferDuration * 1000, session.outputLatency * 1000))
+        } catch {
+            AppLog.warning(.settings, "Buffer I/O de \(ms) ms no soportado: \(error.localizedDescription) — se aplicará el sondeo de respaldo al reconfigurar la sesión")
+        }
     }
 
     /// ✅ BIT-PERFECT: tras una INTERRUPCIÓN (llamada, Siri, otra app) o un

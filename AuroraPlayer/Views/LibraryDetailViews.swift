@@ -594,6 +594,10 @@ struct AlbumSongRow: View {
     let song: Song
     let index: Int
     let isCurrent: Bool
+    /// ✅ Ajuste "Ondas en la canción actual": apagado, la fila activa muestra
+    /// el número de pista como cualquier otra y el color de acento del título ya
+    /// marca cuál suena.
+    @AppStorage("com.aurora.showPlayingIndicator") private var showPlayingIndicator = true
     /// ✅ Estado de reproducción para que el indicador de "suena ahora" solo
     /// anime mientras suena de verdad (ver EqualizerBars).
     let isPlaying: Bool
@@ -612,7 +616,7 @@ struct AlbumSongRow: View {
             action()
         } label: {
             HStack(spacing: 14) {
-                if isCurrent {
+                if isCurrent && showPlayingIndicator {
                     EqualizerBars(color: tintColor, isPlaying: isPlaying)
                 } else {
                     Text("\(index + 1)")
@@ -1159,6 +1163,9 @@ struct ArtistSongRow: View {
     let song: Song
     let index: Int
     let isCurrent: Bool
+    /// ✅ Ver AlbumSongRow: el ajuste "Ondas en la canción actual" también manda
+    /// aquí para que las dos listas se comporten igual.
+    @AppStorage("com.aurora.showPlayingIndicator") private var showPlayingIndicator = true
     /// ✅ Estado de reproducción para que el indicador de "suena ahora" solo
     /// anime mientras suena de verdad (ver EqualizerBars).
     let isPlaying: Bool
@@ -1177,7 +1184,7 @@ struct ArtistSongRow: View {
             action()
         } label: {
             HStack(spacing: 14) {
-                if isCurrent {
+                if isCurrent && showPlayingIndicator {
                     EqualizerBars(color: tintColor, isPlaying: isPlaying)
                 } else {
                     Text("\(index + 1)")

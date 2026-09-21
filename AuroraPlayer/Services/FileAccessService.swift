@@ -107,6 +107,8 @@ class FileAccessService: ObservableObject {
     private var silentBatches: [(urls: [URL], generation: Int, modifiedKeys: Set<String>)] = []
     private var silentInFlight = 0
     private var cacheSaveWorkItem: DispatchWorkItem?
+    // ✅ Token del observador de presión de memoria (ver init/deinit).
+    private var memoryWarningObserver: NSObjectProtocol?
     private var sortWorkItem: DispatchWorkItem?
 
     // Cola de lotes con concurrencia limitada: antes se lanzaba un Task sin
@@ -132,10 +134,16 @@ class FileAccessService: ObservableObject {
     // ✅ CONCURRENCIA OPTIMIZADA: ventana aumentada de lecturas AVAsset en vuelo.
     // Aumentado de 4 a 8 para iPhone 8/A11 con suficiente RAM para indexación más rápida
     // Los índices preservan el orden original (determinista).
-    private let maxConcurrentMetadataReads = 16
+    // ✅ Son `var` a propósito: la ventana REAL de concurrencia es
+    // maxConcurrentMetadataReads × maxInFlightBatches (16 × 4 = 64 lecturas
+    // AVAsset en vuelo, cada una con su portada decodificada). Si iOS avisa de
+    // presión de memoria durante un escaneo se recorta, y se restaura al cerrar
+    // el escaneo. Fuera de un escaneo el valor nunca cambia, así que el
+    // rendimiento normal es idéntico al de antes.
+    private var maxConcurrentMetadataReads = 16
     // ✅ Lotes de 4 en vuelo × 50 URLs: más paralelismo para indexación más rápida
     // sin saturar memoria en dispositivos modernos.
-    private let maxInFlightBatches = 4
+    private var maxInFlightBatches = 4
     // ✅ Lotes más grandes: 50 → 75 URLs para menos overhead de scheduling
     private let metadataBatchSize = 150
 
@@ -195,6 +203,17 @@ class FileAccessService: ObservableObject {
         loadFiles()
         loadPlaylists()
         loadCachedSongs()
+        // ✅ PRESIÓN DE MEMORIA: si el sistema avisa durante un escaneo, se
+        // recorta la ventana de lecturas concurrentes (ver
+        // enterMemoryConstrainedModeIfNeeded). El handler no cuesta nada cuando
+        // no hay escaneo: sale en la primera línea.
+        memoryWarningObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.didReceiveMemoryWarningNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.enterMemoryConstrainedModeIfNeeded()
+        }
     }
 
     // 🔄 Precarga de portadas en caché tras recuperar del archivo
@@ -587,14 +606,15 @@ class FileAccessService: ObservableObject {
                 // para que un archivo problemático no detenga toda la carpeta
                 let values = try? fileURL.resourceValues(forKeys: Set(keys))
                 if values?.isDirectory == true { continue }
-                // ✅ FIX subcarpetas: si es directorio, escanear recursivamente
-                if values?.isDirectory == true {
-                    DispatchQueue.global(qos: .utility).async { [weak self] in
-                        self?.scanFolder(fileURL, silent: silent)
-                    }
-                    continue
-                }
-                
+                // ✅ El enumerador YA es recursivo (no se le pasa
+                // .skipsSubdirectoryDescendants): las subcarpetas se recorren en
+                // este mismo bucle y sus archivos entran a `seenKeys` igual que
+                // los de la raíz. Aquí había un segundo
+                // `if values?.isDirectory == true { scanFolder(...) }` que era
+                // código muerto (venía después del `continue` de la línea de
+                // arriba) y que, de haber sido alcanzable, habría duplicado el
+                // recorrido recursivo completo de cada subcarpeta.
+
                 guard self.supportedExtensions.contains(fileURL.pathExtension.lowercased()) else { continue }
 
                 fileCount += 1
@@ -650,8 +670,22 @@ class FileAccessService: ObservableObject {
     private func scanSingleFile(_ url: URL, silent: Bool = false) {
         let generation = scanGeneration
         if !silent { isScanning = true }
-        // ✅ La URL suelta también cuenta como "vista en disco" para la poda.
+        // ✅ La URL suelta también cuenta como "vista en disco" para la poda,
+        // PERO solo si el archivo sigue existiendo. Antes la clave se marcaba
+        // antes de comprobar nada: un archivo borrado fuera de la app cuyo
+        // bookmark todavía resolvía y concedía acceso quedaba marcado como
+        // "visto" en cada escaneo, así que la poda diferencial lo conservaba
+        // para siempre (canción fantasma que nunca desaparecía de la biblioteca).
         let key = Self.libraryKey(for: url)
+        // Se distingue "borrado" de "existe pero no se pudo leer": eliminar una
+        // canción por un fallo de lectura transitorio sería peor que conservarla.
+        let fileOnDisk = FileManager.default.fileExists(atPath: url.path)
+        guard fileOnDisk else {
+            // Archivo ausente: NO se marca como visto (para que la poda del
+            // rescan lo elimine) y no se registra ningún lote.
+            if !silent { updateScanningState() }
+            return
+        }
         DispatchQueue.main.async { [weak self] in
             guard let self, generation == self.scanGeneration else { return }
             self.seenOnDiskKeys.insert(key)
@@ -663,7 +697,13 @@ class FileAccessService: ObservableObject {
         if indexedSongKeys.contains(key) {
             let knownDate = songs.first(where: { Self.libraryKey(for: $0.url) == key })?.fileModificationDate
             let diskDate = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
-            guard let knownDate, let diskDate, diskDate > knownDate else { return }
+            guard let knownDate, let diskDate, diskDate > knownDate else {
+                // Sin cambios en disco: no hay nada que indexar, pero SÍ hay que
+                // devolver el estado del spinner (antes, un archivo suelto ya
+                // indexado y sin cambios dejaba isScanning en true para siempre).
+                if !silent { updateScanningState() }
+                return
+            }
             registerMetadataBatch([url], generation: generation, silent: silent, modifiedKeys: [key])
             return
         }
@@ -757,6 +797,15 @@ class FileAccessService: ObservableObject {
             await MainActor.run {
                 guard self.scanGeneration == generation else { return }
                 self.silentProcessed += batch.urls.count
+                // ✅ Mismo diagnóstico agregado que en la vía normal (1 línea por
+                // lote, solo si hay lossless sin profundidad).
+                let suspiciousDepth = foundSongs.filter {
+                    ["flac", "wav", "wave", "aiff", "aif"].contains($0.url.pathExtension.lowercased())
+                        && $0.bitDepth == 0
+                }.count
+                if suspiciousDepth > 0 {
+                    AppLog.debug(.metadata, "Lote silencioso de \(batch.urls.count) archivos: \(suspiciousDepth) lossless con bitDepth 0")
+                }
                 // ✅ FIX metadata editada: las claves de batch.modifiedKeys son
                 // ACTUALIZACIONES (canción ya indexada, tag editado): se aceptan
                 // y CONSERVAN su `id` original — si cambiara, la canción saldría
@@ -876,6 +925,17 @@ class FileAccessService: ObservableObject {
                     return
                 }
                 self.scanProcessed += batch.urls.count
+                // ✅ BITDEPTH AGREGADO: una sola línea por lote en lugar de una por
+                // archivo. Solo cuenta extensiones que DEBEN traer profundidad
+                // (FLAC/WAV/AIFF): en MP3/AAC el 0 es legítimo (lossy) y generar
+                // ruido por lote haría inútil el diagnóstico.
+                let suspiciousDepth = foundSongs.filter {
+                    ["flac", "wav", "wave", "aiff", "aif"].contains($0.url.pathExtension.lowercased())
+                        && $0.bitDepth == 0
+                }.count
+                if suspiciousDepth > 0 {
+                    AppLog.debug(.metadata, "Lote de \(batch.urls.count) archivos: \(suspiciousDepth) lossless con bitDepth 0 (revisar inferBitDepth)")
+                }
                 // ✅ Segunda barrera anti-duplicados (misma clave normalizada que
                 // registerMetadataBatch): dos lotes en vuelo pueden traer la
                 // misma canción antes de que el otro la registre.
@@ -971,6 +1031,28 @@ class FileAccessService: ObservableObject {
         updateScanningState()
     }
 
+    // MARK: - Ventana de concurrencia adaptativa
+
+    /// ✅ Recorta la ventana de lecturas concurrentes SOLO si hay un escaneo en
+    /// curso y el sistema avisa de presión de memoria. La ventana real es
+    /// maxConcurrentMetadataReads × maxInFlightBatches: recortarla a 1 lote × 4
+    /// lecturas baja el pico de memoria sin eliminar ninguna función (el escaneo
+    /// sigue completo, solo termina más despacio).
+    private func enterMemoryConstrainedModeIfNeeded() {
+        guard isScanning || isBackgroundDetecting else { return }
+        guard maxInFlightBatches != 1 || maxConcurrentMetadataReads != 4 else { return }
+        maxInFlightBatches = 1
+        maxConcurrentMetadataReads = 4
+        AppLog.warning(.performance, "Presión de memoria durante la indexación: ventana reducida a \(maxInFlightBatches) lote(s) × \(maxConcurrentMetadataReads) lecturas")
+    }
+
+    private func exitMemoryConstrainedMode() {
+        guard maxInFlightBatches != 4 || maxConcurrentMetadataReads != 16 else { return }
+        maxInFlightBatches = 4
+        maxConcurrentMetadataReads = 16
+        AppLog.info(.performance, "Indexación cerrada: ventana de lecturas restaurada a \(maxInFlightBatches) lotes × \(maxConcurrentMetadataReads)")
+    }
+
     private func updateScanningState() {
         let wasScanning = isScanning
         // ✅ FIX: isScanning también debe considerar los lotes pendientes de
@@ -986,6 +1068,13 @@ class FileAccessService: ObservableObject {
         // de progreso congelada para siempre. Con esta condición, al no quedar
         // nada por hacer el estado cierra limpio.
         isScanning = activeDiscoveries > 0 || hasPendingWork
+        // ✅ Al cerrar el escaneo (y la detección silenciosa) se restaura la
+        // ventana completa si la presión de memoria la había recortado. Los
+        // guards de los helpers hacen que esto sea gratis en el caso normal:
+        // sin recorte previo no hay nada que restaurar.
+        if !isScanning && !isBackgroundDetecting {
+            exitMemoryConstrainedMode()
+        }
 
         // ✅ Al finalizar: verificar si hay sort pendiente que ejecutar.
         // El rescan DIFERENCIAL también debe cerrar aunque NO haya canciones
@@ -1033,6 +1122,22 @@ class FileAccessService: ObservableObject {
                         AppLog.info(.library, "Indexación completada: \(sortedSongs.count) canciones (+\(addedCount) nuevas) · RAM \(self.residentMemoryMB) MB")
                     } else {
                         AppLog.info(.library, "Indexación completada: \(sortedSongs.count) canciones (sin cambios) · RAM \(self.residentMemoryMB) MB")
+                    }
+                    // ✅ VERIFICACIÓN DE COBERTURA (solo en rescan completo): aquí
+                    // `seenKeys` contiene TODOS los archivos soportados vistos en
+                    // disco y `songs` ya está publicado. En un escaneo incremental
+                    // o en la detección silenciosa el set se deja vacío a
+                    // propósito (sin poda), así que compararlo daría "vistos 0" y
+                    // un aviso falso. Si quedan archivos en disco que no acabaron
+                    // en la biblioteca, ese es exactamente el síntoma a ver.
+                    if shouldPrune, !seenKeys.isEmpty, self.pendingSongs.isEmpty {
+                        let diff = seenKeys.count - sortedSongs.count
+                        let ratio = Double(abs(diff)) / Double(max(1, seenKeys.count)) * 100
+                        if abs(diff) > 5 && ratio > 5 {
+                            AppLog.warning(.library, "Cobertura: \(seenKeys.count) archivos vistos en disco pero \(sortedSongs.count) en la biblioteca (delta \(diff), \(String(format: "%.1f", ratio))%)")
+                        } else {
+                            AppLog.info(.library, "Cobertura verificada: \(sortedSongs.count) canciones para \(seenKeys.count) archivos vistos en disco")
+                        }
                     }
                     if !self.pendingSongs.isEmpty {
                         self.updateScanningState()
@@ -1086,7 +1191,20 @@ class FileAccessService: ObservableObject {
     }
 
     private func makeSong(from url: URL) async -> Song {
-        let metadata = await readMetadata(from: url)
+        let firstRead = await readMetadata(from: url)
+        var metadata = firstRead.metadata
+        // ✅ RETRY ÚNICO (100 ms) y SOLO si la lectura falló de verdad. Un archivo
+        // sin tags también acaba en el plan B de readMetadata (nombre del archivo
+        // + "desconocido"), pero ese SÍ leyó el asset: reintentarlo sería trabajo
+        // inútil multiplicado por toda la biblioteca. El caso que interesa es el
+        // transitorio (archivo aún copiándose, disco lento, AVAsset ocupado),
+        // donde un segundo intento suele resolverlo. Si vuelve a fallar se
+        // conserva la canción con el nombre del archivo, nunca se descarta.
+        if firstRead.failed {
+            try? await Task.sleep(nanoseconds: 100_000_000)
+            let retried = await readMetadata(from: url)
+            if !retried.failed { metadata = retried.metadata }
+        }
         // ✅ FIX metadata editada: guardar la fecha de modificación del
         // archivo tal como estaba AL MOMENTO de esta lectura. scanFolder
         // compara este valor contra la fecha actual en disco en el próximo
@@ -1114,7 +1232,11 @@ class FileAccessService: ObservableObject {
     }
 
     // MARK: - readMetadata (OPTIMIZADO: una sola apertura de archivo, sin lecturas redundantes, con timeout)
-    private func readMetadata(from url: URL) async -> SongMetadata {
+    // ✅ Devuelve además si la lectura FALLÓ: `SongMetadata` nunca pierde el
+    // archivo (el catch reconstruye la canción con el nombre del archivo y
+    // placeholders), así que el fallo real solo es distinguible desde dentro.
+    // makeSong lo usa para reintentar UNA vez.
+    private func readMetadata(from url: URL) async -> (metadata: SongMetadata, failed: Bool) {
         let asset = AVAsset(url: url)
         var title: String?
         var artist = ""
@@ -1136,6 +1258,8 @@ class FileAccessService: ObservableObject {
         // nil: la canción se ordena al final y el álbum no muestra pill de
         // año. Mejor SIN año que con un año INVENTADO.
         var duration: TimeInterval = 0
+        // ✅ Marca de fallo REAL (ver la firma y el retry de makeSong).
+        var didFail = false
 
         // ✅ Timeout para evitar que archivos corruptos congelen la indexación
         let timeoutTask = Task {
@@ -1300,6 +1424,7 @@ class FileAccessService: ObservableObject {
         } catch {
             // ✅ Manejar timeout y errores sin interrumpir toda la indexación
             timeoutTask.cancel()
+            didFail = true
             AppLog.error(.library, "Error cargando metadatos: \(error.localizedDescription) - \(url.lastPathComponent)")
 
             // ✅ Fallback básico para que el archivo no se pierda
@@ -1339,8 +1464,12 @@ class FileAccessService: ObservableObject {
                     ext: url.pathExtension,
                     sampleRate: sampleRate
                 )
-                // ✅ DEBUG: Log para verificar extracción de bitDepth
-                AppLog.debug(.metadata, "Archivo: \(url.lastPathComponent) - bitDepth extraído: \(bitDepth) (raw: \(fileBits))")
+                // ✅ Diagnóstico de bitDepth: el log de verificación del fix
+                // fd5cddf se movió al cierre de cada LOTE (ver
+                // registerMetadataBatch). Aquí se escribía UNA línea a disco por
+                // archivo — 1 300+ escrituras por indexación completa, y el
+                // buffer de 800 entradas se llenaba de ruido y desalojaba las
+                // líneas útiles antes de poder leerlas.
             }
         }
         // ✅ LOSSLESS → profundidad real; LOSSY (MP3/AAC, bitDepth 0) →
@@ -1359,7 +1488,7 @@ class FileAccessService: ObservableObject {
         .compactMap { $0 }
         .joined(separator: " · ")
 
-        return SongMetadata(
+        return (SongMetadata(
             title: title,
             artist: artist,
             albumArtist: albumArtist,
@@ -1375,7 +1504,7 @@ class FileAccessService: ObservableObject {
             bitDepth: bitDepth,
             channelCount: channelCount,
             bitrate: bitrateKbps
-        )
+        ), didFail)
     }
 
     // Fallback asíncrono moderno (si falla la carga principal). Sin APIs deprecadas.
@@ -2301,6 +2430,9 @@ class FileAccessService: ObservableObject {
     }
 
     deinit {
+        if let observer = memoryWarningObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
         saveCachedSongs()
         for (_, url) in activeURLs {
             url.stopAccessingSecurityScopedResource()

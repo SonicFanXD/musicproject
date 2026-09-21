@@ -16,10 +16,18 @@ struct ContentView: View {
     @State private var showFolderPicker = false
 
     @AppStorage("com.aurora.selectedCategory") private var selectedCategoryRaw = LibraryCategory.songs.rawValue
+    // ✅ Ajuste "Ondas en la canción actual": apagado, la fila que suena se marca
+    // solo con el título en color de acento (sin barras animadas).
+    @AppStorage("com.aurora.showPlayingIndicator") private var showPlayingIndicator = true
     private var selectedCategory: LibraryCategory {
         LibraryCategory(rawValue: selectedCategoryRaw) ?? .songs
     }
     @State private var searchText = ""
+    /// ✅ Texto con el que se filtran las listas: va 250 ms por detrás de
+    /// `searchText` para no re-filtrar la biblioteca en cada pulsación. El campo
+    /// sigue siendo inmediato (lo que escribes se ve al instante); lo que espera
+    /// es el FILTRADO.
+    @State private var debouncedSearchText = ""
     @FocusState private var searchFieldFocused: Bool
     // ✅ Manejo de ciclo de vida para detectar cambios en segundo plano
     @Environment(\.scenePhase) private var scenePhase
@@ -187,6 +195,9 @@ struct ContentView: View {
                                     .frame(width: 44, height: 44)
                                     .contentShape(Rectangle())
                             }
+                            // ✅ Mismo feedback de presión que los botones de
+                            // PlayerBar (el estilo ya existe en el proyecto).
+                            .buttonStyle(PressableButtonStyle(scale: 0.9))
 
                             Button {
                                 showSettings = true
@@ -197,6 +208,9 @@ struct ContentView: View {
                                     .frame(width: 44, height: 44)
                                     .contentShape(Rectangle())
                             }
+                            // ✅ Mismo feedback de presión que los botones de
+                            // PlayerBar (el estilo ya existe en el proyecto).
+                            .buttonStyle(PressableButtonStyle(scale: 0.9))
                         }
                     }
                 }
@@ -214,17 +228,25 @@ struct ContentView: View {
                     syncFirstTimeIndexing()
                     maybeAutoResume()
                     if fileAccessService.isInitialLibraryLoaded {
-                        withAnimation(.easeOut(duration: 0.3)) { isInitialLoad = false }
+                        // ✅ 0,4 s easeInOut: la cruzada se siente continua (0,3 s
+                        // se quedaba corta y 0,5 s se sentía lenta — el estándar
+                        // de una transición de app).
+                        withAnimation(.easeInOut(duration: 0.4)) { isInitialLoad = false }
                     }
                 }
                 .task {
                     try? await Task.sleep(nanoseconds: 8_000_000_000)
                     if isInitialLoad {
-                        withAnimation(.easeOut(duration: 0.3)) { isInitialLoad = false }
+                        withAnimation(.easeInOut(duration: 0.4)) { isInitialLoad = false }
                     }
                 }
                 .sheet(isPresented: $showFolderPicker) {
                     FolderPickerView(fileAccessService: fileAccessService)
+                        // ✅ La hoja ocupaba toda la pantalla para algo que es una
+                        // acción corta: ahora abre a media altura y se puede
+                        // arrastrar a pantalla completa si hay muchas carpetas.
+                        .presentationDetents([.medium, .large])
+                        .presentationDragIndicator(.visible)
                 }
                 .onChange(of: fileAccessService.isInitialLibraryLoaded) { loaded in
                     if loaded {
@@ -234,7 +256,7 @@ struct ContentView: View {
                         // biblioteca terminó de cargar DESPUÉS del onAppear, el
                         // restore recién ocurrió aquí — reintentar el auto-resume.
                         maybeAutoResume()
-                        withAnimation(.easeOut(duration: 0.3)) {
+                        withAnimation(.easeInOut(duration: 0.4)) {
                             isInitialLoad = false
                         }
                     }
@@ -272,14 +294,27 @@ struct ContentView: View {
                         .transition(.opacity)
                     }
                 }
+                // ✅ B.2 — TRANSICIÓN CRUZADA: la biblioteca entra con fundido y
+                // una micro-escala MIENTRAS el splash sale. Es solo transform +
+                // opacidad (GPU) y la biblioteca ya está maquetada detrás del
+                // splash opaco, así que no hay salto de layout ni frame negro
+                // entre las dos.
+                .scaleEffect(isInitialLoad ? 0.98 : 1.0)
+                .opacity(isInitialLoad ? 0 : 1)
             }
 
             if isInitialLoad {
                 SplashView()
-                    // ✅ Salida premium: la escala mínima acompaña al fundido (la
-                    // duración la marca el withAnimation del llamador, que no se
-                    // toca para no alterar la duración total del splash).
-                    .transition(.scale(scale: 0.96).combined(with: .opacity))
+                    // ✅ Salida: el splash crece un 5% mientras se funde (antes se
+                    // encogía, que se lee como "se cierra" en vez de como
+                    // profundidad). La duración la marca el withAnimation del
+                    // llamador.
+                    .transition(
+                        .asymmetric(
+                            insertion: .opacity,
+                            removal: .scale(scale: 1.05).combined(with: .opacity)
+                        )
+                    )
                     .zIndex(1)
             }
         }
@@ -296,6 +331,22 @@ struct ContentView: View {
             // ✅ INDEXACIÓN: sincronizar tarjeta grande / indicador compacto.
             syncFirstTimeIndexing()
         }
+        // ✅ DEBOUNCE de la búsqueda (250 ms): antes el filtrado recorría la
+        // biblioteca ENTERA en cada pulsación (y con la consulta vacía incluso la
+        // re-ordenaba), síncrono en el hilo principal; con 2.000 canciones el
+        // teclado se resentía. Ahora se filtra UNA vez cuando el usuario deja de
+        // escribir y, mientras tanto, siguen viéndose los resultados anteriores
+        // (no se vacía la lista por teclear). Vaciar el campo con la X o con
+        // "Cancelar" sigue siendo inmediato.
+        .task(id: searchText) {
+            guard !searchText.isEmpty else {
+                debouncedSearchText = ""
+                return
+            }
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            guard !Task.isCancelled else { return }
+            debouncedSearchText = searchText
+        }
     }
 
     @AppStorage("com.aurora.keepScreenOn") private var keepScreenOnUserDefaults = false
@@ -305,6 +356,9 @@ struct ContentView: View {
     // oculta) para que aparezca/desaparezca con un fade suave en vez de
     // insertarse/eliminarse como fila (lo que desplazaba la lista bruscamente).
     @State private var compactIndexingVisible = false
+    // ✅ Movimiento reducido (el mismo ajuste que usa el splash): con él activo
+    // la tarjeta de indexación entra y sale sin escala y con curva plana.
+    @AppStorage("com.aurora.reduceMotion") private var reduceMotion = false
 
     // ✅ TARJETA GRANDE solo en la PRIMERA indexación (biblioteca aún vacía):
     // - Primera vez: tarjeta grande en TODAS las categorías mientras escanea,
@@ -329,7 +383,7 @@ struct ContentView: View {
             // a la compacta). Solo se apaga al FINALIZAR el escaneo.
             if !scanning {
                 firstIndexingDone = true
-                withAnimation(.easeOut(duration: 0.45)) { firstTimeIndexing = false }
+                withAnimation(indexingCardAnimation) { firstTimeIndexing = false }
             }
             return
         }
@@ -340,7 +394,7 @@ struct ContentView: View {
             && fileAccessService.songs.isEmpty
             && fileAccessService.pendingSongsCount == 0
         if isFirstScanOfInstall {
-            withAnimation(.easeOut(duration: 0.3)) { firstTimeIndexing = true }
+            withAnimation(indexingCardAnimation) { firstTimeIndexing = true }
         }
     }
 
@@ -398,12 +452,49 @@ struct ContentView: View {
 
     // ✅ Buscador INLINE con look nativo (lupa + fondo secondarySystemBackground).
     // Sustituye a .searchable del NavigationStack sin pelear con la navBar.
+    /// ✅ Placeholder por categoría: el campo decía siempre "Buscar en tu
+    /// biblioteca" aunque estuvieras en Álbumes, Artistas o Listas.
+    private var searchPlaceholderKey: String {
+        switch selectedCategory {
+        case .songs: return "search.promptSongs"
+        case .albums: return "search.promptAlbums"
+        case .artists: return "search.promptArtists"
+        case .playlists: return "search.promptPlaylists"
+        }
+    }
+
     private var searchFieldInline: some View {
+        HStack(spacing: 8) {
+            searchField
+            if !searchText.isEmpty {
+                // ✅ Botón "Cancelar" nativo (antes solo había una X DENTRO del
+                // campo): limpia, suelta el foco y devuelve el campo a su ancho.
+                Button(Localization.localized("actions.cancel")) {
+                    Haptics.light()
+                    searchText = ""
+                    searchFieldFocused = false
+                }
+                .font(.system(size: 15, weight: .medium))
+                .foregroundStyle(AppTheme.accent)
+                .buttonStyle(.plain)
+                .transition(.opacity.combined(with: .move(edge: .trailing)))
+            }
+        }
+        .animation(.easeOut(duration: 0.2), value: searchText.isEmpty)
+    }
+
+    private var searchField: some View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 15, weight: .medium))
-                .foregroundStyle(.secondary)
-            TextField(Localization.localized("search.prompt"), text: $searchText)
+                // ✅ Con texto, la lupa se enciende con el acento de dos colores:
+                // el campo "en uso" se distingue de un vistazo.
+                .foregroundStyle(
+                    searchText.isEmpty
+                        ? AnyShapeStyle(.secondary)
+                        : AnyShapeStyle(AppTheme.accentGradient)
+                )
+            TextField(Localization.localized(searchPlaceholderKey), text: $searchText)
                 .textFieldStyle(.plain)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
@@ -425,6 +516,14 @@ struct ContentView: View {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(Color(UIColor.secondarySystemBackground))
         }
+        // ✅ El foco no se veía por ningún lado: ahora el borde se enciende con
+        // el acento (1,5pt, estático: no recompone el campo por frame).
+        .overlay {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(AppTheme.accentGradient, lineWidth: 1.5)
+                .opacity(searchFieldFocused ? 1 : 0)
+        }
+        .animation(.easeOut(duration: 0.2), value: searchFieldFocused)
         .contentShape(Rectangle())
         .onTapGesture {
             searchFieldFocused = true
@@ -473,7 +572,26 @@ struct ContentView: View {
             }
             .padding(.horizontal, 16)
         }
+        // ✅ Los chips que quedan fuera del borde se desvanecen en vez de cortarse
+        // a hueso: en un iPhone de 375pt no caben las 4 categorías y no había
+        // ninguna pista de que hubiera más (el scroll horizontal no se ve). Es una
+        // máscara ESTÁTICA sobre una tira de ~48pt: no anima ni recompone nada.
+        .mask(
+            LinearGradient(
+                stops: [
+                    .init(color: .clear, location: 0),
+                    .init(color: .black, location: 0.04),
+                    .init(color: .black, location: 0.9),
+                    .init(color: .clear, location: 1)
+                ],
+                startPoint: .leading,
+                endPoint: .trailing
+            )
+        )
         .padding(.vertical, 10)
+        // ✅ Mismo tacto que la transición del contenido (spring 0.32/0.88): antes
+        // el chip seleccionado cambiaba de golpe, sin acompañar al contenido.
+        .animation(.spring(response: 0.32, dampingFraction: 0.88), value: selectedCategoryRaw)
     }
 
     // ✅ Header flotante con nombre de la app integrado al fondo del contenido.
@@ -484,6 +602,10 @@ struct ContentView: View {
             Text(Localization.localized("app.name"))
                 .font(.system(size: 26, weight: .bold, design: .rounded))
                 .foregroundStyle(AppTheme.accentGradient)
+                // ✅ Profundidad mínima sobre el fondo: UNA sola sombra estática
+                // (se compone una vez, no por frame). Sin ella el nombre quedaba
+                // plano sobre el material.
+                .shadow(color: .black.opacity(0.16), radius: 6, y: 2)
                 .accessibilityLabel(Localization.localized("app.name"))
             Spacer()
         }
@@ -508,7 +630,7 @@ struct ContentView: View {
         // apareciendo debajo a medida que se indexa.
         if firstTimeIndexing {
             indexingProgressCard
-                .transition(.opacity)
+                .transition(indexingCardTransition)
                 .padding(.horizontal, 12)
                 .padding(.top, 8)
             if !currentFilteredSongs.isEmpty {
@@ -633,12 +755,11 @@ struct ContentView: View {
                     ZStack(alignment: .leading) {
                         Capsule().fill(Color.secondary.opacity(0.18))
                         Capsule()
-                            .fill(
-                                LinearGradient(
-                                    colors: [AppTheme.accent.opacity(0.8), AppTheme.accent],
-                                    startPoint: .leading, endPoint: .trailing
-                                )
-                            )
+                            // ✅ Gradiente de DOS colores (respeta el modo «acento desde
+                            // carátula»). Antes era un degradado de un solo acento, así
+                            // que la barra era el único elemento de la tarjeta que no
+                            // seguía la paleta.
+                            .fill(AppTheme.accentGradient(opacity: 0.95))
                             .frame(width: geo.size.width * indexingProgress)
                             .animation(.easeInOut(duration: 0.3), value: indexingProgress)
                             .shadow(color: AppTheme.accent.opacity(0.3), radius: 4, y: 0)
@@ -658,7 +779,7 @@ struct ContentView: View {
             }
             .padding(.horizontal, 8)
 
-            Text(Localization.localized("indexing.preparing"))
+            Text(indexingPhaseText)
                 .font(.system(size: 14))
                 .foregroundStyle(.secondary)
         }
@@ -684,7 +805,7 @@ struct ContentView: View {
             ProgressView()
                 .controlSize(.small)
                 .tint(AppTheme.accent)
-            Text("\(Localization.localized("indexing.processed")) \(fileAccessService.scanProcessed)/\(fileAccessService.scanTotal)")
+            Text("\(indexingPhaseText) \(fileAccessService.scanProcessed)/\(fileAccessService.scanTotal)")
                 .font(.system(size: 13, weight: .medium).monospacedDigit())
                 .foregroundStyle(.secondary)
             Spacer()
@@ -692,12 +813,7 @@ struct ContentView: View {
                 ZStack(alignment: .leading) {
                     Capsule().fill(Color.secondary.opacity(0.18))
                     Capsule()
-                        .fill(
-                            LinearGradient(
-                                colors: [AppTheme.accent.opacity(0.8), AppTheme.accent],
-                                startPoint: .leading, endPoint: .trailing
-                            )
-                        )
+                        .fill(AppTheme.accentGradient(opacity: 0.95))
                         .frame(width: max(0, geo.size.width * indexingProgress))
                         .animation(.easeInOut(duration: 0.25), value: indexingProgress)
                 }
@@ -719,6 +835,31 @@ struct ContentView: View {
         .clipped()
     }
 
+    // ✅ FASE real de la indexación, derivada de contadores que YA se publican
+    // (scanProcessed / scanTotal). Antes la tarjeta decía siempre «Preparando tu
+    // música…», incluso mientras leía metadatos o guardaba la caché. Al no
+    // introducir ningún @Published nuevo, los re-renders siguen siendo los
+    // mismos que antes.
+    private var indexingPhaseText: String {
+        if fileAccessService.scanProcessed <= 0 {
+            return Localization.localized("indexing.preparing")
+        }
+        if fileAccessService.scanProcessed < fileAccessService.scanTotal {
+            return Localization.localized("indexing.readingMetadata")
+        }
+        return Localization.localized("indexing.savingCache")
+    }
+
+    // ✅ Entrada/salida de la tarjeta: escala + fundido. Con movimiento reducido
+    // queda en un fundido simple (mismo criterio que el splash).
+    private var indexingCardTransition: AnyTransition {
+        reduceMotion ? .opacity : .scale(scale: 0.96).combined(with: .opacity)
+    }
+
+    private var indexingCardAnimation: Animation {
+        reduceMotion ? .easeOut(duration: 0.3) : .spring(response: 0.4, dampingFraction: 0.8)
+    }
+
     private var indexingProgress: Double {
         guard fileAccessService.scanTotal > 0 else { return 0 }
         return min(1.0, Double(fileAccessService.scanProcessed) / Double(fileAccessService.scanTotal))
@@ -730,7 +871,7 @@ struct ContentView: View {
         // ✅ PRIMERA INDEXACIÓN: tarjeta grande también en álbumes.
         if firstTimeIndexing {
             indexingProgressCard
-                .transition(.opacity)
+                .transition(indexingCardTransition)
                 .padding(.horizontal, 12)
                 .padding(.top, 8)
         }
@@ -761,7 +902,9 @@ struct ContentView: View {
                 } label: {
                     albumListRow(album)
                 }
-                .buttonStyle(.plain)
+                // ✅ Feedback de presión también al abrir un álbum (antes el toque
+                // no producía ninguna respuesta visual).
+                .buttonStyle(PressableButtonStyle(scale: 0.98))
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
             }
@@ -774,7 +917,7 @@ struct ContentView: View {
         // ✅ PRIMERA INDEXACIÓN: tarjeta grande también en artistas.
         if firstTimeIndexing {
             indexingProgressCard
-                .transition(.opacity)
+                .transition(indexingCardTransition)
                 .padding(.horizontal, 12)
                 .padding(.top, 8)
         }
@@ -805,7 +948,8 @@ struct ContentView: View {
                 } label: {
                     artistListRow(artist)
                 }
-                .buttonStyle(.plain)
+                // ✅ Feedback de presión también al abrir un artista.
+                .buttonStyle(PressableButtonStyle(scale: 0.98))
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
             }
@@ -880,7 +1024,7 @@ struct ContentView: View {
                     
                     Spacer(minLength: 10)
                     
-                    if isCurrent {
+                    if isCurrent && showPlayingIndicator {
                         // ✅ 60fps: drawingGroup rasteriza las barras animadas
                         HStack(spacing: 2.5) {
                             ForEach(0..<3, id: \.self) { bar in
@@ -911,7 +1055,9 @@ struct ContentView: View {
                     }
                 }
             }
-            .buttonStyle(.plain)
+            // ✅ Mismo feedback de presión que el resto de la app (antes la fila
+            // no respondía al toque hasta que navegaba).
+            .buttonStyle(PressableButtonStyle(scale: 0.98))
             
             Button {
                 Haptics.light()
@@ -926,17 +1072,22 @@ struct ContentView: View {
                     .frame(width: 36, height: 36)
                     .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(PressableButtonStyle(scale: 0.9))
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
         .background {
                 if isCurrent {
+                    // ✅ La canción en curso se marca con acento 0.12 (antes 0.08,
+                    // que sobre el fondo de la app quedaba casi invisible) y borde
+                    // 0.3. Sigue siendo relleno OPACO + borde fino: NO se añade
+                    // sombra, porque en una lista de cientos de filas cada sombra
+                    // es una pasada offscreen más y en A11 eso se paga en frames.
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(AppTheme.accentGradient(opacity: 0.08))
+                        .fill(AppTheme.accentGradient(opacity: 0.12))
                         .overlay(
                             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                .strokeBorder(AppTheme.accent.opacity(0.2), lineWidth: 0.5)
+                                .strokeBorder(AppTheme.accent.opacity(0.3), lineWidth: 0.5)
                         )
                 } else {
                     // ✅ 60fps: color OPACO (no material blur) — en listas largas
@@ -1029,7 +1180,7 @@ struct ContentView: View {
     }
 
     private var normalizedQuery: String {
-        searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        debouncedSearchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
 
     // ✅ BÚSQUEDA optimizada: el índice ya tiene las cadenas normalizadas
@@ -1220,6 +1371,9 @@ struct SplashView: View {
     // isInitialLoad a false la vista sale del árbol y la animación se detiene
     // con ella (no queda ningún bucle en background).
     @State private var breathing = false
+    // ✅ REDUCIR MOVIMIENTO (Ajustes → Apariencia): la entrada se hace sin
+    // stagger, sin rebote y sin el bucle del halo (fundido simple).
+    @AppStorage("com.aurora.reduceMotion") private var reduceMotion = false
     @Environment(\.colorScheme) private var colorScheme
     
     var body: some View {
@@ -1245,7 +1399,10 @@ struct SplashView: View {
                 
                 // ✅ Logo con animación de escala y opacidad suave
                 ZStack {
-                    // Halo pulsante exterior
+                    // ✅ DOBLE halo con ciclos DESFASADOS (1,25 s el externo, 0,85 s
+                    // el interno): dos respiraciones que no coinciden se leen como
+                    // algo orgánico, mientras que un solo pulso se lee como un
+                    // metrónomo. Siguen siendo solo scale + opacity (GPU).
                     Circle()
                         .fill(
                             RadialGradient(
@@ -1255,14 +1412,30 @@ struct SplashView: View {
                                     Color.clear
                                 ],
                                 center: .center,
-                                startRadius: 30,
-                                endRadius: 80
+                                startRadius: 40,
+                                endRadius: 105
                             )
                         )
-                        .frame(width: 160, height: 160)
-                        .scaleEffect(pulseScale * (breathing ? 1.04 : 0.97))
-                        .opacity(pulseOpacity)
-                        .animation(.easeInOut(duration: 0.75).repeatForever(autoreverses: true), value: breathing)
+                        .frame(width: 170, height: 170)
+                        .scaleEffect(pulseScale * (breathing ? 1.05 : 0.98))
+                        .opacity(pulseOpacity * (breathing ? 1.0 : 0.85))
+                        .animation(.easeInOut(duration: 1.25).repeatForever(autoreverses: true), value: breathing)
+
+                    // Halo INTERNO: radio corto, algo más opaco y más rápido → el
+                    // núcleo del logo respira con su propio tiempo.
+                    Circle()
+                        .fill(
+                            RadialGradient(
+                                colors: [AppTheme.accent.opacity(0.2), Color.clear],
+                                center: .center,
+                                startRadius: 18,
+                                endRadius: 62
+                            )
+                        )
+                        .frame(width: 120, height: 120)
+                        .scaleEffect(pulseScale * (breathing ? 1.02 : 0.95))
+                        .opacity(pulseOpacity * (breathing ? 0.85 : 1.0))
+                        .animation(.easeInOut(duration: 0.85).repeatForever(autoreverses: true), value: breathing)
                     
                     // Círculo del logo
                     Circle()
@@ -1304,26 +1477,34 @@ struct SplashView: View {
                 
                 Spacer().frame(height: 32)
                 
-                // ✅ Título con animación de slide hacia arriba
+                // ✅ Título con STAGGER por letra (30 ms): cada glifo sube y
+                // aparece por su cuenta, en cascada, que es lo que hace premium a
+                // la entrada (antes entraba el bloque entero de golpe).
+                // La rampa texto → acento se conserva, pero calculada por letra:
+                // un `LinearGradient` sobre un HStack se resuelve por glifo y
+                // reiniciaría la rampa en cada uno (se leería como un arcoíris).
                 VStack(spacing: 12) {
-                    Text("Aurora Player")
-                        .font(.system(size: 28, weight: .bold, design: .rounded))
-                        .foregroundStyle(
-                            LinearGradient(
-                                colors: [
-                                    colorScheme == .dark ? .white : Color(UIColor.label),
-                                    AppTheme.accent
-                                ],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                        )
-                    
+                    HStack(spacing: 0) {
+                        ForEach(Array(titleLetters.enumerated()), id: \.offset) { index, letter in
+                            Text(letter)
+                                .font(.system(size: 28, weight: .bold, design: .rounded))
+                                .foregroundStyle(titleRampColor(at: index))
+                                .opacity(titleOpacity)
+                                .offset(y: titleOffset)
+                                .animation(
+                                    reduceMotion
+                                        ? .easeOut(duration: 0.25)
+                                        : .spring(response: 0.6, dampingFraction: 0.8)
+                                            .delay(0.25 + Double(index) * 0.03),
+                                    value: titleOpacity
+                                )
+                        }
+                    }
+
                     // ✅ Indicador de progreso personalizado
                     LoadingDots()
+                        .opacity(titleOpacity)
                 }
-                .opacity(titleOpacity)
-                .offset(y: titleOffset)
                 
                 Spacer()
             }
@@ -1334,24 +1515,58 @@ struct SplashView: View {
             // rebote sutil en lugar de frenar en seco. El retardo del título y
             // del halo es el mismo de antes, así que la duración total del
             // splash no cambia.
-            withAnimation(.spring(response: 0.7, dampingFraction: 0.75)) {
+            withAnimation(reduceMotion ? .easeOut(duration: 0.3) : .spring(response: 0.65, dampingFraction: 0.72)) {
                 logoScale = 1.0
                 logoOpacity = 1.0
             }
 
-            withAnimation(.spring(response: 0.7, dampingFraction: 0.75).delay(0.25)) {
+            withAnimation(reduceMotion ? .easeOut(duration: 0.3) : .spring(response: 0.65, dampingFraction: 0.72).delay(0.25)) {
                 titleOffset = 0
                 titleOpacity = 1.0
             }
 
-            withAnimation(.spring(response: 0.7, dampingFraction: 0.75).delay(0.4)) {
+            withAnimation(reduceMotion ? .easeOut(duration: 0.3) : .spring(response: 0.65, dampingFraction: 0.72).delay(0.4)) {
                 pulseScale = 1.12
                 pulseOpacity = 1.0
             }
 
             // ✅ Y después respira en bucle mientras el splash siga visible.
-            breathing = true
+            // Con movimiento reducido no arranca el bucle: cero frames de más.
+            breathing = !reduceMotion
         }
+        .onDisappear {
+            // ✅ El latido es `repeatForever`: al salir del árbol la vista muere y
+            // el bucle se detiene con ella, pero durante la TRANSICIÓN CRUZADA
+            // (0,4 s) el splash sigue vivo — aquí se apaga de forma explícita.
+            breathing = false
+        }
+    }
+
+    /// ✅ Letras del título, una por glifo, para el stagger de entrada.
+    private var titleLetters: [String] {
+        "Aurora Player".map { String($0) }
+    }
+
+    /// ✅ Color de cada letra: interpolación lineal de la MISMA rampa que usaba
+    /// el gradiente del título (texto → acento del tema, que puede venir de la
+    /// portada). Se calcula por letra y no con un gradiente para que la rampa no
+    /// se reinicie en cada glifo.
+    private func titleRampColor(at index: Int) -> Color {
+        let count = titleLetters.count
+        let t = count > 1 ? CGFloat(index) / CGFloat(count - 1) : 0
+        let base = colorScheme == .dark ? UIColor.white : UIColor.label
+
+        var r1: CGFloat = 0, g1: CGFloat = 0, b1: CGFloat = 0, a1: CGFloat = 0
+        base.getRed(&r1, green: &g1, blue: &b1, alpha: &a1)
+
+        var r2: CGFloat = 0, g2: CGFloat = 0, b2: CGFloat = 0, a2: CGFloat = 0
+        UIColor(AppTheme.accent).getRed(&r2, green: &g2, blue: &b2, alpha: &a2)
+
+        return Color(
+            red: Double(r1 + (r2 - r1) * t),
+            green: Double(g1 + (g2 - g1) * t),
+            blue: Double(b1 + (b2 - b1) * t)
+        )
     }
 }
 
@@ -1367,12 +1582,14 @@ struct LoadingDots: View {
                     .frame(width: 6, height: 6)
                     .scaleEffect(animating ? 1.0 : 0.5)
                     .opacity(animating ? 1.0 : 0.4)
-                    // ✅ autoreverses: el punto late (0,5 s) en vez de saltar de
-                    // golpe al reanudar el ciclo; stagger de 0,12 s entre puntos.
+                    // ✅ autoreverses: el punto late en vez de saltar de golpe al
+                    // reanudar el ciclo. 0,55 s de ciclo y 0,14 s de desfase: con
+                    // el 0,5/0,12 anterior los tres puntos se sincronizaban por
+                    // momentos y el latido se leía como un parpadeo.
                     .animation(
-                        .easeInOut(duration: 0.5)
+                        .easeInOut(duration: 0.55)
                             .repeatForever(autoreverses: true)
-                            .delay(Double(index) * 0.12),
+                            .delay(Double(index) * 0.14),
                         value: animating
                     )
             }

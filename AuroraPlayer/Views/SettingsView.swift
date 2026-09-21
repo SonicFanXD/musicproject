@@ -1,7 +1,7 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-struct SettingsView: View {
+struct SettingsView: View, SettingsRowBuilding {
     @ObservedObject var audioEngine: AudioEngine
     @ObservedObject var fileAccessService: FileAccessService
     @Environment(\.dismiss) private var dismiss
@@ -16,49 +16,9 @@ struct SettingsView: View {
     /// .folders = picker de carpetas, .files = picker de canciones.
     private enum ImportMode { case folders, files }
     @State private var importMode: ImportMode = .folders
-    @ObservedObject private var theme = ThemeManager.shared
     // ✅ Observar el idioma: al cambiar, esta vista se re-renderiza al instante
+    // (las secciones observan por su cuenta el tema y el motor de audio).
     @ObservedObject private var localization = Localization.shared
-
-    // Configuraciones persistentes
-    @AppStorage("com.aurora.showVisualizer") private var showVisualizer = true
-    @AppStorage("com.aurora.enableHaptics") private var enableHaptics = true
-    @AppStorage("com.aurora.keepScreenOn") private var keepScreenOn = false
-    @AppStorage("com.aurora.artworkCorner") private var artworkCorner: Double = 22
-    @AppStorage("com.aurora.reduceTransparency") private var reduceTransparency = false
-    @AppStorage("com.aurora.hapticIntensity") private var hapticIntensity: Double = 1.0
-    @AppStorage("com.aurora.showLyricsByDefault") private var showLyricsByDefault = false
-    @AppStorage("com.aurora.autoPlayOnStart") private var autoPlayOnStart = false
-    @AppStorage("com.aurora.showVisualizerInBar") private var showVisualizerInBar = true
-    @AppStorage("com.aurora.compactPlayerBar") private var compactPlayerBar = false
-    @AppStorage("com.aurora.language") private var selectedLanguage = 0 // 0 = español, 1 = inglés
-    @AppStorage("com.aurora.showFPS") private var showFPS = false
-    @AppStorage("com.aurora.scanOnlyNewSongs") private var scanOnlyNewSongs = true
-    // ✅ AUDIÓFILO: configuración del modo de audio
-    @AppStorage("com.aurora.audioSessionMode") private var audioSessionMode = 0 // 0 = default, 1 = measurement
-
-    // ✅ LOCALIZADOS: computados para reaccionar al cambio de idioma al
-    // instante (antes eran `let` hardcodeados en español → el inglés no
-    // se aplicaba en los pickers de Tema, Color de acento e Idioma).
-    private var themes: [String] {
-        [
-            Localization.localized("settings.theme.system"),
-            Localization.localized("settings.theme.light"),
-            Localization.localized("settings.theme.dark")
-        ]
-    }
-    private var accents: [String] {
-        [
-            Localization.localized("settings.accent.purple"),
-            Localization.localized("settings.accent.blue"),
-            Localization.localized("settings.accent.emerald"),
-            Localization.localized("settings.accent.pink"),
-            Localization.localized("settings.accent.amber"),
-            Localization.localized("settings.accent.black"),
-            Localization.localized("settings.accent.darkRed")
-        ]
-    }
-    private var languages: [String] { ["Español", "English"] }
 
     private let themeDefaultsKey = "com.aurora.uiTheme"
 
@@ -86,333 +46,47 @@ struct SettingsView: View {
                         headerSection
 
                         // Biblioteca (gestión embebida: sin pantalla aparte)
-                        settingsSection(icon: "folder.fill", title: Localization.localized("settings.library"), color: .blue) {
-                            settingsButton(title: Localization.localized("settings.addFolder"), subtitle: Localization.localized("settings.addFolderSubtitle"), icon: "folder.badge.plus", color: .blue) {
-                                importMode = .folders
-                                showImporter = true
-                            }
-                            settingsDivider
-                            settingsButton(title: Localization.localized("settings.addFiles"), subtitle: Localization.localized("settings.addFilesSubtitle"), icon: "music.note.badge.plus", color: .purple) {
-                                importMode = .files
-                                showImporter = true
-                            }
-                            settingsDivider
-                            settingsToggleRow(
-                                title: Localization.localized("settings.scanOnlyNewSongs"),
-                                subtitle: Localization.localized("settings.scanOnlyNewSongsSubtitle"),
-                                icon: "magnifyingglass",
-                                color: .teal,
-                                isOn: $scanOnlyNewSongs
-                            )
-
-                            // ✅ Carpetas añadidas (lista embebida con eliminar)
-                            if !fileAccessService.folders.isEmpty {
-                                settingsDivider
-                                ForEach(fileAccessService.folders) { folder in
-                                    HStack(spacing: 14) {
-                                        iconView(icon: "folder.fill", color: .blue)
-                                        VStack(alignment: .leading, spacing: 2) {
-                                            Text(folder.displayName)
-                                                .font(.system(size: 15, weight: .medium))
-                                                .foregroundStyle(.primary)
-                                                .lineLimit(1)
-                                            Text(Localization.localized("settings.folderAdded"))
-                                                .font(.system(size: 12))
-                                                .foregroundStyle(.secondary)
-                                        }
-                                        Spacer()
-                                        Button(role: .destructive) {
-                                            fileAccessService.removeFolder(folder)
-                                        } label: {
-                                            Image(systemName: "trash.fill")
-                                                .font(.system(size: 14, weight: .semibold))
-                                                .foregroundStyle(.red)
-                                                .frame(width: 44, height: 44)
-                                                .contentShape(Rectangle())
-                                        }
-                                        .buttonStyle(.plain)
-                                    }
-                                    .padding(.horizontal, 16).padding(.vertical, 10)
-                                    .contentShape(Rectangle())
-                                }
-                            }
-
-                            // ✅ Archivos individuales añadidos (lista embebida)
-                            if !fileAccessService.files.isEmpty {
-                                settingsDivider
-                                ForEach(fileAccessService.files) { file in
-                                    HStack(spacing: 14) {
-                                        iconView(icon: "music.note", color: .purple)
-                                        VStack(alignment: .leading, spacing: 2) {
-                                            Text(file.displayName)
-                                                .font(.system(size: 15, weight: .medium))
-                                                .foregroundStyle(.primary)
-                                                .lineLimit(1)
-                                            Text(Localization.localized("settings.fileAdded"))
-                                                .font(.system(size: 12))
-                                                .foregroundStyle(.secondary)
-                                        }
-                                        Spacer()
-                                        Button(role: .destructive) {
-                                            fileAccessService.removeFile(file)
-                                        } label: {
-                                            Image(systemName: "trash.fill")
-                                                .font(.system(size: 14, weight: .semibold))
-                                                .foregroundStyle(.red)
-                                                .frame(width: 44, height: 44)
-                                                .contentShape(Rectangle())
-                                        }
-                                        .buttonStyle(.plain)
-                                    }
-                                    .padding(.horizontal, 16).padding(.vertical, 10)
-                                    .contentShape(Rectangle())
-                                }
-                            }
-
-                            if fileAccessService.folders.isEmpty && fileAccessService.files.isEmpty {
-                                settingsDivider
-                                VStack(spacing: 6) {
-                                    Text(Localization.localized("settings.emptyLibraryTitle"))
-                                        .font(.system(size: 14, weight: .semibold))
-                                        .foregroundStyle(.primary)
-                                    Text(Localization.localized("settings.emptyLibrarySubtitle"))
-                                        .font(.system(size: 12))
-                                        .foregroundStyle(.secondary)
-                                }
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 14)
-                            }
-
-                            settingsDivider
-                            settingsButton(title: Localization.localized("settings.updateLibrary"), subtitle: fileAccessService.isScanning ? Localization.localized("settings.scanning") : Localization.localized("settings.rescanFolders"), icon: "arrow.clockwise", color: .orange) {
-                                if scanOnlyNewSongs {
-                                    fileAccessService.scanForNewSongsOnly()
-                                } else {
-                                    fileAccessService.refreshAllFolders()
-                                }
-                            }
-                            .disabled(fileAccessService.isScanning)
-
-                            if fileAccessService.isScanning {
-                                HStack(spacing: 10) {
-                                    ProgressView()
-                                        .progressViewStyle(CircularProgressViewStyle(tint: AppTheme.accent))
-                                    Text(Localization.localized("settings.scanning"))
-                                        .font(.system(size: 13))
-                                        .foregroundStyle(.secondary)
-                                    Spacer()
-                                }
-                                .padding(.horizontal, 16).padding(.vertical, 10)
-                            }
-                        }
-                        .onChange(of: scanOnlyNewSongs) { v in AppLog.info(.settings, "Escaneo solo nuevas: \(v ? "activado" : "desactivado")") }
+                        LibrarySettingsSection(
+                            fileAccessService: fileAccessService,
+                            onAddFolder: { importMode = .folders; showImporter = true },
+                            onAddFiles: { importMode = .files; showImporter = true }
+                        )
 
                         // Audio
-                        // ✅ Crossfade eliminado por completo (fuente de bugs
-                        // de sincronización): ya no aparece en Ajustes.
-                        settingsSection(icon: "waveform", title: Localization.localized("settings.audio"), color: AppTheme.accent) {
-                            settingsButton(title: Localization.localized("settings.equalizer"), subtitle: audioEngine.isEQEnabled ? "\(Localization.localized("equalizer.active")) (\(audioEngine.eqPreset.displayName))" : Localization.localized("equalizer.disabled"), icon: "slider.horizontal.3", color: AppTheme.accent) {
-                                showEqualizerSheet = true
-                            }
-                            settingsDivider
-                            // ✅ AUDIÓFILO: modo de audio (Default vs Measurement)
-                            settingsMenuButton(
-                                title: Localization.localized("settings.audioMode"),
-                                subtitle: audioSessionMode > 0 ? "Measurement (bit-perfect)" : "Default",
-                                icon: "waveform.badge.micrometer",
-                                color: .orange,
-                                options: ["Default", "Measurement (bit-perfect)"],
-                                selection: Binding(
-                                    get: { self.audioSessionMode },
-                                    set: { newValue in
-                                        Haptics.light()
-                                        self.audioSessionMode = newValue
-                                        audioEngine.setAudioSessionMode(newValue)
-                                        AppLog.info(.settings, "Modo de audio: \(newValue == 1 ? "Measurement" : "Default")")
-                                    }
-                                ),
-                                onChange: { newValue in
-                                    // Actualizar directamente sin verificación de cambio
-                                    Haptics.light()
-                                    self.audioSessionMode = newValue
-                                    audioEngine.setAudioSessionMode(newValue)
-                                }
-                            )
-                            settingsDivider
-                            settingsToggleRow(
-                                title: Localization.localized("settings.monoAudio"),
-                                subtitle: Localization.localized("settings.monoAudioSubtitle"),
-                                icon: "ear",
-                                color: .cyan,
-                                isOn: Binding(
-                                    get: { audioEngine.isMonoAudioEnabled },
-                                    set: { newValue in
-                                        if newValue != audioEngine.isMonoAudioEnabled {
-                                            Haptics.light()
-                                            audioEngine.toggleMonoAudio()
-                                            AppLog.info(.settings, "Audio mono: \(newValue ? "activado" : "desactivado")")
-                                        }
-                                    }
-                                )
-                            )
-                            settingsDivider
-                            // ✅ LIMITER: anti-distorsión universal
-                            settingsToggleRow(
-                                title: Localization.localized("settings.limiter"),
-                                subtitle: Localization.localized("settings.limiterSubtitle"),
-                                icon: "waveform.path",
-                                color: .purple,
-                                isOn: Binding(
-                                    get: { audioEngine.isLimiterEnabled },
-                                    set: { newValue in
-                                        if newValue != audioEngine.isLimiterEnabled {
-                                            Haptics.light()
-                                            audioEngine.toggleLimiter()
-                                        }
-                                    }
-                                )
-                            )
-                            // ✅ ELIMINADO el toggle "Optimización Bluetooth": su
-                            // única acción real era escribir un log (no forzaba
-                            // buffer ni tasa, porque en A2DP la latencia y el
-                            // reloj los impone el enlace) y además no se
-                            // persistía. Un interruptor que no cambia nada es
-                            // peor que no tenerlo. La implementación interna
-                            // sigue en AudioEngine por si se le da uso futuro.
-                        }
+                        AudioSettingsSection(
+                            audioEngine: audioEngine,
+                            showEqualizerSheet: $showEqualizerSheet
+                        )
 
                         // Apariencia
-                        settingsSection(icon: "paintbrush.fill", title: Localization.localized("settings.appearance"), color: .pink) {
-                            settingsMenuButton(title: Localization.localized("settings.theme"), subtitle: themes[selectedThemeIndex], icon: "circle.lefthalf.filled", color: .gray, options: themes, selection: $selectedThemeIndex) { index in
-                                selectedThemeIndex = index
-                                UserDefaults.standard.set(index, forKey: themeDefaultsKey)
-                                AppLog.info(.settings, "Tema: \(themes[index])")
-                            }
-                            settingsDivider
-                            settingsMenuButton(title: Localization.localized("settings.accentColor"), subtitle: accents[theme.accentIndex], icon: "drop.fill", color: theme.accent, options: accents, selection: $theme.accentIndex) { index in
-                                theme.setAccent(index)
-                                AppLog.info(.settings, "Color de acento: \(accents[index])")
-                            }
-                            settingsDivider
-                            settingsSliderRow(title: Localization.localized("settings.artworkCorners"), value: $artworkCorner, range: 0...44, step: 2, color: .blue, suffix: "pt")
-                            settingsDivider
-                            settingsToggleRow(title: Localization.localized("settings.reduceTransparency"), subtitle: Localization.localized("settings.reduceTransparencySubtitle"), icon: "circle.slash", color: .gray, isOn: $reduceTransparency)
-                            settingsDivider
-                            settingsMenuButton(title: Localization.localized("settings.language"), subtitle: languages[selectedLanguage], icon: "globe", color: .blue, options: languages, selection: $selectedLanguage) { index in
-                                selectedLanguage = index
-                                // ✅ Aplicar el idioma al instante en toda la app
-                                Localization.shared.currentLanguage = Localization.Language(rawValue: index) ?? .spanish
-                                AppLog.info(.settings, "Idioma: \(languages[index])")
-                            }
-                        }
+                        AppearanceSettingsSection(
+                            selectedThemeIndex: $selectedThemeIndex,
+                            themeDefaultsKey: themeDefaultsKey
+                        )
 
                         // ✅ Acento de portada: control unificado para todo el entorno
                         // (NowPlaying, álbumes, artistas, PlayerBar, tint global UIKit).
                         // Un solo ajuste activa/desactiva la detección de colores en
                         // TODAS las vistas simultáneamente.
-                        settingsSection(icon: "swatchpalette.fill", title: Localization.localized("settings.artworkAccent"), color: .purple) {
-                            settingsToggleRow(
-                                title: Localization.localized("settings.artworkAccentToggle"),
-                                subtitle: Localization.localized("settings.artworkAccentSubtitle"),
-                                icon: "paintpalette.fill",
-                                color: .purple,
-                                isOn: Binding(
-                                    get: { theme.accentFromArtwork },
-                                    set: { theme.accentFromArtwork = $0 }
-                                )
-                            )
-                            settingsDivider
-                            // ✅ Indicador del color activo (extraído de la portada)
-                            HStack(spacing: 12) {
-                                Circle()
-                                    .fill(theme.artworkAccentColor ?? theme.accent)
-                                    .frame(width: 28, height: 28)
-                                    .overlay(
-                                        Circle()
-                                            .stroke(Color.primary.opacity(0.15), lineWidth: 1)
-                                    )
-                                    .shadow(color: (theme.artworkAccentColor ?? theme.accent).opacity(0.4), radius: 4, y: 2)
-                                Text(Localization.localized("settings.artworkAccentActive"))
-                                    .font(.system(size: 14, weight: .medium, design: .rounded))
-                                    .foregroundStyle(.secondary)
-                                Spacer()
-                            }
-                            .padding(.vertical, 4)
-                        }
+                        ArtworkAccentSettingsSection()
 
                         // Reproducción
-                        settingsSection(icon: "dial.max.fill", title: Localization.localized("settings.playback"), color: .orange) {
-                            settingsToggleRow(title: Localization.localized("settings.visualizer"), subtitle: Localization.localized("settings.visualizerSubtitle"), icon: "waveform.path.ecg", color: .pink, isOn: $showVisualizer)
-                            settingsDivider
-                            settingsToggleRow(title: Localization.localized("settings.haptics"), subtitle: Localization.localized("settings.hapticsSubtitle"), icon: "iphone.radiowaves.left.and.right", color: .mint, isOn: $enableHaptics)
-                            settingsDivider
-                            settingsToggleRow(title: Localization.localized("settings.keepScreenOn"), subtitle: Localization.localized("settings.keepScreenOnSubtitle"), icon: "sun.max.fill", color: .yellow, isOn: $keepScreenOn)
-                            settingsDivider
-                            settingsToggleRow(title: Localization.localized("settings.autoPlayOnStart"), subtitle: Localization.localized("settings.autoPlayOnStartSubtitle"), icon: "play.circle", color: .green, isOn: $autoPlayOnStart)
-                        }
+                        PlaybackSettingsSection(audioEngine: audioEngine)
                         
                         // ✅ Personalización avanzada
-                        settingsSection(icon: "wand.and.rays", title: Localization.localized("settings.customization"), color: .indigo) {
-                            settingsSliderRow(title: Localization.localized("settings.hapticIntensity"), value: $hapticIntensity, range: 0.0...1.0, step: 0.1, color: .mint, suffix: "")
-                            settingsDivider
-                            settingsToggleRow(title: Localization.localized("settings.showVisualizerInBar"), subtitle: Localization.localized("settings.showVisualizerInBarSubtitle"), icon: "waveform", color: AppTheme.accent, isOn: $showVisualizerInBar)
-                            settingsDivider
-                            settingsToggleRow(title: Localization.localized("settings.compactPlayerBar"), subtitle: Localization.localized("settings.compactPlayerBarSubtitle"), icon: "rectangle.compress.vertical", color: .gray, isOn: $compactPlayerBar)
-                            settingsDivider
-                            settingsToggleRow(title: Localization.localized("settings.showLyricsByDefault"), subtitle: Localization.localized("settings.showLyricsByDefaultSubtitle"), icon: "quote.bubble", color: .blue, isOn: $showLyricsByDefault)
-                        }
-                        // ✅ Sincronización en vivo con el engine (antes solo
-                        // se aplicaba al reiniciar ContentView)
-                        .onChange(of: keepScreenOn) { newValue in
-                            audioEngine.isKeepScreenOnEnabled = newValue
-                            AppLog.info(.settings, "Mantener pantalla encendida: \(newValue ? "activado" : "desactivado")")
-                        }
-                        // ✅ LOGS TÉCNICOS: cambios de ajustes del usuario
-                        .onChange(of: showVisualizer) { v in AppLog.info(.settings, "Visualizador: \(v ? "activado" : "desactivado")") }
-                        .onChange(of: enableHaptics) { v in AppLog.info(.settings, "Haptics: \(v ? "activado" : "desactivado")") }
-                        .onChange(of: autoPlayOnStart) { v in AppLog.info(.settings, "Reproducir al iniciar: \(v ? "activado" : "desactivado")") }
-                        .onChange(of: reduceTransparency) { v in AppLog.info(.settings, "Reducir transparencia: \(v ? "activado" : "desactivado")") }
-                        .onChange(of: showVisualizerInBar) { v in AppLog.info(.settings, "Visualizador en barra: \(v ? "activado" : "desactivado")") }
-                        .onChange(of: compactPlayerBar) { v in AppLog.info(.settings, "Barra compacta: \(v ? "activado" : "desactivado")") }
-                        .onChange(of: showLyricsByDefault) { v in AppLog.info(.settings, "Letras por defecto: \(v ? "activado" : "desactivado")") }
-                        .onChange(of: showFPS) { v in
-                            AppLog.info(.settings, "Contador FPS: \(v ? "activado" : "desactivado")")
-                            FPSOverlayController.shared.setEnabled(v)
-                        }
+                        CustomizationSettingsSection()
 
                         // Rendimiento (info técnica)
-                        settingsSection(icon: "gauge.open.with.needle", title: Localization.localized("settings.performance"), color: .indigo) {
-                            settingsToggleRow(title: Localization.localized("settings.showFPS"), subtitle: Localization.localized("settings.showFPSSubtitle"), icon: "speedometer", color: .green, isOn: $showFPS)
-                            settingsDivider
-                            settingsInfoRow(title: Localization.localized("settings.audioOutput"), value: audioEngine.audioQualityInfo.isEmpty ? "\(Int(audioEngine.outputSampleRate / 1000)) kHz · \(audioEngine.outputChannelCount)" : audioEngine.audioQualityInfo, icon: "speaker.wave.2.fill", color: .indigo)
-                            settingsDivider
-                            settingsInfoRow(title: Localization.localized("settings.playbackRoute"), value: audioEngine.routeDisplay, icon: "airplayaudio", color: .blue)
-                            settingsDivider
-                            // ✅ Modelo comercial real (ej. "iPhone 13 Pro") en vez de "iPhone"
-                            settingsInfoRow(title: Localization.localized("settings.device"), value: audioEngine.deviceModelName, icon: "iphone", color: .gray)
-                        }
+                        PerformanceSettingsSection(audioEngine: audioEngine)
 
-                        // Estadísticas (✅ incluye canciones en proceso de indexación)
-                        let totalSongs = fileAccessService.songs.count + fileAccessService.pendingSongsCount
-                        let isIndexing = fileAccessService.isScanning || fileAccessService.pendingSongsCount > 0
-                        settingsSection(icon: "chart.bar.fill", title: Localization.localized("settings.stats"), color: .green) {
-                            statRow(title: Localization.localized("library.songs"), value: isIndexing ? "\(totalSongs)+" : "\(totalSongs)")
-                            settingsDivider
-                            statRow(title: Localization.localized("library.albums"), value: "\(fileAccessService.albums.count)")
-                            settingsDivider
-                            statRow(title: Localization.localized("library.artists"), value: "\(fileAccessService.artists.count)")
-                        }
+                        // Estadísticas
+                        StatsSettingsSection(fileAccessService: fileAccessService)
 
                         // Avanzado
-                        settingsSection(icon: "wrench.and.screwdriver.fill", title: Localization.localized("settings.advanced"), color: .orange) {
-                            settingsButton(title: Localization.localized("settings.logs"), subtitle: Localization.localized("settings.logsSubtitle"), icon: "doc.text.magnifyingglass", color: .gray) {
-                                showLogs = true
-                            }
-                            settingsDivider
-                            settingsButton(title: Localization.localized("settings.about"), subtitle: "Aurora Player v\(appVersion)", icon: "info.circle.fill", color: .blue) {
-                                showAbout = true
-                            }
-                        }
+                        AdvancedSettingsSection(
+                            onShowLogs: { showLogs = true },
+                            onShowAbout: { showAbout = true }
+                        )
                     }
                     .padding(.horizontal, 20).padding(.top, 8).padding(.bottom, 30)
                 }
@@ -421,25 +95,7 @@ struct SettingsView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(.hidden, for: .navigationBar)
             .toolbar {
-                ToolbarItem(placement: .principal) {
-                    Text(Localization.localized("settings.title"))
-                        .font(.system(size: 20, weight: .bold, design: .rounded))
-                        .foregroundStyle(
-                            LinearGradient(
-                                colors: [AppTheme.accent, AppTheme.accent.opacity(0.75)],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                        )
-                        .accessibilityLabel(Localization.localized("settings.title"))
-                }
-
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(Localization.localized("actions.done")) { dismiss() }
-                        .foregroundStyle(AppTheme.accent)
-                        .frame(width: 44, height: 44)
-                        .contentShape(Rectangle())
-                }
+                SettingsToolbar(onDone: { dismiss() })
             }
             .sheet(isPresented: $showLogs) {
                 LogsView()
@@ -537,9 +193,60 @@ struct SettingsView: View {
         return "\(Localization.localized("settings.version")) \(short) · \(Localization.localized("settings.build")) \(build)"
     }
 
+    // MARK: - Importación embebida (carpetas / canciones individuales)
+
+    /// Tipos de audio soportados para el picker de archivos individuales.
+    private var supportedAudioTypes: [UTType] {
+        var types: [UTType] = [.audio]
+        if let mp3 = UTType(filenameExtension: "mp3") { types.append(mp3) }
+        if let flac = UTType(filenameExtension: "flac") { types.append(flac) }
+        if let m4a = UTType(filenameExtension: "m4a") { types.append(m4a) }
+        if let wav = UTType(filenameExtension: "wav") { types.append(wav) }
+        if let aiff = UTType(filenameExtension: "aiff") { types.append(aiff) }
+        if let ogg = UTType(filenameExtension: "ogg") { types.append(ogg) }
+        if let wma = UTType(filenameExtension: "wma") { types.append(wma) }
+        // ✅ Dolby Digital (AC-3) y Dolby Digital Plus (E-AC-3)
+        if let ac3 = UTType(filenameExtension: "ac3") { types.append(ac3) }
+        if let ec3 = UTType(filenameExtension: "ec3") { types.append(ec3) }
+        if let eac3 = UTType(filenameExtension: "eac3") { types.append(eac3) }
+        if let ddp = UTType(filenameExtension: "ddp") { types.append(ddp) }
+        return types
+    }
+
+    private func handleImportResult(_ result: Result<[URL], Error>) {
+        switch result {
+        case .success(let urls):
+            guard !urls.isEmpty else {
+                AppLog.error(.library, "No se seleccionó nada")
+                return
+            }
+            switch importMode {
+            case .folders:
+                if let url = urls.first {
+                    fileAccessService.addFolder(url: url)
+                }
+            case .files:
+                fileAccessService.addFiles(urls: urls)
+            }
+        case .failure(let error):
+            AppLog.error(.library, "Error al importar: \(error.localizedDescription)")
+        }
+    }
+}
+
+// ✅ Los helpers de fila (sección, botón, toggle, slider, menú, info, stat,
+// divisor e icono) viven en un protocolo con implementación por defecto: así la
+// pantalla de Ajustes y CADA sección extraída los usan con los mismos nombres,
+// sin duplicarlos. Extraer las secciones a structs —cada una con su propio
+// `body`— es lo que baja la profundidad del tipo genérico de la vista: el
+// demangler de Swift desbordaba la pila resolviendo el nombre del tipo gigante
+// que era el `body` de esta pantalla.
+private protocol SettingsRowBuilding {}
+
+extension SettingsRowBuilding {
     // MARK: - Section Builder (diseño premium estilo NowPlayingView)
     @ViewBuilder
-    private func settingsSection<Content: View>(
+    func settingsSection<Content: View>(
         icon: String, title: String, color: Color,
         @ViewBuilder content: () -> Content
     ) -> some View {
@@ -587,7 +294,7 @@ struct SettingsView: View {
 
     // MARK: - Button Row
     @ViewBuilder
-    private func settingsButton(
+    func settingsButton(
         title: String, subtitle: String, icon: String, color: Color,
         action: @escaping () -> Void
     ) -> some View {
@@ -619,7 +326,7 @@ struct SettingsView: View {
 
     // MARK: - Toggle Row
     @ViewBuilder
-    private func settingsToggleRow(
+    func settingsToggleRow(
         title: String, subtitle: String, icon: String, color: Color,
         isOn: Binding<Bool>
     ) -> some View {
@@ -648,7 +355,7 @@ struct SettingsView: View {
 
     // MARK: - Slider Row
     @ViewBuilder
-    private func settingsSliderRow(
+    func settingsSliderRow(
         title: String, value: Binding<Double>, range: ClosedRange<Double>, step: Double,
         color: Color, suffix: String
     ) -> some View {
@@ -675,7 +382,7 @@ struct SettingsView: View {
 
     // MARK: - Info Row
     @ViewBuilder
-    private func settingsInfoRow(
+    func settingsInfoRow(
         title: String, value: String, icon: String, color: Color
     ) -> some View {
         HStack(spacing: 14) {
@@ -700,7 +407,7 @@ struct SettingsView: View {
     }
 
     // MARK: - Icon (diseño premium estilo NowPlayingView)
-    private func iconView(icon: String, color: Color) -> some View {
+    func iconView(icon: String, color: Color) -> some View {
         Image(systemName: icon)
             .font(.system(size: 16, weight: .semibold))
             .foregroundStyle(color)
@@ -723,7 +430,7 @@ struct SettingsView: View {
 
     // MARK: - Menu Picker Button Row
     @ViewBuilder
-    private func settingsMenuButton(
+    func settingsMenuButton(
         title: String, subtitle: String, icon: String, color: Color,
         options: [String], selection: Binding<Int>,
         onChange: @escaping (Int) -> Void
@@ -768,7 +475,7 @@ struct SettingsView: View {
     }
 
     // MARK: - Stat Row
-    private func statRow(title: String, value: String) -> some View {
+    func statRow(title: String, value: String) -> some View {
         HStack {
             Text(title)
                 .font(.system(size: 15, weight: .medium))
@@ -786,49 +493,661 @@ struct SettingsView: View {
     }
 
     // MARK: - Divider
-    private var settingsDivider: some View {
+    var settingsDivider: some View {
         Divider()
             .opacity(0.1)
             .padding(.leading, 60)
     }
+}
 
-    // MARK: - Importación embebida (carpetas / canciones individuales)
+// MARK: - Secciones extraídas del body
+//
+// ✅ Cada sección es su PROPIO tipo con su propio `body`. Motivo: el tipo
+// genérico del `body` de SettingsView era tan profundo (closures anidadas por
+// cada picker/ForEach) que el demangler de Swift desbordaba la pila al resolver
+// su nombre en runtime → EXC_BAD_ACCESS en la stack guard. Con las secciones
+// fuera, ningún tipo individual pasa de un par de niveles de anidación.
+// El contenido es idéntico: solo cambia dónde vive.
 
-    /// Tipos de audio soportados para el picker de archivos individuales.
-    private var supportedAudioTypes: [UTType] {
-        var types: [UTType] = [.audio]
-        if let mp3 = UTType(filenameExtension: "mp3") { types.append(mp3) }
-        if let flac = UTType(filenameExtension: "flac") { types.append(flac) }
-        if let m4a = UTType(filenameExtension: "m4a") { types.append(m4a) }
-        if let wav = UTType(filenameExtension: "wav") { types.append(wav) }
-        if let aiff = UTType(filenameExtension: "aiff") { types.append(aiff) }
-        if let ogg = UTType(filenameExtension: "ogg") { types.append(ogg) }
-        if let wma = UTType(filenameExtension: "wma") { types.append(wma) }
-        // ✅ Dolby Digital (AC-3) y Dolby Digital Plus (E-AC-3)
-        if let ac3 = UTType(filenameExtension: "ac3") { types.append(ac3) }
-        if let ec3 = UTType(filenameExtension: "ec3") { types.append(ec3) }
-        if let eac3 = UTType(filenameExtension: "eac3") { types.append(eac3) }
-        if let ddp = UTType(filenameExtension: "ddp") { types.append(ddp) }
-        return types
+/// Barra de navegación de Ajustes: título con degradado y botón "Listo".
+/// ⚠️ Extraída (como el resto de secciones) para que el tipo del `body` padre
+/// deje de anidar closures dentro de `.toolbar`.
+private struct SettingsToolbar: ToolbarContent {
+    let onDone: () -> Void
+
+    var body: some ToolbarContent {
+        ToolbarItem(placement: .principal) {
+            Text(Localization.localized("settings.title"))
+                .font(.system(size: 20, weight: .bold, design: .rounded))
+                .foregroundStyle(
+                    LinearGradient(
+                        colors: [AppTheme.accent, AppTheme.accent.opacity(0.75)],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
+                .accessibilityLabel(Localization.localized("settings.title"))
+        }
+
+        ToolbarItem(placement: .navigationBarTrailing) {
+            Button(Localization.localized("actions.done")) { onDone() }
+                .foregroundStyle(AppTheme.accent)
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }
+    }
+}
+
+/// Apariencia: tema, acento, esquinas, transparencia, movimiento, idioma y
+/// tamaño de portada. Cada ajuste viaja con la sub-vista; el índice de tema
+/// sigue siendo `@State` del padre porque su valor inicial se resuelve en `init`.
+private struct AppearanceSettingsSection: View, SettingsRowBuilding {
+    @ObservedObject var theme = ThemeManager.shared
+    @ObservedObject var localization = Localization.shared
+    @Binding var selectedThemeIndex: Int
+    let themeDefaultsKey: String
+
+    @AppStorage("com.aurora.artworkCorner") private var artworkCorner: Double = 22
+    @AppStorage("com.aurora.reduceTransparency") private var reduceTransparency = false
+    @AppStorage("com.aurora.reduceMotion") private var reduceMotion = false
+    @AppStorage("com.aurora.language") private var selectedLanguage = 0 // 0 = español, 1 = inglés
+    // ✅ PARTE C: tamaño de la portada en Now Playing (0 = pequeña, 1 = media, 2 = grande).
+    @AppStorage("com.aurora.nowPlayingArtSize") private var nowPlayingArtSize = 1
+
+    // ✅ LOCALIZADOS: computados para reaccionar al cambio de idioma al
+    // instante (antes eran `let` hardcodeados en español → el inglés no
+    // se aplicaba en los pickers de Tema, Color de acento e Idioma).
+    private var themes: [String] {
+        [
+            Localization.localized("settings.theme.system"),
+            Localization.localized("settings.theme.light"),
+            Localization.localized("settings.theme.dark")
+        ]
     }
 
-    private func handleImportResult(_ result: Result<[URL], Error>) {
-        switch result {
-        case .success(let urls):
-            guard !urls.isEmpty else {
-                AppLog.error(.library, "No se seleccionó nada")
-                return
+    /// ✅ TAMAÑO DE PORTADA: etiquetas localizadas.
+    private var artSizeLabels: [String] {
+        [
+            Localization.localized("settings.artSize.small"),
+            Localization.localized("settings.artSize.medium"),
+            Localization.localized("settings.artSize.large")
+        ]
+    }
+
+    private var accents: [String] {
+        [
+            Localization.localized("settings.accent.purple"),
+            Localization.localized("settings.accent.blue"),
+            Localization.localized("settings.accent.emerald"),
+            Localization.localized("settings.accent.pink"),
+            Localization.localized("settings.accent.amber"),
+            Localization.localized("settings.accent.black"),
+            Localization.localized("settings.accent.darkRed")
+        ]
+    }
+    private var languages: [String] { ["Español", "English"] }
+
+    var body: some View {
+        settingsSection(icon: "paintbrush.fill", title: Localization.localized("settings.appearance"), color: .pink) {
+            settingsMenuButton(title: Localization.localized("settings.theme"), subtitle: themes[selectedThemeIndex], icon: "circle.lefthalf.filled", color: .gray, options: themes, selection: $selectedThemeIndex) { index in
+                selectedThemeIndex = index
+                UserDefaults.standard.set(index, forKey: themeDefaultsKey)
+                AppLog.info(.settings, "Tema: \(themes[index])")
             }
-            switch importMode {
-            case .folders:
-                if let url = urls.first {
-                    fileAccessService.addFolder(url: url)
+            settingsDivider
+            settingsMenuButton(title: Localization.localized("settings.accentColor"), subtitle: accents[theme.accentIndex], icon: "drop.fill", color: theme.accent, options: accents, selection: $theme.accentIndex) { index in
+                theme.setAccent(index)
+                AppLog.info(.settings, "Color de acento: \(accents[index])")
+            }
+            settingsDivider
+            settingsSliderRow(title: Localization.localized("settings.artworkCorners"), value: $artworkCorner, range: 0...44, step: 2, color: .blue, suffix: "pt")
+            settingsDivider
+            settingsToggleRow(title: Localization.localized("settings.reduceTransparency"), subtitle: Localization.localized("settings.reduceTransparencySubtitle"), icon: "circle.slash", color: .gray, isOn: $reduceTransparency)
+            settingsDivider
+            // ✅ REDUCIR MOVIMIENTO: accesibilidad (sensibilidad al
+            // movimiento) y, de paso, menos trabajo de GPU: splash sin
+            // stagger ni bucle de halo, transiciones de letra sin
+            // rebote y visualizador sin CADisplayLink.
+            settingsToggleRow(
+                title: Localization.localized("settings.reduceMotion"),
+                subtitle: Localization.localized("settings.reduceMotionSubtitle"),
+                icon: "figure.walk.motion",
+                color: .orange,
+                isOn: $reduceMotion
+            )
+            settingsDivider
+            settingsMenuButton(title: Localization.localized("settings.language"), subtitle: languages[selectedLanguage], icon: "globe", color: .blue, options: languages, selection: $selectedLanguage) { index in
+                selectedLanguage = index
+                // ✅ Aplicar el idioma al instante en toda la app
+                Localization.shared.currentLanguage = Localization.Language(rawValue: index) ?? .spanish
+                AppLog.info(.settings, "Idioma: \(languages[index])")
+            }
+            settingsDivider
+            // ✅ TAMAÑO DE PORTADA: mueve el tope y el factor de
+            // altura, así que se ve distinto también en el 8 Plus.
+            settingsMenuButton(
+                title: Localization.localized("settings.nowPlayingArtSize"),
+                subtitle: artSizeLabels[nowPlayingArtSize],
+                icon: "photo",
+                color: .teal,
+                options: artSizeLabels,
+                selection: $nowPlayingArtSize,
+                onChange: { index in
+                    nowPlayingArtSize = index
+                    AppLog.info(.settings, "Tamaño de portada: \(artSizeLabels[index])")
                 }
-            case .files:
-                fileAccessService.addFiles(urls: urls)
+            )
+        }
+        // ✅ LOGS TÉCNICOS: cambios de ajustes del usuario
+        .onChange(of: reduceTransparency) { v in AppLog.info(.settings, "Reducir transparencia: \(v ? "activado" : "desactivado")") }
+        .onChange(of: reduceMotion) { v in AppLog.info(.settings, "Reducir movimiento: \(v ? "activado" : "desactivado")") }
+    }
+}
+
+/// Biblioteca: alta de carpetas/archivos, listas con eliminar y re-escaneo.
+/// ⚠️ Extraída del `body` padre: es la sección con más anidación real (dos
+/// `ForEach` con `Button` dentro de `HStack` dentro de `VStack`).
+private struct LibrarySettingsSection: View, SettingsRowBuilding {
+    @ObservedObject var fileAccessService: FileAccessService
+    @ObservedObject var localization = Localization.shared
+    /// El importador (`fileImporter`, tipos permitidos y resultado) vive en el
+    /// padre: la sección solo pide que se abra en modo carpetas o en modo archivos.
+    let onAddFolder: () -> Void
+    let onAddFiles: () -> Void
+    @AppStorage("com.aurora.scanOnlyNewSongs") private var scanOnlyNewSongs = true
+
+    var body: some View {
+        settingsSection(icon: "folder.fill", title: Localization.localized("settings.library"), color: .blue) {
+            settingsButton(title: Localization.localized("settings.addFolder"), subtitle: Localization.localized("settings.addFolderSubtitle"), icon: "folder.badge.plus", color: .blue) {
+                onAddFolder()
             }
-        case .failure(let error):
-            AppLog.error(.library, "Error al importar: \(error.localizedDescription)")
+            settingsDivider
+            settingsButton(title: Localization.localized("settings.addFiles"), subtitle: Localization.localized("settings.addFilesSubtitle"), icon: "music.note.badge.plus", color: .purple) {
+                onAddFiles()
+            }
+            settingsDivider
+            settingsToggleRow(
+                title: Localization.localized("settings.scanOnlyNewSongs"),
+                subtitle: Localization.localized("settings.scanOnlyNewSongsSubtitle"),
+                icon: "magnifyingglass",
+                color: .teal,
+                isOn: $scanOnlyNewSongs
+            )
+
+            // ✅ Carpetas añadidas (lista embebida con eliminar)
+            if !fileAccessService.folders.isEmpty {
+                settingsDivider
+                ForEach(fileAccessService.folders) { folder in
+                    HStack(spacing: 14) {
+                        iconView(icon: "folder.fill", color: .blue)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(folder.displayName)
+                                .font(.system(size: 15, weight: .medium))
+                                .foregroundStyle(.primary)
+                                .lineLimit(1)
+                            Text(Localization.localized("settings.folderAdded"))
+                                .font(.system(size: 12))
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Button(role: .destructive) {
+                            fileAccessService.removeFolder(folder)
+                        } label: {
+                            Image(systemName: "trash.fill")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(.red)
+                                .frame(width: 44, height: 44)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(.horizontal, 16).padding(.vertical, 10)
+                    .contentShape(Rectangle())
+                }
+            }
+
+            // ✅ Archivos individuales añadidos (lista embebida)
+            if !fileAccessService.files.isEmpty {
+                settingsDivider
+                ForEach(fileAccessService.files) { file in
+                    HStack(spacing: 14) {
+                        iconView(icon: "music.note", color: .purple)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(file.displayName)
+                                .font(.system(size: 15, weight: .medium))
+                                .foregroundStyle(.primary)
+                                .lineLimit(1)
+                            Text(Localization.localized("settings.fileAdded"))
+                                .font(.system(size: 12))
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Button(role: .destructive) {
+                            fileAccessService.removeFile(file)
+                        } label: {
+                            Image(systemName: "trash.fill")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(.red)
+                                .frame(width: 44, height: 44)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(.horizontal, 16).padding(.vertical, 10)
+                    .contentShape(Rectangle())
+                }
+            }
+
+            if fileAccessService.folders.isEmpty && fileAccessService.files.isEmpty {
+                settingsDivider
+                VStack(spacing: 6) {
+                    Text(Localization.localized("settings.emptyLibraryTitle"))
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(.primary)
+                    Text(Localization.localized("settings.emptyLibrarySubtitle"))
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+            }
+
+            settingsDivider
+            settingsButton(title: Localization.localized("settings.updateLibrary"), subtitle: fileAccessService.isScanning ? Localization.localized("settings.scanning") : Localization.localized("settings.rescanFolders"), icon: "arrow.clockwise", color: .orange) {
+                if scanOnlyNewSongs {
+                    fileAccessService.scanForNewSongsOnly()
+                } else {
+                    fileAccessService.refreshAllFolders()
+                }
+            }
+            .disabled(fileAccessService.isScanning)
+
+            if fileAccessService.isScanning {
+                HStack(spacing: 10) {
+                    ProgressView()
+                        .progressViewStyle(CircularProgressViewStyle(tint: AppTheme.accent))
+                    Text(Localization.localized("settings.scanning"))
+                        .font(.system(size: 13))
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                }
+                .padding(.horizontal, 16).padding(.vertical, 10)
+            }
+        }
+        .onChange(of: scanOnlyNewSongs) { v in AppLog.info(.settings, "Escaneo solo nuevas: \(v ? "activado" : "desactivado")") }
+    }
+}
+
+/// Personalización avanzada: intensidad de hápticos, visualizador en la barra,
+/// estilo y altura de la barra, y letras por defecto.
+private struct CustomizationSettingsSection: View, SettingsRowBuilding {
+    @ObservedObject var localization = Localization.shared
+
+    @AppStorage("com.aurora.hapticIntensity") private var hapticIntensity: Double = 1.0
+    @AppStorage("com.aurora.showLyricsByDefault") private var showLyricsByDefault = false
+    @AppStorage("com.aurora.showVisualizerInBar") private var showVisualizerInBar = true
+    @AppStorage("com.aurora.compactPlayerBar") private var compactPlayerBar = false
+    // ✅ PARTE C: estilo de la barra de reproducción (0 = vidrio, 1 = sólido, 2 = compacto).
+    @AppStorage("com.aurora.playerBarStyle") private var playerBarStyle = 0
+
+    /// ✅ ESTILO DE BARRA: etiquetas localizadas (se re-evalúan al cambiar de
+    /// idioma, como Tema / Acento / Idioma).
+    private var playerBarStyleLabels: [String] {
+        [
+            Localization.localized("settings.playerBarStyle.glass"),
+            Localization.localized("settings.playerBarStyle.solid"),
+            Localization.localized("settings.playerBarStyle.compact")
+        ]
+    }
+
+    var body: some View {
+        settingsSection(icon: "wand.and.rays", title: Localization.localized("settings.customization"), color: .indigo) {
+            settingsSliderRow(title: Localization.localized("settings.hapticIntensity"), value: $hapticIntensity, range: 0.0...1.0, step: 0.1, color: .mint, suffix: "")
+            settingsDivider
+            settingsToggleRow(title: Localization.localized("settings.showVisualizerInBar"), subtitle: Localization.localized("settings.showVisualizerInBarSubtitle"), icon: "waveform", color: AppTheme.accent, isOn: $showVisualizerInBar)
+            settingsDivider
+            settingsToggleRow(title: Localization.localized("settings.compactPlayerBar"), subtitle: Localization.localized("settings.compactPlayerBarSubtitle"), icon: "rectangle.compress.vertical", color: .gray, isOn: $compactPlayerBar)
+            settingsDivider
+            // ✅ ESTILO DE BARRA: vidrio (el de siempre), sólido
+            // opaco (mismo aspecto sin material que rasterizar por
+            // frame) o compacto (vidrio con la altura reducida).
+            settingsMenuButton(
+                title: Localization.localized("settings.playerBarStyle"),
+                subtitle: playerBarStyleLabels[playerBarStyle],
+                icon: "rectangle.topthird.inset.filled",
+                color: .indigo,
+                options: playerBarStyleLabels,
+                selection: $playerBarStyle,
+                onChange: { index in
+                    playerBarStyle = index
+                    AppLog.info(.settings, "Estilo de barra: \(playerBarStyleLabels[index])")
+                }
+            )
+            settingsDivider
+            settingsToggleRow(title: Localization.localized("settings.showLyricsByDefault"), subtitle: Localization.localized("settings.showLyricsByDefaultSubtitle"), icon: "quote.bubble", color: .blue, isOn: $showLyricsByDefault)
+        }
+        // ✅ LOGS TÉCNICOS: cambios de ajustes del usuario
+        .onChange(of: showVisualizerInBar) { v in AppLog.info(.settings, "Visualizador en barra: \(v ? "activado" : "desactivado")") }
+        .onChange(of: compactPlayerBar) { v in AppLog.info(.settings, "Barra compacta: \(v ? "activado" : "desactivado")") }
+        .onChange(of: showLyricsByDefault) { v in AppLog.info(.settings, "Letras por defecto: \(v ? "activado" : "desactivado")") }
+    }
+}
+
+/// Reproducción: visualizador, hápticos, pantalla encendida, autoplay, velocidad
+/// de letras y ondas de la fila actual. Se lleva sus ajustes y sus efectos, incluida
+/// la sincronización de la pantalla encendida con el motor.
+private struct PlaybackSettingsSection: View, SettingsRowBuilding {
+    @ObservedObject var audioEngine: AudioEngine
+    @ObservedObject var localization = Localization.shared
+
+    @AppStorage("com.aurora.showVisualizer") private var showVisualizer = true
+    @AppStorage("com.aurora.enableHaptics") private var enableHaptics = true
+    @AppStorage("com.aurora.keepScreenOn") private var keepScreenOn = false
+    @AppStorage("com.aurora.autoPlayOnStart") private var autoPlayOnStart = false
+    // ✅ PARTE C: ondas de la canción actual en las listas.
+    @AppStorage("com.aurora.showPlayingIndicator") private var showPlayingIndicator = true
+    // ✅ PARTE C: velocidad del auto-scroll de las letras (0 = lenta, 1 = normal, 2 = rápida).
+    @AppStorage("com.aurora.lyricsScrollSpeed") private var lyricsScrollSpeed = 1
+
+    /// ✅ VELOCIDAD DE LETRAS: etiquetas localizadas.
+    private var lyricsSpeedLabels: [String] {
+        [
+            Localization.localized("settings.lyricsSpeed.slow"),
+            Localization.localized("settings.lyricsSpeed.normal"),
+            Localization.localized("settings.lyricsSpeed.fast")
+        ]
+    }
+
+    var body: some View {
+        settingsSection(icon: "dial.max.fill", title: Localization.localized("settings.playback"), color: .orange) {
+            settingsToggleRow(title: Localization.localized("settings.visualizer"), subtitle: Localization.localized("settings.visualizerSubtitle"), icon: "waveform.path.ecg", color: .pink, isOn: $showVisualizer)
+            settingsDivider
+            settingsToggleRow(title: Localization.localized("settings.haptics"), subtitle: Localization.localized("settings.hapticsSubtitle"), icon: "iphone.radiowaves.left.and.right", color: .mint, isOn: $enableHaptics)
+            settingsDivider
+            settingsToggleRow(title: Localization.localized("settings.keepScreenOn"), subtitle: Localization.localized("settings.keepScreenOnSubtitle"), icon: "sun.max.fill", color: .yellow, isOn: $keepScreenOn)
+            settingsDivider
+            settingsToggleRow(title: Localization.localized("settings.autoPlayOnStart"), subtitle: Localization.localized("settings.autoPlayOnStartSubtitle"), icon: "play.circle", color: .green, isOn: $autoPlayOnStart)
+            settingsDivider
+            // ✅ VELOCIDAD DEL SCROLL DE LETRAS: solo el muelle del
+            // auto-scroll de LyricsView (0,5 / 0,35 / 0,2 s).
+            settingsMenuButton(
+                title: Localization.localized("settings.lyricsScrollSpeed"),
+                subtitle: lyricsSpeedLabels[lyricsScrollSpeed],
+                icon: "text.line.first.and.arrowtriangle.forward",
+                color: .blue,
+                options: lyricsSpeedLabels,
+                selection: $lyricsScrollSpeed,
+                onChange: { index in
+                    lyricsScrollSpeed = index
+                    AppLog.info(.settings, "Velocidad de letras: \(lyricsSpeedLabels[index])")
+                }
+            )
+            settingsDivider
+            // ✅ ONDAS EN LA CANCIÓN ACTUAL: apagado, la fila que
+            // suena se marca solo con el título en color de acento
+            // (útil si las barras animadas distraen en listas largas).
+            settingsToggleRow(
+                title: Localization.localized("settings.showPlayingIndicator"),
+                subtitle: Localization.localized("settings.showPlayingIndicatorSubtitle"),
+                icon: "waveform",
+                color: AppTheme.accent,
+                isOn: $showPlayingIndicator
+            )
+        }
+        // ✅ Sincronización en vivo con el engine (antes solo
+        // se aplicaba al reiniciar ContentView)
+        .onChange(of: keepScreenOn) { newValue in
+            audioEngine.isKeepScreenOnEnabled = newValue
+            AppLog.info(.settings, "Mantener pantalla encendida: \(newValue ? "activado" : "desactivado")")
+        }
+        // ✅ LOGS TÉCNICOS: cambios de ajustes del usuario
+        .onChange(of: showVisualizer) { v in AppLog.info(.settings, "Visualizador: \(v ? "activado" : "desactivado")") }
+        .onChange(of: enableHaptics) { v in AppLog.info(.settings, "Haptics: \(v ? "activado" : "desactivado")") }
+        .onChange(of: autoPlayOnStart) { v in AppLog.info(.settings, "Reproducir al iniciar: \(v ? "activado" : "desactivado")") }
+        .onChange(of: showPlayingIndicator) { v in AppLog.info(.settings, "Ondas en la canción actual: \(v ? "activado" : "desactivado")") }
+    }
+}
+
+/// Acento desde portada: un solo ajuste activa la detección de color en toda la app.
+private struct ArtworkAccentSettingsSection: View, SettingsRowBuilding {
+    @ObservedObject var theme = ThemeManager.shared
+    @ObservedObject var localization = Localization.shared
+
+    var body: some View {
+        settingsSection(icon: "swatchpalette.fill", title: Localization.localized("settings.artworkAccent"), color: .purple) {
+            settingsToggleRow(
+                title: Localization.localized("settings.artworkAccentToggle"),
+                subtitle: Localization.localized("settings.artworkAccentSubtitle"),
+                icon: "paintpalette.fill",
+                color: .purple,
+                isOn: Binding(
+                    get: { theme.accentFromArtwork },
+                    set: { theme.accentFromArtwork = $0 }
+                )
+            )
+            settingsDivider
+            // ✅ Indicador del color activo (extraído de la portada)
+            HStack(spacing: 12) {
+                Circle()
+                    .fill(theme.artworkAccentColor ?? theme.accent)
+                    .frame(width: 28, height: 28)
+                    .overlay(
+                        Circle()
+                            .stroke(Color.primary.opacity(0.15), lineWidth: 1)
+                    )
+                    .shadow(color: (theme.artworkAccentColor ?? theme.accent).opacity(0.4), radius: 4, y: 2)
+                Text(Localization.localized("settings.artworkAccentActive"))
+                    .font(.system(size: 14, weight: .medium, design: .rounded))
+                    .foregroundStyle(.secondary)
+                Spacer()
+            }
+            .padding(.vertical, 4)
+        }
+    }
+}
+
+/// Audio: ecualizador, modo de sesión, buffer de E/S, mono y limiter.
+/// ⚠️ Extraída del `body` padre: era la sección más anidada (dos pickers con
+/// closures de tres niveles) y contribuía al tipo gigante que desbordaba el
+/// demangler al abrir Ajustes.
+private struct AudioSettingsSection: View, SettingsRowBuilding {
+    @ObservedObject var audioEngine: AudioEngine
+    @ObservedObject var localization = Localization.shared
+    @Binding var showEqualizerSheet: Bool
+    // ✅ AUDIÓFILO: configuración del modo de audio
+    @AppStorage("com.aurora.audioSessionMode") private var audioSessionMode = 0 // 0 = default, 1 = measurement
+    // ✅ AUDIÓFILO: buffer de E/S preferido (0 = Auto). Lo lee AudioEngine al
+    // configurar la sesión y lo aplica en vivo `applyPreferredIOBufferDuration`.
+    @AppStorage("com.aurora.ioBufferMs") private var ioBufferMs = 0
+    /// ✅ BUFFER I/O: opciones del picker (0 = Auto) y el índice que corresponde
+    /// al valor guardado. Etiquetas localizadas para que el cambio de idioma se
+    /// vea al instante, como en Tema / Acento / Idioma.
+    private let ioBufferValues: [Int] = [0, 8, 15, 20]
+    private var ioBufferLabels: [String] {
+        [
+            Localization.localized("settings.ioBufferAuto"),
+            "8 ms",
+            "15 ms",
+            "20 ms"
+        ]
+    }
+    private var ioBufferIndex: Int {
+        ioBufferValues.firstIndex(of: ioBufferMs) ?? 0
+    }
+
+    var body: some View {
+        // ✅ Crossfade eliminado por completo (fuente de bugs
+        // de sincronización): ya no aparece en Ajustes.
+        settingsSection(icon: "waveform", title: Localization.localized("settings.audio"), color: AppTheme.accent) {
+            settingsButton(title: Localization.localized("settings.equalizer"), subtitle: audioEngine.isEQEnabled ? "\(Localization.localized("equalizer.active")) (\(audioEngine.eqPreset.displayName))" : Localization.localized("equalizer.disabled"), icon: "slider.horizontal.3", color: AppTheme.accent) {
+                showEqualizerSheet = true
+            }
+            settingsDivider
+            // ✅ AUDIÓFILO: modo de audio (Default vs Measurement)
+            settingsMenuButton(
+                title: Localization.localized("settings.audioMode"),
+                subtitle: audioSessionMode > 0 ? "Measurement (bit-perfect)" : "Default",
+                icon: "waveform.badge.micrometer",
+                color: .orange,
+                options: ["Default", "Measurement (bit-perfect)"],
+                selection: Binding(
+                    get: { self.audioSessionMode },
+                    set: { newValue in
+                        Haptics.light()
+                        self.audioSessionMode = newValue
+                        audioEngine.setAudioSessionMode(newValue)
+                        AppLog.info(.settings, "Modo de audio: \(newValue == 1 ? "Measurement" : "Default")")
+                    }
+                ),
+                onChange: { newValue in
+                    // Actualizar directamente sin verificación de cambio
+                    Haptics.light()
+                    self.audioSessionMode = newValue
+                    audioEngine.setAudioSessionMode(newValue)
+                }
+            )
+            settingsDivider
+            // ✅ BUFFER I/O: control real sobre la latencia y la CPU
+            // del motor. Con un DAC externo o en A11, 8 ms puede dar
+            // glitches que 15/20 ms resuelven; en Bluetooth el enlace
+            // manda y iOS ignora el valor. No altera la calidad: solo
+            // cambia cada cuánto se sirve un buffer.
+            settingsMenuButton(
+                title: Localization.localized("settings.ioBuffer"),
+                subtitle: ioBufferLabels[ioBufferIndex],
+                icon: "timer",
+                color: .teal,
+                options: ioBufferLabels,
+                selection: Binding(
+                    get: { ioBufferIndex },
+                    set: { newValue in
+                        Haptics.light()
+                        let ms = ioBufferValues[newValue]
+                        self.ioBufferMs = ms
+                        audioEngine.applyPreferredIOBufferDuration(ms: ms)
+                        AppLog.info(.settings, "Buffer I/O: \(ms == 0 ? "Auto" : "\(ms) ms")")
+                    }
+                ),
+                onChange: { newValue in
+                    Haptics.light()
+                    let ms = ioBufferValues[newValue]
+                    self.ioBufferMs = ms
+                    audioEngine.applyPreferredIOBufferDuration(ms: ms)
+                }
+            )
+            settingsDivider
+            settingsToggleRow(
+                title: Localization.localized("settings.monoAudio"),
+                subtitle: Localization.localized("settings.monoAudioSubtitle"),
+                icon: "ear",
+                color: .cyan,
+                isOn: Binding(
+                    get: { audioEngine.isMonoAudioEnabled },
+                    set: { newValue in
+                        if newValue != audioEngine.isMonoAudioEnabled {
+                            Haptics.light()
+                            audioEngine.toggleMonoAudio()
+                            AppLog.info(.settings, "Audio mono: \(newValue ? "activado" : "desactivado")")
+                        }
+                    }
+                )
+            )
+            settingsDivider
+            // ✅ LIMITER: anti-distorsión universal
+            settingsToggleRow(
+                title: Localization.localized("settings.limiter"),
+                subtitle: Localization.localized("settings.limiterSubtitle"),
+                icon: "waveform.path",
+                color: .purple,
+                isOn: Binding(
+                    get: { audioEngine.isLimiterEnabled },
+                    set: { newValue in
+                        if newValue != audioEngine.isLimiterEnabled {
+                            Haptics.light()
+                            audioEngine.toggleLimiter()
+                        }
+                    }
+                )
+            )
+            // ✅ ELIMINADO el toggle "Optimización Bluetooth": su
+            // única acción real era escribir un log (no forzaba
+            // buffer ni tasa, porque en A2DP la latencia y el
+            // reloj los impone el enlace) y además no se
+            // persistía. Un interruptor que no cambia nada es
+            // peor que no tenerlo. La implementación interna
+            // sigue en AudioEngine por si se le da uso futuro.
+        }
+    }
+}
+
+/// Rendimiento: contador de FPS e información técnica de la salida de audio.
+private struct PerformanceSettingsSection: View, SettingsRowBuilding {
+    @ObservedObject var audioEngine: AudioEngine
+    @ObservedObject var localization = Localization.shared
+    /// ✅ El ajuste viaja con su efecto: el overlay de FPS se activa desde aquí
+    /// (antes vivía en la cadena de `onChange` del padre).
+    @AppStorage("com.aurora.showFPS") private var showFPS = false
+
+    var body: some View {
+        settingsSection(icon: "gauge.open.with.needle", title: Localization.localized("settings.performance"), color: .indigo) {
+            settingsToggleRow(title: Localization.localized("settings.showFPS"), subtitle: Localization.localized("settings.showFPSSubtitle"), icon: "speedometer", color: .green, isOn: $showFPS)
+            settingsDivider
+            settingsInfoRow(title: Localization.localized("settings.audioOutput"), value: audioEngine.audioQualityInfo.isEmpty ? "\(Int(audioEngine.outputSampleRate / 1000)) kHz · \(audioEngine.outputChannelCount)" : audioEngine.audioQualityInfo, icon: "speaker.wave.2.fill", color: .indigo)
+            settingsDivider
+            settingsInfoRow(title: Localization.localized("settings.playbackRoute"), value: audioEngine.routeDisplay, icon: "airplayaudio", color: .blue)
+            settingsDivider
+            // ✅ Modelo comercial real (ej. "iPhone 13 Pro") en vez de "iPhone"
+            settingsInfoRow(title: Localization.localized("settings.device"), value: audioEngine.deviceModelName, icon: "iphone", color: .gray)
+        }
+        // ✅ LOGS TÉCNICOS: el cambio del contador aplica el overlay al instante.
+        .onChange(of: showFPS) { v in
+            AppLog.info(.settings, "Contador FPS: \(v ? "activado" : "desactivado")")
+            FPSOverlayController.shared.setEnabled(v)
+        }
+    }
+}
+
+/// Estadísticas de la biblioteca (incluye las canciones en indexación).
+private struct StatsSettingsSection: View, SettingsRowBuilding {
+    @ObservedObject var fileAccessService: FileAccessService
+    @ObservedObject var localization = Localization.shared
+
+    var body: some View {
+        // ✅ Incluye canciones en proceso de indexación.
+        let totalSongs = fileAccessService.songs.count + fileAccessService.pendingSongsCount
+        let isIndexing = fileAccessService.isScanning || fileAccessService.pendingSongsCount > 0
+        settingsSection(icon: "chart.bar.fill", title: Localization.localized("settings.stats"), color: .green) {
+            statRow(title: Localization.localized("library.songs"), value: isIndexing ? "\(totalSongs)+" : "\(totalSongs)")
+            settingsDivider
+            statRow(title: Localization.localized("library.albums"), value: "\(fileAccessService.albums.count)")
+            settingsDivider
+            statRow(title: Localization.localized("library.artists"), value: "\(fileAccessService.artists.count)")
+        }
+    }
+}
+
+/// Avanzado (registros + acerca de).
+private struct AdvancedSettingsSection: View, SettingsRowBuilding {
+    @ObservedObject var localization = Localization.shared
+
+    let onShowLogs: () -> Void
+    let onShowAbout: () -> Void
+
+    private var appVersion: String {
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "2.1.0"
+        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "21"
+        return "\(version) (\(build))"
+    }
+
+    var body: some View {
+        settingsSection(icon: "wrench.and.screwdriver.fill", title: Localization.localized("settings.advanced"), color: .orange) {
+            settingsButton(title: Localization.localized("settings.logs"), subtitle: Localization.localized("settings.logsSubtitle"), icon: "doc.text.magnifyingglass", color: .gray) {
+                onShowLogs()
+            }
+            settingsDivider
+            settingsButton(title: Localization.localized("settings.about"), subtitle: "Aurora Player v\(appVersion)", icon: "info.circle.fill", color: .blue) {
+                onShowAbout()
+            }
         }
     }
 }

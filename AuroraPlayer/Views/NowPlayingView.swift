@@ -21,6 +21,10 @@ struct NowPlayingView: View {
     @AppStorage("com.aurora.reduceTransparency") private var reduceTransparency = false
     // ✅ Ajuste "Mostrar letras" (antes no se aplicaba)
     @AppStorage("com.aurora.showLyricsByDefault") private var showLyricsByDefault = false
+    // ✅ Tamaño de la portada (Ajustes → Apariencia): 0 = pequeña, 1 = media (la
+    // de siempre), 2 = grande. Solo cambia el tamaño EN PANTALLA: la imagen se
+    // sigue cargando entera, no se remuestrea ni se pierde resolución.
+    @AppStorage("com.aurora.nowPlayingArtSize") private var nowPlayingArtSize = 1
 
     @State private var showLyrics = false
     @State private var showEqualizer = false
@@ -29,7 +33,10 @@ struct NowPlayingView: View {
     // ✅ NUEVO: menú de 3 puntos → ver artista / álbum / letras / cola / compartir
     @State private var showArtistDetail = false
     @State private var showAlbumDetail = false
-    @State private var artworkScale: CGFloat = 1.0
+    /// ✅ Arranca por DEBAJO de 1: el `withAnimation(.spring)` de `onAppear` la
+    /// lleva a 1.0, así la portada entra con spring. Antes valía 1.0 y el spring
+    /// de `onAppear` no animaba nada (y el estado ni se aplicaba a ninguna vista).
+    @State private var artworkScale: CGFloat = 0.94
     @State private var extractedColor: Color = AppTheme.accent
     // ✅ Segundo color dominante de la carátula (solo con "Acento desde
     // portada" activo). Alimenta los gradientes de DOS colores, igual que en
@@ -56,8 +63,26 @@ struct NowPlayingView: View {
         let screenHeight = UIScreen.main.bounds.height
         // ✅ MEJORADO: Portada más grande y mejor centrada
         let maxByWidth = screenWidth - 40
-        let maxByHeight = screenHeight * (isCompactScreen ? 0.32 : 0.42)
-        return min(340, maxByWidth, maxByHeight)
+        // ✅ TAMAÑO ELEGIBLE: el ajuste mueve el TOPE y el factor de altura. Con
+        // el factor fijo, en el 8 Plus (736 pt de alto) las tres opciones caían en
+        // el mismo valor porque la altura era lo que recortaba la portada; así las
+        // tres se ven distintas también ahí. La opción "media" mantiene EXACTAMENTE
+        // el cálculo anterior (0.32 en pantalla compacta, 0.42 en el resto).
+        let baseHeightFactor: CGFloat = isCompactScreen ? 0.32 : 0.42
+        let cap: CGFloat
+        let heightFactor: CGFloat
+        switch nowPlayingArtSize {
+        case 0:
+            cap = 280
+            heightFactor = baseHeightFactor * 0.8
+        case 2:
+            cap = 400
+            heightFactor = baseHeightFactor * 1.25
+        default:
+            cap = 340
+            heightFactor = baseHeightFactor
+        }
+        return min(cap, maxByWidth, screenHeight * heightFactor)
     }
 
     // ✅ Contraste: si el color dominante es claro → texto oscuro; si es oscuro → texto blanco
@@ -194,6 +219,11 @@ struct NowPlayingView: View {
                         // no al pausar/resumir. Antes había una animación rara de
                         // escala (1.02 → 1.0) que se veía artificial al tocar play/pause.
                         .animation(.easeInOut(duration: 0.3), value: audioEngine.currentSong?.id)
+                        // ✅ Entrada de la portada (0.94 → 1.0). Va FUERA del
+                        // `.animation` de arriba a propósito: así el spring lo pone
+                        // el `withAnimation` del cambio de canción/`onAppear`, y no
+                        // el easeInOut que anima el color del borde.
+                        .scaleEffect(artworkScale)
 
                     Spacer(minLength: isCompactScreen ? 10 : 16)
 
@@ -201,7 +231,11 @@ struct NowPlayingView: View {
                         // ✅ MEJORADO: AudioVisualizer ya rasteriza internamente
                         // con .drawingGroup() y maneja la atenuación al pausar.
                         // Nada de animaciones raras de escala aquí.
-                        AudioVisualizer(audioEngine: audioEngine, tintColor: extractedColor)
+                        AudioVisualizer(
+                            audioEngine: audioEngine,
+                            tintColor: extractedColor,
+                            secondaryTintColor: extractedSecondaryColor
+                        )
                             .frame(height: isCompactScreen ? 32 : 48)
                             .padding(.horizontal, 36)
                     }
@@ -257,6 +291,17 @@ struct NowPlayingView: View {
                 // ✅ Propagar el color de acento a ThemeManager para que PlayerBar
                 // y todas las vistas que lo observen se actualicen al instante
                 ThemeManager.shared.updateArtworkAccent(from: audioEngine.currentSong)
+                // ✅ Entrada cinematográfica de la portada al CAMBIAR de canción: se
+                // encoge un instante y vuelve con spring. El 0.94 se fija SIN
+                // animación y el spring se aplica en el siguiente turno del run
+                // loop: si las dos asignaciones fueran seguidas, SwiftUI no vería
+                // el estado intermedio y no habría nada que animar.
+                artworkScale = 0.94
+                DispatchQueue.main.async {
+                    withAnimation(.spring(response: 0.55, dampingFraction: 0.8)) {
+                        artworkScale = 1.0
+                    }
+                }
             }
             .onChange(of: ThemeManager.shared.accentFromArtwork) { value in
                 // ✅ FIX: propaga el color a ThemeManager (que a su vez publica a
@@ -288,7 +333,14 @@ struct NowPlayingView: View {
             .toolbarBackground(.hidden, for: .navigationBar)
             .navigationBarBackButtonHidden(true)
             .sheet(isPresented: $showLyrics) {
-                LyricsView(song: audioEngine.currentSong, viewModel: audioEngine.lyricsViewModel)
+                // ✅ La observación del motor tiene que vivir DENTRO del contenido de
+                // la hoja: una hoja ya presentada no garantiza re-evaluar este
+                // closure al cambiar de canción, así que `LyricsView` recibía
+                // siempre la canción con la que se abrió (`song` congelado) y sus
+                // letras no cambiaban al pasar de pista. Es la misma lección que
+                // NowPlayingView, que sí se mantiene vivo porque observa el motor
+                // él mismo.
+                LyricsSheetHost(audioEngine: audioEngine)
             }
             .sheet(isPresented: $showEqualizer) {
                 EqualizerView(audioEngine: audioEngine)
@@ -322,13 +374,21 @@ struct NowPlayingView: View {
                             .clipped()
                             .blur(radius: 25)
                             .opacity(0.45)
-
-                        extractedColor.opacity(0.12)
                     }
                 }
                 .ignoresSafeArea()
                 .allowsHitTesting(false)
                 .drawingGroup(opaque: false)
+
+                // ✅ La capa de COLOR sale del `drawingGroup`: así el cambio de
+                // acento al pasar de canción se interpola (0.6s) SIN obligar a
+                // re-rasterizar el blur de pantalla completa en cada frame, que es
+                // lo caro en A11. El blur queda rasterizado una vez y esto es un
+                // cuadrado translúcido encima.
+                extractedColor.opacity(0.12)
+                    .ignoresSafeArea()
+                    .allowsHitTesting(false)
+                    .animation(.easeInOut(duration: 0.6), value: extractedColor)
             } else {
                 LinearGradient(
                     colors: [
@@ -945,8 +1005,11 @@ private struct ProgressScrubView: View {
                         .overlay(alignment: .leading) {
                             Circle()
                                 .fill(.white)
-                                .frame(width: isScrubbing ? 14 : 10, height: isScrubbing ? 14 : 10)
-                                .shadow(color: .black.opacity(0.2), radius: 3, x: 0, y: 1)
+                                // ✅ Más grande (18/13 en vez de 14/10) y con UNA sola
+                                // sombra más marcada: el indicador se veía minúsculo
+                                // y flotaba sin peso sobre la barra.
+                                .frame(width: isScrubbing ? 18 : 13, height: isScrubbing ? 18 : 13)
+                                .shadow(color: .black.opacity(0.28), radius: 4, x: 0, y: 2)
                                 .position(
                                     x: geometry.size.width * progress,
                                     y: barHeight / 2
@@ -1031,5 +1094,19 @@ struct AirPlayRoutePickerView: UIViewRepresentable {
         // FIX: reaccionar al acento dinamico de la caratula / acento manual
         let tint = AppTheme.accentUIColor
         if uiView.tintColor != tint { uiView.tintColor = tint }
+    }
+}
+
+// MARK: - Host de la hoja de letras
+/// ✅ Vista intermedia entre la hoja y `LyricsView` cuyo único trabajo es
+/// OBSERVAR el motor: así las letras reciben la canción ACTUAL aunque la hoja
+/// lleve rato presentada. `LyricsView` sigue recibiendo la canción como valor
+/// (no cambia su firma): el cambio de pista le llega por su
+/// `onChange(of: song?.id)`, que es el que re-parsea y re-centra sin animación.
+private struct LyricsSheetHost: View {
+    @ObservedObject var audioEngine: AudioEngine
+
+    var body: some View {
+        LyricsView(song: audioEngine.currentSong, viewModel: audioEngine.lyricsViewModel)
     }
 }

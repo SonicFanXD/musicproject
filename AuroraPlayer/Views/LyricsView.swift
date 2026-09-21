@@ -26,6 +26,10 @@ struct LyricsView: View {
     // ✅ Observado para que los textos se re-rendericen al cambiar de idioma en vivo.
     @ObservedObject private var localization = Localization.shared
     @Environment(\.dismiss) private var dismiss
+    // ✅ VELOCIDAD DEL SCROLL (Ajustes → Reproducción): 0 = lenta, 1 = normal (la
+    // de Apple Music), 2 = rápida. Solo cambia el muelle del auto-scroll; el
+    // relleno por frame sigue igual.
+    @AppStorage("com.aurora.lyricsScrollSpeed") private var lyricsScrollSpeed = 1
 
     /// ✅ Petición de centrado: el `token` garantiza que SwiftUI reciba un
     /// cambio aunque la línea destino sea la misma (al cambiar de canción), así
@@ -37,6 +41,11 @@ struct LyricsView: View {
 
     @State private var scrollRequest: ScrollRequest?
     @State private var scrollToken: Int = 0
+    /// ✅ Qué canción tienen ahora mismo las líneas publicadas: es lo que detecta
+    /// el cambio de canción con la vista ya abierta y lo que evita re-parsear la
+    /// MISMA dos veces (el `onAppear` y el `onChange` pueden coincidir en el mismo
+    /// ciclo, y el `onAppear` inicial también pasa por aquí).
+    @State private var lastParsedSongID: UUID?
     /// ✅ Distingue el PRIMER centrado (al entrar o al cambiar de canción) del
     /// resto: el primero va SIN animación (la vista "nace" ya centrada) y los
     /// scrolleos durante la reproducción sí se animan.
@@ -219,6 +228,17 @@ struct LyricsView: View {
         .padding(.horizontal, Self.horizontalPadding)
     }
 
+    /// ✅ Respuesta del muelle según el ajuste de velocidad (0,5 / 0,35 / 0,2 s).
+    /// El damping se mantiene en 0.85: es lo que da el tacto "sin rebote" de
+    /// Apple Music en los tres casos.
+    private var scrollSpringResponse: Double {
+        switch lyricsScrollSpeed {
+        case 0: return 0.5
+        case 2: return 0.2
+        default: return 0.35
+        }
+    }
+
     /// ✅ Scroll centrado y natural (spring 0.35s, damping 0.85, el tacto de
     /// Apple Music) al cambiar de línea activa. Cuanto más corto es el solape
     /// entre la animación del scroll y el wipe a 60 fps de la línea entrante,
@@ -229,7 +249,7 @@ struct LyricsView: View {
         guard let request else { return }
 
         if hasDoneInitialScroll {
-            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+            withAnimation(.spring(response: scrollSpringResponse, dampingFraction: 0.85)) {
                 proxy.scrollTo(request.lineID, anchor: .center)
             }
         } else {
@@ -291,18 +311,38 @@ struct LyricsView: View {
 
     // MARK: - Parse lyrics
     private func parseLyricsIfNeeded() {
-        guard let song = song else { return }
+        guard let song else {
+            // ✅ Sin canción (fin de cola / stop): limpiar en vez de dejar en
+            // pantalla las letras de la canción anterior.
+            if lastParsedSongID != nil {
+                lastParsedSongID = nil
+                viewModel.clearLyrics()
+            }
+            return
+        }
+
+        // ✅ Misma canción: solo re-sincronizar. Sin esto, el `onAppear` y el
+        // `onChange` del mismo ciclo re-parsearían (y reiniciarían el wipe) dos
+        // veces sin motivo.
+        guard lastParsedSongID != song.id else {
+            viewModel.syncToCurrentTime()
+            return
+        }
+
+        // ✅ Canción DISTINTA con la vista abierta: vaciar el estado de la
+        // anterior (líneas, línea activa y `hasLyrics`) ANTES de publicar la
+        // nueva, para que no quede ni un frame mostrando el verso anterior.
+        lastParsedSongID = song.id
+        viewModel.clearLyrics()
 
         // ✅ Usar lyrics del modelo de canción (ya parseado en FileAccessService)
         let lyrics = song.lyrics
-        if !lyrics.isEmpty {
-            viewModel.parseLyrics(lyrics)
-            // ✅ La línea activa se fija con el tiempo REAL de reproducción antes
-            // del primer centrado (entrar en el minuto 2:30 no muestra la línea 1).
-            viewModel.syncToCurrentTime()
-        } else {
-            viewModel.clearLyrics()
-        }
+        guard !lyrics.isEmpty else { return }
+
+        viewModel.parseLyrics(lyrics)
+        // ✅ La línea activa se fija con el tiempo REAL de reproducción antes
+        // del primer centrado (entrar en el minuto 2:30 no muestra la línea 1).
+        viewModel.syncToCurrentTime()
     }
 }
 
@@ -483,6 +523,10 @@ private struct LyricLineView: View, Equatable {
     let viewModel: LyricsViewModel
     /// ✅ Ancho útil para el texto: el troceo por medición real depende de él.
     let availableWidth: CGFloat
+    // ✅ REDUCIR MOVIMIENTO (Ajustes → Apariencia): sin "pop" de escala y sin
+    // muelle — la línea activa entra con un fundido corto. Los usuarios con
+    // sensibilidad al movimiento lo piden y además ahorra animaciones por evento.
+    @AppStorage("com.aurora.reduceMotion") private var reduceMotion = false
 
     /// ✅ Separación entre filas visuales de una misma línea lógica (también en
     /// la capa atenuada, para que el texto no salte al activarse la línea).
@@ -529,11 +573,13 @@ private struct LyricLineView: View, Equatable {
                     ))
             } else {
                 dimmedRows(rows)
-                    // ✅ Profundidad MUY sutil (0.5pt), y SOLO en las líneas
-                    // inactivas: la activa es la que pide frames a 60 Hz y no
-                    // debe pagar ninguna pasada de blur. Si en el iPhone 8 Plus
-                    // no convence, basta con borrar esta línea.
-                    .blur(radius: 0.5)
+                    // ✅ SIN blur: las líneas inactivas visibles son ~10 y cada
+                    // `.blur` es una pasada offscreen propia POR FRAME mientras se
+                    // anima el scroll (justo el "múltiples blurs simultáneos en
+                    // pantalla" que no se puede permitir en un A11 el día que se
+                    // pide 60fps sostenidos). A 0.5pt tampoco aportaba profundidad
+                    // percibible y sí emborronaba algo el texto de 18pt, así que
+                    // se gana fluidez Y nitidez. Restaurarla es añadir una línea.
                     .transition(.opacity)
             }
         }
@@ -541,14 +587,14 @@ private struct LyricLineView: View, Equatable {
         .padding(.vertical, 12)
         // ✅ "Pop" premium al cambiar de línea: las inactivas "respiran" algo
         // más pequeñas (0.96) y la activa recupera la escala completa.
-        .scaleEffect(isActive ? 1.0 : 0.96)
+        .scaleEffect(reduceMotion ? 1.0 : (isActive ? 1.0 : 0.96))
         .animation(lineActivation, value: isActive)
     }
 
     /// ✅ Spring del cambio de línea (activación de la capa brillante y pop de
     /// escala). El wipe a 60 fps NO lo usa: el TimelineView interpola por frame.
     private var lineActivation: Animation {
-        .spring(response: 0.4, dampingFraction: 0.75)
+        reduceMotion ? .easeInOut(duration: 0.2) : .spring(response: 0.4, dampingFraction: 0.75)
     }
 
     /// ✅ Filas REALES de la línea (cacheado por texto+fuente+ancho): las lógicas
