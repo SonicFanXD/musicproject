@@ -3,6 +3,8 @@ import UniformTypeIdentifiers
 
 struct FolderPickerView: View {
     @ObservedObject var fileAccessService: FileAccessService
+    // ✅ Observado para que los textos se re-rendericen al cambiar de idioma en vivo.
+    @ObservedObject private var localization = Localization.shared
     @Environment(\.dismiss) private var dismiss
 
     @State private var showImporter = false
@@ -43,11 +45,11 @@ struct FolderPickerView: View {
             .toolbar {
                 // Título personalizado consistente con la app
                 ToolbarItem(placement: .principal) {
-                    Text("Biblioteca")
+                    Text(Localization.localized("library.title"))
                         .font(.system(size: 20, weight: .bold, design: .rounded))
                         // ✅ Acento de dos colores (antes un solo color con opacidad).
                         .foregroundStyle(AppTheme.accentGradient)
-                        .accessibilityLabel("Biblioteca")
+                        .accessibilityLabel(Localization.localized("library.title"))
                 }
 
                 ToolbarItem(placement: .navigationBarTrailing) {
@@ -152,11 +154,11 @@ struct FolderPickerView: View {
                     }
 
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Añadir carpeta")
+                        Text(Localization.localized("folders.addFolder"))
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(.primary)
 
-                        Text("Selecciona una carpeta completa")
+                        Text(Localization.localized("folders.addFolderSubtitle"))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -193,11 +195,11 @@ struct FolderPickerView: View {
                     }
 
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Añadir archivos")
+                        Text(Localization.localized("folders.addFiles"))
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(.primary)
 
-                        Text("Selecciona canciones individuales")
+                        Text(Localization.localized("folders.addFilesSubtitle"))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -233,11 +235,11 @@ struct FolderPickerView: View {
                     }
 
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Actualizar biblioteca")
+                        Text(Localization.localized("folders.refresh"))
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(.primary)
 
-                        Text("Rescanear carpetas existentes")
+                        Text(Localization.localized("folders.refreshSubtitle"))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -269,7 +271,7 @@ struct FolderPickerView: View {
                 ProgressView()
                     .progressViewStyle(CircularProgressViewStyle(tint: AppTheme.accent))
 
-                Text("Escaneando biblioteca...")
+                Text(Localization.localized("folders.scanning"))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
 
@@ -295,7 +297,7 @@ struct FolderPickerView: View {
                         Image(systemName: "folder.fill")
                             .foregroundStyle(AppTheme.accentGradient)
 
-                        Text("Carpetas")
+                        Text(Localization.localized("folders.folderSection"))
                             .font(.headline)
                     }
                     .padding(.horizontal, 4)
@@ -317,7 +319,7 @@ struct FolderPickerView: View {
                                     Text(folder.displayName)
                                         .font(.subheadline.weight(.medium))
 
-                                    Text("Carpeta añadida")
+                                    Text(Localization.localized("folders.folderAdded"))
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
                                 }
@@ -356,7 +358,7 @@ struct FolderPickerView: View {
                         Image(systemName: "music.note")
                             .foregroundStyle(AppTheme.accentGradient)
 
-                        Text("Archivos individuales")
+                        Text(Localization.localized("folders.filesSection"))
                             .font(.headline)
                     }
                     .padding(.horizontal, 4)
@@ -379,7 +381,7 @@ struct FolderPickerView: View {
                                         .font(.subheadline.weight(.medium))
                                         .lineLimit(1)
 
-                                    Text("Archivo individual")
+                                    Text(Localization.localized("folders.fileAdded"))
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
                                 }
@@ -427,11 +429,11 @@ struct FolderPickerView: View {
                     }
                     .padding(.bottom, 2)
 
-                    Text("Tu biblioteca está vacía")
+                    Text(Localization.localized("folders.emptyTitle"))
                         .font(.headline)
                         .foregroundStyle(.primary)
 
-                    Text("Añade carpetas o archivos para empezar")
+                    Text(Localization.localized("folders.emptySubtitle"))
                         .font(.caption)
                         .foregroundStyle(.tertiary)
                         .multilineTextAlignment(.center)

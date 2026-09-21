@@ -23,6 +23,8 @@ import SwiftUI
 struct LyricsView: View {
     let song: Song?
     @ObservedObject var viewModel: LyricsViewModel
+    // ✅ Observado para que los textos se re-rendericen al cambiar de idioma en vivo.
+    @ObservedObject private var localization = Localization.shared
     @Environment(\.dismiss) private var dismiss
 
     /// ✅ Petición de centrado: el `token` garantiza que SwiftUI reciba un
@@ -151,11 +153,11 @@ struct LyricsView: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Cerrar")
+            .accessibilityLabel(Localization.localized("nowPlaying.close"))
 
             Spacer()
 
-            Text("Letras")
+            Text(Localization.localized("nowPlaying.lyrics"))
                 .font(.system(size: 16, weight: .semibold, design: .rounded))
                 .foregroundStyle(.primary.opacity(0.9))
                 .shadow(color: .black.opacity(0.15), radius: 4, y: 1)
@@ -274,7 +276,7 @@ struct LyricsView: View {
                 .font(.system(size: 48))
                 .foregroundStyle(.secondary.opacity(0.5))
 
-            Text("Esta canción no tiene letras")
+            Text(Localization.localized("lyrics.noLyrics"))
                 .font(.system(size: 18, weight: .medium))
                 .foregroundStyle(.secondary)
         }

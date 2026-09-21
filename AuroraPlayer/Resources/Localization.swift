@@ -273,6 +273,23 @@ final class Localization: ObservableObject {
             "lyrics.noLyrics": [.spanish: "No hay letras disponibles", .english: "No lyrics available"],
             "lyrics.noLyricsSubtitle": [.spanish: "Esta canción no tiene información de letras en su metadata.", .english: "This song has no lyrics information in its metadata."],
 
+            // Selector de carpetas / Folder Picker
+            // ✅ Copy propio de la pantalla (mismas frases que sus filas homólogas
+            //    de Ajustes, pero con el texto exacto que ya se mostraba).
+            "folders.addFolder": [.spanish: "Añadir carpeta", .english: "Add Folder"],
+            "folders.addFolderSubtitle": [.spanish: "Selecciona una carpeta completa", .english: "Select a complete folder"],
+            "folders.addFiles": [.spanish: "Añadir archivos", .english: "Add Files"],
+            "folders.addFilesSubtitle": [.spanish: "Selecciona canciones individuales", .english: "Select individual songs"],
+            "folders.refresh": [.spanish: "Actualizar biblioteca", .english: "Update Library"],
+            "folders.refreshSubtitle": [.spanish: "Rescanear carpetas existentes", .english: "Rescan existing folders"],
+            "folders.scanning": [.spanish: "Escaneando biblioteca...", .english: "Scanning library..."],
+            "folders.folderSection": [.spanish: "Carpetas", .english: "Folders"],
+            "folders.folderAdded": [.spanish: "Carpeta añadida", .english: "Added folder"],
+            "folders.filesSection": [.spanish: "Archivos individuales", .english: "Individual Files"],
+            "folders.fileAdded": [.spanish: "Archivo individual", .english: "Individual file"],
+            "folders.emptyTitle": [.spanish: "Tu biblioteca está vacía", .english: "Your library is empty"],
+            "folders.emptySubtitle": [.spanish: "Añade carpetas o archivos para empezar", .english: "Add folders or files to get started"],
+
             // Album/Artist Details
             "details.songs": [.spanish: "Canciones", .english: "Songs"],
             "details.albums": [.spanish: "Álbumes", .english: "Albums"],
