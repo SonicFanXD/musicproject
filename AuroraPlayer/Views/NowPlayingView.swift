@@ -29,7 +29,10 @@ struct NowPlayingView: View {
     // ✅ NUEVO: menú de 3 puntos → ver artista / álbum / letras / cola / compartir
     @State private var showArtistDetail = false
     @State private var showAlbumDetail = false
-    @State private var artworkScale: CGFloat = 1.0
+    /// ✅ Arranca por DEBAJO de 1: el `withAnimation(.spring)` de `onAppear` la
+    /// lleva a 1.0, así la portada entra con spring. Antes valía 1.0 y el spring
+    /// de `onAppear` no animaba nada (y el estado ni se aplicaba a ninguna vista).
+    @State private var artworkScale: CGFloat = 0.94
     @State private var extractedColor: Color = AppTheme.accent
     // ✅ Segundo color dominante de la carátula (solo con "Acento desde
     // portada" activo). Alimenta los gradientes de DOS colores, igual que en
@@ -194,6 +197,11 @@ struct NowPlayingView: View {
                         // no al pausar/resumir. Antes había una animación rara de
                         // escala (1.02 → 1.0) que se veía artificial al tocar play/pause.
                         .animation(.easeInOut(duration: 0.3), value: audioEngine.currentSong?.id)
+                        // ✅ Entrada de la portada (0.94 → 1.0). Va FUERA del
+                        // `.animation` de arriba a propósito: así el spring lo pone
+                        // el `withAnimation` del cambio de canción/`onAppear`, y no
+                        // el easeInOut que anima el color del borde.
+                        .scaleEffect(artworkScale)
 
                     Spacer(minLength: isCompactScreen ? 10 : 16)
 
@@ -257,6 +265,17 @@ struct NowPlayingView: View {
                 // ✅ Propagar el color de acento a ThemeManager para que PlayerBar
                 // y todas las vistas que lo observen se actualicen al instante
                 ThemeManager.shared.updateArtworkAccent(from: audioEngine.currentSong)
+                // ✅ Entrada cinematográfica de la portada al CAMBIAR de canción: se
+                // encoge un instante y vuelve con spring. El 0.94 se fija SIN
+                // animación y el spring se aplica en el siguiente turno del run
+                // loop: si las dos asignaciones fueran seguidas, SwiftUI no vería
+                // el estado intermedio y no habría nada que animar.
+                artworkScale = 0.94
+                DispatchQueue.main.async {
+                    withAnimation(.spring(response: 0.55, dampingFraction: 0.8)) {
+                        artworkScale = 1.0
+                    }
+                }
             }
             .onChange(of: ThemeManager.shared.accentFromArtwork) { value in
                 // ✅ FIX: propaga el color a ThemeManager (que a su vez publica a
@@ -329,13 +348,21 @@ struct NowPlayingView: View {
                             .clipped()
                             .blur(radius: 25)
                             .opacity(0.45)
-
-                        extractedColor.opacity(0.12)
                     }
                 }
                 .ignoresSafeArea()
                 .allowsHitTesting(false)
                 .drawingGroup(opaque: false)
+
+                // ✅ La capa de COLOR sale del `drawingGroup`: así el cambio de
+                // acento al pasar de canción se interpola (0.6s) SIN obligar a
+                // re-rasterizar el blur de pantalla completa en cada frame, que es
+                // lo caro en A11. El blur queda rasterizado una vez y esto es un
+                // cuadrado translúcido encima.
+                extractedColor.opacity(0.12)
+                    .ignoresSafeArea()
+                    .allowsHitTesting(false)
+                    .animation(.easeInOut(duration: 0.6), value: extractedColor)
             } else {
                 LinearGradient(
                     colors: [
@@ -952,8 +979,11 @@ private struct ProgressScrubView: View {
                         .overlay(alignment: .leading) {
                             Circle()
                                 .fill(.white)
-                                .frame(width: isScrubbing ? 14 : 10, height: isScrubbing ? 14 : 10)
-                                .shadow(color: .black.opacity(0.2), radius: 3, x: 0, y: 1)
+                                // ✅ Más grande (18/13 en vez de 14/10) y con UNA sola
+                                // sombra más marcada: el indicador se veía minúsculo
+                                // y flotaba sin peso sobre la barra.
+                                .frame(width: isScrubbing ? 18 : 13, height: isScrubbing ? 18 : 13)
+                                .shadow(color: .black.opacity(0.28), radius: 4, x: 0, y: 2)
                                 .position(
                                     x: geometry.size.width * progress,
                                     y: barHeight / 2
