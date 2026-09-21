@@ -2109,7 +2109,12 @@ class AudioEngine: NSObject, ObservableObject {
         // un update cada 3s es imperceptible visualmente pero ahorra CPU/RAM.
         let interval: TimeInterval = isBackground ? 3.0 : 0.4
         let nowPlayingRefreshTicks = isBackground ? 1 : 2
-        displayTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
+        // ✅ SINCRONIZACIÓN: el timer se añade al run loop en modo .common. Con el
+        // modo por defecto (.default) NO dispara mientras el usuario hace scroll o
+        // arrastra un control (el run loop está en .tracking), así que la barra de
+        // progreso de la app y del lock screen se congelaba durante el gesto y los
+        // watchdogs de fin de pista se retrasaban.
+        let timer = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
             guard let self = self, self.isPlaying else { return }
             // 🛡 WATCHDOG DE RUTA/ENGINE: si isPlaying=true pero el engine ya no
             // corre (ruta perdida sin notificación — p. ej. Bluetooth caído en
@@ -2161,6 +2166,8 @@ class AudioEngine: NSObject, ObservableObject {
                 self.saveState()
             }
         }
+        RunLoop.main.add(timer, forMode: .common)
+        displayTimer = timer
     }
 
     private func stopDisplayTimer() {
