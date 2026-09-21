@@ -288,7 +288,14 @@ struct NowPlayingView: View {
             .toolbarBackground(.hidden, for: .navigationBar)
             .navigationBarBackButtonHidden(true)
             .sheet(isPresented: $showLyrics) {
-                LyricsView(song: audioEngine.currentSong, viewModel: audioEngine.lyricsViewModel)
+                // ✅ La observación del motor tiene que vivir DENTRO del contenido de
+                // la hoja: una hoja ya presentada no garantiza re-evaluar este
+                // closure al cambiar de canción, así que `LyricsView` recibía
+                // siempre la canción con la que se abrió (`song` congelado) y sus
+                // letras no cambiaban al pasar de pista. Es la misma lección que
+                // NowPlayingView, que sí se mantiene vivo porque observa el motor
+                // él mismo.
+                LyricsSheetHost(audioEngine: audioEngine)
             }
             .sheet(isPresented: $showEqualizer) {
                 EqualizerView(audioEngine: audioEngine)
@@ -1031,5 +1038,19 @@ struct AirPlayRoutePickerView: UIViewRepresentable {
         // FIX: reaccionar al acento dinamico de la caratula / acento manual
         let tint = AppTheme.accentUIColor
         if uiView.tintColor != tint { uiView.tintColor = tint }
+    }
+}
+
+// MARK: - Host de la hoja de letras
+/// ✅ Vista intermedia entre la hoja y `LyricsView` cuyo único trabajo es
+/// OBSERVAR el motor: así las letras reciben la canción ACTUAL aunque la hoja
+/// lleve rato presentada. `LyricsView` sigue recibiendo la canción como valor
+/// (no cambia su firma): el cambio de pista le llega por su
+/// `onChange(of: song?.id)`, que es el que re-parsea y re-centra sin animación.
+private struct LyricsSheetHost: View {
+    @ObservedObject var audioEngine: AudioEngine
+
+    var body: some View {
+        LyricsView(song: audioEngine.currentSong, viewModel: audioEngine.lyricsViewModel)
     }
 }

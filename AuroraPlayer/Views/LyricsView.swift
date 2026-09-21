@@ -37,6 +37,11 @@ struct LyricsView: View {
 
     @State private var scrollRequest: ScrollRequest?
     @State private var scrollToken: Int = 0
+    /// ✅ Qué canción tienen ahora mismo las líneas publicadas: es lo que detecta
+    /// el cambio de canción con la vista ya abierta y lo que evita re-parsear la
+    /// MISMA dos veces (el `onAppear` y el `onChange` pueden coincidir en el mismo
+    /// ciclo, y el `onAppear` inicial también pasa por aquí).
+    @State private var lastParsedSongID: UUID?
     /// ✅ Distingue el PRIMER centrado (al entrar o al cambiar de canción) del
     /// resto: el primero va SIN animación (la vista "nace" ya centrada) y los
     /// scrolleos durante la reproducción sí se animan.
@@ -291,18 +296,38 @@ struct LyricsView: View {
 
     // MARK: - Parse lyrics
     private func parseLyricsIfNeeded() {
-        guard let song = song else { return }
+        guard let song else {
+            // ✅ Sin canción (fin de cola / stop): limpiar en vez de dejar en
+            // pantalla las letras de la canción anterior.
+            if lastParsedSongID != nil {
+                lastParsedSongID = nil
+                viewModel.clearLyrics()
+            }
+            return
+        }
+
+        // ✅ Misma canción: solo re-sincronizar. Sin esto, el `onAppear` y el
+        // `onChange` del mismo ciclo re-parsearían (y reiniciarían el wipe) dos
+        // veces sin motivo.
+        guard lastParsedSongID != song.id else {
+            viewModel.syncToCurrentTime()
+            return
+        }
+
+        // ✅ Canción DISTINTA con la vista abierta: vaciar el estado de la
+        // anterior (líneas, línea activa y `hasLyrics`) ANTES de publicar la
+        // nueva, para que no quede ni un frame mostrando el verso anterior.
+        lastParsedSongID = song.id
+        viewModel.clearLyrics()
 
         // ✅ Usar lyrics del modelo de canción (ya parseado en FileAccessService)
         let lyrics = song.lyrics
-        if !lyrics.isEmpty {
-            viewModel.parseLyrics(lyrics)
-            // ✅ La línea activa se fija con el tiempo REAL de reproducción antes
-            // del primer centrado (entrar en el minuto 2:30 no muestra la línea 1).
-            viewModel.syncToCurrentTime()
-        } else {
-            viewModel.clearLyrics()
-        }
+        guard !lyrics.isEmpty else { return }
+
+        viewModel.parseLyrics(lyrics)
+        // ✅ La línea activa se fija con el tiempo REAL de reproducción antes
+        // del primer centrado (entrar en el minuto 2:30 no muestra la línea 1).
+        viewModel.syncToCurrentTime()
     }
 }
 
