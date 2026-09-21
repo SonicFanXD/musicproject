@@ -318,8 +318,14 @@ private enum LyricRowSplitter {
     /// pueden diferir en una fracción; trocear un 1,5% antes evita que un trozo
     /// envuelva por sorpresa (peor caso: una palabra baja a la fila siguiente).
     private static let safetyMargin: CGFloat = 0.985
-    /// ✅ Cacheado por (texto + fuente + ancho) para no medir en cada render.
-    private static let cache = NSCache<NSString, NSArray>()
+    /// ✅ Cacheado por (texto + fuente + ancho) para no medir en cada render, con
+    /// tope de entradas: una canción de 500 líneas en sus dos estados (activa a
+    /// 24pt e inactiva a 18pt) no debe crecer sin límite (iPhone 8 Plus / 3GB).
+    private static let cache: NSCache<NSString, NSArray> = {
+        let cache = NSCache<NSString, NSArray>()
+        cache.countLimit = 600
+        return cache
+    }()
 
     static func split(_ text: String, fontSize: CGFloat, weight: UIFont.Weight, maxWidth: CGFloat) -> [String] {
         guard !text.isEmpty, maxWidth >= minimumUsableWidth else { return [text] }
