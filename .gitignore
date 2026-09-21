@@ -46,3 +46,10 @@ Desktop.ini
 # Herramientas locales (no parte de la app)
 OmniCopilot/
 build/
+
+# Archivos temporales que dejaron sesiones de agentes anteriores.
+# Los que ya estaban en el repo siguen trackeados (quitarlos es una decisión
+# aparte); estos patrones evitan que vuelvan a colarse.
+$null
+_*.txt
+_backup/
