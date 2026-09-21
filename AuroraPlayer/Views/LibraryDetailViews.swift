@@ -173,6 +173,12 @@ struct AlbumDetailView: View {
         }
     }
     // ? UIColor crudo para calcular contraste de textos/botones
+    /// ✅ Estado real del motor para ESTE álbum (ver el pill de bit-perfect).
+    private var isAlbumBitPerfect: Bool {
+        guard let current = audioEngine.currentSong else { return false }
+        return audioEngine.isBitPerfect && songs.contains { $0.id == current.id }
+    }
+
     private var tintUIColor: UIColor { liveDominantColor ?? album.dominantColor ?? AppTheme.accentUIColor }
     // ? Contraste: blanco o negro seg�n luminancia del color de la portada
     private var onTintColor: Color { AppTheme.contrastingText(on: tintUIColor) }
@@ -363,6 +369,13 @@ struct AlbumDetailView: View {
                     let text = q.bits > 0 ? "\(q.bits)-bit · \(khzText)" : khzText
                     statPill(icon: "waveform", text: text)
                 }
+                // ✅ BIT-PERFECT REAL (no una promesa del formato del archivo):
+                // aparece solo si lo que suena es una canción DE ESTE álbum y la
+                // salida está en bit-perfect ahora mismo (misma tasa que el
+                // archivo, sin EQ/mono/protección y por cable).
+                if isAlbumBitPerfect {
+                    statPill(icon: "checkmark.seal.fill", text: "Bit-perfect", highlighted: true)
+                }
             }
             .frame(maxWidth: .infinity)
             .padding(.horizontal, 20)
@@ -517,16 +530,18 @@ struct AlbumDetailView: View {
         }
     }
 
-    private func statPill(icon: String, text: String) -> some View {
+    private func statPill(icon: String, text: String, highlighted: Bool = false) -> some View {
         HStack(spacing: 5) {
-            Image(systemName: icon).font(.system(size: 11, weight: .semibold))
+            Image(systemName: icon).font(.system(size: 12, weight: .semibold))
             // lineLimit(1) + fixedSize: el texto NUNCA se parte ni corta con
             // guiones — la píldora mantiene su tamaño intrínseco y el
             // FlowLayout la acomoda entera en la siguiente fila si no cabe.
-            Text(text).font(.system(size: 12, weight: .medium).monospacedDigit())
+            // ✅ 13 semibold: la píldora es dato de cabecera, no letra pequeña.
+            Text(text).font(.system(size: 13, weight: .semibold).monospacedDigit())
                 .lineLimit(1)
         }
-        .foregroundStyle(.secondary).padding(.horizontal, 12).padding(.vertical, 6)
+        .foregroundStyle(highlighted ? tintColor : Color.secondary)
+        .padding(.horizontal, 12).padding(.vertical, 6)
         .fixedSize()
         .nativeGlassCapsule()
     }
@@ -1042,16 +1057,18 @@ struct ArtistDetailView: View {
         .padding(.horizontal, 4)
     }
 
-    private func statPill(icon: String, text: String) -> some View {
+    private func statPill(icon: String, text: String, highlighted: Bool = false) -> some View {
         HStack(spacing: 5) {
-            Image(systemName: icon).font(.system(size: 11, weight: .semibold))
+            Image(systemName: icon).font(.system(size: 12, weight: .semibold))
             // lineLimit(1) + fixedSize: el texto NUNCA se parte ni corta con
             // guiones — la píldora mantiene su tamaño intrínseco y el
             // FlowLayout la acomoda entera en la siguiente fila si no cabe.
-            Text(text).font(.system(size: 12, weight: .medium).monospacedDigit())
+            // ✅ 13 semibold: la píldora es dato de cabecera, no letra pequeña.
+            Text(text).font(.system(size: 13, weight: .semibold).monospacedDigit())
                 .lineLimit(1)
         }
-        .foregroundStyle(.secondary).padding(.horizontal, 12).padding(.vertical, 6)
+        .foregroundStyle(highlighted ? tintColor : Color.secondary)
+        .padding(.horizontal, 12).padding(.vertical, 6)
         .fixedSize()
         .nativeGlassCapsule()
     }
@@ -1081,6 +1098,14 @@ struct ArtistAlbumCard: View {
             artworkSecondaryColor: nil,
             fromArtwork: theme.accentFromArtwork
         )
+    }
+
+    /// ✅ Subtítulo de la tarjeta: "2021 · 12 canciones" (o solo el recuento si
+    /// el álbum no trae fecha).
+    private var cardSubtitle: String {
+        let count = localizedSongCount(album.songs.count)
+        guard let date = album.releaseDate else { return count }
+        return "\(Calendar.current.component(.year, from: date)) · \(count)"
     }
 
     var body: some View {
@@ -1114,11 +1139,16 @@ struct ArtistAlbumCard: View {
                 Text(album.name)
                     .font(.system(size: 14, weight: .semibold, design: .rounded))
                     .foregroundStyle(.primary).lineLimit(1)
-                Text(localizedSongCount(album.songs.count))
+                // ✅ Año + nº de canciones: en un carrusel de discografía el año
+                // es el dato que orienta al usuario (antes solo el recuento).
+                Text(cardSubtitle)
                     .font(.system(size: 12)).foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
         }
         .frame(width: 150)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(album.name), \(cardSubtitle)")
         // ? Micro-escala al presionar la tarjeta (feedback premium, GPU)
         .contentShape(Rectangle())
     }
