@@ -1,27 +1,79 @@
 import SwiftUI
 
 // MARK: - Vista de lyrics línea por línea (optimizada para iPhone 8 Plus)
-// ✅ Diseño: ScrollView + LazyVStack para máximo rendimiento (60 fps)
-// ✅ Línea activa en blanco opaco, líneas inactivas atenuadas
-// ✅ Auto-scroll suave con ScrollViewReader (solo cuando cambia activeID)
-// ✅ Padding vertical generoso (200 pt) para centrar primera/última línea
+// ✅ Diseño: ScrollView + LazyVStack para máximo rendimiento
+// ✅ 60 fps REALES: el relleno progresivo vive dentro de un TimelineView(.animation)
+//    que interpola entre los ticks del reloj de reproducción (0.4s) usando el
+//    ancla CACurrentMediaTime del ViewModel.
+// ✅ Solo la línea ACTIVA tiene TimelineView → el resto del LazyVStack no se
+//    re-evalúa en cada frame.
+// ✅ Una línea lógica puede tener VARIAS filas visuales (TTML <br/>): cada fila
+//    lleva su propia máscara y su propia ventana temporal, así el relleno
+//    avanza de arriba abajo (nunca en paralelo) y respeta los silencios.
+// ✅ Las filas que SwiftUI partiría por ANCHURA también se trocean (medición real
+//    con la fuente activa): el wipe avanza fila a fila, nunca en paralelo.
+// ✅ Sin temporizadores propios (ni en la vista ni en el modelo).
+// ✅ Auto-scroll suave con ScrollViewReader (solo cuando cambia la línea activa)
+// ✅ Sin línea activa (intro instrumental / outro) se centra la primera o la
+//    última línea como "activa provisional": la vista nunca nace mostrando la
+//    franja vacía del relleno de centrado con las letras abajo.
+// ✅ Colores ADAPTATIVOS (`.primary`): la app no fuerza modo oscuro, así que el
+//    texto blanco fijo era invisible sobre el fondo claro en modo claro.
 // ✅ Render 100% por código, sin assets
-// ✅ PROHIBIDO: APIs de iOS 17+, TimelineView, CADisplayLink
 struct LyricsView: View {
     let song: Song?
     @ObservedObject var viewModel: LyricsViewModel
+    // ✅ Observado para que los textos se re-rendericen al cambiar de idioma en vivo.
+    @ObservedObject private var localization = Localization.shared
     @Environment(\.dismiss) private var dismiss
-    
-    @State private var scrollTarget: Int? = nil
-    
+
+    /// ✅ Petición de centrado: el `token` garantiza que SwiftUI reciba un
+    /// cambio aunque la línea destino sea la misma (al cambiar de canción), así
+    /// el re-centrado nunca se pierde.
+    private struct ScrollRequest: Equatable {
+        let lineID: Int
+        let token: Int
+    }
+
+    @State private var scrollRequest: ScrollRequest?
+    @State private var scrollToken: Int = 0
+    /// ✅ Distingue el PRIMER centrado (al entrar o al cambiar de canción) del
+    /// resto: el primero va SIN animación (la vista "nace" ya centrada) y los
+    /// scrolleos durante la reproducción sí se animan.
+    @State private var hasDoneInitialScroll = false
+
+    /// ✅ Padding horizontal del contenido de letras: el ancho ÚTIL para el texto
+    /// (y para el troceo por medición) es el ancho de la vista menos el doble.
+    private static let horizontalPadding: CGFloat = 24
+
+    /// ✅ Centrado geométrico exacto: el relleno vertical debe ser al menos MEDIA
+    /// ALTURA del área visible. Con menos, `scrollTo(anchor: .center)` no puede
+    /// alcanzar el centro de las PRIMERAS y ÚLTIMAS líneas (el scroll se queda
+    /// clavado en el borde del contenido). El 40 % de `UIScreen.main` se quedaba
+    /// corto: en el 8 Plus son 294 pt frente a los 346 pt que exige un área
+    /// visible de 692 pt, así que la línea 0 aterrizaba ~30-65 pt por encima del
+    /// centro y, sin scroll inicial, el relleno se veía como una franja vacía
+    /// arriba con las letras en la mitad inferior.
+    /// ✅ Se mide el área REAL de scroll (ya sin el header), no la pantalla: el
+    /// centrado queda exacto en cualquier dispositivo y tamaño de ventana.
+    private func centeringInset(viewportHeight: CGFloat) -> CGFloat {
+        // Red de seguridad: si la geometría todavía no está medida (0), se
+        // conserva el valor anterior para no dejar el contenido sin relleno.
+        viewportHeight > 0 ? viewportHeight / 2 : UIScreen.main.bounds.height * 0.4
+    }
+
     var body: some View {
         ZStack {
-            blurredArtworkBackground
-            
+            // ✅ Fondo como vista propia y `Equatable`: al cambiar de línea activa
+            // este body se re-evalúa, pero el blur de pantalla completa NO vuelve
+            // a componerse si la carátula y el acento siguen siendo los mismos.
+            LyricsArtworkBackground(artwork: song?.artwork, accentToken: AppTheme.accentUIColor)
+                .equatable()
+
             VStack(spacing: 0) {
                 // Header transparente
                 headerView
-                
+
                 Group {
                     if !viewModel.hasLyrics {
                         emptyLyricsView
@@ -34,15 +86,66 @@ struct LyricsView: View {
         }
         .onAppear {
             parseLyricsIfNeeded()
+            // ✅ Centrado inmediato, sin animación: la línea activa ya está en el
+            // centro en el primer frame.
+            syncScrollToActiveLine()
         }
-        // ✅ iOS 16 onChange clásico: scroll solo cuando cambia activeID
+        // ✅ iOS 16 onChange clásico: scroll solo cuando cambia la línea activa
         .onChange(of: viewModel.activeID) { newID in
-            if let newID = newID {
-                scrollTarget = newID
-            }
+            guard let newID else { return }
+            requestScroll(to: newID)
+        }
+        // ✅ Letras que llegan de un parseo en background: terminan DESPUÉS del
+        // `onAppear`, así que el centrado inicial hay que repetirlo con las líneas
+        // ya publicadas (sigue siendo el primer centrado → sin animación).
+        .onChange(of: viewModel.lyricsRevision) { _ in
+            syncScrollToActiveLine()
+        }
+        // ✅ Cambio de canción con la vista abierta: re-parsear y re-centrar sin
+        // animación, como si la vista acabara de nacer.
+        .onChange(of: song?.id) { _ in
+            parseLyricsIfNeeded()
+            syncScrollToActiveLine()
         }
     }
-    
+
+    // MARK: - Centrado de la línea activa
+    /// Centra la línea activa SIN animación (entrada a la vista / cambio de
+    /// canción). Resetea la petición para poder re-centrar aunque la línea
+    /// destino coincida con la anterior.
+    /// ✅ SIN línea activa (intro instrumental antes de la primera letra, o
+    /// canción ya terminada) se centra la PRIMERA o la ÚLTIMA línea como si fuera
+    /// la activa provisional: antes se salía sin pedir ningún scroll, la lista
+    /// nacía en su posición natural y el relleno de centrado se veía como una
+    /// franja vacía arriba con las letras pegadas abajo.
+    private func syncScrollToActiveLine() {
+        hasDoneInitialScroll = false
+        scrollRequest = nil
+        if let activeID = viewModel.activeID {
+            requestScroll(to: activeID)
+        } else if let fallbackID = centeringFallbackLineID() {
+            requestScroll(to: fallbackID)
+        }
+    }
+
+    /// ✅ Línea provisional que se centra mientras no hay línea activa: la primera
+    /// si la reproducción todavía no la ha alcanzado (intro), la última si ya
+    /// pasó todas (outro). Mismo criterio que Apple Music.
+    private func centeringFallbackLineID() -> Int? {
+        let lines = viewModel.lyricsLines
+        guard let first = lines.first, let last = lines.last else { return nil }
+
+        let timeMs = Int(((viewModel.audioEngine?.currentTime ?? 0) * 1000).rounded())
+        return timeMs < first.startMs ? first.id : last.id
+    }
+
+    /// Pide un centrado. El token hace que la petición siempre sea distinta de la
+    /// anterior (y que un scroll a la MISMA línea no se descarte).
+    private func requestScroll(to lineID: Int) {
+        scrollToken += 1
+        scrollRequest = ScrollRequest(lineID: lineID, token: scrollToken)
+    }
+
     // MARK: - Header
     private var headerView: some View {
         HStack(spacing: 0) {
@@ -56,85 +159,176 @@ struct LyricsView: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Cerrar")
-            
+            .accessibilityLabel(Localization.localized("nowPlaying.close"))
+
             Spacer()
-            
-            Text("Letras")
+
+            Text(Localization.localized("nowPlaying.lyrics"))
                 .font(.system(size: 16, weight: .semibold, design: .rounded))
                 .foregroundStyle(.primary.opacity(0.9))
                 .shadow(color: .black.opacity(0.15), radius: 4, y: 1)
-            
+
             Spacer()
-            
+
             Color.clear.frame(width: 44, height: 44)
         }
         .padding(.horizontal, 8)
     }
-    
+
     // MARK: - Contenido de lyrics
     private var lyricsContentView: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 8) {
-                    // ✅ Padding vertical generoso (200 pt) para centrar primera/última línea
-                    Color.clear.frame(height: 200)
-                    
-                    ForEach(viewModel.lyricsLines) { line in
-                        lyricLineView(line: line, isActive: viewModel.activeID == line.id)
-                            .id(line.id)
-                            .contentShape(Rectangle())
-                            .onTapGesture {
-                                seekToLine(line)
-                            }
-                    }
-                    
-                    Color.clear.frame(height: 200)
+        // ✅ El ancho real se mide aquí (UNA vez, no por fila) y se pasa a cada
+        // línea: el troceo por medición necesita saber cuánto texto cabe.
+        GeometryReader { geometry in
+            ScrollViewReader { proxy in
+                ScrollView {
+                    // ✅ La altura del área de scroll (ya descontado el header) es
+                    // la que define el relleno de centrado: no se depende de la
+                    // pantalla completa.
+                    lyricsStack(contentWidth: geometry.size.width, viewportHeight: geometry.size.height)
                 }
-                .padding(.horizontal, 24)
-            }
-            // ✅ iOS 16 onChange clásico: scroll suave solo cuando cambia scrollTarget
-            .onChange(of: scrollTarget) { target in
-                if let target = target {
-                    // ✅ Animación suave solo cuando cambia la línea activa
-                    withAnimation(.easeInOut(duration: 0.25)) {
-                        proxy.scrollTo(target, anchor: .center)
-                    }
+                // ✅ iOS 16 onChange clásico: scroll suave solo cuando cambia el target
+                .onChange(of: scrollRequest) { request in
+                    scrollToActiveLine(request, proxy: proxy)
                 }
             }
         }
     }
-    
-    // MARK: - Vista de línea individual
-    // ✅ No recrea Text en cada frame: solo cambia color/opacidad
-    // ✅ Sin blur/shadow por frame para máximo rendimiento en iPhone 8 Plus
-    private func lyricLineView(line: LyricsLine, isActive: Bool) -> some View {
-        Text(line.cleanText)
-            .font(.system(size: isActive ? 24 : 18, weight: isActive ? .bold : .regular))
-            .foregroundStyle(isActive ? Color.white : Color.white.opacity(0.35))
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.vertical, 12)
-            // ✅ Animación suave solo cuando cambia el estado de activación
-            .animation(.easeInOut(duration: 0.25), value: isActive)
+
+    /// ✅ Relleno de media altura visible antes y después: fuerza que la línea
+    /// centrada lo esté de forma geométrica (no depende del tamaño de la lista) y
+    /// deja margen suficiente para centrar también la PRIMERA y la ÚLTIMA.
+    private func lyricsStack(contentWidth: CGFloat, viewportHeight: CGFloat) -> some View {
+        // ✅ Media altura visible arriba y abajo → la primera y la última línea
+        // pueden quedar centradas de verdad (no solo las de en medio).
+        let inset = centeringInset(viewportHeight: viewportHeight)
+        return LazyVStack(alignment: .leading, spacing: 8) {
+            Color.clear.frame(height: inset)
+
+            ForEach(viewModel.lyricsLines) { line in
+                lyricLineView(line: line, contentWidth: contentWidth)
+                    .id(line.id)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        seekToLine(line)
+                    }
+            }
+
+            Color.clear.frame(height: inset)
+        }
+        .padding(.horizontal, Self.horizontalPadding)
     }
-    
+
+    /// ✅ Scroll centrado y natural (spring 0.35s, damping 0.85, el tacto de
+    /// Apple Music) al cambiar de línea activa. Cuanto más corto es el solape
+    /// entre la animación del scroll y el wipe a 60 fps de la línea entrante,
+    /// menos tirones se ven en la transición.
+    /// ✅ El PRIMER centrado (entrada / cambio de canción) va sin animación: el
+    /// usuario no ve la letra "llegar" desde la primera línea.
+    private func scrollToActiveLine(_ request: ScrollRequest?, proxy: ScrollViewProxy) {
+        guard let request else { return }
+
+        if hasDoneInitialScroll {
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                proxy.scrollTo(request.lineID, anchor: .center)
+            }
+        } else {
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                proxy.scrollTo(request.lineID, anchor: .center)
+            }
+            hasDoneInitialScroll = true
+        }
+    }
+
+    // MARK: - Línea individual
+    /// ✅ El scroll se hace en DOS fases (activeID → scrollRequest → scrollTo) a
+    /// propósito: así la línea activa se centra también cuando el ScrollView
+    /// nace en el mismo ciclo en que el parser publica `activeID` (con un solo
+    /// onChange dentro del ScrollViewReader ese primer centrado se perdería).
+    private func lyricLineView(line: LyricsLine, contentWidth: CGFloat) -> some View {
+        LyricLineView(
+            line: line,
+            isActive: viewModel.activeID == line.id,
+            isPlaying: viewModel.isPlaying,
+            viewModel: viewModel,
+            // ✅ Ancho ÚTIL para el texto (sin el padding horizontal): es lo que
+            // se mide para trocear las filas que SwiftUI envolvería.
+            availableWidth: max(0, contentWidth - Self.horizontalPadding * 2)
+        )
+        // ✅ Solo las filas cuyo contenido ha cambiado vuelven a evaluar su body:
+        // al cambiar de línea activa (o al hacer scroll) se evita re-evaluar todo
+        // el LazyVStack visible.
+        .equatable()
+    }
+
     // MARK: - Seek a línea
     private func seekToLine(_ line: LyricsLine) {
         guard let audioEngine = viewModel.audioEngine else { return }
-        
+
         // ✅ Seek al inicio de la línea
         let seekTime = TimeInterval(line.startMs) / 1000.0
         audioEngine.seek(to: seekTime)
-        
+
         // ✅ Recalcular línea activa inmediatamente
         viewModel.handleSeek()
     }
-    
-    // MARK: - Fondo difuminado
-    private var blurredArtworkBackground: some View {
+
+    // MARK: - Vista vacía
+    private var emptyLyricsView: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "music.note")
+                .font(.system(size: 48))
+                .foregroundStyle(.secondary.opacity(0.5))
+
+            Text(Localization.localized("lyrics.noLyrics"))
+                .font(.system(size: 18, weight: .medium))
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    // MARK: - Parse lyrics
+    private func parseLyricsIfNeeded() {
+        guard let song = song else { return }
+
+        // ✅ Usar lyrics del modelo de canción (ya parseado en FileAccessService)
+        let lyrics = song.lyrics
+        if !lyrics.isEmpty {
+            viewModel.parseLyrics(lyrics)
+            // ✅ La línea activa se fija con el tiempo REAL de reproducción antes
+            // del primer centrado (entrar en el minuto 2:30 no muestra la línea 1).
+            viewModel.syncToCurrentTime()
+        } else {
+            viewModel.clearLyrics()
+        }
+    }
+}
+
+// MARK: - Fondo de carátula difuminada
+/// ✅ Vista PROPIA y `Equatable`: el body de `LyricsView` se re-evalúa en cada
+/// cambio de línea activa; con `.equatable()` esta sub-vista no vuelve a componer
+/// el blur de pantalla completa si la carátula y el acento no han cambiado (era
+/// el candidato a los tirones al cambiar de verso).
+private struct LyricsArtworkBackground: View, Equatable {
+    let artwork: UIImage?
+    /// ✅ Solo como TOKEN de comparación: el color se pinta con `AppTheme.accent`
+    /// para no alterar el tono con conversiones de espacio de color.
+    let accentToken: UIColor
+
+    static func == (lhs: LyricsArtworkBackground, rhs: LyricsArtworkBackground) -> Bool {
+        guard lhs.accentToken == rhs.accentToken else { return false }
+        if let lhsArtwork = lhs.artwork, let rhsArtwork = rhs.artwork {
+            return lhsArtwork === rhsArtwork
+        }
+        return lhs.artwork == nil && rhs.artwork == nil
+    }
+
+    var body: some View {
         GeometryReader { geometry in
             Group {
-                if let artwork = song?.artwork {
+                if let artwork {
                     Image(uiImage: artwork)
                         .resizable()
                         .interpolation(.medium)
@@ -153,31 +347,315 @@ struct LyricsView: View {
             }
         }
     }
-    
-    // MARK: - Vista vacía
-    private var emptyLyricsView: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "music.note")
-                .font(.system(size: 48))
-                .foregroundStyle(.secondary.opacity(0.5))
-            
-            Text("Esta canción no tiene letras")
-                .font(.system(size: 18, weight: .medium))
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+}
+
+// MARK: - Troceo por medición real (filas que SwiftUI partiría por ancho)
+/// ✅ El modelo no conoce el ancho ni la fuente, así que una fila lógica larga
+/// (sin `<br/>`) la partía SwiftUI por anchura y la máscara —un solo rectángulo
+/// sobre el `Text` completo— iluminaba TODAS las líneas envueltas a la vez.
+/// Aquí se mide el texto con la fuente real y se trocea en filas de verdad: cada
+/// trozo se dibuja como `Text` propio con su ventana temporal (reparto
+/// proporcional al nº de caracteres), así el wipe avanza de arriba abajo.
+/// ✅ Si la medición se queda corta por milímetros, el peor caso es que ESE trozo
+/// envuelva dentro de sí mismo: nunca se recorta ni se pierde texto.
+private enum LyricRowSplitter {
+    /// Por debajo de este ancho no se intenta trocear (geometría aún sin medir).
+    private static let minimumUsableWidth: CGFloat = 40
+    /// ✅ Margen de seguridad: la medición con `UIFont` y el render de SwiftUI
+    /// pueden diferir en una fracción; trocear un 1,5% antes evita que un trozo
+    /// envuelva por sorpresa (peor caso: una palabra baja a la fila siguiente).
+    private static let safetyMargin: CGFloat = 0.985
+    /// ✅ Cacheado por (texto + fuente + ancho) para no medir en cada render, con
+    /// tope de entradas: una canción de 500 líneas en sus dos estados (activa a
+    /// 24pt e inactiva a 18pt) no debe crecer sin límite (iPhone 8 Plus / 3GB).
+    private static let cache: NSCache<NSString, NSArray> = {
+        let cache = NSCache<NSString, NSArray>()
+        cache.countLimit = 600
+        return cache
+    }()
+
+    static func split(_ text: String, fontSize: CGFloat, weight: UIFont.Weight, maxWidth: CGFloat) -> [String] {
+        guard !text.isEmpty, maxWidth >= minimumUsableWidth else { return [text] }
+
+        let key = "\(Int(fontSize.rounded()))|\(weight.rawValue)|\(Int(maxWidth.rounded()))|\(text)" as NSString
+        if let cached = cache.object(forKey: key) as? [String] { return cached }
+
+        let font = UIFont.systemFont(ofSize: fontSize, weight: weight)
+        let parts = wrap(text, font: font, maxWidth: maxWidth)
+        cache.setObject(parts as NSArray, forKey: key)
+        return parts
     }
-    
-    // MARK: - Parse lyrics
-    private func parseLyricsIfNeeded() {
-        guard let song = song else { return }
-        
-        // ✅ Usar lyrics del modelo de canción (ya parseado en FileAccessService)
-        let lyrics = song.lyrics
-        if !lyrics.isEmpty {
-            viewModel.parseLyrics(lyrics)
+
+    /// Reparto voraz por palabras (y por caracteres cuando no hay espacios, p. ej.
+    /// CJK). Una palabra sola más ancha que la fila se deja entera.
+    private static func wrap(_ text: String, font: UIFont, maxWidth: CGFloat) -> [String] {
+        var lines: [String] = []
+        var current = ""
+
+        for word in text.components(separatedBy: " ") {
+            let candidate = current.isEmpty ? word : current + " " + word
+            if current.isEmpty || width(of: candidate, font: font) <= maxWidth * safetyMargin {
+                current = candidate
+            } else {
+                lines.append(current)
+                current = word
+            }
+        }
+        if !current.isEmpty { lines.append(current) }
+
+        if lines.count == 1, let only = lines.first, width(of: only, font: font) > maxWidth * safetyMargin {
+            return splitByCharacter(only, font: font, maxWidth: maxWidth)
+        }
+        return lines.isEmpty ? [text] : lines
+    }
+
+    private static func splitByCharacter(_ text: String, font: UIFont, maxWidth: CGFloat) -> [String] {
+        var lines: [String] = []
+        var current = ""
+
+        for character in text {
+            let candidate = current + String(character)
+            if current.isEmpty || width(of: candidate, font: font) <= maxWidth * safetyMargin {
+                current = candidate
+            } else {
+                lines.append(current)
+                current = String(character)
+            }
+        }
+        if !current.isEmpty { lines.append(current) }
+        return lines.isEmpty ? [text] : lines
+    }
+
+    private static func width(of text: String, font: UIFont) -> CGFloat {
+        (text as NSString).size(withAttributes: [.font: font]).width
+    }
+}
+
+// MARK: - Filas reales (lógicas + troceo por medición)
+private enum LyricRowBuilder {
+    /// ✅ Cada trozo hereda un sub-rango de la ventana de su fila lógica, en
+    /// proporción al nº de caracteres (misma regla que el modelo cuando no hay
+    /// timings por palabra), así las ventanas quedan encadenadas y el trozo N+1
+    /// no empieza hasta que el N termina.
+    static func rows(
+        from logicalRows: [LyricVisualRow],
+        fontSize: CGFloat,
+        weight: UIFont.Weight,
+        maxWidth: CGFloat
+    ) -> [LyricVisualRow] {
+        var result: [LyricVisualRow] = []
+        result.reserveCapacity(logicalRows.count)
+
+        for row in logicalRows {
+            let parts = LyricRowSplitter.split(row.text, fontSize: fontSize, weight: weight, maxWidth: maxWidth)
+            guard parts.count > 1 else {
+                result.append(row)
+                continue
+            }
+
+            let span = Double(max(row.endMs - row.startMs, 1))
+            let totalCharacters = max(1, parts.reduce(0) { $0 + $1.count })
+            var charactersBefore = 0
+
+            for part in parts {
+                let start = row.startMs + Int((span * Double(charactersBefore) / Double(totalCharacters)).rounded())
+                let end = row.startMs + Int((span * Double(charactersBefore + part.count) / Double(totalCharacters)).rounded())
+                result.append(LyricVisualRow(text: part, startMs: start, endMs: max(end, start + 1)))
+                charactersBefore += part.count
+            }
+        }
+
+        return result
+    }
+}
+
+// MARK: - Línea individual con relleno progresivo (estilo Apple Music)
+// ✅ Struct (no clase) y sin envoltorios de tipo borrado: el cuerpo solo se
+//    re-evalúa cuando cambia el estado de activación; el TimelineView
+//    recalcula únicamente su contenido.
+private struct LyricLineView: View, Equatable {
+    let line: LyricsLine
+    let isActive: Bool
+    /// ✅ Valor explícito (en lugar de leer `viewModel.isPlaying` dentro): forma
+    /// parte de la comparación, así la vista se entera de play/pause sin
+    /// depender de que el padre se re-evalúe.
+    let isPlaying: Bool
+    let viewModel: LyricsViewModel
+    /// ✅ Ancho útil para el texto: el troceo por medición real depende de él.
+    let availableWidth: CGFloat
+
+    /// ✅ Separación entre filas visuales de una misma línea lógica (también en
+    /// la capa atenuada, para que el texto no salte al activarse la línea).
+    private static let rowSpacing: CGFloat = 2
+
+    /// ✅ Igualdad = "¿está igual lo que esta fila PINTA?". Del viewModel solo se
+    /// compara la IDENTIDAD (misma instancia), nunca su estado mutable: el estado
+    /// vivo (reloj, línea activa) solo se lee DENTRO del TimelineView, que se
+    /// actualiza por frame por su cuenta y sin depender de este diff.
+    /// ✅ Sin `.drawingGroup()`: rasterizaría el texto antes del "pop" de escala
+    /// y la animación de entrada se vería borrosa (la máscara ya compone fuera
+    /// de pantalla, así que tampoco ahorraría una pasada).
+    static func == (lhs: LyricLineView, rhs: LyricLineView) -> Bool {
+        lhs.isActive == rhs.isActive
+            && lhs.isPlaying == rhs.isPlaying
+            && lhs.viewModel === rhs.viewModel
+            && lhs.line == rhs.line
+            && lhs.availableWidth == rhs.availableWidth
+    }
+
+    private var fontSize: CGFloat {
+        isActive ? 24 : 18
+    }
+
+    private var fontWeight: Font.Weight {
+        isActive ? .bold : .regular
+    }
+
+    var body: some View {
+        // ✅ Las filas REALES se calculan AQUÍ, fuera del TimelineView: el troceo
+        // por medición se paga una sola vez por línea (y queda cacheado), nunca
+        // por frame.
+        let rows = displayedRows
+
+        Group {
+            if isActive {
+                activeLine(rows)
+                    // ✅ Al ganar el foco, la capa brillante entra con el spring
+                    // de la línea; al perderlo se funde hacia la capa atenuada
+                    // (0.2s easeInOut) en vez de cambiar de golpe.
+                    .transition(.asymmetric(
+                        insertion: .opacity.animation(lineActivation),
+                        removal: .opacity.animation(.easeInOut(duration: 0.2))
+                    ))
+            } else {
+                dimmedRows(rows)
+                    // ✅ Profundidad MUY sutil (0.5pt), y SOLO en las líneas
+                    // inactivas: la activa es la que pide frames a 60 Hz y no
+                    // debe pagar ninguna pasada de blur. Si en el iPhone 8 Plus
+                    // no convence, basta con borrar esta línea.
+                    .blur(radius: 0.5)
+                    .transition(.opacity)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 12)
+        // ✅ "Pop" premium al cambiar de línea: las inactivas "respiran" algo
+        // más pequeñas (0.96) y la activa recupera la escala completa.
+        .scaleEffect(isActive ? 1.0 : 0.96)
+        .animation(lineActivation, value: isActive)
+    }
+
+    /// ✅ Spring del cambio de línea (activación de la capa brillante y pop de
+    /// escala). El wipe a 60 fps NO lo usa: el TimelineView interpola por frame.
+    private var lineActivation: Animation {
+        .spring(response: 0.4, dampingFraction: 0.75)
+    }
+
+    /// ✅ Filas REALES de la línea (cacheado por texto+fuente+ancho): las lógicas
+    /// del modelo troceadas por medición. Una fila larga sin `<br/>` que SwiftUI
+    /// partiría en dos líneas se convierte en DOS filas con su propia ventana de
+    /// tiempo, así el relleno avanza de arriba abajo y no ilumina ambas a la vez.
+    private var displayedRows: [LyricVisualRow] {
+        LyricRowBuilder.rows(
+            from: line.visualRows,
+            fontSize: fontSize,
+            weight: isActive ? .bold : .regular,
+            maxWidth: availableWidth
+        )
+    }
+
+    // MARK: Línea activa (relleno animado, fila a fila)
+    /// ✅ Con reproducción activa se piden frames a 60 Hz; en pausa se dibuja el
+    /// estado congelado una sola vez (sin gastar GPU/batería).
+    @ViewBuilder
+    private func activeLine(_ rows: [LyricVisualRow]) -> some View {
+        if isPlaying {
+            TimelineView(.animation) { _ in
+                activeRows(rows)
+            }
         } else {
-            viewModel.hasLyrics = false
+            activeRows(rows)
+        }
+    }
+
+    /// ✅ UN solo TimelineView para la línea completa: cada fila visual lleva su
+    /// propia máscara y su propia ventana temporal, pero solo hay UNA
+    /// suscripción de frames por línea activa (nunca una por fila).
+    private func activeRows(_ rows: [LyricVisualRow]) -> some View {
+        VStack(alignment: .leading, spacing: Self.rowSpacing) {
+            ForEach(rows.indices, id: \.self) { index in
+                LyricFillText(
+                    text: rows[index].text,
+                    fontSize: fontSize,
+                    fontWeight: fontWeight,
+                    progress: easedProgress(rows: rows, index: index)
+                )
+                // ✅ Las filas ya completadas (o aún sin empezar) tienen el mismo
+                // progreso frame a frame → no se redibujan; solo la fila que se
+                // está rellenando recalcula su máscara.
+                .equatable()
+            }
+        }
+    }
+
+    /// ✅ Misma estructura de filas que la capa activa: el texto de una línea
+    /// normal (una sola fila) se dibuja exactamente igual que antes.
+    private func dimmedRows(_ rows: [LyricVisualRow]) -> some View {
+        VStack(alignment: .leading, spacing: Self.rowSpacing) {
+            ForEach(rows.indices, id: \.self) { index in
+                Text(rows[index].text)
+                    .font(.system(size: fontSize, weight: fontWeight))
+                    .foregroundStyle(Color.primary.opacity(0.35))
+            }
+        }
+    }
+
+    /// ✅ Smoothstep (t·t·(3−2t)) POR FILA: cada fila se rellena en su propio
+    /// rango, así la fila de arriba se completa antes de que empiece la de abajo.
+    private func easedProgress(rows: [LyricVisualRow], index: Int) -> Double {
+        guard rows.indices.contains(index) else { return 0 }
+
+        let raw = viewModel.fillProgress(
+            forLineID: line.id,
+            row: rows[index],
+            isLastRow: index == rows.count - 1
+        )
+        return raw * raw * (3 - 2 * raw)
+    }
+}
+
+// MARK: - Texto con relleno progresivo (dos capas + máscara)
+// ✅ Sin blur ni capas extra: dos Text y una máscara rectangular por frame.
+private struct LyricFillText: View, Equatable {
+    let text: String
+    let fontSize: CGFloat
+    let fontWeight: Font.Weight
+    let progress: Double
+
+    var body: some View {
+        ZStack(alignment: .leading) {
+            dimmedLayer
+            brightLayer.mask(alignment: .leading) { progressMask }
+        }
+    }
+
+    private var dimmedLayer: some View {
+        Text(text)
+            .font(.system(size: fontSize, weight: fontWeight))
+            .foregroundStyle(Color.primary.opacity(0.35))
+    }
+
+    private var brightLayer: some View {
+        Text(text)
+            .font(.system(size: fontSize, weight: fontWeight))
+            .foregroundStyle(Color.primary)
+    }
+
+    /// ✅ Ancho de la máscara = ancho REAL del texto × progreso (0...1).
+    private var progressMask: some View {
+        GeometryReader { geometry in
+            Rectangle()
+                .frame(width: geometry.size.width * progress)
         }
     }
 }

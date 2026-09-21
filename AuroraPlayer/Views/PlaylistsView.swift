@@ -57,7 +57,7 @@ struct PlaylistsView: View {
                         showCreatePlaylist = true
                     } label: {
                         Image(systemName: "plus")
-                            .foregroundStyle(AppTheme.accent)
+                            .foregroundStyle(AppTheme.accentGradient)
                             .frame(width: 44, height: 44) // Bigger invisible touch target
                             .contentShape(Rectangle())
                     }
@@ -149,7 +149,7 @@ struct PlaylistsView: View {
             ZStack {
                 if let artwork = playlist.artwork {
                     // ✅ ANTI-JETSAM: card de 150pt → basta thumbnail de 300px.
-                    Image(uiImage: artwork.preparingThumbnail(of: CGSize(width: 300, height: 300)) ?? artwork)
+                    Image(uiImage: AppTheme.thumbnail(from: artwork, size: CGSize(width: 300, height: 300)))
                         .resizable()
                         .scaledToFill()
                         .frame(width: 150, height: 150)
@@ -157,16 +157,9 @@ struct PlaylistsView: View {
                 } else {
                     ZStack {
                         RoundedRectangle(cornerRadius: 18, style: .continuous)
-                            .fill(
-                                LinearGradient(
-                                    colors: [
-                                        AppTheme.accent.opacity(0.3),
-                                        AppTheme.accent.opacity(0.15)
-                                    ],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                            )
+                            // ✅ Mismo acento de dos colores que la card de la
+                            // biblioteca (antes era un solo color con opacidad).
+                            .fill(AppTheme.accentGradient(opacity: 0.3))
                             .frame(width: 150, height: 150)
 
                         Image(systemName: "music.note.list")
@@ -230,12 +223,12 @@ struct PlaylistsView: View {
                         VStack(spacing: 16) {
                             ZStack {
                                 Circle()
-                                    .fill(AppTheme.accent.opacity(0.16))
+                                    .fill(AppTheme.accentGradient(opacity: 0.16))
                                     .frame(width: 70, height: 70)
 
                                 Image(systemName: "plus.circle.fill")
                                     .font(.system(size: 28, weight: .semibold))
-                                    .foregroundStyle(AppTheme.accent)
+                                    .foregroundStyle(AppTheme.accentGradient)
                             }
 
                             Text(Localization.localized("playlists.newPlaylist"))
@@ -440,7 +433,8 @@ struct PlaylistDetailView: View {
             // Artwork con marco sutil
             ZStack {
                 if let artwork = playlist.artwork {
-                    Image(uiImage: artwork)
+                    // ✅ ANTI-JETSAM: hero de 220pt → miniatura de 440px cacheada.
+                    Image(uiImage: AppTheme.thumbnail(from: artwork, size: CGSize(width: 440, height: 440)))
                         .resizable()
                         .interpolation(.high)
                         .scaledToFill()
@@ -543,11 +537,11 @@ struct PlaylistDetailView: View {
                     } label: {
                         Image(systemName: "shuffle")
                             .font(.system(size: 17, weight: .semibold))
-                            .foregroundStyle(AppTheme.accent)
+                            .foregroundStyle(AppTheme.accentGradient)
                             .frame(width: 52, height: 52)
                             .background {
                                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                    .fill(AppTheme.accent.opacity(0.14))
+                                    .fill(AppTheme.accentGradient(opacity: 0.14))
                             }
                             .frame(width: 60, height: 60) // Bigger invisible touch target
                             .contentShape(Rectangle())
@@ -563,7 +557,10 @@ struct PlaylistDetailView: View {
             GeometryReader { geometry in
                 Group {
                     if let artwork = playlist.artwork {
-                        Image(uiImage: artwork)
+                        // ✅ ANTI-JETSAM: el fondo va desenfocado a 44pt, así que
+                        // se decodifica una miniatura de 400px en vez de la
+                        // carátula completa (≈2.4MB) en cada re-render del header.
+                        Image(uiImage: AppTheme.thumbnail(from: artwork, size: CGSize(width: 400, height: 400)))
                             .resizable()
                             .scaledToFill()
                             .blur(radius: 44)
@@ -622,16 +619,17 @@ struct PlaylistDetailView: View {
                         HStack(spacing: 3) {
                             ForEach(0..<3, id: \.self) { bar in
                                 RoundedRectangle(cornerRadius: 1.5)
-                                    .fill(LinearGradient(
-                                        colors: [AppTheme.accent, AppTheme.accent.opacity(0.5)],
-                                        startPoint: .top,
-                                        endPoint: .bottom
-                                    ))
-                                    .frame(width: 3, height: bar % 2 == 0 ? 14 : 9)
+                                    .fill(AppTheme.accentGradient)
+                                    // ✅ El indicador ANIMA de verdad: la altura cambia al
+                                    // reproducir (antes no había ninguna propiedad que
+                                    // animar, así que el repeatForever quedaba inerte).
+                                    // ✅ BATERÍA: en pausa se retira la animación.
+                                    .frame(width: 3, height: audioEngine.isPlaying ? (bar % 2 == 0 ? 14 : 9) : 6)
                                     .animation(
-                                        .easeInOut(duration: 0.45 + Double(bar) * 0.12)
-                                            .repeatForever(autoreverses: true),
-                                        value: isCurrent
+                                        audioEngine.isPlaying
+                                            ? Animation.easeInOut(duration: 0.45 + Double(bar) * 0.12).repeatForever(autoreverses: true)
+                                            : nil,
+                                        value: audioEngine.isPlaying
                                     )
                             }
                         }
@@ -682,7 +680,7 @@ struct PlaylistDetailView: View {
         .padding(.vertical, 12)
         .background {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(isCurrent ? AppTheme.accent.opacity(0.1) : Color.secondary.opacity(0.05))
+                .fill(AnyShapeStyle(isCurrent ? AnyShapeStyle(AppTheme.accentGradient(opacity: 0.1)) : AnyShapeStyle(Color.secondary.opacity(0.05))))
         }
         .overlay {
             if isCurrent {

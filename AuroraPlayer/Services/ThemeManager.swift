@@ -67,8 +67,14 @@ final class ThemeManager: ObservableObject {
         if let cached = AppTheme.artworkColorCache.object(forKey: cacheKey) {
             artworkAccentUIColor = cached
             artworkAccentColor = Self.normalizeArtworkAccent(cached)
-            // ✅ Dos colores: detectar secundario también
-            if let secondary = AppTheme.secondaryDominantColor(from: artwork, primary: cached) {
+            // ✅ Dos colores: detectar secundario también (con caché: el
+            // clustering recorre la portada otra vez y esto está en el hilo
+            // principal)
+            if let secondary = AppTheme.cachedSecondaryDominantColor(
+                from: artwork,
+                key: song.id.uuidString,
+                primary: cached
+            ) {
                 artworkSecondaryUIColor = secondary
                 artworkSecondaryColor = Self.normalizeArtworkAccent(secondary)
                 AppLog.info(.playback, "✅ PALETA DOS COLORES: secundario encontrado (cache)")
@@ -82,7 +88,11 @@ final class ThemeManager: ObservableObject {
             let dominant = AppTheme.dominantColor(from: artwork)
             guard let dominant else { return }
             AppTheme.artworkColorCache.setObject(dominant, forKey: cacheKey)
-            let secondary = AppTheme.secondaryDominantColor(from: artwork, primary: dominant)
+            let secondary = AppTheme.cachedSecondaryDominantColor(
+                from: artwork,
+                key: song.id.uuidString,
+                primary: dominant
+            )
             DispatchQueue.main.async {
                 guard let self, self.accentFromArtwork else { return }
                 self.artworkAccentUIColor = dominant
@@ -102,21 +112,29 @@ final class ThemeManager: ObservableObject {
     /// ✅ Gradiente de dos colores universal para todos los elementos
     /// Si hay dos colores de carátula, usa gradiente con más contraste
     var resolvedAccentGradient: LinearGradient {
+        resolvedAccentGradient(opacity: 1)
+    }
+
+    /// ✅ Gradiente con opacidad aplicada a CADA color. Necesario porque en
+    /// iOS 16 `LinearGradient.opacity(_:)` devuelve una View y no un ShapeStyle
+    /// (no compila dentro de `.fill(...)`). El degradado es más tenue pero
+    /// conserva el efecto de dos colores en fondos, chips y barras.
+    func resolvedAccentGradient(opacity: Double) -> LinearGradient {
         if accentFromArtwork, let primary = artworkAccentColor, let secondary = artworkSecondaryColor {
             return LinearGradient(
-                colors: [primary, secondary],
+                colors: [primary.opacity(opacity), secondary.opacity(opacity)],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
         } else if accentFromArtwork, let c = artworkAccentColor {
             return LinearGradient(
-                colors: [c, c.opacity(0.4)],
+                colors: [c.opacity(opacity), c.opacity(opacity * 0.4)],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
         }
         return LinearGradient(
-            colors: [accent, accent.opacity(0.4)],
+            colors: [accent.opacity(opacity), accent.opacity(opacity * 0.4)],
             startPoint: .topLeading,
             endPoint: .bottomTrailing
         )
@@ -213,6 +231,11 @@ enum AppTheme {
     /// ✅ Gradiente de dos colores universal para elementos que lo soportan
     static var accentGradient: LinearGradient { ThemeManager.shared.resolvedAccentGradient }
 
+    /// ✅ Variante con opacidad (para fondos, bordes y barras con alpha).
+    static func accentGradient(opacity: Double) -> LinearGradient {
+        ThemeManager.shared.resolvedAccentGradient(opacity: opacity)
+    }
+
     /// ✅ Acento como UIColor: reemplaza los antiguos fallbacks
     /// `UIColor.systemPurple` hardcodeados (no respetaban el ajuste).
     static var accentUIColor: UIColor {
@@ -308,10 +331,248 @@ enum AppTheme {
         return color
     }
 
+    /// ✅ Caché del SEGUNDO color: el clustering vuelve a recorrer la portada, así
+    /// que se cachea igual que el primario (misma clave = id de canción/álbum).
+    /// Solo se guardan aciertos: un `nil` (sin secundario) se recalcula, que es
+    /// el caso barato (nunca hay gradiente que pintar).
+    static let artworkSecondaryColorCache: NSCache<NSString, UIColor> = {
+        let cache = NSCache<NSString, UIColor>()
+        cache.countLimit = 300
+        return cache
+    }()
+
+    /// Wrapper con caché del secundario.
+    static func cachedSecondaryDominantColor(from artwork: UIImage, key: String, primary: UIColor) -> UIColor? {
+        let nsKey = key as NSString
+        if let cached = artworkSecondaryColorCache.object(forKey: nsKey) { return cached }
+        guard let color = secondaryDominantColor(from: artwork, primary: primary) else { return nil }
+        artworkSecondaryColorCache.setObject(color, forKey: nsKey)
+        return color
+    }
+
+    // MARK: - Clustering de HUE (estilo Apple Music)
+
+    /// ✅ Píxel de la portada ya convertido a HSB (hue en grados 0..<360).
+    private struct HSBPixel {
+        let hue: CGFloat
+        let saturation: CGFloat
+        let brightness: CGFloat
+    }
+
+    /// ✅ Un sector de tono (30°) con la suma de los píxeles que caen dentro.
+    /// La media del tono usa vectores unitarios (media circular) para que los
+    /// tonos que cruzan el 0° (rojos) no salgan desplazados.
+    private struct HueSector {
+        var count = 0
+        var hueVectorX: CGFloat = 0
+        var hueVectorY: CGFloat = 0
+        var saturationSum: CGFloat = 0
+        var brightnessSum: CGFloat = 0
+
+        mutating func add(_ pixel: HSBPixel) {
+            count += 1
+            let radians = pixel.hue * .pi / 180
+            hueVectorX += cos(radians)
+            hueVectorY += sin(radians)
+            saturationSum += pixel.saturation
+            brightnessSum += pixel.brightness
+        }
+
+        /// Tono medio del sector en grados (0..<360).
+        var averageHue: CGFloat {
+            guard count > 0 else { return 0 }
+            var degrees = atan2(hueVectorY, hueVectorX) * 180 / .pi
+            if degrees < 0 { degrees += 360 }
+            return degrees
+        }
+
+        /// Color medio (H medio, S medio, V medio) del sector.
+        var averageColor: UIColor? {
+            guard count > 0 else { return nil }
+            return UIColor(
+                hue: averageHue / 360,
+                saturation: saturationSum / CGFloat(count),
+                brightness: brightnessSum / CGFloat(count),
+                alpha: 1
+            )
+        }
+    }
+
+    /// 12 sectores de 30°: agrupar por TONO, no por cubo RGB exacto.
+    private static let hueSectorCount = 12
+    private static let hueSectorWidth: CGFloat = 360 / CGFloat(hueSectorCount)
+    /// ✅ Muestreo a 64×64: menos ruido y más rápido que a 80×80.
+    private static let dominantSampleEdge: CGFloat = 64
+    /// ✅ Mínimo de píxeles con color real para fiarse del clustering. Por debajo,
+    /// la portada es prácticamente monocromática (blanco y negro, grises) y se
+    /// delega en el histograma RGB clásico.
+    private static let minimumColoredPixels = 100
+    /// ✅ Separación mínima de tono entre primario y secundario.
+    private static let minimumSecondaryHueDelta: CGFloat = 30
+
+    /// ⚡ Algoritmo por clustering de hue (estilo Apple Music)
+    /// Devuelve el color primario (sector de tono con más píxeles) y, si existe,
+    /// el secundario (siguiente sector poblado con un tono a ≥30° del primario).
+    /// nil si la portada no aporta suficiente color → el llamador usa el fallback.
+    private static func clusteredAccentColors(from artwork: UIImage) -> (primary: UIColor, secondary: UIColor?)? {
+        guard let pixels = coloredPixels(from: artwork) else { return nil }
+
+        var sectors = [HueSector](repeating: HueSector(), count: hueSectorCount)
+        for pixel in pixels {
+            let index = min(hueSectorCount - 1, max(0, Int(pixel.hue / hueSectorWidth)))
+            sectors[index].add(pixel)
+        }
+
+        // ✅ El sector con MÁS píxeles es el color dominante visual (un logo rojo
+        // pequeño ya no gana a un fondo azul mayoritario: cada sector suma todos
+        // sus píxeles, no un cubo RGB concreto).
+        let ranked = sectors.enumerated().sorted { $0.element.count > $1.element.count }
+        guard let winner = ranked.first, winner.element.count > 0,
+              let primary = winner.element.averageColor else { return nil }
+
+        let primaryHue = winner.element.averageHue
+        var secondary: UIColor?
+        for candidate in ranked.dropFirst() where candidate.element.count > 10 {
+            guard let color = candidate.element.averageColor else { continue }
+            if angularDistance(candidate.element.averageHue, primaryHue) >= minimumSecondaryHueDelta {
+                secondary = color
+                break
+            }
+        }
+
+        return (primary, secondary)
+    }
+
+    /// ✅ Píxeles significativos de la portada (64×64) en HSB.
+    /// FILTRO: se descartan los transparentes (alpha < 0.5), los casi negros
+    /// (brillo < 0.10), los casi blancos (brillo > 0.95) y los grises
+    /// (saturación < 0.10) — siempre presentes en cualquier portada y que
+    /// ensucian el resultado.
+    private static func coloredPixels(from artwork: UIImage) -> [HSBPixel]? {
+        let size = CGSize(width: dominantSampleEdge, height: dominantSampleEdge)
+        UIGraphicsBeginImageContextWithOptions(size, false, 1.0)
+        artwork.draw(in: CGRect(origin: .zero, size: size))
+        guard let cgImage = UIGraphicsGetImageFromCurrentImageContext()?.cgImage else {
+            UIGraphicsEndImageContext()
+            return nil
+        }
+        UIGraphicsEndImageContext()
+
+        let width = cgImage.width
+        let height = cgImage.height
+        let bytesPerRow = cgImage.bytesPerRow
+        var data = [UInt8](repeating: 0, count: height * bytesPerRow)
+
+        // ✅ `withUnsafeMutableBytes` garantiza que el puntero que ve CoreGraphics
+        // es el mismo buffer que leemos después (sin copias temporales).
+        let drawn = data.withUnsafeMutableBytes { raw -> Bool in
+            guard let base = raw.baseAddress,
+                  let ctx = CGContext(
+                    data: base, width: width, height: height,
+                    bitsPerComponent: 8, bytesPerRow: bytesPerRow,
+                    space: CGColorSpaceCreateDeviceRGB(),
+                    bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+                  ) else { return false }
+            ctx.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+            return true
+        }
+        guard drawn else { return nil }
+
+        var pixels: [HSBPixel] = []
+        pixels.reserveCapacity(width * height)
+
+        for y in 0..<height {
+            for x in 0..<width {
+                let offset = y * bytesPerRow + x * 4
+                guard CGFloat(data[offset + 3]) / 255 >= 0.5 else { continue }
+
+                let pixelColor = UIColor(
+                    red: CGFloat(data[offset]) / 255,
+                    green: CGFloat(data[offset + 1]) / 255,
+                    blue: CGFloat(data[offset + 2]) / 255,
+                    alpha: 1
+                )
+                var hue: CGFloat = 0
+                var saturation: CGFloat = 0
+                var brightness: CGFloat = 0
+                guard pixelColor.getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: nil) else { continue }
+
+                guard brightness >= 0.10, brightness <= 0.95, saturation >= 0.10 else { continue }
+                pixels.append(HSBPixel(hue: hue * 360, saturation: saturation, brightness: brightness))
+            }
+        }
+
+        guard pixels.count >= minimumColoredPixels else { return nil }
+        return pixels
+    }
+
+    /// ✅ Distancia angular mínima entre dos tonos (0...180°).
+    private static func angularDistance(_ first: CGFloat, _ second: CGFloat) -> CGFloat {
+        let delta = abs(first - second).truncatingRemainder(dividingBy: 360)
+        return min(delta, 360 - delta)
+    }
+
+    // MARK: - Miniaturas de carátula (caché)
+
+    // ✅ `preparingThumbnail(of:)` decodifica la portada COMPLETA (768px ≈ 2.4MB)
+    // y devuelve un UIImage NUEVO en cada llamada. En filas que se re-renderizan
+    // (scroll, cambios de estado del motor) eso es CPU y churn de memoria en A11.
+    // Clave = instancia de la carátula (`Song.artwork` ya devuelve la MISMA
+    // instancia cacheada por id de canción) + tamaño en píxeles.
+    static let thumbnailCache: NSCache<NSString, UIImage> = {
+        let cache = NSCache<NSString, UIImage>()
+        // ✅ ANTI-JETSAM (iPhone 8 Plus / 3GB): tope por MEMORIA, no por conteo.
+        // 12MB ≈ 330 miniaturas de 96px o ≈ 33 de 300px; las carátulas completas
+        // nunca entran aquí (siguen en Song.artworkCache).
+        cache.countLimit = 400
+        cache.totalCostLimit = 12 * 1024 * 1024
+        return cache
+    }()
+
+    /// Miniatura cacheada de una carátula. Mismo resultado que
+    /// `artwork.preparingThumbnail(of:)` (y mismo fallback a la original),
+    /// pero sin recomputarla en cada render de fila.
+    static func thumbnail(from artwork: UIImage, size: CGSize) -> UIImage {
+        let width = max(1, Int(size.width.rounded()))
+        let height = max(1, Int(size.height.rounded()))
+        let key = "\(ObjectIdentifier(artwork).hashValue)-\(width)x\(height)" as NSString
+
+        if let cached = thumbnailCache.object(forKey: key) { return cached }
+        guard let thumbnail = artwork.preparingThumbnail(of: CGSize(width: width, height: height)) else {
+            return artwork
+        }
+        // Costo = bytes del bitmap (RGBA) para que NSCache expulse por RAM real.
+        thumbnailCache.setObject(thumbnail, forKey: key, cost: width * height * 4)
+        return thumbnail
+    }
+
+    // MARK: - API pública de extracción
+
+    /// ⚡ Algoritmo por clustering de hue (estilo Apple Music):
+    /// 1. Portada reducida a 64×64 (menos ruido, más rápido).
+    /// 2. Cada píxel se convierte a HSB y se filtran transparentes, casi negros,
+    ///    casi blancos y grises.
+    /// 3. Los píxeles restantes se agrupan por TONO en 12 sectores de 30° y el
+    ///    sector con más píxeles da el color dominante visual.
+    /// 4. Si no quedan 100 píxeles con color (portadas en blanco y negro o casi
+    ///    planas) se usa el histograma RGB clásico como fallback.
+    static func dominantColor(from artwork: UIImage) -> UIColor? {
+        if let clustered = clusteredAccentColors(from: artwork) { return clustered.primary }
+        return legacyDominantColor(from: artwork)
+    }
+
+    /// ✅ SISTEMA DOS COLORES: segundo sector poblado con un tono perceptualmente
+    /// distinto (≥30°) del primario. nil si la portada es monocromática.
+    static func secondaryDominantColor(from artwork: UIImage, primary: UIColor) -> UIColor? {
+        if let clustered = clusteredAccentColors(from: artwork) { return clustered.secondary }
+        return legacySecondaryDominantColor(from: artwork, primary: primary)
+    }
+
+    // MARK: - Fallback clásico (histograma RGB)
     /// Extrae el color más REPRESENTATIVO de una portada:
     /// ✅ SISTEMA DE MAYORÍA: cuantización RGB para encontrar el color más frecuente
     /// No usa promedio (puede ser sesgado), usa frecuencia de colores
-    static func dominantColor(from artwork: UIImage) -> UIColor? {
+    private static func legacyDominantColor(from artwork: UIImage) -> UIColor? {
         let size = CGSize(width: 80, height: 80)
         UIGraphicsBeginImageContextWithOptions(size, false, 1.0)
         artwork.draw(in: CGRect(origin: .zero, size: size))
@@ -381,9 +642,9 @@ enum AppTheme {
         return UIColor(red: CGFloat(r), green: CGFloat(g), blue: CGFloat(b), alpha: 1)
     }
 
-    /// ✅ SISTEMA DOS COLORES: extrae el segundo color dominante
-    /// Usa el mismo sistema de frecuencia para encontrar el segundo más común
-    static func secondaryDominantColor(from artwork: UIImage, primary: UIColor) -> UIColor? {
+    /// ✅ Fallback clásico del segundo color (histograma RGB): solo se usa con
+    /// portadas sin color significativo, donde el clustering no tiene datos.
+    private static func legacySecondaryDominantColor(from artwork: UIImage, primary: UIColor) -> UIColor? {
         let size = CGSize(width: 80, height: 80)
         UIGraphicsBeginImageContextWithOptions(size, false, 1.0)
         artwork.draw(in: CGRect(origin: .zero, size: size))

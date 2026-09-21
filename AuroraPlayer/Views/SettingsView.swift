@@ -272,23 +272,13 @@ struct SettingsView: View {
                                     }
                                 )
                             )
-                            settingsDivider
-                            // ✅ BLUETOOTH OPTIMIZATION: mejorar calidad en BT
-                            settingsToggleRow(
-                                title: Localization.localized("settings.bluetoothOptimization"),
-                                subtitle: Localization.localized("settings.bluetoothOptimizationSubtitle"),
-                                icon: "antenna.radiowaves.left.and.right",
-                                color: .blue,
-                                isOn: Binding(
-                                    get: { audioEngine.isBluetoothOptimizationEnabled },
-                                    set: { newValue in
-                                        if newValue != audioEngine.isBluetoothOptimizationEnabled {
-                                            Haptics.light()
-                                            audioEngine.toggleBluetoothOptimization()
-                                        }
-                                    }
-                                )
-                            )
+                            // ✅ ELIMINADO el toggle "Optimización Bluetooth": su
+                            // única acción real era escribir un log (no forzaba
+                            // buffer ni tasa, porque en A2DP la latencia y el
+                            // reloj los impone el enlace) y además no se
+                            // persistía. Un interruptor que no cambia nada es
+                            // peor que no tenerlo. La implementación interna
+                            // sigue en AudioEngine por si se le da uso futuro.
                         }
 
                         // Apariencia
@@ -478,7 +468,7 @@ struct SettingsView: View {
             ZStack {
                 // ✅ Círculo con tinte suave (sin blur: cero re-muestreo en scroll)
                 Circle()
-                    .fill(AppTheme.accent.opacity(0.12))
+                    .fill(AppTheme.accentGradient(opacity: 0.12))
                     .frame(width: 88, height: 88)
                     .overlay {
                         Circle()
@@ -510,6 +500,13 @@ struct SettingsView: View {
                 Text(Localization.localized("settings.subtitle"))
                     .font(.system(size: 14))
                     .foregroundStyle(.secondary)
+
+                // ✅ Versión visible en el header (los números de versión no se
+                // traducen, así que no hace falta una key de Localización).
+                Text(appVersionLabel)
+                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                    .foregroundStyle(.tertiary)
+                    .padding(.top, 2)
             }
         }
         .frame(maxWidth: .infinity)
@@ -532,6 +529,14 @@ struct SettingsView: View {
         }
     }
 
+    /// ✅ "Versión 2.2.0 · Build 22": leído del bundle y localizado con las
+    /// keys que ya existían (settings.version / settings.build).
+    private var appVersionLabel: String {
+        let short = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—"
+        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "—"
+        return "\(Localization.localized("settings.version")) \(short) · \(Localization.localized("settings.build")) \(build)"
+    }
+
     // MARK: - Section Builder (diseño premium estilo NowPlayingView)
     @ViewBuilder
     private func settingsSection<Content: View>(
@@ -545,8 +550,16 @@ struct SettingsView: View {
                     .foregroundStyle(color)
                     .frame(width: 30, height: 30)
                     .background {
+                        // ✅ Micro-gradiente del MISMO tono de la sección: da
+                        // profundidad sin cambiar el color identificativo de cada
+                        // grupo (Biblioteca/Audio/Apariencia/...).
                         RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .fill(color.opacity(0.15))
+                            .fill(
+                                LinearGradient(
+                                    colors: [color.opacity(0.22), color.opacity(0.08)],
+                                    startPoint: .topLeading, endPoint: .bottomTrailing
+                                )
+                            )
                     }
                     .overlay {
                         RoundedRectangle(cornerRadius: 10, style: .continuous)
@@ -693,8 +706,14 @@ struct SettingsView: View {
             .foregroundStyle(color)
             .frame(width: 32, height: 32)
             .background {
+                // ✅ Mismo micro-gradiente que los iconos de sección.
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(color.opacity(0.12))
+                    .fill(
+                        LinearGradient(
+                            colors: [color.opacity(0.18), color.opacity(0.07)],
+                            startPoint: .topLeading, endPoint: .bottomTrailing
+                        )
+                    )
             }
             .overlay {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)

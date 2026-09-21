@@ -3,6 +3,8 @@ import UniformTypeIdentifiers
 
 struct FolderPickerView: View {
     @ObservedObject var fileAccessService: FileAccessService
+    // ✅ Observado para que los textos se re-rendericen al cambiar de idioma en vivo.
+    @ObservedObject private var localization = Localization.shared
     @Environment(\.dismiss) private var dismiss
 
     @State private var showImporter = false
@@ -43,16 +45,11 @@ struct FolderPickerView: View {
             .toolbar {
                 // Título personalizado consistente con la app
                 ToolbarItem(placement: .principal) {
-                    Text("Biblioteca")
+                    Text(Localization.localized("library.title"))
                         .font(.system(size: 20, weight: .bold, design: .rounded))
-                        .foregroundStyle(
-                            LinearGradient(
-                                colors: [AppTheme.accent, AppTheme.accent.opacity(0.75)],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                        )
-                        .accessibilityLabel("Biblioteca")
+                        // ✅ Acento de dos colores (antes un solo color con opacidad).
+                        .foregroundStyle(AppTheme.accentGradient)
+                        .accessibilityLabel(Localization.localized("library.title"))
                 }
 
                 ToolbarItem(placement: .navigationBarTrailing) {
@@ -72,7 +69,11 @@ struct FolderPickerView: View {
             }
             .onAppear {
                 withAnimation(.easeOut(duration: 0.5)) { appearAnimation = true }
-                withAnimation(.easeInOut(duration: 1.5).repeatForever(autoreverses: true)) { headerPulse = true }
+                // ✅ El anillo empieza a latir DESPUÉS de la entrada (0,25 s) para que
+                // el pulso no compita con la escala de aparición del icono.
+                withAnimation(.easeInOut(duration: 1.5).repeatForever(autoreverses: true).delay(0.25)) {
+                    headerPulse = true
+                }
             }
         }
     }
@@ -84,13 +85,7 @@ struct FolderPickerView: View {
             ZStack {
                 // ✅ Anillo pulsante con material de vidrio (estilo NowPlayingView)
                 Circle()
-                    .stroke(
-                        LinearGradient(
-                            colors: [AppTheme.accent.opacity(0.4), AppTheme.accent.opacity(0.1)],
-                            startPoint: .topLeading, endPoint: .bottomTrailing
-                        ),
-                        lineWidth: 2
-                    )
+                    .stroke(AppTheme.accentGradient(opacity: 0.45), lineWidth: 2)
                     .frame(width: 88, height: 88)
                     .scaleEffect(headerPulse ? 1.12 : 0.95)
                     .opacity(headerPulse ? 0.6 : 0.25)
@@ -111,12 +106,7 @@ struct FolderPickerView: View {
 
                 Image(systemName: "music.note.list")
                     .font(.system(size: 32, weight: .semibold))
-                    .foregroundStyle(
-                        LinearGradient(
-                            colors: [AppTheme.accent, AppTheme.accent.opacity(0.7)],
-                            startPoint: .top, endPoint: .bottom
-                        )
-                    )
+                    .foregroundStyle(AppTheme.accentGradient)
             }
             .opacity(appearAnimation ? 1 : 0)
             .scaleEffect(appearAnimation ? 1 : 0.7)
@@ -155,20 +145,20 @@ struct FolderPickerView: View {
                 HStack {
                     ZStack {
                         RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .fill(AppTheme.accent.opacity(0.12))
+                            .fill(AppTheme.accentGradient(opacity: 0.12))
                             .frame(width: 44, height: 44)
 
                         Image(systemName: "folder.fill")
                             .font(.system(size: 18, weight: .semibold))
-                            .foregroundStyle(AppTheme.accent)
+                            .foregroundStyle(AppTheme.accentGradient)
                     }
 
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Añadir carpeta")
+                        Text(Localization.localized("folders.addFolder"))
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(.primary)
 
-                        Text("Selecciona una carpeta completa")
+                        Text(Localization.localized("folders.addFolderSubtitle"))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -196,20 +186,20 @@ struct FolderPickerView: View {
                 HStack {
                     ZStack {
                         RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .fill(AppTheme.accent.opacity(0.12))
+                            .fill(AppTheme.accentGradient(opacity: 0.12))
                             .frame(width: 44, height: 44)
 
                         Image(systemName: "music.note")
                             .font(.system(size: 18, weight: .semibold))
-                            .foregroundStyle(AppTheme.accent)
+                            .foregroundStyle(AppTheme.accentGradient)
                     }
 
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Añadir archivos")
+                        Text(Localization.localized("folders.addFiles"))
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(.primary)
 
-                        Text("Selecciona canciones individuales")
+                        Text(Localization.localized("folders.addFilesSubtitle"))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -245,11 +235,11 @@ struct FolderPickerView: View {
                     }
 
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Actualizar biblioteca")
+                        Text(Localization.localized("folders.refresh"))
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(.primary)
 
-                        Text("Rescanear carpetas existentes")
+                        Text(Localization.localized("folders.refreshSubtitle"))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -281,7 +271,7 @@ struct FolderPickerView: View {
                 ProgressView()
                     .progressViewStyle(CircularProgressViewStyle(tint: AppTheme.accent))
 
-                Text("Escaneando biblioteca...")
+                Text(Localization.localized("folders.scanning"))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
 
@@ -305,9 +295,9 @@ struct FolderPickerView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
                         Image(systemName: "folder.fill")
-                            .foregroundStyle(AppTheme.accent)
+                            .foregroundStyle(AppTheme.accentGradient)
 
-                        Text("Carpetas")
+                        Text(Localization.localized("folders.folderSection"))
                             .font(.headline)
                     }
                     .padding(.horizontal, 4)
@@ -316,20 +306,20 @@ struct FolderPickerView: View {
                         ForEach(fileAccessService.folders) { folder in
                             HStack {
                                 ZStack {
-                                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                        .fill(AppTheme.accent.opacity(0.12))
-                                        .frame(width: 38, height: 38)
+                                    RoundedRectangle(cornerRadius: 11, style: .continuous)
+                                        .fill(AppTheme.accentGradient(opacity: 0.12))
+                                        .frame(width: 40, height: 40)
 
                                     Image(systemName: "folder.fill")
-                                        .font(.system(size: 16, weight: .semibold))
-                                        .foregroundStyle(AppTheme.accent)
+                                        .font(.system(size: 17, weight: .semibold))
+                                        .foregroundStyle(AppTheme.accentGradient)
                                 }
 
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(folder.displayName)
                                         .font(.subheadline.weight(.medium))
 
-                                    Text("Carpeta añadida")
+                                    Text(Localization.localized("folders.folderAdded"))
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
                                 }
@@ -366,9 +356,9 @@ struct FolderPickerView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
                         Image(systemName: "music.note")
-                            .foregroundStyle(AppTheme.accent)
+                            .foregroundStyle(AppTheme.accentGradient)
 
-                        Text("Archivos individuales")
+                        Text(Localization.localized("folders.filesSection"))
                             .font(.headline)
                     }
                     .padding(.horizontal, 4)
@@ -377,13 +367,13 @@ struct FolderPickerView: View {
                         ForEach(fileAccessService.files) { file in
                             HStack {
                                 ZStack {
-                                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                        .fill(AppTheme.accent.opacity(0.12))
-                                        .frame(width: 38, height: 38)
+                                    RoundedRectangle(cornerRadius: 11, style: .continuous)
+                                        .fill(AppTheme.accentGradient(opacity: 0.12))
+                                        .frame(width: 40, height: 40)
 
                                     Image(systemName: "music.note")
-                                        .font(.system(size: 16, weight: .semibold))
-                                        .foregroundStyle(AppTheme.accent)
+                                        .font(.system(size: 17, weight: .semibold))
+                                        .foregroundStyle(AppTheme.accentGradient)
                                 }
 
                                 VStack(alignment: .leading, spacing: 2) {
@@ -391,7 +381,7 @@ struct FolderPickerView: View {
                                         .font(.subheadline.weight(.medium))
                                         .lineLimit(1)
 
-                                    Text("Archivo individual")
+                                    Text(Localization.localized("folders.fileAdded"))
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
                                 }
@@ -426,15 +416,24 @@ struct FolderPickerView: View {
             // Empty State
             if fileAccessService.folders.isEmpty && fileAccessService.files.isEmpty {
                 VStack(spacing: 12) {
-                    Image(systemName: "music.note")
-                        .font(.system(size: 40))
-                        .foregroundStyle(.tertiary)
+                    // ✅ Estado vacío con el icono del header (mismo lenguaje visual
+                    // que el resto: acento de dos colores sobre un disco suave).
+                    ZStack {
+                        Circle()
+                            .fill(AppTheme.accentGradient(opacity: 0.1))
+                            .frame(width: 72, height: 72)
 
-                    Text("Tu biblioteca está vacía")
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(.secondary)
+                        Image(systemName: "music.note")
+                            .font(.system(size: 30, weight: .medium))
+                            .foregroundStyle(AppTheme.accentGradient)
+                    }
+                    .padding(.bottom, 2)
 
-                    Text("Añade carpetas o archivos para empezar")
+                    Text(Localization.localized("folders.emptyTitle"))
+                        .font(.headline)
+                        .foregroundStyle(.primary)
+
+                    Text(Localization.localized("folders.emptySubtitle"))
                         .font(.caption)
                         .foregroundStyle(.tertiary)
                         .multilineTextAlignment(.center)

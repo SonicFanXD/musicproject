@@ -276,7 +276,10 @@ struct ContentView: View {
 
             if isInitialLoad {
                 SplashView()
-                    .transition(.opacity)
+                    // ✅ Salida premium: la escala mínima acompaña al fundido (la
+                    // duración la marca el withAnimation del llamador, que no se
+                    // toca para no alterar la duración total del splash).
+                    .transition(.scale(scale: 0.96).combined(with: .opacity))
                     .zIndex(1)
             }
         }
@@ -754,7 +757,7 @@ struct ContentView: View {
                 .padding(.top, 8)
             ForEach(albums) { album in
                 NavigationLink {
-                    AlbumDetailView(album: album, audioEngine: audioEngine)
+                    AlbumDetailView(album: album, audioEngine: audioEngine, fileAccessService: fileAccessService)
                 } label: {
                     albumListRow(album)
                 }
@@ -798,7 +801,7 @@ struct ContentView: View {
                 .padding(.top, 8)
             ForEach(artists) { artist in
                 NavigationLink {
-                    ArtistDetailView(artist: artist, audioEngine: audioEngine)
+                    ArtistDetailView(artist: artist, audioEngine: audioEngine, fileAccessService: fileAccessService)
                 } label: {
                     artistListRow(artist)
                 }
@@ -850,8 +853,10 @@ struct ContentView: View {
                     artworkView(for: song)
                     
                     VStack(alignment: .leading, spacing: 3) {
+                        // ✅ Jerarquía: el título sube a 16 (la fila de álbum/artista
+                        // también) para separarse mejor del subtítulo de 12.
                         Text(song.displayName)
-                            .font(.system(size: 15, weight: .semibold, design: .rounded))
+                            .font(.system(size: 16, weight: .semibold, design: .rounded))
                             .foregroundStyle(isCurrent ? AppTheme.accent : .primary)
                             .lineLimit(1)
                         
@@ -880,14 +885,20 @@ struct ContentView: View {
                         HStack(spacing: 2.5) {
                             ForEach(0..<3, id: \.self) { bar in
                                 RoundedRectangle(cornerRadius: 1)
-                                    .fill(LinearGradient(
-                                        colors: [AppTheme.accent, AppTheme.accent.opacity(0.5)],
-                                        startPoint: .top,
-                                        endPoint: .bottom
-                                    ))
-                                    .frame(width: 2.5, height: bar % 2 == 0 ? 12 : 7)
+                                    .fill(AppTheme.accentGradient)
+                                    // ✅ El indicador ANIMA de verdad: la altura cambia
+                                    // al reproducir y el repeatForever la hace oscilar
+                                    // entre 4 y 12/7 pt (antes la animación no tenía
+                                    // ninguna propiedad que cambiar → barras fijas).
+                                    // ✅ BATERÍA: en pausa no hay bucle que animar.
+                                    .frame(
+                                        width: 2.5,
+                                        height: audioEngine.isPlaying ? (bar % 2 == 0 ? 12 : 7) : 4
+                                    )
                                     .animation(
-                                        .easeInOut(duration: 0.4 + Double(bar) * 0.1).repeatForever(autoreverses: true),
+                                        audioEngine.isPlaying
+                                            ? Animation.easeInOut(duration: 0.4 + Double(bar) * 0.1).repeatForever(autoreverses: true)
+                                            : nil,
                                         value: audioEngine.isPlaying
                                     )
                             }
@@ -922,7 +933,7 @@ struct ContentView: View {
         .background {
                 if isCurrent {
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(AppTheme.accent.opacity(0.08))
+                        .fill(AppTheme.accentGradient(opacity: 0.08))
                         .overlay(
                             RoundedRectangle(cornerRadius: 16, style: .continuous)
                                 .strokeBorder(AppTheme.accent.opacity(0.2), lineWidth: 0.5)
@@ -999,7 +1010,7 @@ struct ContentView: View {
             // 48pt pero decodificaba los 768px completos (2.4MB) por fila en el
             // scroll → picos de RAM + tirones. Reescalar a 96px (48pt @2x):
             // ~15KB retenidos por fila en vez de 2.4MB (160× menos).
-            Image(uiImage: artwork.preparingThumbnail(of: CGSize(width: 96, height: 96)) ?? artwork)
+            Image(uiImage: AppTheme.thumbnail(from: artwork, size: CGSize(width: 96, height: 96)))
                 .resizable()
                 .interpolation(.high)
                 .scaledToFill()
@@ -1007,18 +1018,12 @@ struct ContentView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         } else {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: [AppTheme.accent.opacity(0.15), AppTheme.accent.opacity(0.05)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
+                .fill(AppTheme.accentGradient(opacity: 0.15))
                 .frame(width: 48, height: 48)
                 .overlay {
                     Image(systemName: "music.note")
                         .font(.system(size: 16, weight: .medium))
-                        .foregroundStyle(AppTheme.accent.opacity(0.6))
+                        .foregroundStyle(AppTheme.accentGradient(opacity: 0.6))
                 }
         }
     }
@@ -1210,6 +1215,11 @@ struct SplashView: View {
     @State private var titleOpacity: Double = 0
     @State private var pulseScale: CGFloat = 1.0
     @State private var pulseOpacity: Double = 0
+    // ✅ Halo "respirable": ciclo corto (≈1,5 s con autoreverses) y amplitud
+    // mínima. Vive solo mientras el splash está en pantalla: al pasar
+    // isInitialLoad a false la vista sale del árbol y la animación se detiene
+    // con ella (no queda ningún bucle en background).
+    @State private var breathing = false
     @Environment(\.colorScheme) private var colorScheme
     
     var body: some View {
@@ -1250,8 +1260,9 @@ struct SplashView: View {
                             )
                         )
                         .frame(width: 160, height: 160)
-                        .scaleEffect(pulseScale)
+                        .scaleEffect(pulseScale * (breathing ? 1.04 : 0.97))
                         .opacity(pulseOpacity)
+                        .animation(.easeInOut(duration: 0.75).repeatForever(autoreverses: true), value: breathing)
                     
                     // Círculo del logo
                     Circle()
@@ -1284,13 +1295,8 @@ struct SplashView: View {
                     // Icono principal
                     Image(systemName: "music.note")
                         .font(.system(size: 44, weight: .light))
-                        .foregroundStyle(
-                            LinearGradient(
-                                colors: [AppTheme.accent, AppTheme.accent.opacity(0.7)],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
-                        )
+                        // ✅ Mismo acento de dos colores que el resto de la app.
+                        .foregroundStyle(AppTheme.accentGradient)
                         .shadow(color: AppTheme.accent.opacity(0.3), radius: 8, y: 4)
                 }
                 .scaleEffect(logoScale)
@@ -1324,23 +1330,27 @@ struct SplashView: View {
         }
         .allowsHitTesting(false)
         .onAppear {
-            // ✅ Animación del logo
-            withAnimation(.easeOut(duration: 0.6)) {
+            // ✅ Entrada con spring (antes easeOut 0.6): el logo "asienta" con un
+            // rebote sutil en lugar de frenar en seco. El retardo del título y
+            // del halo es el mismo de antes, así que la duración total del
+            // splash no cambia.
+            withAnimation(.spring(response: 0.7, dampingFraction: 0.75)) {
                 logoScale = 1.0
                 logoOpacity = 1.0
             }
-            
-            // ✅ Animación del título (con delay)
-            withAnimation(.easeOut(duration: 0.5).delay(0.25)) {
+
+            withAnimation(.spring(response: 0.7, dampingFraction: 0.75).delay(0.25)) {
                 titleOffset = 0
                 titleOpacity = 1.0
             }
-            
-            // ✅ Animación de pulso del halo
-            withAnimation(.easeInOut(duration: 1.2).delay(0.4)) {
-                pulseScale = 1.15
+
+            withAnimation(.spring(response: 0.7, dampingFraction: 0.75).delay(0.4)) {
+                pulseScale = 1.12
                 pulseOpacity = 1.0
             }
+
+            // ✅ Y después respira en bucle mientras el splash siga visible.
+            breathing = true
         }
     }
 }
@@ -1357,10 +1367,12 @@ struct LoadingDots: View {
                     .frame(width: 6, height: 6)
                     .scaleEffect(animating ? 1.0 : 0.5)
                     .opacity(animating ? 1.0 : 0.4)
+                    // ✅ autoreverses: el punto late (0,5 s) en vez de saltar de
+                    // golpe al reanudar el ciclo; stagger de 0,12 s entre puntos.
                     .animation(
-                        .easeInOut(duration: 0.6)
-                            .repeatForever()
-                            .delay(Double(index) * 0.15),
+                        .easeInOut(duration: 0.5)
+                            .repeatForever(autoreverses: true)
+                            .delay(Double(index) * 0.12),
                         value: animating
                     )
             }
@@ -1541,7 +1553,10 @@ private func albumListRow(_ album: Album) -> some View {
     HStack(spacing: 14) {
         Group {
             if let artwork = album.artwork {
-                Image(uiImage: artwork)
+                // ✅ ANTI-JETSAM: la fila muestra 52pt pero decodificaba los 768px
+                // completos (≈2.4MB) por fila durante el scroll. Miniatura de
+                // 104px (52pt @2x) cacheada, igual que la fila de canciones.
+                Image(uiImage: AppTheme.thumbnail(from: artwork, size: CGSize(width: 104, height: 104)))
                     .resizable().interpolation(.high).scaledToFill()
                     .frame(width: 52, height: 52)
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
@@ -1559,7 +1574,7 @@ private func albumListRow(_ album: Album) -> some View {
 
         VStack(alignment: .leading, spacing: 3) {
             Text(album.name)
-                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                .font(.system(size: 16, weight: .semibold, design: .rounded))
                 .foregroundStyle(.primary).lineLimit(1)
             Text(album.artist)
                 .font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
@@ -1583,7 +1598,8 @@ private func artistListRow(_ artist: Artist) -> some View {
     HStack(spacing: 14) {
         Group {
             if let artwork = artist.artwork {
-                Image(uiImage: artwork)
+                // ✅ ANTI-JETSAM: mismo caso que la fila de álbumes (52pt @2x).
+                Image(uiImage: AppTheme.thumbnail(from: artwork, size: CGSize(width: 104, height: 104)))
                     .resizable().interpolation(.high).scaledToFill()
                     .frame(width: 52, height: 52)
                     .clipShape(Circle())
@@ -1600,7 +1616,7 @@ private func artistListRow(_ artist: Artist) -> some View {
 
         VStack(alignment: .leading, spacing: 3) {
             Text(artist.name)
-                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                .font(.system(size: 16, weight: .semibold, design: .rounded))
                 .foregroundStyle(.primary).lineLimit(1)
             // ✅ Solo canciones: artist.albums agrupa discos y es caro de calcular
             // por fila en cada render (el detalle del artista sí muestra álbumes).
@@ -1628,7 +1644,7 @@ struct ContentUnavailableLibraryView: View {
     var body: some View {
         VStack(spacing: 16) {
             ZStack {
-                Circle().fill(AppTheme.accent.opacity(0.1)).frame(width: 80, height: 80)
+                Circle().fill(AppTheme.accentGradient(opacity: 0.1)).frame(width: 80, height: 80)
                 Image(systemName: icon)
                     .font(.system(size: 36, weight: .semibold))
                     .foregroundStyle(AppTheme.accentGradient)
@@ -1655,19 +1671,15 @@ struct playlistLibraryCard: View {
         VStack(alignment: .leading, spacing: 10) {
             Group {
                 if let artwork = playlist.artwork {
-                    Image(uiImage: artwork)
+                    // ✅ ANTI-JETSAM: card de 140pt → miniatura de 280px cacheada.
+                    Image(uiImage: AppTheme.thumbnail(from: artwork, size: CGSize(width: 280, height: 280)))
                         .resizable().scaledToFill()
                         .frame(width: 140, height: 140)
                         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                 } else {
                     ZStack {
                         RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .fill(
-                                LinearGradient(
-                                    colors: [AppTheme.accent.opacity(0.25), AppTheme.accent.opacity(0.1)],
-                                    startPoint: .topLeading, endPoint: .bottomTrailing
-                                )
-                            )
+                            .fill(AppTheme.accentGradient(opacity: 0.25))
                             .frame(width: 140, height: 140)
                         Image(systemName: "music.note.list")
                             .font(.system(size: 35))
@@ -1678,7 +1690,7 @@ struct playlistLibraryCard: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(playlist.name)
-                    .font(.system(size: 14, weight: .semibold, design: .rounded))
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
                     .foregroundStyle(.primary).lineLimit(1)
                 Text(localizedSongCount(playlist.songIDs.count))
                     .font(.system(size: 12)).foregroundStyle(.secondary)

@@ -1,10 +1,113 @@
 import SwiftUI
 import CoreImage
 
+// MARK: - Acento de las vistas de detalle (SIEMPRE de DOS colores)
+/// ✅ Regla única para Album/Artist detail:
+/// · Con "Acento desde portada" ACTIVO → color de ESTA carátula (álbum o
+///   artista) + su secundario REAL, extraído con la misma caché que el primario.
+/// · Con el modo DESACTIVADO → acento manual con su segunda parada al 40%,
+///   idéntico a `AppTheme.accentGradient` (consistencia con el resto de la app).
+/// ✅ Nunca `[color, color.opacity(x)]` de un solo color: siempre DOS tonos reales,
+/// como los chips, botones y cabeceras del resto de la interfaz.
+private struct DetailAccent {
+    let primary: Color
+    let secondary: Color
+
+    static func resolve(
+        artworkColor: UIColor?,
+        artworkSecondaryColor: UIColor?,
+        fromArtwork: Bool
+    ) -> DetailAccent {
+        guard fromArtwork, let artworkColor else {
+            let accent = AppTheme.accent
+            return DetailAccent(primary: accent, secondary: accent.opacity(0.4))
+        }
+        let primary = AppTheme.readableColor(from: artworkColor)
+        let secondary = artworkSecondaryColor.map { AppTheme.readableColor(from: $0) }
+        return DetailAccent(primary: primary, secondary: secondary ?? primary.opacity(0.7))
+    }
+
+    /// Dos paradas con la opacidad que pida cada sitio (fondos, bordes, washes).
+    func colors(primaryOpacity: Double = 1, secondaryOpacity: Double = 1) -> [Color] {
+        [primary.opacity(primaryOpacity), secondary.opacity(secondaryOpacity)]
+    }
+
+    /// ✅ Superficies CON TEXTO BLANCO encima (pastilla de Play, donde el texto es
+    /// blanco fijo): si el secundario de la carátula difiere MUCHO en brillo del
+    /// primario, media pastilla quedaría ilegible. En ese caso se conserva el TONO
+    /// del secundario y se ancla su brillo al del primario: el degradado sigue
+    /// siendo de DOS colores reales, pero la legibilidad del texto blanco queda
+    /// exactamente como antes de este cambio.
+    func textSafeGradient(primaryOpacity: Double = 1, secondaryOpacity: Double = 1) -> LinearGradient {
+        LinearGradient(
+            colors: Self.textSafeColors(primary: primary, secondary: secondary,
+                                        primaryOpacity: primaryOpacity, secondaryOpacity: secondaryOpacity),
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+    }
+
+    private static func textSafeColors(
+        primary: Color,
+        secondary: Color,
+        primaryOpacity: Double,
+        secondaryOpacity: Double
+    ) -> [Color] {
+        var secondaryStop = secondary
+        var h1: CGFloat = 0, s1: CGFloat = 0, b1: CGFloat = 0, a1: CGFloat = 1
+        var h2: CGFloat = 0, s2: CGFloat = 0, b2: CGFloat = 0, a2: CGFloat = 1
+        let primaryUI = UIColor(primary)
+        let secondaryUI = UIColor(secondary)
+        if primaryUI.getHue(&h1, saturation: &s1, brightness: &b1, alpha: &a1),
+           secondaryUI.getHue(&h2, saturation: &s2, brightness: &b2, alpha: &a2),
+           abs(b1 - b2) > 0.3 {
+            secondaryStop = Color(UIColor(hue: h2, saturation: s2, brightness: b1, alpha: a2))
+        }
+        return [primary.opacity(primaryOpacity), secondaryStop.opacity(secondaryOpacity)]
+    }
+
+    func gradient(
+        start: UnitPoint = .topLeading,
+        end: UnitPoint = .bottomTrailing,
+        primaryOpacity: Double = 1,
+        secondaryOpacity: Double = 1
+    ) -> LinearGradient {
+        LinearGradient(
+            colors: colors(primaryOpacity: primaryOpacity, secondaryOpacity: secondaryOpacity),
+            startPoint: start,
+            endPoint: end
+        )
+    }
+}
+
+// MARK: - Offset de scroll compartido por las vistas de detalle
+/// Publica el minY del hero en el espacio "detailScroll". Se usa SOLO para
+/// transform/opacity del fondo del hero y para la opacidad del título de la
+/// barra: nunca para recalcular blur, sombras o materiales.
+private struct DetailScrollOffsetKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
+/// Progreso 0…1 del desplazamiento del hero (0 = sin desplazar, 1 = 180pt arriba).
+private func detailHeroProgress(for offset: CGFloat) -> CGFloat {
+    min(max(-min(offset, 0) / 180, 0), 1)
+}
+
+/// Opacidad del título de la barra: emerge cuando el hero está a punto de salir.
+private func detailTitleReveal(for progress: CGFloat) -> CGFloat {
+    min(max((progress - 0.5) / 0.4, 0), 1)
+}
+
 // MARK: - Album Detail (dise�o inmersivo premium con color de car�tula)
 struct AlbumDetailView: View {
     let album: Album
     @ObservedObject var audioEngine: AudioEngine
+    // ✅ Inyectado (mismo patrón que NowPlayingView/PlayerBar): lo necesitan las
+    // acciones rápidas de las filas (añadir a la cola y me gusta).
+    @ObservedObject var fileAccessService: FileAccessService
     @Environment(\.dismiss) private var dismiss
 
     // ? Color dominante VIVO (histograma HSB) extra�do en segundo plano
@@ -23,13 +126,59 @@ struct AlbumDetailView: View {
     // kHz mostrado es el de la MAYORÍA de canciones, y los bits el más común
     // entre esas canciones (ver computeMajorityQuality()).
     @State private var cachedQuality: (bits: Int, khz: Double)? = nil
+    // ✅ PARALLAX / BARRA EMERGENTE: offset vertical del scroll (0 = arriba del
+    // todo). Alimenta únicamente transform y opacidad del fondo del hero.
+    @State private var scrollOffset: CGFloat = 0
+
+    // ✅ Acento de DOS colores: primario + secundario real de la carátula.
+    // El secundario solo se usa con "Acento desde portada" activo.
+    @ObservedObject private var theme = ThemeManager.shared
+    @State private var liveSecondaryColor: UIColor? = nil
     private var songs: [Song] { cachedSongs }
     private var totalDuration: TimeInterval { cachedTotalDuration }
     private var hasMultipleDiscs: Bool { cachedHasMultipleDiscs }
     private var songsByDisc: [(disc: Int, songs: [Song])] { cachedSongsByDisc }
     // ? FIX: color normalizado para legibilidad; usa el vivo si ya se extrajo
-    private var tintColor: Color { AppTheme.readableColor(from: liveDominantColor ?? album.dominantColor) }
+    /// ✅ Acento de la vista, SIEMPRE de dos colores (primario + secundario real
+    /// de la carátula). Con "Acento desde portada" activo usa el color de ESTE
+    /// álbum y su secundario; con el modo desactivado, el acento manual con su
+    /// segunda parada al 40%, igual que el resto de la app.
+    private var accent: DetailAccent {
+        DetailAccent.resolve(
+            artworkColor: liveDominantColor ?? album.dominantColor,
+            artworkSecondaryColor: liveSecondaryColor,
+            fromArtwork: theme.accentFromArtwork
+        )
+    }
+
+    /// ✅ Acento sólido (textos, iconos y resaltados de fila): el mismo primario
+    /// del gradiente, para que la pantalla entera respete el modo activo.
+    private var tintColor: Color { accent.primary }
+
+    /// ✅ Secundario de la carátula del álbum (segundo color dominante) para el
+    /// gradiente. Solo se calcula con el modo portada activo y queda en la caché
+    /// compartida, así que volver a la vista no repite el trabajo.
+    private func loadSecondaryArtworkColorIfNeeded() {
+        guard theme.accentFromArtwork, liveSecondaryColor == nil, let artwork = album.artwork else { return }
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            let dominant = AppTheme.cachedDominantColor(from: artwork, key: album.id)
+            let secondary = dominant.flatMap {
+                AppTheme.cachedSecondaryDominantColor(from: artwork, key: "album-secondary-" + album.id, primary: $0)
+            }
+            DispatchQueue.main.async {
+                guard let secondary, self.liveSecondaryColor == nil else { return }
+                withAnimation(.easeInOut(duration: 0.3)) { self.liveSecondaryColor = secondary }
+            }
+        }
+    }
     // ? UIColor crudo para calcular contraste de textos/botones
+    /// ✅ Estado real del motor para ESTE álbum (ver el pill de bit-perfect).
+    private var isAlbumBitPerfect: Bool {
+        guard let current = audioEngine.currentSong else { return false }
+        return audioEngine.isBitPerfect && songs.contains { $0.id == current.id }
+    }
+
     private var tintUIColor: UIColor { liveDominantColor ?? album.dominantColor ?? AppTheme.accentUIColor }
     // ? Contraste: blanco o negro seg�n luminancia del color de la portada
     private var onTintColor: Color { AppTheme.contrastingText(on: tintUIColor) }
@@ -38,17 +187,36 @@ struct AlbumDetailView: View {
         ScrollView {
             VStack(spacing: 0) {
                 heroSection
+                    // ✅ Rastreo del scroll: solo publica el minY del hero en el
+                    // espacio "detailScroll". Sin cálculos por frame.
+                    .background(
+                        GeometryReader { geometry in
+                            Color.clear.preference(
+                                key: DetailScrollOffsetKey.self,
+                                value: geometry.frame(in: .named("detailScroll")).minY
+                            )
+                        }
+                    )
                 actionButtons
                     .padding(.horizontal, 20).padding(.top, 12)
                 LazyVStack(spacing: 10) {
-                    sectionHeader(icon: "music.note.list", title: Localization.localized("details.songs"), tintColor: tintColor)
+                    sectionHeader(icon: "music.note.list", title: Localization.localized("details.songs"), accent: accent)
                     if hasMultipleDiscs {
                         ForEach(cachedSongsByDisc, id: \.disc) { discGroup in
                             discSection(disc: discGroup.disc, songs: discGroup.songs)
                         }
                     } else {
                         ForEach(Array(cachedSongs.enumerated()), id: \.element.id) { index, song in
-                            AlbumSongRow(song: song, index: index, isCurrent: audioEngine.currentSong?.id == song.id, tintColor: tintColor) {
+                            AlbumSongRow(
+                                song: song,
+                                index: index,
+                                isCurrent: audioEngine.currentSong?.id == song.id,
+                                isPlaying: audioEngine.isPlaying,
+                                tintColor: tintColor,
+                                isLiked: fileAccessService.isLiked(song),
+                                onAddToQueue: { audioEngine.addToQueue(song) },
+                                onToggleLike: { Haptics.light(); fileAccessService.toggleLike(song) }
+                            ) {
                                 audioEngine.play(song: song, from: cachedSongs)
                             }
                         }
@@ -60,9 +228,24 @@ struct AlbumDetailView: View {
                 .padding(.bottom, 130)
             }
         }
+        .coordinateSpace(name: "detailScroll")
+        // ✅ Cuantizado a 1pt: el scroll repinta un par de veces menos por frame
+        // (una subida de 40pt ya no genera 40 renders).
+        .onPreferenceChange(DetailScrollOffsetKey.self) { offset in
+            if abs(offset - scrollOffset) > 1 { scrollOffset = offset }
+        }
         .background(AppBackground().ignoresSafeArea())
-        .navigationTitle(album.name)
         .navigationBarTitleDisplayMode(.inline)
+        // ✅ BARRERA EMERGENTE (estilo Apple Music): el título aparece solo
+        // cuando el hero ya casi salió de pantalla. Solo opacidad, sin recalculos.
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                Text(album.name)
+                    .font(.system(size: 17, weight: .semibold))
+                    .lineLimit(1)
+                    .opacity(detailTitleReveal(for: detailHeroProgress(for: scrollOffset)))
+            }
+        }
         // ? Sin banda gris: el hero inmersivo fluye bajo la barra de navegaci�n
         .toolbarBackground(.hidden, for: .navigationBar)
         .onAppear {
@@ -82,6 +265,7 @@ struct AlbumDetailView: View {
             // ? OPT: precalcular el blur del hero UNA vez en background
             prepareBlurredArtwork(from: album.artwork)
             // ? Extraer el color dominante VIVO de la car�tula en hilo de fondo
+            loadSecondaryArtworkColorIfNeeded()
             guard liveDominantColor == nil, let artwork = album.artwork else { return }
             DispatchQueue.global(qos: .userInitiated).async {
                 // ? Cach� compartida: mismo color que NowPlaying para este �lbum
@@ -111,7 +295,9 @@ struct AlbumDetailView: View {
             // de offscreen rendering por frame en A11; visualmente equivalente).
             Group {
                 if let artwork = album.artwork {
-                    Image(uiImage: artwork)
+                    // ✅ ANTI-JETSAM: 200pt de display → miniatura de 400px
+                    // cacheada en vez de decodificar la carátula completa.
+                    Image(uiImage: AppTheme.thumbnail(from: artwork, size: CGSize(width: 400, height: 400)))
                         .resizable().interpolation(.high).scaledToFill()
                         .frame(width: 200, height: 200)
                         .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
@@ -131,7 +317,7 @@ struct AlbumDetailView: View {
                         RoundedRectangle(cornerRadius: 24, style: .continuous)
                             .fill(
                                 LinearGradient(
-                                    colors: [tintColor.opacity(0.35), tintColor.opacity(0.12), Color.secondary.opacity(0.18)],
+                                    colors: accent.colors(primaryOpacity: 0.35, secondaryOpacity: 0.2) + [Color.secondary.opacity(0.18)],
                                     startPoint: .topLeading, endPoint: .bottomTrailing
                                 )
                             )
@@ -183,6 +369,13 @@ struct AlbumDetailView: View {
                     let text = q.bits > 0 ? "\(q.bits)-bit · \(khzText)" : khzText
                     statPill(icon: "waveform", text: text)
                 }
+                // ✅ BIT-PERFECT REAL (no una promesa del formato del archivo):
+                // aparece solo si lo que suena es una canción DE ESTE álbum y la
+                // salida está en bit-perfect ahora mismo (misma tasa que el
+                // archivo, sin EQ/mono/protección y por cable).
+                if isAlbumBitPerfect {
+                    statPill(icon: "checkmark.seal.fill", text: "Bit-perfect", highlighted: true)
+                }
             }
             .frame(maxWidth: .infinity)
             .padding(.horizontal, 20)
@@ -199,22 +392,25 @@ struct AlbumDetailView: View {
                             .resizable().scaledToFill().opacity(0.35)
                             .overlay(
                                 LinearGradient(
-                                    colors: [
-                                        tintColor.opacity(0.3),
-                                        tintColor.opacity(0.1),
-                                        Color(UIColor.secondarySystemBackground).opacity(0.6)
-                                    ],
+                                    colors: accent.colors(primaryOpacity: 0.3, secondaryOpacity: 0.12)
+                                        + [Color(UIColor.secondarySystemBackground).opacity(0.6)],
                                     startPoint: .top, endPoint: .bottom
                                 )
                             )
                     } else {
                         LinearGradient(
-                            colors: [tintColor.opacity(0.2), Color(UIColor.secondarySystemBackground)],
+                            colors: accent.colors(primaryOpacity: 0.2, secondaryOpacity: 0.1) + [Color(UIColor.secondarySystemBackground)],
                             startPoint: .top, endPoint: .bottom
                         )
                     }
                 }
                 .frame(width: geometry.size.width, height: geometry.size.height + 80)
+                // ✅ PARALLAX BARATO: esta capa YA está rasterizada por el
+                // .drawingGroup() de abajo (el blur se calculó una sola vez en
+                // background), así que aquí solo se le aplican transform y
+                // opacidad — no se recalcula ni el blur ni ningún material.
+                .scaleEffect(1 + detailHeroProgress(for: scrollOffset) * 0.14)
+                .opacity(1 - detailHeroProgress(for: scrollOffset) * 0.55)
                 .clipped().ignoresSafeArea(edges: .top)
                 .drawingGroup() // ? Optimizaci�n GPU para 60fps
             }
@@ -252,10 +448,10 @@ struct AlbumDetailView: View {
                     Image(systemName: "play.fill").font(.system(size: 15, weight: .bold))
                     Text(Localization.localized("details.play")).font(.system(size: 15, weight: .bold, design: .rounded))
                 }
-                .foregroundStyle(onTintColor).frame(maxWidth: .infinity).frame(height: 46)
+                .foregroundStyle(onTintColor).frame(maxWidth: .infinity).frame(height: 48)
                 .background {
                     Capsule().fill(
-                        LinearGradient(colors: [tintColor, tintColor.opacity(0.82)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                        accent.textSafeGradient()
                     )
                 }
                 .contentShape(Capsule())
@@ -270,21 +466,32 @@ struct AlbumDetailView: View {
                     audioEngine.play(song: randomSong, from: songs)
                 }
             } label: {
-                Image(systemName: "shuffle")
-                    .font(.system(size: 16, weight: .bold)).foregroundStyle(tintColor)
-                    .frame(width: 48, height: 48)
-                    .background {
-                        Circle().fill(
-                            LinearGradient(colors: [tintColor.opacity(0.2), tintColor.opacity(0.1)], startPoint: .topLeading, endPoint: .bottomTrailing)
-                        )
-                    }
-                    .frame(width: 56, height: 56)
-                    .background {
-                        Circle().fill(AnyShapeStyle(.ultraThinMaterial))
-                    }
-                    .contentShape(Circle())
+                HStack(spacing: 10) {
+                    Image(systemName: "shuffle").font(.system(size: 15, weight: .bold))
+                    Text(Localization.localized("details.shuffle")).font(.system(size: 15, weight: .bold, design: .rounded))
+                }
+                .foregroundStyle(tintColor)
+                // ✅ GEMELO del botón de reproducir: misma altura (48) y mismo eje
+                // que el primario, con jerarquía secundaria (relleno suave +
+                // borde de acento en vez del sólido). Antes era un círculo de
+                // 56pt que quedaba desalineado respecto a la cápsula de 46pt.
+                .frame(maxWidth: .infinity).frame(height: 48)
+                // ✅ Se MANTIENE el material de vidrio (identidad de la app) y el
+                // acento va como velo encima; antes eran dos círculos apilados
+                // (material + color), ahora una sola cápsula con el mismo vidrio.
+                .background {
+                    Capsule().fill(AnyShapeStyle(.ultraThinMaterial))
+                }
+                .overlay {
+                    Capsule().fill(accent.gradient(primaryOpacity: 0.22, secondaryOpacity: 0.12))
+                }
+                .overlay {
+                    Capsule().strokeBorder(tintColor.opacity(0.35), lineWidth: 1)
+                }
+                .contentShape(Capsule())
             }
-            .buttonStyle(PressableButtonStyle(scale: 0.9))
+            .accessibilityLabel(Localization.localized("details.shuffle"))
+            .buttonStyle(PressableButtonStyle(scale: 0.97))
         }
         .padding(.horizontal, 4)
     }
@@ -307,23 +514,34 @@ struct AlbumDetailView: View {
                 // repetición volvía a empezar el mismo disco en vez de seguir
                 // con el siguiente. Ahora al tocar una canción se reproduce
                 // todo el álbum en corrido desde esa posición.
-                AlbumSongRow(song: song, index: index, isCurrent: audioEngine.currentSong?.id == song.id, tintColor: tintColor) {
+                AlbumSongRow(
+                    song: song,
+                    index: index,
+                    isCurrent: audioEngine.currentSong?.id == song.id,
+                    isPlaying: audioEngine.isPlaying,
+                    tintColor: tintColor,
+                    isLiked: fileAccessService.isLiked(song),
+                    onAddToQueue: { audioEngine.addToQueue(song) },
+                    onToggleLike: { Haptics.light(); fileAccessService.toggleLike(song) }
+                ) {
                     audioEngine.play(song: song, from: cachedSongs)
                 }
             }
         }
     }
 
-    private func statPill(icon: String, text: String) -> some View {
+    private func statPill(icon: String, text: String, highlighted: Bool = false) -> some View {
         HStack(spacing: 5) {
-            Image(systemName: icon).font(.system(size: 11, weight: .semibold))
+            Image(systemName: icon).font(.system(size: 12, weight: .semibold))
             // lineLimit(1) + fixedSize: el texto NUNCA se parte ni corta con
             // guiones — la píldora mantiene su tamaño intrínseco y el
             // FlowLayout la acomoda entera en la siguiente fila si no cabe.
-            Text(text).font(.system(size: 12, weight: .medium).monospacedDigit())
+            // ✅ 13 semibold: la píldora es dato de cabecera, no letra pequeña.
+            Text(text).font(.system(size: 13, weight: .semibold).monospacedDigit())
                 .lineLimit(1)
         }
-        .foregroundStyle(.secondary).padding(.horizontal, 12).padding(.vertical, 6)
+        .foregroundStyle(highlighted ? tintColor : Color.secondary)
+        .padding(.horizontal, 12).padding(.vertical, 6)
         .fixedSize()
         .nativeGlassCapsule()
     }
@@ -376,7 +594,16 @@ struct AlbumSongRow: View {
     let song: Song
     let index: Int
     let isCurrent: Bool
+    /// ✅ Estado de reproducción para que el indicador de "suena ahora" solo
+    /// anime mientras suena de verdad (ver EqualizerBars).
+    let isPlaying: Bool
     let tintColor: Color
+    // ✅ Acciones rápidas por menú contextual. No usamos .swipeActions porque
+    // estas filas viven en un LazyVStack dentro de un ScrollView, y swipeActions
+    // solo se activa dentro de un List.
+    let isLiked: Bool
+    let onAddToQueue: () -> Void
+    let onToggleLike: () -> Void
     let action: () -> Void
 
     var body: some View {
@@ -386,7 +613,7 @@ struct AlbumSongRow: View {
         } label: {
             HStack(spacing: 14) {
                 if isCurrent {
-                    EqualizerBars(color: tintColor)
+                    EqualizerBars(color: tintColor, isPlaying: isPlaying)
                 } else {
                     Text("\(index + 1)")
                         .font(.system(size: 14, weight: .medium).monospacedDigit())
@@ -422,6 +649,24 @@ struct AlbumSongRow: View {
             }
         }
         .buttonStyle(PressableButtonStyle(scale: 0.98))
+        // ✅ Acciones rápidas (mantener pulsada la fila): añadir a la cola y me
+        // gusta. Menú contextual en vez de swipeActions por lo explicado arriba.
+        .contextMenu {
+            Button {
+                Haptics.light()
+                onAddToQueue()
+            } label: {
+                Label(Localization.localized("actions.addToQueue"), systemImage: "text.badge.plus")
+            }
+            Button {
+                onToggleLike()
+            } label: {
+                Label(
+                    Localization.localized(isLiked ? "actions.unlike" : "actions.like"),
+                    systemImage: isLiked ? "heart.slash" : "heart"
+                )
+            }
+        }
     }
 
     private func formatDuration(_ seconds: TimeInterval) -> String {
@@ -434,6 +679,10 @@ struct AlbumSongRow: View {
 // MARK: - Equalizer Bars (animaci�n optimizada sin bloqueo de hilo)
 struct EqualizerBars: View {
     let color: Color
+    /// ✅ BATERÍA: el latido solo corre mientras hay reproducción. Antes el
+    /// repeatForever seguía oscilando con la música en pausa (frames, CPU y GPU
+    /// gastados para nada) porque la animación nunca se retiraba.
+    let isPlaying: Bool
     @State private var animate = false
 
     var body: some View {
@@ -447,30 +696,27 @@ struct EqualizerBars: View {
                     // y las barras del tema activo quedaban CONGELADAS.
                     .frame(width: 2.5, height: animate ? (bar % 2 == 0 ? 13 : 8) : (bar % 2 == 0 ? 8 : 13))
                     .animation(
-                        .easeInOut(duration: 0.5).repeatForever(autoreverses: true),
+                        animate ? Animation.easeInOut(duration: 0.5).repeatForever(autoreverses: true) : nil,
                         value: animate
                     )
             }
         }
         .frame(width: 24)
         .onAppear {
-            animate = true
+            animate = isPlaying
+        }
+        .onChange(of: isPlaying) { playing in
+            animate = playing
         }
     }
 }
 
 // MARK: - Header de secci�n reutilizable (con gradiente sutil y color din�mico)
-private func sectionHeader(icon: String, title: String, tintColor: Color? = nil) -> some View {
-    let gradientColor = tintColor ?? AppTheme.accent
+private func sectionHeader(icon: String, title: String, accent: DetailAccent) -> some View {
     return HStack(spacing: 8) {
         Image(systemName: icon)
             .font(.system(size: 14, weight: .semibold))
-            .foregroundStyle(
-                LinearGradient(
-                    colors: [gradientColor, gradientColor.opacity(0.7)],
-                    startPoint: .top, endPoint: .bottom
-                )
-            )
+            .foregroundStyle(accent.gradient(start: .top, end: .bottom))
         Text(title)
             .font(.system(size: 20, weight: .bold, design: .rounded))
             .foregroundStyle(.primary)
@@ -482,6 +728,8 @@ private func sectionHeader(icon: String, title: String, tintColor: Color? = nil)
 struct ArtistDetailView: View {
     let artist: Artist
     @ObservedObject var audioEngine: AudioEngine
+    // ✅ Inyectado: acciones rápidas de las filas (cola y me gusta).
+    @ObservedObject var fileAccessService: FileAccessService
     @Environment(\.dismiss) private var dismiss
 
     @State private var appearAnimation = false
@@ -495,8 +743,44 @@ struct ArtistDetailView: View {
     @State private var cachedTotalDuration: TimeInterval = 0
     private var songs: [Song] { cachedSongs }
     private var albums: [Album] { cachedAlbums }
+
+    // ✅ Acento de DOS colores: primario + secundario real de la carátula.
+    // El secundario solo se usa con "Acento desde portada" activo.
+    @ObservedObject private var theme = ThemeManager.shared
+    @State private var liveSecondaryColor: UIColor? = nil
+    // ✅ PARALLAX / BARRA EMERGENTE (mismo criterio que AlbumDetailView).
+    @State private var scrollOffset: CGFloat = 0
     private var totalDuration: TimeInterval { cachedTotalDuration }
-    private var tintColor: Color { AppTheme.readableColor(from: liveDominantColor ?? artist.albums.first?.dominantColor) }
+    /// ✅ Acento de la vista, SIEMPRE de dos colores (mismo criterio que Album
+    /// Detail): color del artista + su secundario con el modo portada activo;
+    /// acento manual con su segunda parada al 40% si el modo está desactivado.
+    private var accent: DetailAccent {
+        DetailAccent.resolve(
+            artworkColor: liveDominantColor ?? artist.albums.first?.dominantColor,
+            artworkSecondaryColor: liveSecondaryColor,
+            fromArtwork: theme.accentFromArtwork
+        )
+    }
+
+    /// ✅ Acento sólido (textos, iconos y resaltados de fila): el mismo primario
+    /// del gradiente, para que la pantalla entera respete el modo activo.
+    private var tintColor: Color { accent.primary }
+
+    /// ✅ Secundario de la carátula del artista para el gradiente de dos colores.
+    private func loadSecondaryArtworkColorIfNeeded() {
+        guard theme.accentFromArtwork, liveSecondaryColor == nil, let artwork = artist.artwork else { return }
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            let dominant = AppTheme.cachedDominantColor(from: artwork, key: "artist-" + artist.id)
+            let secondary = dominant.flatMap {
+                AppTheme.cachedSecondaryDominantColor(from: artwork, key: "artist-secondary-" + artist.id, primary: $0)
+            }
+            DispatchQueue.main.async {
+                guard let secondary, self.liveSecondaryColor == nil else { return }
+                withAnimation(.easeInOut(duration: 0.3)) { self.liveSecondaryColor = secondary }
+            }
+        }
+    }
     private var tintUIColor: UIColor { liveDominantColor ?? artist.albums.first?.dominantColor ?? AppTheme.accentUIColor }
     // ? Contraste para botones (igual que AlbumDetailView)
     private var onTintColor: Color { AppTheme.contrastingText(on: tintUIColor) }
@@ -505,16 +789,25 @@ struct ArtistDetailView: View {
         ScrollView {
             VStack(spacing: 0) {
                 artistHeroSection
+                    // ✅ Rastreo del scroll (mismo criterio que AlbumDetailView).
+                    .background(
+                        GeometryReader { geometry in
+                            Color.clear.preference(
+                                key: DetailScrollOffsetKey.self,
+                                value: geometry.frame(in: .named("detailScroll")).minY
+                            )
+                        }
+                    )
                 artistActionButtons
                     .padding(.horizontal, 20).padding(.top, 18)
                 if !albums.isEmpty {
                     VStack(alignment: .leading, spacing: 14) {
-                        sectionHeader(icon: "square.stack", title: Localization.localized("details.albums"), tintColor: tintColor)
+                        sectionHeader(icon: "square.stack", title: Localization.localized("details.albums"), accent: accent)
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 14) {
                                 ForEach(cachedAlbums) { album in
                                     NavigationLink {
-                                        AlbumDetailView(album: album, audioEngine: audioEngine)
+                                        AlbumDetailView(album: album, audioEngine: audioEngine, fileAccessService: fileAccessService)
                                     } label: {
                                         ArtistAlbumCard(album: album)
                                     }
@@ -527,9 +820,18 @@ struct ArtistDetailView: View {
                     .padding(.top, 28)
                 }
                 LazyVStack(spacing: 10) {
-                    sectionHeader(icon: "music.note.list", title: Localization.localized("details.songs"), tintColor: tintColor)
+                    sectionHeader(icon: "music.note.list", title: Localization.localized("details.songs"), accent: accent)
                     ForEach(Array(cachedSongs.enumerated()), id: \.element.id) { index, song in
-                        ArtistSongRow(song: song, index: index, isCurrent: audioEngine.currentSong?.id == song.id, tintColor: tintColor) {
+                        ArtistSongRow(
+                            song: song,
+                            index: index,
+                            isCurrent: audioEngine.currentSong?.id == song.id,
+                            isPlaying: audioEngine.isPlaying,
+                            tintColor: tintColor,
+                            isLiked: fileAccessService.isLiked(song),
+                            onAddToQueue: { audioEngine.addToQueue(song) },
+                            onToggleLike: { Haptics.light(); fileAccessService.toggleLike(song) }
+                        ) {
                             audioEngine.play(song: song, from: cachedSongs)
                         }
                     }
@@ -539,9 +841,23 @@ struct ArtistDetailView: View {
                 .padding(.bottom, 130)
             }
         }
+        .coordinateSpace(name: "detailScroll")
+        // ✅ Cuantizado a 1pt: el scroll repinta un par de veces menos por frame
+        // (una subida de 40pt ya no genera 40 renders).
+        .onPreferenceChange(DetailScrollOffsetKey.self) { offset in
+            if abs(offset - scrollOffset) > 1 { scrollOffset = offset }
+        }
         .background(AppBackground().ignoresSafeArea())
-        .navigationTitle(artist.name)
         .navigationBarTitleDisplayMode(.inline)
+        // ✅ Barra emergente con el nombre del artista (mismo criterio que Album).
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                Text(artist.name)
+                    .font(.system(size: 17, weight: .semibold))
+                    .lineLimit(1)
+                    .opacity(detailTitleReveal(for: detailHeroProgress(for: scrollOffset)))
+            }
+        }
         // ? Sin banda gris (coherente con AlbumDetailView)
         .toolbarBackground(.hidden, for: .navigationBar)
         .onAppear {
@@ -557,6 +873,7 @@ struct ArtistDetailView: View {
             // ? OPT: precalcular el blur del hero UNA vez en background
             prepareBlurredArtwork(from: artist.artwork)
             // ? Extraer color del primer �lbum
+            loadSecondaryArtworkColorIfNeeded()
             guard liveDominantColor == nil, let artwork = artist.artwork else { return }
                 DispatchQueue.global(qos: .userInitiated).async {
                     // ? Cach� compartida por id de artista
@@ -584,7 +901,8 @@ struct ArtistDetailView: View {
             // ? Avatar del artista con animaci�n y efectos mejorados
             Group {
                 if let artwork = artist.artwork {
-                    Image(uiImage: artwork)
+                    // ✅ ANTI-JETSAM: avatar de 170pt → miniatura de 340px.
+                    Image(uiImage: AppTheme.thumbnail(from: artwork, size: CGSize(width: 340, height: 340)))
                         .resizable().interpolation(.high).scaledToFill()
                         .frame(width: 170, height: 170)
                         .clipShape(Circle())
@@ -592,7 +910,7 @@ struct ArtistDetailView: View {
                             // ? Borde con gradiente premium (estilo NowPlayingView)
                             Circle().strokeBorder(
                                 LinearGradient(
-                                    colors: [.white.opacity(0.45), tintColor.opacity(0.7), .white.opacity(0.15)],
+                                    colors: [.white.opacity(0.45), accent.primary.opacity(0.7), accent.secondary.opacity(0.55), .white.opacity(0.15)],
                                     startPoint: .topLeading, endPoint: .bottomTrailing
                                 ),
                                 lineWidth: 3.5
@@ -604,7 +922,7 @@ struct ArtistDetailView: View {
                     ZStack {
                         Circle().fill(
                             LinearGradient(
-                                colors: [tintColor.opacity(0.45), tintColor.opacity(0.18), Color.secondary.opacity(0.25)],
+                                colors: accent.colors(primaryOpacity: 0.45, secondaryOpacity: 0.25) + [Color.secondary.opacity(0.25)],
                                 startPoint: .topLeading, endPoint: .bottomTrailing
                             )
                         )
@@ -654,22 +972,25 @@ struct ArtistDetailView: View {
                             .resizable().scaledToFill().opacity(0.3)
                             .overlay(
                                 LinearGradient(
-                                    colors: [
-                                        tintColor.opacity(0.25),
-                                        tintColor.opacity(0.1),
-                                        Color(UIColor.secondarySystemBackground).opacity(0.5)
-                                    ],
+                                    colors: accent.colors(primaryOpacity: 0.25, secondaryOpacity: 0.12)
+                                        + [Color(UIColor.secondarySystemBackground).opacity(0.5)],
                                     startPoint: .top, endPoint: .bottom
                                 )
                             )
                     } else {
                         LinearGradient(
-                            colors: [tintColor.opacity(0.2), Color(UIColor.secondarySystemBackground)],
+                            colors: accent.colors(primaryOpacity: 0.2, secondaryOpacity: 0.1) + [Color(UIColor.secondarySystemBackground)],
                             startPoint: .top, endPoint: .bottom
                         )
                     }
                 }
                 .frame(width: geometry.size.width, height: geometry.size.height + 80)
+                // ✅ PARALLAX BARATO: esta capa YA está rasterizada por el
+                // .drawingGroup() de abajo (el blur se calculó una sola vez en
+                // background), así que aquí solo se le aplican transform y
+                // opacidad — no se recalcula ni el blur ni ningún material.
+                .scaleEffect(1 + detailHeroProgress(for: scrollOffset) * 0.14)
+                .opacity(1 - detailHeroProgress(for: scrollOffset) * 0.55)
                 .clipped().ignoresSafeArea(edges: .top)
                 .drawingGroup() // ? Optimizaci�n GPU para 60fps
             }
@@ -688,10 +1009,10 @@ struct ArtistDetailView: View {
                     Image(systemName: "play.fill").font(.system(size: 15, weight: .bold))
                     Text(Localization.localized("details.play")).font(.system(size: 15, weight: .bold, design: .rounded))
                 }
-                .foregroundStyle(onTintColor).frame(maxWidth: .infinity).frame(height: 46)
+                .foregroundStyle(onTintColor).frame(maxWidth: .infinity).frame(height: 48)
                 .background {
                     Capsule().fill(
-                        LinearGradient(colors: [tintColor, tintColor.opacity(0.82)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                        accent.textSafeGradient()
                     )
                 }
                 .contentShape(Capsule())
@@ -706,35 +1027,48 @@ struct ArtistDetailView: View {
                     audioEngine.play(song: randomSong, from: songs)
                 }
             } label: {
-                Image(systemName: "shuffle")
-                    .font(.system(size: 16, weight: .bold)).foregroundStyle(tintColor)
-                    .frame(width: 48, height: 48)
-                    .background {
-                        Circle().fill(
-                            LinearGradient(colors: [tintColor.opacity(0.2), tintColor.opacity(0.1)], startPoint: .topLeading, endPoint: .bottomTrailing)
-                        )
-                    }
-                    .frame(width: 56, height: 56)
-                    .background {
-                        Circle().fill(AnyShapeStyle(.ultraThinMaterial))
-                    }
-                    .contentShape(Circle())
+                HStack(spacing: 10) {
+                    Image(systemName: "shuffle").font(.system(size: 15, weight: .bold))
+                    Text(Localization.localized("details.shuffle")).font(.system(size: 15, weight: .bold, design: .rounded))
+                }
+                .foregroundStyle(tintColor)
+                // ✅ GEMELO del botón de reproducir: misma altura (48) y mismo eje
+                // que el primario, con jerarquía secundaria (relleno suave +
+                // borde de acento en vez del sólido). Antes era un círculo de
+                // 56pt que quedaba desalineado respecto a la cápsula de 46pt.
+                .frame(maxWidth: .infinity).frame(height: 48)
+                // ✅ Se MANTIENE el material de vidrio (identidad de la app) y el
+                // acento va como velo encima; antes eran dos círculos apilados
+                // (material + color), ahora una sola cápsula con el mismo vidrio.
+                .background {
+                    Capsule().fill(AnyShapeStyle(.ultraThinMaterial))
+                }
+                .overlay {
+                    Capsule().fill(accent.gradient(primaryOpacity: 0.22, secondaryOpacity: 0.12))
+                }
+                .overlay {
+                    Capsule().strokeBorder(tintColor.opacity(0.35), lineWidth: 1)
+                }
+                .contentShape(Capsule())
             }
-            .buttonStyle(PressableButtonStyle(scale: 0.9))
+            .accessibilityLabel(Localization.localized("details.shuffle"))
+            .buttonStyle(PressableButtonStyle(scale: 0.97))
         }
         .padding(.horizontal, 4)
     }
 
-    private func statPill(icon: String, text: String) -> some View {
+    private func statPill(icon: String, text: String, highlighted: Bool = false) -> some View {
         HStack(spacing: 5) {
-            Image(systemName: icon).font(.system(size: 11, weight: .semibold))
+            Image(systemName: icon).font(.system(size: 12, weight: .semibold))
             // lineLimit(1) + fixedSize: el texto NUNCA se parte ni corta con
             // guiones — la píldora mantiene su tamaño intrínseco y el
             // FlowLayout la acomoda entera en la siguiente fila si no cabe.
-            Text(text).font(.system(size: 12, weight: .medium).monospacedDigit())
+            // ✅ 13 semibold: la píldora es dato de cabecera, no letra pequeña.
+            Text(text).font(.system(size: 13, weight: .semibold).monospacedDigit())
                 .lineLimit(1)
         }
-        .foregroundStyle(.secondary).padding(.horizontal, 12).padding(.vertical, 6)
+        .foregroundStyle(highlighted ? tintColor : Color.secondary)
+        .padding(.horizontal, 12).padding(.vertical, 6)
         .fixedSize()
         .nativeGlassCapsule()
     }
@@ -754,11 +1088,32 @@ struct ArtistDetailView: View {
 struct ArtistAlbumCard: View {
     let album: Album
 
+    @ObservedObject private var theme = ThemeManager.shared
+
+    /// ✅ Mismo criterio que el resto de la app: dos colores de acento (con el modo
+    /// portada activo, el de ESTE álbum cuando existe; si no, el manual).
+    private var accent: DetailAccent {
+        DetailAccent.resolve(
+            artworkColor: album.dominantColor,
+            artworkSecondaryColor: nil,
+            fromArtwork: theme.accentFromArtwork
+        )
+    }
+
+    /// ✅ Subtítulo de la tarjeta: "2021 · 12 canciones" (o solo el recuento si
+    /// el álbum no trae fecha).
+    private var cardSubtitle: String {
+        let count = localizedSongCount(album.songs.count)
+        guard let date = album.releaseDate else { return count }
+        return "\(Calendar.current.component(.year, from: date)) · \(count)"
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Group {
                 if let artwork = album.artwork {
-                    Image(uiImage: artwork)
+                    // ✅ ANTI-JETSAM: card de 150pt → miniatura de 300px.
+                    Image(uiImage: AppTheme.thumbnail(from: artwork, size: CGSize(width: 300, height: 300)))
                         .resizable().scaledToFill()
                         .frame(width: 150, height: 150)
                         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
@@ -771,7 +1126,7 @@ struct ArtistAlbumCard: View {
                     ZStack {
                         RoundedRectangle(cornerRadius: 20, style: .continuous)
                             .fill(
-                                LinearGradient(colors: [AppTheme.accent.opacity(0.25), Color.secondary.opacity(0.18)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                                LinearGradient(colors: accent.colors(primaryOpacity: 0.25, secondaryOpacity: 0.18), startPoint: .topLeading, endPoint: .bottomTrailing)
                             )
                             .frame(width: 150, height: 150)
                         Image(systemName: "square.stack").font(.system(size: 36)).foregroundStyle(.secondary.opacity(0.7))
@@ -784,11 +1139,16 @@ struct ArtistAlbumCard: View {
                 Text(album.name)
                     .font(.system(size: 14, weight: .semibold, design: .rounded))
                     .foregroundStyle(.primary).lineLimit(1)
-                Text(localizedSongCount(album.songs.count))
+                // ✅ Año + nº de canciones: en un carrusel de discografía el año
+                // es el dato que orienta al usuario (antes solo el recuento).
+                Text(cardSubtitle)
                     .font(.system(size: 12)).foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
         }
         .frame(width: 150)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(album.name), \(cardSubtitle)")
         // ? Micro-escala al presionar la tarjeta (feedback premium, GPU)
         .contentShape(Rectangle())
     }
@@ -799,7 +1159,16 @@ struct ArtistSongRow: View {
     let song: Song
     let index: Int
     let isCurrent: Bool
+    /// ✅ Estado de reproducción para que el indicador de "suena ahora" solo
+    /// anime mientras suena de verdad (ver EqualizerBars).
+    let isPlaying: Bool
     let tintColor: Color
+    // ✅ Acciones rápidas por menú contextual. No usamos .swipeActions porque
+    // estas filas viven en un LazyVStack dentro de un ScrollView, y swipeActions
+    // solo se activa dentro de un List.
+    let isLiked: Bool
+    let onAddToQueue: () -> Void
+    let onToggleLike: () -> Void
     let action: () -> Void
 
     var body: some View {
@@ -809,7 +1178,7 @@ struct ArtistSongRow: View {
         } label: {
             HStack(spacing: 14) {
                 if isCurrent {
-                    EqualizerBars(color: tintColor)
+                    EqualizerBars(color: tintColor, isPlaying: isPlaying)
                 } else {
                     Text("\(index + 1)")
                         .font(.system(size: 14, weight: .medium).monospacedDigit())
@@ -844,6 +1213,24 @@ struct ArtistSongRow: View {
         }
         // ? Feedback de presi�n al tocar (micro-escala, animaci�n GPU)
         .buttonStyle(PressableButtonStyle(scale: 0.98))
+        // ✅ Acciones rápidas (mantener pulsada la fila): añadir a la cola y me
+        // gusta. Menú contextual en vez de swipeActions por lo explicado arriba.
+        .contextMenu {
+            Button {
+                Haptics.light()
+                onAddToQueue()
+            } label: {
+                Label(Localization.localized("actions.addToQueue"), systemImage: "text.badge.plus")
+            }
+            Button {
+                onToggleLike()
+            } label: {
+                Label(
+                    Localization.localized(isLiked ? "actions.unlike" : "actions.like"),
+                    systemImage: isLiked ? "heart.slash" : "heart"
+                )
+            }
+        }
     }
 
     private func formatDuration(_ seconds: TimeInterval) -> String {

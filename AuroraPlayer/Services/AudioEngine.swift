@@ -416,12 +416,48 @@ class AudioEngine: NSObject, ObservableObject {
 
     // MARK: - Equalizador
     private var equalizerNode: AVAudioUnitEQ?
-    @Published var isEQEnabled: Bool = false
-    @Published var eqPreset: EQPreset = .flat
-    // ✅ LIMITER: atenuación fija anti-distorsión (comportamiento de la versión
-    // previa a la iteración de lyrics: SIN Audio Unit en la cadena, para que la
-    // señal no pase por ningún procesador dinámico).
-    @Published var isLimiterEnabled: Bool = true
+    // ✅ PERSISTENCIA (Fase 6): el EQ (activado + preset) sobrevivía solo a la
+    // sesión — se apagaba y volvía a "Flat" en cada arranque. El preset se guarda
+    // por rawValue (String) y se valida al leer.
+    @Published var isEQEnabled: Bool = UserDefaults.standard.bool(forKey: "com.aurora.eqEnabled") {
+        didSet {
+            if isEQEnabled != oldValue {
+                UserDefaults.standard.set(isEQEnabled, forKey: "com.aurora.eqEnabled")
+            }
+        }
+    }
+    @Published var eqPreset: EQPreset = {
+        if let raw = UserDefaults.standard.string(forKey: "com.aurora.eqPreset"),
+           let preset = EQPreset(rawValue: raw) { return preset }
+        return .flat
+    }() {
+        didSet {
+            if eqPreset != oldValue {
+                UserDefaults.standard.set(eqPreset.rawValue, forKey: "com.aurora.eqPreset")
+            }
+        }
+    }
+    // ✅ PROTECCIÓN ANTI-CLIPPING: atenuación fija anti-distorsión (SIN Audio
+    // Unit en la cadena, para que la señal no pase por ningún procesador
+    // dinámico). Aplica 0.99 (≈ -0.09 dB) sobre la salida.
+    // ✅ BIT-PERFECT: desactivada por defecto. Con la protección activa TODOS
+    // los samples salen escalados (x0.99), así que la ruta no puede ser
+    // bit-perfect aunque el resto de condiciones se cumplan: el usuario tenía
+    // que apagarla a mano para que el indicador se encendiera. La música a
+    // 0 dBFS no satura si nada añade ganancia, y el headroom del EQ sigue
+    // calculándose por separado, así que el valor por defecto es 1.0.
+    // ✅ PERSISTENCIA (Fase 6): el usuario configura su sonido una vez y no
+    // debería rehacerlo en cada arranque. Mismo patrón que isMonoAudioEnabled:
+    // se lee al crear el motor y se guarda con cada cambio. Este ajuste mueve la
+    // ganancia base de salida (0.99 con protección anti-clipping, 1.0 sin ella) y
+    // el indicador bit-perfect, así que recordarlo es lo coherente.
+    @Published var isLimiterEnabled: Bool = UserDefaults.standard.bool(forKey: "com.aurora.limiterEnabled") {
+        didSet {
+            if isLimiterEnabled != oldValue {
+                UserDefaults.standard.set(isLimiterEnabled, forKey: "com.aurora.limiterEnabled")
+            }
+        }
+    }
     // ✅ BLUETOOTH OPTIMIZATION: ajustes para mejorar calidad en BT
     @Published var isBluetoothOptimizationEnabled: Bool = false
     // ✅ Audio Mono: mezcla ambos canales en uno para usuarios con audífono único
@@ -499,8 +535,9 @@ class AudioEngine: NSObject, ObservableObject {
             forName: UIApplication.didReceiveMemoryWarningNotification,
             object: nil, queue: .main
         ) { [weak self] _ in
-            AppLog.warning(.performance, "Aviso de memoria: liberando cachés (colores de carátula + lock screen)")
+            AppLog.warning(.performance, "Aviso de memoria: liberando cachés (colores + miniaturas de carátula + lock screen)")
             AppTheme.artworkColorCache.removeAllObjects()
+            AppTheme.thumbnailCache.removeAllObjects()
             self?.cachedNowPlayingArtwork = nil
             self?.cachedArtworkSongID = nil
         }
@@ -573,10 +610,10 @@ class AudioEngine: NSObject, ObservableObject {
 
         let session = AVAudioSession.sharedInstance()
         do {
-            // ✅ Reactivar la sesión con notifyOthersOnDeactivation para que
-            // otras apps (if any) se enteren y no se pisen. Mantener activa
-            // la sesión es imprescindible para audio en background continuo.
-            try session.setActive(true, options: .notifyOthersOnDeactivation)
+            // ✅ Reactivar la sesión (necesario para audio en background continuo).
+            // La opción .notifyOthersOnDeactivation solo aplica al desactivar
+            // la sesión (stop()), no al activarla.
+            try session.setActive(true)
         } catch {
             AppLog.error(.playback, error, context: "background: reactivar sesión")
         }
@@ -786,10 +823,14 @@ class AudioEngine: NSObject, ObservableObject {
             // hasta encontrar el menor soportado por el hardware/DAC actual.
             // ✅ OPTIMIZACIÓN: buffers de 8-10ms para menor latencia sin glitches
             let bufferDurations: [TimeInterval] = [0.008, 0.01, 0.015, 0.02]
+            // ✅ DIAGNÓSTICO: se guarda el último valor PEDIDO para poder compararlo
+            // con el CONCEDIDO (setPreferredIOBufferDuration no falla cuando el
+            // hardware no lo soporta: redondea en silencio al más cercano).
+            var requestedBufferDuration: TimeInterval = session.ioBufferDuration
             for duration in bufferDurations {
                 do {
                     try session.setPreferredIOBufferDuration(duration)
-                    AppLog.debug(.playback, "Buffer I/O óptimo: \(duration * 1000)ms")
+                    requestedBufferDuration = duration
                     break
                 } catch {
                     // ✅ Esperado en A11 (iPhone 8): no es un error real,
@@ -797,25 +838,32 @@ class AudioEngine: NSObject, ObservableObject {
                     AppLog.debug(.playback, "Buffer \(Int(duration * 1000))ms no soportado, probando siguiente")
                 }
             }
+            AppLog.info(.playback, String(format: "Buffer I/O concedido: %.2f ms (pedido: %.1f ms)",
+                                          session.ioBufferDuration * 1000, requestedBufferDuration * 1000))
 
-            // ✅ Línea base de sample rate: pedir 44.1 kHz como referencia para
-            // que el DAC arranque en un reloj correcto ANTES de la primera
-            // canción. setPreferredSampleRate NO remuestrea la señal (solo
-            // selecciona el reloj del DAC/hardware más cercano soportado).
-            // El ajuste por canción (playCurrentSong) luego pide el rate NATIVO
-            // del archivo: si el hardware lo soporta, la pista corre bit-clean
-            // hasta la salida sin ningún remuestreo; si no, iOS elige el más
-            // cercano y el mainMixer aplica su remuestreo final de alta calidad.
-            do {
-                try session.setPreferredSampleRate(44100)
-            } catch {
-                AppLog.debug(.playback, "SetPreferredSampleRate base no aplicado: \(error.localizedDescription)")
+            // ✅ Línea base de sample rate SIN forzar 44.1 kHz: pedir siempre
+            // 44100 al reconfigurar la sesión reclocaba el hardware si el archivo
+            // cargado (o el DAC) estaba en otra tasa. Ahora se usa la tasa del
+            // archivo actual y, si no hay ninguno cargado, la que ya tiene el
+            // sistema: nunca se cambia el reloj a ciegas.
+            // setPreferredSampleRate NO remuestrea la señal (solo selecciona el
+            // reloj del DAC/hardware más cercano soportado); el ajuste por
+            // canción (playCurrentSong) pide el rate NATIVO del archivo.
+            let baselineRate = sampleRate > 0 ? sampleRate : session.sampleRate
+            if baselineRate > 0, abs(session.sampleRate - baselineRate) > 1 {
+                do {
+                    try session.setPreferredSampleRate(baselineRate)
+                } catch {
+                    AppLog.debug(.playback, "SetPreferredSampleRate base no aplicado: \(error.localizedDescription)")
+                }
             }
 
             // Mantener el sample rate del archivo cuando el DAC lo soporta: el
             // remuestreo final lo hace el mainMixer en la salida física
             // (DAC/BT/altavoz) solo cuando el hardware no acepta el rate nativo.
-            try session.setActive(true, options: .notifyOthersOnDeactivation)
+            // ✅ La opción .notifyOthersOnDeactivation solo tiene efecto al
+            // DESACTIVAR la sesión (abajo, en stop()); al activarla es inerte.
+            try session.setActive(true)
             updateRouteName()
             updateAudioQuality()
         } catch {
@@ -859,7 +907,16 @@ class AudioEngine: NSObject, ObservableObject {
             band.bypass = false
         }
 
-        eq.bypass = !isEQEnabled
+        // ✅ PERSISTENCIA: las bandas nacen a 0 (bucle de arriba), así que un EQ
+        // restaurado desde UserDefaults habría dicho "Bajos" en Ajustes y sonado
+        // plano. Reaplicar aquí el preset guardado deja el estado auditivo igual
+        // al que el usuario dejó.
+        for (index, gain) in eqPreset.gains.enumerated() where index < eq.bands.count {
+            eq.bands[index].gain = gain
+        }
+        // Procesa solo si está activado Y el preset no es plano (misma regla que
+        // updateEQBypassState(): "flat" = bypass total, cero biquads de más).
+        eq.bypass = !(isEQEnabled && eqPreset != .flat)
         engine.attach(eq)
         reconnectPlayerNode(format: AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 2) ?? engine.outputNode.outputFormat(forBus: 0))
     }
@@ -970,7 +1027,7 @@ class AudioEngine: NSObject, ObservableObject {
     func toggleLimiter() {
         isLimiterEnabled.toggle()
         updateEQBypassState()
-        AppLog.info(.playback, "Limiter: \(isLimiterEnabled ? "activado" : "desactivado")")
+        AppLog.info(.playback, "Protección anti-clipping: \(isLimiterEnabled ? "activada (base 0.99)" : "desactivada (base 1.0, bit-perfect posible)")")
     }
 
     /// ✅ BLUETOOTH OPTIMIZATION: activar optimizaciones para BT
@@ -987,15 +1044,14 @@ class AudioEngine: NSObject, ObservableObject {
     /// trabaja a 44.1 kHz. Pedir 48 kHz (como hacía antes) provocaba un doble
     /// remuestreo 44.1→48→44.1: solo CPU y pérdida, nunca calidad.
     private func configureSessionWithBluetoothOptimization() {
+        // ✅ OPTIMIZACIÓN (BT): en A2DP la latencia la impone el enlace
+        // (100-300 ms), así que un buffer de render de 8 ms en la app NO la
+        // mejora: solo añade presión de render y CPU por buffer (batería y
+        // riesgo de underrun). La tasa también la decide iOS (ver
+        // playCurrentSong), así que aquí ya no se fuerza nada.
         let session = AVAudioSession.sharedInstance()
-        do {
-            // La tasa la decide iOS (ver playCurrentSong): aqui solo el buffer.
-            // ✅ OPTIMIZACIÓN: buffer de 8ms para menor latencia sin glitches
-            try session.setPreferredIOBufferDuration(0.008)
-            AppLog.info(.playback, "Sesión optimizada para BT: buffer 8ms (tasa decidida por iOS)")
-        } catch {
-            AppLog.error(.playback, error, context: "configureSessionWithBluetoothOptimization")
-        }
+        AppLog.info(.playback, String(format: "Sesión BT: sin forzar buffer ni tasa (concedido: %.2f ms, %.0f Hz)",
+                                      session.ioBufferDuration * 1000, session.sampleRate))
     }
 
     /// "Sin remuestreo / bit-clean": solo es cierto si (1) la tasa de salida
@@ -1035,8 +1091,9 @@ class AudioEngine: NSObject, ObservableObject {
             }
             maxGain = max(single, pair)
         }
-        // ✅ NIVEL BASE: 1.0 cuando el limiter está desactivado (bit-perfect),
-        // 0.99 cuando está activo (mínima protección anti-clipping).
+        // ✅ NIVEL BASE: 1.0 cuando la protección anti-clipping está
+        // desactivada (por defecto → bit-perfect posible), 0.99 cuando está
+        // activa (mínima protección anti-clipping).
         // En Bluetooth el codificador AAC/SBC puede saturar con picos entre
         // muestras: ~1 dB de margen (0.89) evita clipping del codec.
         let base: Float = isBluetoothRoute ? 0.89 : (isLimiterEnabled ? 0.99 : 1.0)
@@ -1451,6 +1508,27 @@ class AudioEngine: NSObject, ObservableObject {
         scheduleStep(0)
     }
 
+    /// ✅ BIT-PERFECT: tras una INTERRUPCIÓN (llamada, Siri, otra app) o un
+    /// cambio de ruta, iOS puede dejar la salida en otra tasa de muestreo: la
+    /// canción seguiría sonando REMUESTREADA en silencio hasta la siguiente
+    /// pista (el indicador lo delataba, pero no se corregía solo).
+    /// Se reafirma la tasa NATIVA del archivo actual solo en ruta cableada
+    /// (jack/DAC USB): en Bluetooth/AirPlay/altavoz la tasa la decide iOS.
+    /// Se llama ANTES de subir el volumen con el fade anti-pop para que el
+    /// reclock del DAC quede tapado por la rampa.
+    private func reassertNativeSampleRateIfNeeded() {
+        guard !isUsingFallback, isWiredRoute, sampleRate > 0 else { return }
+        let session = AVAudioSession.sharedInstance()
+        let previousRate = session.sampleRate
+        guard abs(previousRate - sampleRate) > 1 else { return }
+        do {
+            try session.setPreferredSampleRate(sampleRate)
+            AppLog.info(.playback, String(format: "Tasa de salida reafirmada: %.0f Hz → %.0f Hz", previousRate, sampleRate))
+        } catch {
+            AppLog.debug(.playback, "No se pudo reafirmar la tasa nativa: \(error.localizedDescription)")
+        }
+    }
+
     func pause() {
         // ✅ FIX: detener el display timer PRIMERO para evitar que siga
         // actualizando currentTime mientras capturamos la posición exacta.
@@ -1609,6 +1687,10 @@ class AudioEngine: NSObject, ObservableObject {
         }
         AppLog.info(.playback, String(format: "Resume desde %.1fs — '%@' (engine running: %@, fallback: %@)", currentTime, currentSong?.displayName ?? "—", engine.isRunning ? "sí" : "no", isUsingFallback ? "sí" : "no"))
         isPlaying = true
+        // ✅ BIT-PERFECT: si el sistema cambió la tasa durante la interrupción o
+        // el cambio de ruta, se recupera la nativa del archivo antes de subir
+        // el volumen (el reclock queda tapado por la rampa del fade).
+        reassertNativeSampleRateIfNeeded()
         // ✅ FADE anti-pop: subir el volumen suavemente tras el play (el mixer
         // quedó en 0 por el fade de pausa). 4 pasos × 10 ms, sin clic.
         rampMixerVolume(to: 1, duration: 0.04)
@@ -1667,8 +1749,14 @@ class AudioEngine: NSObject, ObservableObject {
         if !manualQueue.isEmpty {
             // Añadir primera canción de cola manual a la playlist y reproducirla
             let nextSong = manualQueue.removeFirst()
-            playlist.insert(nextSong, at: currentIndex + 1)
-            currentIndex += 1
+            // ✅ FIX crash (Array index out of range): `insert(_:at:)` exige
+            // 0...playlist.count. Si la playlist está VACÍA (nada reproduciéndose)
+            // o currentIndex quedó fuera de rango, insertar en currentIndex + 1
+            // abortaba el proceso. El clamp no cambia nada cuando el índice es
+            // válido (caso normal) y sanea el caso borde.
+            let insertionIndex = min(max(currentIndex + 1, 0), playlist.count)
+            playlist.insert(nextSong, at: insertionIndex)
+            currentIndex = insertionIndex
             updateNextUpQueue()
             return currentIndex
         }
@@ -1723,22 +1811,109 @@ class AudioEngine: NSObject, ObservableObject {
         return next
     }
 
+    /// ¿Hay una canción siguiente que el motor pueda reproducir ahora mismo?
+    /// Réplica de `computeNextIndex()` **sin efectos secundarios**: NO consume
+    /// la cola manual, NO inserta en la playlist y NO modifica `shuffleIndex`.
+    /// Lo usan los comandos remotos (lock screen / Centro de Control) para
+    /// responder `.noSuchContent` en lugar de `.success` cuando un "siguiente"
+    /// no haría absolutamente nada.
+    ///
+    /// Nota sobre el aleatorio: con 2+ canciones, `computeNextIndex()` regenera
+    /// `shuffledPlaylist` cuando se agota (rama en la que solo devuelve nil si la
+    /// lista mezclada queda vacía), así que siempre hay siguiente — igual que
+    /// hace Apple Music al saltar en modo aleatorio.
+    var hasNextTrack: Bool {
+        // Una canción ya programada por adelantado (gapless) sonará sí o sí al
+        // terminar la actual, incluso si el estado de la playlist cambia después.
+        if chainedAheadSong != nil { return true }
+        // La cola manual siempre tiene contenido pendiente.
+        if !manualQueue.isEmpty { return true }
+        guard !playlist.isEmpty else { return false }
+        // Con una sola canción, solo repeat (.all/.one) permite avanzar.
+        if playlist.count == 1 { return repeatMode == .all || repeatMode == .one }
+        if isShuffleEnabled { return true }
+        // Secuencial: queda algo por delante, o repeat-all vuelve al principio.
+        if currentIndex + 1 < playlist.count { return true }
+        return repeatMode == .all
+    }
+
+    /// Índice de la siguiente canción SIN comprometerla.
+    /// Pura, sin side effects. Usar para consultar "qué sigue" sin comprometer
+    /// la cola (la precarga, por ejemplo). Para avanzar de verdad —consumiendo
+    /// la cola manual y avanzando el puntero del aleatorio— usar
+    /// `computeNextIndex()`.
+    func peekNextIndex() -> Int? { peekNextTrack()?.index }
+
+    /// Núcleo puro del peek: devuelve el índice que tendrá la siguiente canción
+    /// y la URL que realmente va a sonar.
+    ///
+    /// Es un espejo de `computeNextIndex()` **sin mutar nada**: ni
+    /// `manualQueue.removeFirst()`, ni `playlist.insert(_:at:)`, ni
+    /// `shuffledPlaylist`/`shuffleIndex`. Los índices devueltos coinciden con
+    /// los que devolverá `computeNextIndex()` cuando llegue el momento real
+    /// (mientras la playlist y el índice actual no cambien entre medias), para
+    /// que la caché de precarga siga acertando.
+    private func peekNextTrack() -> (index: Int, url: URL)? {
+        // Rama 1 — cola manual: se insertará justo después de la actual. Ese es
+        // el índice que devolverá computeNextIndex() (`min(max(currentIndex+1,0),
+        // playlist.count)`), y la URL hay que leerla de la cola, porque la
+        // canción TODAVÍA no está en la playlist en este momento.
+        if let queued = manualQueue.first {
+            let insertionIndex = min(max(currentIndex + 1, 0), playlist.count)
+            return (insertionIndex, queued.url)
+        }
+
+        guard !playlist.isEmpty else { return nil }
+        // Con una sola canción, solo repeat (.all/.one) permite avanzar.
+        if playlist.count == 1 {
+            return (repeatMode == .all || repeatMode == .one) ? (0, playlist[0].url) : nil
+        }
+        if isShuffleEnabled {
+            // Espejo del camino real: si la lista mezclada está vigente, la
+            // siguiente es `shuffledPlaylist[shuffleIndex]` — se devuelve su
+            // índice en la playlist SIN avanzar el puntero.
+            if !shuffledPlaylist.isEmpty, shuffleIndex < shuffledPlaylist.count {
+                let nextSong = shuffledPlaylist[shuffleIndex]
+                if let idx = playlist.firstIndex(where: { $0.id == nextSong.id }) {
+                    return (idx, nextSong.url)
+                }
+            }
+            // Lista agotada o aún sin generar: computeNextIndex() regeneraría
+            // (mutación) y elegiría una canción al azar, así que no es predecible
+            // sin mutar. Devolver nil aquí solo significa "no precargar": la
+            // transición real abrirá el archivo en su momento.
+            return nil
+        }
+        // Secuencial
+        let next = currentIndex + 1
+        if next >= playlist.count {
+            return repeatMode == .all ? (0, playlist[0].url) : nil
+        }
+        return (next, playlist[next].url)
+    }
+
     /// ✅ PRECARGA de la siguiente canción en background: mientras suena la
     /// actual, abrimos el AVAudioFile de la siguiente para que, al terminar,
     /// el reinicio atómico de playCurrentSong() use el archivo ya "caliente"
     /// en vez de leerlo de disco — eliminando el grueso del hueco entre pistas.
 
     private func preloadNextSong() {
-        guard let index = computeNextIndex() else {
+        // ✅ FIX: consultar con la versión PURA del cálculo. Antes se usaba
+        // computeNextIndex(), que CONSUME la cola manual (removeFirst), inserta
+        // en la playlist y avanza el puntero del aleatorio — es decir, la simple
+        // PRECARGA alteraba la cola (una canción de la cola manual desaparecía
+        // de nextUpQueue sin sonar) y el orden del aleatorio.
+        guard let next = peekNextTrack() else {
             clearPreloadedNext()
             return
         }
+        let index = next.index
+        let url = next.url
         // Ya está precargada la misma siguiente → no volver a abrirla.
-        guard playlist[index].url != preloadedNextURL else { return }
+        guard url != preloadedNextURL else { return }
         preloadedNextIndex = index
-        preloadedNextURL = playlist[index].url
+        preloadedNextURL = url
         preloadedNextFile = nil
-        let url = playlist[index].url
 
         DispatchQueue.global(qos: .utility).async { [weak self] in
 
@@ -1828,6 +2003,13 @@ class AudioEngine: NSObject, ObservableObject {
         currentTime = clampedTime
         // ✅ RELOJ DE PARED: anclar la extrapolación en la posición buscada.
         anchorPlaybackPosition(clampedTime)
+        // ✅ FIX sincronización UI: publicar la posición YA en el reloj de las
+        // vistas. Sin esto, la barra de la app (PlayerBar/NowPlaying) seguía
+        // mostrando la posición previa al seek hasta el siguiente tick del
+        // timer de display (hasta 0,4 s; 3 s en segundo plano), mientras el
+        // lock screen/CC ya mostraban la nueva. Mismo patrón que ya usan
+        // suspendForRouteLoss() y commitChainedSong().
+        clock.time = clampedTime
         // ✅ Handle seek en lyrics line-by-line
         Task { @MainActor in
             lyricsViewModel.handleSeek()
@@ -2060,7 +2242,12 @@ class AudioEngine: NSObject, ObservableObject {
         // un update cada 3s es imperceptible visualmente pero ahorra CPU/RAM.
         let interval: TimeInterval = isBackground ? 3.0 : 0.4
         let nowPlayingRefreshTicks = isBackground ? 1 : 2
-        displayTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
+        // ✅ SINCRONIZACIÓN: el timer se añade al run loop en modo .common. Con el
+        // modo por defecto (.default) NO dispara mientras el usuario hace scroll o
+        // arrastra un control (el run loop está en .tracking), así que la barra de
+        // progreso de la app y del lock screen se congelaba durante el gesto y los
+        // watchdogs de fin de pista se retrasaban.
+        let timer = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
             guard let self = self, self.isPlaying else { return }
             // 🛡 WATCHDOG DE RUTA/ENGINE: si isPlaying=true pero el engine ya no
             // corre (ruta perdida sin notificación — p. ej. Bluetooth caído en
@@ -2112,6 +2299,8 @@ class AudioEngine: NSObject, ObservableObject {
                 self.saveState()
             }
         }
+        RunLoop.main.add(timer, forMode: .common)
+        displayTimer = timer
     }
 
     private func stopDisplayTimer() {
@@ -2480,39 +2669,32 @@ class AudioEngine: NSObject, ObservableObject {
                 // después `resume()` solo hacía playerNode.play() sobre un
                 // nodo que ya "estaba reproduciendo" (no-op) — silencio
                 // seguía. Apple recomienda pausar explícitamente en este caso.
-                self.wasPlayingBeforeRouteChange = self.isPlaying
+                // ⚠️ NO dejar el flag en true: si quedara activo, la siguiente
+                // conexión de ruta (rama .newDeviceAvailable, más abajo o en la
+                // rama genérica) reanudaría una reproducción que el usuario ya
+                // no tiene activa. El único "estaba sonando" que debe contar es
+                // el de una ruta que se conecta CON reproducción en curso.
+                self.wasPlayingBeforeRouteChange = false
                 if self.isPlaying {
                     // ⛔️ No pause() a secas: suspendForRouteLoss() invalida la
                     // generación ANTES de detener el nodo → un completion
                     // de audio en el playerNode.
-                    let position = self.currentTime
                     self.suspendForRouteLoss()
-                    // ✅ FIX Lightning DAC: reanudar en otra ruta después de desconectar
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
-                        guard let self = self else { return }
-                        let route = AVAudioSession.sharedInstance().currentRoute.outputs.first
-                        // Si hay una ruta disponible y estaba reproduciendo, reanudar
-                        if route != nil && self.wasPlayingBeforeRouteChange {
-                            do {
-                                try self.startEngineSafely()
-                                self.anchorPlaybackPosition(position)
-                                if let file = self.audioFile {
-                                    self.scheduleFile(file, from: position, generation: self.scheduleGeneration)
-                                    self.scheduleAheadIfPossible()
-                                }
-                                self.resume()
-                                AppLog.info(.playback, "Dispositivo desconectado, reanudando en \(route?.portName ?? "?")")
-                            } catch {
-                                AppLog.error(.playback, error, context: "oldDeviceUnavailable: reanudar en nueva ruta")
-                            }
-                        }
-                    }
-                    // obsoleto que se dispare en plena caída de la ruta no
-                    // puede llamar a playNext() (salto a la canción siguiente)
-                    // y publica rate 0 al lock screen/CC (nada de
-                    // "reproduciendo" con la barra congelada).
-                    self.suspendForRouteLoss()
-                    AppLog.info(.playback, "Audífonos/Bluetooth desconectados: suspendido sin salto de canción")
+                    // ✅ PAUSA COMO APPLE MUSIC (decisión de producto): al perder
+                    // la ruta NO se reanuda en la nueva salida. Aquí vivía un
+                    // DispatchQueue.main.asyncAfter(0.2) que reprogramaba el
+                    // archivo en la posición actual y llamaba a resume(), así que
+                    // desenchufar los auriculares hacía que la música siguiera
+                    // sonando por el ALTAVOZ del iPhone. Nació para "rescatar" el
+                    // Lightning DAC, pero quien desenchufa espera silencio: ahora
+                    // se suspende, la posición queda intacta y el play lo da el
+                    // usuario (que sí funciona, en la ruta activa en ese momento).
+                    // La reanudación automática al CONECTAR una ruta sigue
+                    // intacta en la rama .newDeviceAvailable.
+                    // ✅ Una sola suspensión por evento: la de arriba, que
+                    // invalida la generación ANTES de detener el nodo (el orden
+                    // obligatorio).
+                    AppLog.info(.playback, "Audífonos/Bluetooth desconectados: pausado sin salto de canción (no se reanuda en altavoz)")
                 }
             } else {
                 self.wasPlayingBeforeRouteChange = self.isPlaying
@@ -2668,6 +2850,12 @@ class AudioEngine: NSObject, ObservableObject {
         info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = currentTime
 
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+        // ✅ SINCRONIZACIÓN (iOS 13+): fijar también el estado explícito de
+        // reproducción. Con solo el rate (1.0/0.0), tras una interrupción o una
+        // pausa desde el Centro de Control el sistema podía mostrar el botón del
+        // lock screen en el estado contrario al real.
+        // `publishNowPlayingInfo()` ya se ejecuta en el hilo principal.
+        MPNowPlayingInfoCenter.default().playbackState = isPlaying ? .playing : .paused
     }
 
     private func setupRemoteCommandCenter() {
@@ -2686,7 +2874,13 @@ class AudioEngine: NSObject, ObservableObject {
             return .success
         }
         center.nextTrackCommand.addTarget { [weak self] _ in
-            self?.playNext()
+            // ✅ Honestidad con el sistema: si no hay siguiente (fin de la
+            // playlist sin repeat), responder `.noSuchContent` en lugar de
+            // `.success` para que iOS no dé por hecho un salto que no ocurrió.
+            // `hasNextTrack` es una comprobación SIN efectos secundarios, así que
+            // puede consultarse en cada pulsación sin tocar el estado.
+            guard let self = self, self.hasNextTrack else { return .noSuchContent }
+            self.playNext()
             return .success
         }
         center.previousTrackCommand.addTarget { [weak self] _ in
