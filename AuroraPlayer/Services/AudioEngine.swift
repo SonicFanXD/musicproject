@@ -580,10 +580,10 @@ class AudioEngine: NSObject, ObservableObject {
 
         let session = AVAudioSession.sharedInstance()
         do {
-            // ✅ Reactivar la sesión con notifyOthersOnDeactivation para que
-            // otras apps (if any) se enteren y no se pisen. Mantener activa
-            // la sesión es imprescindible para audio en background continuo.
-            try session.setActive(true, options: .notifyOthersOnDeactivation)
+            // ✅ Reactivar la sesión (necesario para audio en background continuo).
+            // La opción .notifyOthersOnDeactivation solo aplica al desactivar
+            // la sesión (stop()), no al activarla.
+            try session.setActive(true)
         } catch {
             AppLog.error(.playback, error, context: "background: reactivar sesión")
         }
@@ -793,10 +793,14 @@ class AudioEngine: NSObject, ObservableObject {
             // hasta encontrar el menor soportado por el hardware/DAC actual.
             // ✅ OPTIMIZACIÓN: buffers de 8-10ms para menor latencia sin glitches
             let bufferDurations: [TimeInterval] = [0.008, 0.01, 0.015, 0.02]
+            // ✅ DIAGNÓSTICO: se guarda el último valor PEDIDO para poder compararlo
+            // con el CONCEDIDO (setPreferredIOBufferDuration no falla cuando el
+            // hardware no lo soporta: redondea en silencio al más cercano).
+            var requestedBufferDuration: TimeInterval = session.ioBufferDuration
             for duration in bufferDurations {
                 do {
                     try session.setPreferredIOBufferDuration(duration)
-                    AppLog.debug(.playback, "Buffer I/O óptimo: \(duration * 1000)ms")
+                    requestedBufferDuration = duration
                     break
                 } catch {
                     // ✅ Esperado en A11 (iPhone 8): no es un error real,
@@ -804,25 +808,32 @@ class AudioEngine: NSObject, ObservableObject {
                     AppLog.debug(.playback, "Buffer \(Int(duration * 1000))ms no soportado, probando siguiente")
                 }
             }
+            AppLog.info(.playback, String(format: "Buffer I/O concedido: %.2f ms (pedido: %.1f ms)",
+                                          session.ioBufferDuration * 1000, requestedBufferDuration * 1000))
 
-            // ✅ Línea base de sample rate: pedir 44.1 kHz como referencia para
-            // que el DAC arranque en un reloj correcto ANTES de la primera
-            // canción. setPreferredSampleRate NO remuestrea la señal (solo
-            // selecciona el reloj del DAC/hardware más cercano soportado).
-            // El ajuste por canción (playCurrentSong) luego pide el rate NATIVO
-            // del archivo: si el hardware lo soporta, la pista corre bit-clean
-            // hasta la salida sin ningún remuestreo; si no, iOS elige el más
-            // cercano y el mainMixer aplica su remuestreo final de alta calidad.
-            do {
-                try session.setPreferredSampleRate(44100)
-            } catch {
-                AppLog.debug(.playback, "SetPreferredSampleRate base no aplicado: \(error.localizedDescription)")
+            // ✅ Línea base de sample rate SIN forzar 44.1 kHz: pedir siempre
+            // 44100 al reconfigurar la sesión reclocaba el hardware si el archivo
+            // cargado (o el DAC) estaba en otra tasa. Ahora se usa la tasa del
+            // archivo actual y, si no hay ninguno cargado, la que ya tiene el
+            // sistema: nunca se cambia el reloj a ciegas.
+            // setPreferredSampleRate NO remuestrea la señal (solo selecciona el
+            // reloj del DAC/hardware más cercano soportado); el ajuste por
+            // canción (playCurrentSong) pide el rate NATIVO del archivo.
+            let baselineRate = sampleRate > 0 ? sampleRate : session.sampleRate
+            if baselineRate > 0, abs(session.sampleRate - baselineRate) > 1 {
+                do {
+                    try session.setPreferredSampleRate(baselineRate)
+                } catch {
+                    AppLog.debug(.playback, "SetPreferredSampleRate base no aplicado: \(error.localizedDescription)")
+                }
             }
 
             // Mantener el sample rate del archivo cuando el DAC lo soporta: el
             // remuestreo final lo hace el mainMixer en la salida física
             // (DAC/BT/altavoz) solo cuando el hardware no acepta el rate nativo.
-            try session.setActive(true, options: .notifyOthersOnDeactivation)
+            // ✅ La opción .notifyOthersOnDeactivation solo tiene efecto al
+            // DESACTIVAR la sesión (abajo, en stop()); al activarla es inerte.
+            try session.setActive(true)
             updateRouteName()
             updateAudioQuality()
         } catch {
@@ -994,15 +1005,14 @@ class AudioEngine: NSObject, ObservableObject {
     /// trabaja a 44.1 kHz. Pedir 48 kHz (como hacía antes) provocaba un doble
     /// remuestreo 44.1→48→44.1: solo CPU y pérdida, nunca calidad.
     private func configureSessionWithBluetoothOptimization() {
+        // ✅ OPTIMIZACIÓN (BT): en A2DP la latencia la impone el enlace
+        // (100-300 ms), así que un buffer de render de 8 ms en la app NO la
+        // mejora: solo añade presión de render y CPU por buffer (batería y
+        // riesgo de underrun). La tasa también la decide iOS (ver
+        // playCurrentSong), así que aquí ya no se fuerza nada.
         let session = AVAudioSession.sharedInstance()
-        do {
-            // La tasa la decide iOS (ver playCurrentSong): aqui solo el buffer.
-            // ✅ OPTIMIZACIÓN: buffer de 8ms para menor latencia sin glitches
-            try session.setPreferredIOBufferDuration(0.008)
-            AppLog.info(.playback, "Sesión optimizada para BT: buffer 8ms (tasa decidida por iOS)")
-        } catch {
-            AppLog.error(.playback, error, context: "configureSessionWithBluetoothOptimization")
-        }
+        AppLog.info(.playback, String(format: "Sesión BT: sin forzar buffer ni tasa (concedido: %.2f ms, %.0f Hz)",
+                                      session.ioBufferDuration * 1000, session.sampleRate))
     }
 
     /// "Sin remuestreo / bit-clean": solo es cierto si (1) la tasa de salida
