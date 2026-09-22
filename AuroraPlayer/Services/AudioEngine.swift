@@ -71,7 +71,10 @@ class AudioEngine: NSObject, ObservableObject {
     @Published var deviceModelName: String = AudioEngine.resolveDeviceModel()
 
     // MARK: - Propiedades para la vista de calidad de audio
-    @Published var sourceSampleRate: Double = 0
+    // ✅ 3.0.1: aquí vivía `sourceSampleRate`, que solo se escribía en
+    // playCurrentSong (nunca en la transición gapless, así que quedaba obsoleto)
+    // y que NINGUNA vista leía (grep en todo el proyecto: 0 consumidores).
+    // Eliminada: la tasa de referencia real es `sampleRate` del motor.
     @Published var outputSampleRate: Double = 0
     @Published var outputChannelCount: Int = 0
     @Published var audioQualityInfo: String = ""
@@ -1393,7 +1396,6 @@ class AudioEngine: NSObject, ObservableObject {
             }
             audioFile = file
             sampleRate = file.processingFormat.sampleRate
-            sourceSampleRate = sampleRate
             duration = Double(file.length) / sampleRate
 
             guard duration > 0, file.length > 0 else {
