@@ -25,8 +25,6 @@ struct LyricsView: View {
     @ObservedObject var viewModel: LyricsViewModel
     // ✅ Observado para que los textos se re-rendericen al cambiar de idioma en vivo.
     @ObservedObject private var localization = Localization.shared
-    // ✅ 3.0: el fondo de carátula difuminada cede ante el calor crítico.
-    @ObservedObject private var thermal = ThermalManager.shared
     @Environment(\.dismiss) private var dismiss
 
     /// ✅ Petición de centrado: el `token` garantiza que SwiftUI reciba un
@@ -69,13 +67,8 @@ struct LyricsView: View {
             // ✅ Fondo como vista propia y `Equatable`: al cambiar de línea activa
             // este body se re-evalúa, pero el blur de pantalla completa NO vuelve
             // a componerse si la carátula y el acento siguen siendo los mismos.
-            LyricsArtworkBackground(
-                artwork: song?.artwork,
-                accentToken: AppTheme.accentUIColor,
-                // ✅ 3.0: con el equipo crítico se omite el blur de 60pt.
-                disableBlur: thermal.shouldDisableHeavyBlur
-            )
-            .equatable()
+            LyricsArtworkBackground(artwork: song?.artwork, accentToken: AppTheme.accentUIColor)
+                .equatable()
 
             VStack(spacing: 0) {
                 // Header transparente
@@ -323,13 +316,9 @@ private struct LyricsArtworkBackground: View, Equatable {
     /// ✅ Solo como TOKEN de comparación: el color se pinta con `AppTheme.accent`
     /// para no alterar el tono con conversiones de espacio de color.
     let accentToken: UIColor
-    /// ✅ 3.0: estado térmico crítico → fondo sólido con el acento en vez del
-    /// blur de pantalla completa. Participa en `==`: al cambiar el estado, el
-    /// fondo se recompone una vez (y solo una).
-    let disableBlur: Bool
 
     static func == (lhs: LyricsArtworkBackground, rhs: LyricsArtworkBackground) -> Bool {
-        guard lhs.accentToken == rhs.accentToken, lhs.disableBlur == rhs.disableBlur else { return false }
+        guard lhs.accentToken == rhs.accentToken else { return false }
         if let lhsArtwork = lhs.artwork, let rhsArtwork = rhs.artwork {
             return lhsArtwork === rhsArtwork
         }
@@ -339,7 +328,7 @@ private struct LyricsArtworkBackground: View, Equatable {
     var body: some View {
         GeometryReader { geometry in
             Group {
-                if let artwork, !disableBlur {
+                if let artwork {
                     Image(uiImage: artwork)
                         .resizable()
                         .interpolation(.medium)
@@ -350,9 +339,7 @@ private struct LyricsArtworkBackground: View, Equatable {
                         .overlay(Color(UIColor.systemBackground).opacity(0.72))
                 } else {
                     LinearGradient(
-                        // ✅ 3.0: sin blur, el acento lleva algo más de peso para que
-                        // el fondo no quede plano (mismo lenguaje, cero coste).
-                        colors: [AppTheme.accent.opacity(disableBlur ? 0.22 : 0.12), Color(UIColor.systemBackground)],
+                        colors: [AppTheme.accent.opacity(0.12), Color(UIColor.systemBackground)],
                         startPoint: .top,
                         endPoint: .bottom
                     )

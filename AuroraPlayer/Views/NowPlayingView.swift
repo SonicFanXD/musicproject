@@ -21,9 +21,6 @@ struct NowPlayingView: View {
     @AppStorage("com.aurora.reduceTransparency") private var reduceTransparency = false
     // ✅ Ajuste "Mostrar letras" (antes no se aplicaba)
     @AppStorage("com.aurora.showLyricsByDefault") private var showLyricsByDefault = false
-    // ✅ 3.0: observar el estado térmico — en crítico el blur a pantalla completa
-    // (lo más caro de renderizar) se sustituye por color sólido. Solo visual.
-    @ObservedObject private var thermal = ThermalManager.shared
 
     @State private var showLyrics = false
     @State private var showEqualizer = false
@@ -314,26 +311,19 @@ struct NowPlayingView: View {
             if let artwork = audioEngine.currentSong?.artwork, !reduceTransparency {
                 GeometryReader { geometry in
                     ZStack {
-                        if thermal.shouldDisableHeavyBlur {
-                            // ✅ 3.0 TÉRMICA CRÍTICA: nada de blur a pantalla
-                            // completa; el color dominante de la portada, sólido.
-                            Color(UIColor.systemBackground)
-                            extractedColor.opacity(0.3)
-                        } else {
-                            // ✅ FIX barra negra: scaledToFill + clipped para cubrir
-                            // TODA la pantalla (scaledToFit dejaba franjas en pantallas
-                            // altas/anchas por encima y debajo de la imagen cuadrada).
-                            Image(uiImage: artwork)
-                                .resizable()
-                                .interpolation(.medium)
-                                .scaledToFill()
-                                .frame(width: geometry.size.width + 60, height: geometry.size.height + 60)
-                                .clipped()
-                                .blur(radius: 25)
-                                .opacity(0.45)
+                        // ✅ FIX barra negra: scaledToFill + clipped para cubrir
+                        // TODA la pantalla (scaledToFit dejaba franjas en pantallas
+                        // altas/anchas por encima y debajo de la imagen cuadrada).
+                        Image(uiImage: artwork)
+                            .resizable()
+                            .interpolation(.medium)
+                            .scaledToFill()
+                            .frame(width: geometry.size.width + 60, height: geometry.size.height + 60)
+                            .clipped()
+                            .blur(radius: 25)
+                            .opacity(0.45)
 
-                            extractedColor.opacity(0.12)
-                        }
+                        extractedColor.opacity(0.12)
                     }
                 }
                 .ignoresSafeArea()

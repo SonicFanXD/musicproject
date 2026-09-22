@@ -123,38 +123,6 @@ class AudioEngine: NSObject, ObservableObject {
     @Published var playbackQueue: [Song] = []
     @Published var nextUpQueue: [Song] = []
     @Published var playHistory: [Song] = []
-    /// ✅ 3.0: aviso de "canción iniciada" para el tracking de estadísticas.
-    /// Lo asigna RootTabView (dueño de FileAccessService). Opcional: si nadie lo
-    /// conecta, no hay ningún coste ni cambio de comportamiento.
-    var onSongStarted: ((Song) -> Void)?
-
-    /// ✅ 3.0 SHUFFLE INTELIGENTE: peso de cada canción según hábitos. Lo calcula
-    /// FileAccessService (que tiene playCounts/lastPlayedDates/liked) y lo
-    /// inyecta RootTabView. Si es nil, el orden vuelve a ser aleatorio puro.
-    var shuffleWeightProvider: ((Song) -> Double)?
-
-    /// ✅ 3.0: shuffle ponderado por hábitos. Lee la MISMA clave que escribe el
-    /// toggle de Ajustes (`com.aurora.smartShuffle`) y solo en el momento de
-    /// GENERAR el orden, así que no necesita observación reactiva. Se hace con
-    /// UserDefaults directo —igual que `isShuffleEnabled`— para no importar
-    /// SwiftUI en el motor de audio (este archivo solo usa Foundation/AVFoundation).
-    private var smartShuffleEnabled: Bool {
-        UserDefaults.standard.bool(forKey: "com.aurora.smartShuffle")
-    }
-
-    /// ✅ 3.0: genera el orden del aleatorio. Con el shuffle inteligente activo,
-    /// cada canción recibe su peso + un azar pequeño (0…1) y se ordena de mayor a
-    /// menor: primero lo que escuchas menos, lo que hace mucho que no suena y lo
-    /// que te gusta. Sin el toggle (o sin proveedor) → `shuffled()` clásico.
-    private func makeShuffleOrder(_ source: [Song]) -> [Song] {
-        guard smartShuffleEnabled, let weightProvider = shuffleWeightProvider else {
-            return source.shuffled()
-        }
-        return source
-            .map { song in (song: song, weight: weightProvider(song) + Double.random(in: 0...1)) }
-            .sorted { $0.weight > $1.weight }
-            .map { $0.song }
-    }
 
     // MARK: - Cola de reproducción interna
     private var playlist: [Song] = []
@@ -1313,9 +1281,7 @@ class AudioEngine: NSObject, ObservableObject {
                     ? songPlaylist
                     : playlist
                 let current = playlist[currentIndex]
-                // ✅ 3.0: el orden lo genera makeShuffleOrder (ponderado si el
-                // shuffle inteligente está activo; aleatorio puro si no).
-                playlist = makeShuffleOrder(playlist)
+                playlist.shuffle()
                 if let newIndex = playlist.firstIndex(where: { $0.id == current.id }) {
                     playlist.remove(at: newIndex)
                     playlist.insert(current, at: 0)
@@ -1879,8 +1845,7 @@ class AudioEngine: NSObject, ObservableObject {
             // ✅ MEJORA: usar lista mezclada en lugar de RNG cada vez
             if shuffledPlaylist.isEmpty || shuffleIndex >= shuffledPlaylist.count {
                 // Regenerar lista mezclada cuando se agota
-                // ✅ 3.0: ponderada por hábitos si el shuffle inteligente está activo.
-                shuffledPlaylist = makeShuffleOrder(playlist)
+                shuffledPlaylist = playlist.shuffled()
                 shuffleIndex = 0
                 // ✅ CRÍTICO - ESTABILIDAD: verificar que la lista mezclada no quede vacía
                 // después de remover la canción actual. Si la playlist tiene solo 1 canción
@@ -1905,7 +1870,7 @@ class AudioEngine: NSObject, ObservableObject {
             guard shuffleIndex < shuffledPlaylist.count else {
                 // Lista agotada, reiniciar con repeat-all o nil si no hay repeat
                 if repeatMode == .all {
-                    shuffledPlaylist = makeShuffleOrder(playlist)
+                    shuffledPlaylist = playlist.shuffled()
                     shuffleIndex = 0
                     return playlist.firstIndex(where: { $0.id == shuffledPlaylist[0].id })
                 }
@@ -2143,12 +2108,10 @@ class AudioEngine: NSObject, ObservableObject {
         if isShuffleEnabled {
             originalPlaylist = playlist
             // ✅ MEJORA: inicializar lista mezclada nueva
-            // ✅ 3.0: el orden lo genera makeShuffleOrder (ponderado si el shuffle
-            // inteligente está activo; aleatorio puro si no).
-            shuffledPlaylist = makeShuffleOrder(playlist)
+            shuffledPlaylist = playlist.shuffled()
             shuffleIndex = 0
             let current = playlist[currentIndex]
-            playlist = makeShuffleOrder(playlist)
+            playlist.shuffle()
             if let newIndex = playlist.firstIndex(where: { $0.id == current.id }) {
                 playlist.remove(at: newIndex)
                 playlist.insert(current, at: 0)
@@ -2564,13 +2527,6 @@ class AudioEngine: NSObject, ObservableObject {
     }
 
     private func addToHistory(_ song: Song) {
-        // ✅ 3.0 HOOK DE ESTADÍSTICAS: único punto por el que pasan las TRES rutas
-        // de arranque real (engine AVAudioEngine, gapless encadenado y respaldo
-        // AVPlayer). restoreState() NO pasa por aquí, así que restaurar la última
-        // canción al abrir la app no cuenta como reproducción. Se avisa ANTES del
-        // filtro de repetición consecutiva (reproducir la misma canción otra vez
-        // sí es una reproducción nueva). Sin llamador asignado, coste cero.
-        onSongStarted?(song)
         if let last = playHistory.first, last.id == song.id { return }
         playHistory.insert(song, at: 0)
         if playHistory.count > 50 { playHistory = Array(playHistory.prefix(50)) }

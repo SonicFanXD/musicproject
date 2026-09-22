@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 struct SettingsView: View {
     @ObservedObject var audioEngine: AudioEngine
     @ObservedObject var fileAccessService: FileAccessService
+    @Environment(\.dismiss) private var dismiss
 
     @State private var showImporter = false
     @State private var showLogs = false
@@ -28,11 +29,6 @@ struct SettingsView: View {
     @AppStorage("com.aurora.hapticIntensity") private var hapticIntensity: Double = 1.0
     @AppStorage("com.aurora.showLyricsByDefault") private var showLyricsByDefault = false
     @AppStorage("com.aurora.autoPlayOnStart") private var autoPlayOnStart = false
-    // ✅ 3.0: shuffle ponderado por hábitos (el motor lee la misma clave).
-    @AppStorage("com.aurora.smartShuffle") private var smartShuffle = false
-    // ✅ 3.0: estadísticas de reproducción en las filas de playlists (activado por
-    // defecto; la biblioteca principal nunca las muestra).
-    @AppStorage("com.aurora.showPlaylistStats") private var showPlaylistStats = true
     @AppStorage("com.aurora.showVisualizerInBar") private var showVisualizerInBar = true
     @AppStorage("com.aurora.compactPlayerBar") private var compactPlayerBar = false
     @AppStorage("com.aurora.language") private var selectedLanguage = 0 // 0 = español, 1 = inglés
@@ -44,10 +40,12 @@ struct SettingsView: View {
     // ✅ LOCALIZADOS: computados para reaccionar al cambio de idioma al
     // instante (antes eran `let` hardcodeados en español → el inglés no
     // se aplicaba en los pickers de Tema, Color de acento e Idioma).
-    // ✅ TEMAS 3.0: el selector se deriva de AppThemeMode, de modo que las
-    // etiquetas y su orden SIEMPRE coinciden con el índice persistido (0…5).
     private var themes: [String] {
-        AppThemeMode.allCases.map { Localization.localized($0.localizationKey) }
+        [
+            Localization.localized("settings.theme.system"),
+            Localization.localized("settings.theme.light"),
+            Localization.localized("settings.theme.dark")
+        ]
     }
     private var accents: [String] {
         [
@@ -65,10 +63,8 @@ struct SettingsView: View {
     private let themeDefaultsKey = "com.aurora.uiTheme"
 
     private var appVersion: String {
-        // ✅ 3.0: el respaldo se alinea con la versión real del Info.plist (solo se
-        // usa si el bundle no expone las claves, que no es el caso normal).
-        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "3.0.0"
-        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "30"
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "2.1.0"
+        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "21"
         return "\(version) (\(build))"
     }
 
@@ -77,18 +73,11 @@ struct SettingsView: View {
         self.fileAccessService = fileAccessService
 
         let savedTheme = UserDefaults.standard.integer(forKey: themeDefaultsKey)
-        // ✅ MIGRACIÓN SEGURA: 0/1/2 (Sistema/Claro/Oscuro) se leen igual que
-        // antes; los índices nuevos (3…5) y cualquier valor inválido se
-        // normalizan a un modo existente. No se toca la clave persistida.
-        _selectedThemeIndex = State(initialValue: AppThemeMode.mode(forStoredIndex: savedTheme).rawValue)
+        _selectedThemeIndex = State(initialValue: savedTheme >= 0 && savedTheme < 3 ? savedTheme : 0)
     }
 
     var body: some View {
-        // ✅ 3.0: Ajustes es una PESTAÑA a pantalla completa, no un sheet, así que
-        // ya no necesita su propio NavigationStack ni barra de navegación (el
-        // título y la versión los aporta headerSection). `Group` conserva el
-        // mismo contenido y layout.
-        Group {
+        NavigationStack {
             ZStack {
                 AppBackground()
 
@@ -360,11 +349,6 @@ struct SettingsView: View {
                             settingsToggleRow(title: Localization.localized("settings.keepScreenOn"), subtitle: Localization.localized("settings.keepScreenOnSubtitle"), icon: "sun.max.fill", color: .yellow, isOn: $keepScreenOn)
                             settingsDivider
                             settingsToggleRow(title: Localization.localized("settings.autoPlayOnStart"), subtitle: Localization.localized("settings.autoPlayOnStartSubtitle"), icon: "play.circle", color: .green, isOn: $autoPlayOnStart)
-                            settingsDivider
-                            // ✅ 3.0: el orden aleatorio deja de ser puro azar y
-                            // prioriza lo que suena menos (mismos hábitos que las
-                            // playlists automáticas).
-                            settingsToggleRow(title: Localization.localized("settings.smartShuffle"), subtitle: Localization.localized("settings.smartShuffleSubtitle"), icon: "shuffle", color: .purple, isOn: $smartShuffle)
                         }
                         
                         // ✅ Personalización avanzada
@@ -376,9 +360,6 @@ struct SettingsView: View {
                             settingsToggleRow(title: Localization.localized("settings.compactPlayerBar"), subtitle: Localization.localized("settings.compactPlayerBarSubtitle"), icon: "rectangle.compress.vertical", color: .gray, isOn: $compactPlayerBar)
                             settingsDivider
                             settingsToggleRow(title: Localization.localized("settings.showLyricsByDefault"), subtitle: Localization.localized("settings.showLyricsByDefaultSubtitle"), icon: "quote.bubble", color: .blue, isOn: $showLyricsByDefault)
-                            settingsDivider
-                            // ✅ 3.0: solo afecta a las playlists (propias y automáticas).
-                            settingsToggleRow(title: Localization.localized("settings.showPlaylistStats"), subtitle: Localization.localized("settings.showPlaylistStatsSubtitle"), icon: "chart.bar.fill", color: .teal, isOn: $showPlaylistStats)
                         }
                         // ✅ Sincronización en vivo con el engine (antes solo
                         // se aplicaba al reiniciar ContentView)
@@ -423,7 +404,7 @@ struct SettingsView: View {
                         }
 
                         // Avanzado
-                        settingsSection(icon: "wrench.and.screwdriver.fill", title: Localization.localized("settings.advanced"), color: .orange, showsSeparator: false) {
+                        settingsSection(icon: "wrench.and.screwdriver.fill", title: Localization.localized("settings.advanced"), color: .orange) {
                             settingsButton(title: Localization.localized("settings.logs"), subtitle: Localization.localized("settings.logsSubtitle"), icon: "doc.text.magnifyingglass", color: .gray) {
                                 showLogs = true
                             }
@@ -433,12 +414,32 @@ struct SettingsView: View {
                             }
                         }
                     }
-                    // ✅ POLISH: 12pt arriba (antes 8, heredado del sheet: quedaba
-                    // pegado a la barra de estado). El fondo se mantiene en 30pt porque
-                    // el contenido YA reserva el alto de la PlayerBar vía safeAreaInset.
-                    .padding(.horizontal, 20).padding(.top, 12).padding(.bottom, 30)
+                    .padding(.horizontal, 20).padding(.top, 8).padding(.bottom, 30)
                 }
                 .scrollIndicators(.hidden)
+            }
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.hidden, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .principal) {
+                    Text(Localization.localized("settings.title"))
+                        .font(.system(size: 20, weight: .bold, design: .rounded))
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: [AppTheme.accent, AppTheme.accent.opacity(0.75)],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .accessibilityLabel(Localization.localized("settings.title"))
+                }
+
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(Localization.localized("actions.done")) { dismiss() }
+                        .foregroundStyle(AppTheme.accent)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
             }
             .sheet(isPresented: $showLogs) {
                 LogsView()
@@ -461,39 +462,63 @@ struct SettingsView: View {
         }
     }
 
-    // MARK: - Header (compacto: Ajustes ya es una PESTAÑA, no un sheet)
-    // ✅ POLISH: antes era un header de sheet — círculo de 88pt con anillo,
-    // icono de 36pt, título de 26 y subtítulo — que se comía ~200pt de alto útil
-    // en una pantalla de 736pt. Ahora es una fila de 60pt: icono 28pt con el
-    // gradiente de acento, título 22pt y versión 12pt terciaria. Se conserva el
-    // contenedor de card para seguir el mismo lenguaje que las secciones.
+    // MARK: - Header (diseño premium estilo NowPlayingView)
     private var headerSection: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "gearshape.fill")
-                .font(.system(size: 28, weight: .semibold))
-                .foregroundStyle(AppTheme.accentGradient)
+        VStack(spacing: 16) {
+            ZStack {
+                // ✅ Círculo con tinte suave (sin blur: cero re-muestreo en scroll)
+                Circle()
+                    .fill(AppTheme.accentGradient(opacity: 0.12))
+                    .frame(width: 88, height: 88)
+                    .overlay {
+                        Circle()
+                            .stroke(
+                                LinearGradient(
+                                    colors: [AppTheme.accent.opacity(0.5), AppTheme.accent.opacity(0.1), .clear],
+                                    startPoint: .topLeading, endPoint: .bottomTrailing
+                                ),
+                                lineWidth: 2
+                            )
+                    }
+                    .shadow(color: AppTheme.accent.opacity(0.2), radius: 12, x: 0, y: 6)
 
-            VStack(alignment: .leading, spacing: 2) {
+                Image(systemName: "gearshape.fill")
+                    .font(.system(size: 36, weight: .medium))
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [AppTheme.accent, AppTheme.accent.opacity(0.7)],
+                            startPoint: .top, endPoint: .bottom
+                        )
+                    )
+            }
+
+            VStack(spacing: 6) {
                 Text(Localization.localized("settings.title"))
-                    .font(.system(size: 22, weight: .bold, design: .rounded))
+                    .font(.system(size: 26, weight: .bold, design: .rounded))
                     .foregroundStyle(.primary)
 
+                Text(Localization.localized("settings.subtitle"))
+                    .font(.system(size: 14))
+                    .foregroundStyle(.secondary)
+
+                // ✅ Versión visible en el header (los números de versión no se
+                // traducen, así que no hace falta una key de Localización).
                 Text(appVersionLabel)
                     .font(.system(size: 12, weight: .medium, design: .rounded))
                     .foregroundStyle(.tertiary)
+                    .padding(.top, 2)
             }
-
-            Spacer(minLength: 0)
         }
-        .padding(.horizontal, 16)
-        .frame(minHeight: 60)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 18)
         .background {
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
+            // ✅ Fondo opaco + borde gradiente sutil (look vidrio sin blur)
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
                 .fill(Color(UIColor.secondarySystemGroupedBackground))
-                .shadow(color: .black.opacity(0.06), radius: 8, x: 0, y: 4)
+                .shadow(color: .black.opacity(0.06), radius: 10, x: 0, y: 4)
         }
         .overlay {
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
                 .strokeBorder(
                     LinearGradient(
                         colors: [.white.opacity(0.14), .clear, .white.opacity(0.06)],
@@ -516,8 +541,6 @@ struct SettingsView: View {
     @ViewBuilder
     private func settingsSection<Content: View>(
         icon: String, title: String, color: Color,
-        // ✅ POLISH: separador sutil al pie de la sección (la última no lo lleva).
-        showsSeparator: Bool = true,
         @ViewBuilder content: () -> Content
     ) -> some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -543,10 +566,8 @@ struct SettingsView: View {
                             .strokeBorder(color.opacity(0.1), lineWidth: 0.5)
                     }
 
-                // ✅ POLISH: `.rounded` — era el único texto de Ajustes que rompía
-                // la identidad tipográfica de la app.
                 Text(title)
-                    .font(.system(size: 18, weight: .semibold, design: .rounded))
+                    .font(.system(size: 18, weight: .semibold))
                     .foregroundStyle(.primary)
             }
             .padding(.horizontal, 4)
@@ -560,18 +581,6 @@ struct SettingsView: View {
                 RoundedRectangle(cornerRadius: 20, style: .continuous)
                     .fill(Color(UIColor.secondarySystemGroupedBackground))
                     .shadow(color: .black.opacity(0.06), radius: 8, x: 0, y: 4)
-            }
-        }
-        // ✅ POLISH: separador de hairline centrado en el hueco entre secciones.
-        // Va como overlay (no como hijo del VStack) a propósito: el cuerpo de la
-        // vista ya está en el límite de 10 hijos del ViewBuilder, y añadir un
-        // `Divider` por sección no compilaría.
-        .overlay(alignment: .bottom) {
-            if showsSeparator {
-                Rectangle()
-                    .fill(Color.primary.opacity(0.06))
-                    .frame(height: 0.5)
-                    .offset(y: 11)
             }
         }
     }

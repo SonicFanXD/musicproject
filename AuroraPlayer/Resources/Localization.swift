@@ -107,7 +107,7 @@ final class Localization: ObservableObject {
         "settings.subtitle": [.spanish: "Configura Aurora Player a tu gusto", .english: "Customize Aurora Player"],
         // ✅ Copy actualizada: se eliminó la mención al crossfade (ajuste ya
         // retirado) y se refleja lo que hace hoy la app.
-        "settings.description": [.spanish: "Reproductor Hi-Fi para iOS con reproducción sin remuestreo por cable cuando el hardware lo permite. Soporta FLAC, ALAC, WAV y AIFF, ecualizador de 10 bandas, gestión de carpetas locales, letras sincronizadas en formato TTML y acento dinámico extraído de la portada. Playlists inteligentes por hábitos, modo presentación al grabar pantalla, gestión térmica inteligente y seis temas visuales.", .english: "Hi-Fi player for iOS with cable playback free of resampling whenever the hardware allows it. Supports FLAC, ALAC, WAV and AIFF, a 10-band equalizer, local folder management, TTML synchronized lyrics and a dynamic accent extracted from the artwork. Smart playlists based on your habits, presentation mode while recording the screen, smart thermal management and six visual themes."],
+        "settings.description": [.spanish: "Reproductor Hi-Fi para iOS con reproducción sin remuestreo por cable cuando el hardware lo permite. Soporta FLAC, ALAC, WAV y AIFF, ecualizador de 10 bandas, gestión de carpetas locales, letras sincronizadas en formato TTML y acento dinámico extraído de la portada.", .english: "Hi-Fi player for iOS with cable playback free of resampling whenever the hardware allows it. Supports FLAC, ALAC, WAV and AIFF, a 10-band equalizer, local folder management, TTML synchronized lyrics and a dynamic accent extracted from the artwork."],
         "settings.version": [.spanish: "Versión", .english: "Version"],
         "settings.build": [.spanish: "Build", .english: "Build"],
         "settings.logs": [.spanish: "Registros", .english: "Logs"],
@@ -378,50 +378,6 @@ final class Localization: ObservableObject {
         "settings.theme.system": [.spanish: "Sistema (claro/oscuro)", .english: "System (light/dark)"],
         "settings.theme.light": [.spanish: "Modo Claro", .english: "Light Mode"],
         "settings.theme.dark": [.spanish: "Modo Oscuro", .english: "Dark Mode"],
-        "settings.theme.midnight": [.spanish: "Medianoche", .english: "Midnight"],
-        "settings.theme.twilight": [.spanish: "Crepúsculo", .english: "Twilight"],
-        "settings.theme.paper": [.spanish: "Papel", .english: "Paper"],
-
-        // 3.0: tab bar inferior y pestaña Bienvenida
-        "tab.welcome": [.spanish: "Bienvenida", .english: "Welcome"],
-        "tab.library": [.spanish: "Biblioteca", .english: "Library"],
-        "tab.settings": [.spanish: "Ajustes", .english: "Settings"],
-        "welcome.title": [.spanish: "Bienvenida", .english: "Welcome"],
-        "welcome.comingSoon": [.spanish: "Próximamente", .english: "Coming soon"],
-        "welcome.comingSoonMessage": [.spanish: "Estamos preparando esta pantalla. Mientras tanto, añade tu carpeta de música.", .english: "We are building this screen. Meanwhile, add your music folder."],
-
-        // 3.0: playlists automáticas (calculadas al vuelo)
-        "smart.topPlayed": [.spanish: "Lo más escuchado", .english: "Most played"],
-        "smart.discoveries": [.spanish: "Descubrimientos", .english: "Discoveries"],
-        "smart.sleep": [.spanish: "Para dormir", .english: "For sleep"],
-        "smart.dailyMix": [.spanish: "Mezcla diaria", .english: "Daily mix"],
-        "smart.weeklyMix": [.spanish: "Mezcla semanal", .english: "Weekly mix"],
-        "smart.empty": [.spanish: "Todavía no hay canciones para esta mezcla", .english: "No songs for this mix yet"],
-        "settings.smartShuffle": [.spanish: "Shuffle inteligente", .english: "Smart shuffle"],
-
-        // 3.0: pestaña Bienvenida
-        "welcome.goodMorning": [.spanish: "Buenos días", .english: "Good morning"],
-        "welcome.goodAfternoon": [.spanish: "Buenas tardes", .english: "Good afternoon"],
-        "welcome.goodEvening": [.spanish: "Buenas noches", .english: "Good evening"],
-        "welcome.subtitle": [.spanish: "¿Qué quieres escuchar hoy?", .english: "What do you want to listen to today?"],
-        "welcome.updatedToday": [.spanish: "Actualizada hoy", .english: "Updated today"],
-        "welcome.smartPlaylists": [.spanish: "Tus playlists", .english: "Your playlists"],
-        "welcome.recommended": [.spanish: "Recomendadas para ti", .english: "Recommended for you"],
-        "welcome.topArtists": [.spanish: "Tus artistas top", .english: "Your top artists"],
-        "welcome.emptyTitle": [.spanish: "Tu música. Tu ritmo.", .english: "Your music. Your rhythm."],
-        "welcome.emptyMessage": [.spanish: "Añade una carpeta con tu música para comenzar", .english: "Add a folder with your music to get started"],
-        "smart.playAll": [.spanish: "Reproducir", .english: "Play"],
-
-        // 3.0: estadísticas de reproducción en playlists
-        // 3.0: modo presentación (grabación de pantalla) y capturas
-        "capture.recording": [.spanish: "Grabando", .english: "Recording"],
-        "capture.screenshotSaved": [.spanish: "Captura guardada", .english: "Screenshot saved"],
-        "stats.plays": [.spanish: "reproducciones", .english: "plays"],
-        "stats.playsSingular": [.spanish: "reproducción", .english: "play"],
-        "stats.minutes": [.spanish: "min", .english: "min"],
-        "settings.showPlaylistStats": [.spanish: "Mostrar estadísticas en playlists", .english: "Show stats in playlists"],
-        "settings.showPlaylistStatsSubtitle": [.spanish: "Reproducciones y tiempo escuchado en tus listas", .english: "Plays and listening time inside playlists"],
-        "settings.smartShuffleSubtitle": [.spanish: "Prioriza canciones que escuchas menos", .english: "Prioritizes songs you listen to less"],
         "settings.accent.purple": [.spanish: "Morado (predeterminado)", .english: "Purple (default)"],
         "settings.accent.blue": [.spanish: "Azul Aurora", .english: "Aurora Blue"],
         "settings.accent.emerald": [.spanish: "Esmeralda", .english: "Emerald"],
@@ -465,23 +421,6 @@ final class Localization: ObservableObject {
         "quality.accessibility.queue": [.spanish: "Cola de reproducción", .english: "Playback queue"],
         "quality.accessibility.airplay": [.spanish: "AirPlay", .english: "AirPlay"],
     ]
-
-    /// ✅ 3.0: resumen de estadísticas para las filas de playlists
-    /// ("12 reproducciones · 47 min"). Devuelve nil cuando la canción aún no
-    /// tiene ninguna reproducción ni tiempo escuchado, para no dejar una línea
-    /// vacía en la fila.
-    static func playStats(plays: Int, seconds: TimeInterval) -> String? {
-        var parts: [String] = []
-        if plays > 0 {
-            let unit = localized(plays == 1 ? "stats.playsSingular" : "stats.plays")
-            parts.append("\(plays) \(unit)")
-        }
-        let minutes = Int((seconds / 60).rounded())
-        if minutes > 0 {
-            parts.append("\(minutes) \(localized("stats.minutes"))")
-        }
-        return parts.isEmpty ? nil : parts.joined(separator: " · ")
-    }
 
     static func localized(_ key: String) -> String {
         if let langStrings = strings[key], let translation = langStrings[Localization.shared.currentLanguage] {

@@ -346,11 +346,6 @@ struct PlaylistDetailView: View {
     let playlist: Playlist
     @ObservedObject var fileAccessService: FileAccessService
     @ObservedObject var audioEngine: AudioEngine
-    // ✅ 3.0: estadísticas de reproducción en las filas (se desactivan desde Ajustes).
-    @AppStorage("com.aurora.showPlaylistStats") private var showPlaylistStats = true
-    // ✅ 3.0: observar el modo captura para detener los indicadores decorativos
-    // mientras se graba la pantalla.
-    @ObservedObject private var captureMode = CaptureModeManager.shared
     @Environment(\.dismiss) private var dismiss
 
     @State private var showEditPlaylist = false
@@ -623,22 +618,19 @@ struct PlaylistDetailView: View {
                     if isCurrent {
                         HStack(spacing: 3) {
                             ForEach(0..<3, id: \.self) { bar in
-                                // ✅ 3.0: constantes con tipo explícito — la expresión en
-                                // una sola línea desbordaba el verificador de tipos.
-                                let animating: Bool = DecorativeMotion.isAnimating(audioEngine.isPlaying)
-                                let barHeight: CGFloat = animating ? (bar % 2 == 0 ? 14 : 9) : 6
-                                let barAnimation: Animation? = DecorativeMotion.animation(
-                                    Animation.easeInOut(duration: 0.45 + Double(bar) * 0.12).repeatForever(autoreverses: true),
-                                    isActive: audioEngine.isPlaying
-                                )
                                 RoundedRectangle(cornerRadius: 1.5)
                                     .fill(AppTheme.accentGradient)
                                     // ✅ El indicador ANIMA de verdad: la altura cambia al
                                     // reproducir (antes no había ninguna propiedad que
                                     // animar, así que el repeatForever quedaba inerte).
                                     // ✅ BATERÍA: en pausa se retira la animación.
-                                    .frame(width: 3, height: barHeight)
-                                    .animation(barAnimation, value: animating)
+                                    .frame(width: 3, height: audioEngine.isPlaying ? (bar % 2 == 0 ? 14 : 9) : 6)
+                                    .animation(
+                                        audioEngine.isPlaying
+                                            ? Animation.easeInOut(duration: 0.45 + Double(bar) * 0.12).repeatForever(autoreverses: true)
+                                            : nil,
+                                        value: audioEngine.isPlaying
+                                    )
                             }
                         }
                         .frame(width: 26)
@@ -659,16 +651,6 @@ struct PlaylistDetailView: View {
                             .font(.system(size: 13))
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
-
-                        // ✅ 3.0: "12 reproducciones · 47 min". Solo aparece si la
-                        // canción tiene historial, así las listas recién creadas se
-                        // ven exactamente igual que antes.
-                        if let stats = statsLine(for: song) {
-                            Text(stats)
-                                .font(.system(size: 11, weight: .medium).monospacedDigit())
-                                .foregroundStyle(.tertiary)
-                                .lineLimit(1)
-                        }
                     }
 
                     Spacer()
@@ -706,17 +688,6 @@ struct PlaylistDetailView: View {
                     .strokeBorder(AppTheme.accent.opacity(0.25), lineWidth: 1)
             }
         }
-    }
-
-    /// ✅ 3.0: "12 reproducciones · 47 min" SOLO en playlists (esta vista y las
-    /// automáticas de Bienvenida). La biblioteca principal y los detalles de
-    /// álbum/artista no las muestran.
-    private func statsLine(for song: Song) -> String? {
-        guard showPlaylistStats else { return nil }
-        return Localization.playStats(
-            plays: fileAccessService.playCount(for: song.id),
-            seconds: fileAccessService.playTime(for: song.id)
-        )
     }
 
     private var editPlaylistSheet: some View {
