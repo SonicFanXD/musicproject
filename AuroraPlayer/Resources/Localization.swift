@@ -201,7 +201,7 @@ final class Localization: ObservableObject {
         "settings.limiter": [.spanish: "Protección anti-clipping", .english: "Anti-clipping protection"],
         "settings.limiterSubtitle": [.spanish: "Atenúa 0,09 dB para evitar saturación. Desactivada, la salida por cable puede ser bit-perfect", .english: "Attenuates 0.09 dB to prevent clipping. When off, wired output can be bit-perfect"],
         "settings.bluetoothOptimization": [.spanish: "Optimización Bluetooth", .english: "Bluetooth Optimization"],
-        "settings.bluetoothOptimizationSubtitle": [.spanish: "Mejora calidad en dispositivos Bluetooth (48kHz, buffer corto)", .english: "Improves quality on Bluetooth devices (48kHz, short buffer)"],
+        "settings.bluetoothOptimizationSubtitle": [.spanish: "Optimiza el enlace Bluetooth: el reloj y el búfer los decide iOS", .english: "Optimizes the Bluetooth link: clock and buffer are decided by iOS"],
         "audio.quality.title": [.spanish: "Calidad de audio", .english: "Audio Quality"],
         "audio.quality.close": [.spanish: "Cerrar", .english: "Close"],
         "audio.quality.stereo": [.spanish: "Estéreo", .english: "Stereo"],

@@ -884,8 +884,12 @@ class AudioEngine: NSObject, ObservableObject {
                     AppLog.debug(.playback, "Buffer \(Int(duration * 1000))ms no soportado, probando siguiente")
                 }
             }
-            AppLog.info(.playback, String(format: "Buffer I/O concedido: %.2f ms (pedido: %.1f ms)",
-                                          session.ioBufferDuration * 1000, requestedBufferDuration * 1000))
+            // ✅ 3.0.1: aquí NO se puede leer el concedido — en el instante de la
+            // petición el audio server todavía no lo ha aplicado (y
+            // setPreferredIOBufferDuration no falla cuando el hardware no lo
+            // soporta: redondea en silencio). El valor REAL se registra 0.3 s
+            // después de activar la sesión.
+            AppLog.info(.playback, String(format: "Buffer I/O pedido: %.1f ms (el concedido se comprueba tras activar)", requestedBufferDuration * 1000))
 
             // ✅ Línea base de sample rate SIN forzar 44.1 kHz: pedir siempre
             // 44100 al reconfigurar la sesión reclocaba el hardware si el archivo
@@ -910,6 +914,13 @@ class AudioEngine: NSObject, ObservableObject {
             // ✅ La opción .notifyOthersOnDeactivation solo tiene efecto al
             // DESACTIVAR la sesión (abajo, en stop()); al activarla es inerte.
             try session.setActive(true)
+            // ✅ 3.0.1: buffer REAL concedido, leído cuando el audio server ya
+            // aplicó (o redondeó) la petición. Comparado con "pedido" dice si el
+            // hardware aceptó los 8 ms o si sirvió su valor por defecto.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                let granted = AVAudioSession.sharedInstance().ioBufferDuration
+                AppLog.info(.playback, String(format: "Buffer I/O concedido: %.2f ms (pedido: %.1f ms)", granted * 1000, requestedBufferDuration * 1000))
+            }
             updateRouteName()
             updateAudioQuality()
         } catch {
