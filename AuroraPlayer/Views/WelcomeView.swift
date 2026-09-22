@@ -55,13 +55,14 @@ struct WelcomeView: View {
                     }
                     // ✅ Espacio al pie para la PlayerBar flotante.
                     .padding(.bottom, 130)
-                    // ✅ FLUIDEZ 3.0.1: UNA sola entrada (fade) en el contenedor
-                    // raíz en lugar de 5 springs escalonados (5 transacciones
-                    // simultáneas al abrir la pestaña). Solo opacity → composición
-                    // en GPU; al ser `value:`-scoped, los cambios de contenido no
-                    // se animan.
+                    // ✅ POLISH 3.0.1: UNA sola entrada para toda la pestaña — fade
+                    // + micro-escala (0.98 → 1). Opacity y transform son las dos
+                    // propiedades que compone la GPU, así que no cuesta un fotograma;
+                    // al ser `value:`-scoped, los cambios de contenido NO se animan
+                    // (solo la aparición de la pestaña).
                     .opacity(appeared ? 1 : 0)
-                    .animation(.easeOut(duration: 0.25), value: appeared)
+                    .scaleEffect(appeared ? 1 : 0.98)
+                    .animation(.easeOut(duration: 0.35), value: appeared)
                 }
                 .scrollIndicators(.hidden)
             }
@@ -101,15 +102,42 @@ struct WelcomeView: View {
         return "welcome.goodEvening"
     }
 
+    /// ✅ POLISH: el header empieza con una pieza gráfica (como NowPlaying y los
+    /// detalles de álbum/artista, que siempre abren con carátula o icono). Antes
+    /// era solo texto: el punto más débil de la portada.
     private var headerSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(Localization.localized(greetingKey))
-                .font(.system(size: 30, weight: .bold, design: .rounded))
-                .foregroundStyle(AppTheme.accentGradient)
+        HStack(alignment: .center, spacing: 14) {
+            ZStack {
+                Circle()
+                    .fill(AppTheme.accentGradient(opacity: 0.16))
+                    .frame(width: 46, height: 46)
 
-            Text(Localization.localized("welcome.subtitle"))
-                .font(.system(size: 15))
-                .foregroundStyle(.secondary)
+                Image(systemName: "music.note")
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(AppTheme.accentGradient)
+            }
+            .overlay(
+                Circle().strokeBorder(
+                    LinearGradient(
+                        colors: [AppTheme.accent.opacity(0.45), AppTheme.accent.opacity(0.08)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 1
+                )
+            )
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(Localization.localized(greetingKey))
+                    .font(.system(size: 32, weight: .bold, design: .rounded))
+                    .foregroundStyle(AppTheme.accentGradient)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+
+                Text(Localization.localized("welcome.subtitle"))
+                    .font(.system(size: 15))
+                    .foregroundStyle(.secondary)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 20)
@@ -140,6 +168,15 @@ struct WelcomeView: View {
                         .allowsHitTesting(false)
                 }
 
+                // ✅ POLISH: barrido diagonal del acento sobre la carátula — da
+                // dirección a la textura y sube el contraste del texto sin velos
+                // opacos (nada de blur de superficie completa).
+                LinearGradient(
+                    colors: [AppTheme.accent.opacity(0.5), .clear, AppTheme.accent.opacity(0.22)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+
                 // Velo inferior para que el texto siempre sea legible.
                 LinearGradient(
                     colors: [.black.opacity(0.5), .black.opacity(0.05), .clear],
@@ -151,12 +188,16 @@ struct WelcomeView: View {
             }
             .frame(maxWidth: .infinity)
             .aspectRatio(1, contentMode: .fit)
+            .overlay(alignment: .topLeading) {
+                dailyMixBadge
+                    .padding(16)
+            }
             .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 28, style: .continuous)
-                    .strokeBorder(.white.opacity(0.14), lineWidth: 0.5)
+                    .strokeBorder(.white.opacity(0.16), lineWidth: 0.5)
             )
-            .shadow(color: AppTheme.accent.opacity(0.28), radius: 16, x: 0, y: 8)
+            .shadow(color: AppTheme.accent.opacity(0.35), radius: 20, x: 0, y: 10)
         }
         .buttonStyle(PressableButtonStyle(scale: 0.985))
         .disabled(dailyMixSongs.isEmpty)
@@ -174,26 +215,51 @@ struct WelcomeView: View {
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(.white.opacity(0.85))
 
-            HStack(spacing: 8) {
+            HStack(spacing: 10) {
                 Image(systemName: "play.fill")
-                    .font(.system(size: 12, weight: .bold))
+                    .font(.system(size: 14, weight: .bold))
                     .foregroundStyle(.white)
-                    .frame(width: 28, height: 28)
+                    .frame(width: 32, height: 32)
                     .background(Circle().fill(.black.opacity(0.35)))
 
-                Text(localizedSongCount(dailyMixSongs.count))
+                Text(dailyMixChipLabel)
                     .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .monospacedDigit()
                     .foregroundStyle(.white)
             }
-            // ✅ Único material del grid/carrusel: un chip pequeño, no un blur
+            // ✅ POLISH: se usa la primitiva de vidrio COMPARTIDA
+            // (`nativeGlassCapsule`, ver OpaqueGlass.swift) en vez de
+            // `.ultraThinMaterial` suelto: respeta "Reducir transparencia" igual
+            // que el resto de la app. Sigue siendo un chip pequeño, nunca un blur
             // de superficie completa.
-            .padding(.horizontal, 10)
+            .padding(.leading, 6)
+            .padding(.trailing, 14)
             .padding(.vertical, 6)
-            .background {
-                Capsule().fill(AnyShapeStyle(.ultraThinMaterial))
-            }
+            .nativeGlassCapsule()
+            .overlay(Capsule().strokeBorder(.white.opacity(0.22), lineWidth: 0.5))
         }
         .padding(20)
+    }
+
+    /// ✅ Badge editorial de la card del día: mayúsculas con letra espaciada sobre
+    /// vidrio. El texto sale del nombre ya localizado de la mezcla (sin clave
+    /// nueva) en mayúsculas.
+    private var dailyMixBadge: some View {
+        Text(Localization.localized(SmartPlaylist.dailyMix.nameKey).uppercased())
+            .font(.system(size: 10, weight: .bold, design: .rounded))
+            .tracking(1.4)
+            .foregroundStyle(.white)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .nativeGlassCapsule()
+            .overlay(Capsule().strokeBorder(.white.opacity(0.25), lineWidth: 0.5))
+    }
+
+    /// ✅ "12 canciones · Reproducir" — se compone como String (no como
+    /// interpolación de `Text`) para no depender de cómo SwiftUI trate una
+    /// LocalizedStringKey con dos comodines.
+    private var dailyMixChipLabel: String {
+        "\(localizedSongCount(dailyMixSongs.count)) · \(Localization.localized("actions.play"))"
     }
 
     // MARK: - 3. Tus playlists (automáticas)
@@ -216,40 +282,56 @@ struct WelcomeView: View {
 
     private func smartPlaylistCard(_ playlist: SmartPlaylist) -> some View {
         let songs = smartContent[playlist.id] ?? []
+        // ✅ POLISH: 170pt (antes 160) y todo el tratamiento en un solo sitio.
+        let edge: CGFloat = 170
 
         return VStack(alignment: .leading, spacing: 10) {
             ZStack(alignment: .bottomTrailing) {
                 RoundedRectangle(cornerRadius: 20, style: .continuous)
                     .fill(
                         LinearGradient(
-                            colors: [playlist.colorHint.opacity(0.9), playlist.colorHint.opacity(0.45)],
+                            colors: [playlist.colorHint.opacity(0.92), playlist.colorHint.opacity(0.45)],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         )
                     )
-                    .frame(width: 160, height: 160)
-                    .overlay {
-                        Image(systemName: playlist.icon)
-                            .font(.system(size: 44, weight: .semibold))
-                            .foregroundStyle(.white.opacity(0.92))
-                    }
+
+                // ✅ POLISH: barrido diagonal de luz sobre el gradiente — una
+                // superficie que antes era completamente plana.
+                LinearGradient(
+                    colors: [.white.opacity(0.22), .clear, .black.opacity(0.14)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+
+                Image(systemName: playlist.icon)
+                    .font(.system(size: 32, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.95))
 
                 playBadge {
                     playSongs(songs)
                 }
                 .padding(10)
             }
+            .frame(width: edge, height: edge)
+            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .strokeBorder(.white.opacity(0.16), lineWidth: 0.5)
+            )
+            .shadow(color: .black.opacity(0.18), radius: 12, x: 0, y: 6)
 
             Text(playlist.name)
-                .font(.system(size: 14, weight: .semibold, design: .rounded))
+                .font(.system(size: 15, weight: .semibold, design: .rounded))
                 .foregroundStyle(.primary)
                 .lineLimit(1)
 
             Text(localizedSongCount(songs.count))
-                .font(.system(size: 12))
+                .font(.system(size: 13))
+                .monospacedDigit()
                 .foregroundStyle(.secondary)
         }
-        .frame(width: 160, alignment: .leading)
+        .frame(width: edge, alignment: .leading)
         .contentShape(Rectangle())
         // ✅ Tap en la card → lista completa (con estadísticas); el botón de play
         // reproduce directamente sin abrir nada.
@@ -266,8 +348,8 @@ struct WelcomeView: View {
             sectionTitle("welcome.recommended")
 
             LazyVGrid(
-                columns: [GridItem(.flexible(), spacing: 14), GridItem(.flexible(), spacing: 14)],
-                spacing: 16
+                columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)],
+                spacing: 12
             ) {
                 ForEach(recommendedSongs) { song in
                     recommendedCell(song)
@@ -283,14 +365,18 @@ struct WelcomeView: View {
         } label: {
             VStack(alignment: .leading, spacing: 8) {
                 ZStack(alignment: .bottomTrailing) {
-                    artworkThumb(song, edge: 160, corner: 18)
-                    // ✅ El botón es una pista visual: toda la celda reproduce.
+                    artworkThumb(song, edge: 160, corner: 16)
+                    // ✅ POLISH: el play flotante usa la primitiva de vidrio
+                    // compartida (respeta "Reducir transparencia") en vez del negro
+                    // sólido, con filo y sombra propios. Sigue sin recibir toques:
+                    // la celda entera reproduce.
                     Image(systemName: "play.fill")
                         .font(.system(size: 11, weight: .bold))
                         .foregroundStyle(.white)
                         .frame(width: 28, height: 28)
-                        .background(Circle().fill(.black.opacity(0.38)))
-                        .overlay(Circle().strokeBorder(.white.opacity(0.22), lineWidth: 0.5))
+                        .nativeGlassCapsule()
+                        .overlay(Circle().strokeBorder(.white.opacity(0.28), lineWidth: 0.5))
+                        .shadow(color: .black.opacity(0.25), radius: 4, x: 0, y: 2)
                         .padding(8)
                         .allowsHitTesting(false)
                 }
@@ -306,11 +392,18 @@ struct WelcomeView: View {
                     .lineLimit(1)
             }
             .padding(10)
-            // ✅ Mismo patrón que las filas de la biblioteca: color opaco, sin blur.
+            // ✅ Mismo patrón que las filas de la biblioteca: color opaco, sin blur,
+            // ahora con el filo de vidrio y la sombra que sí usa el resto de la app
+            // (sin ellos la rejilla se leía completamente plana).
             .background {
                 RoundedRectangle(cornerRadius: 20, style: .continuous)
                     .fill(Color(UIColor.secondarySystemBackground).opacity(0.6))
             }
+            .overlay(
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .strokeBorder(.white.opacity(0.08), lineWidth: 0.5)
+            )
+            .shadow(color: .black.opacity(0.12), radius: 8, x: 0, y: 4)
         }
         .buttonStyle(PressableButtonStyle(scale: 0.97))
     }
@@ -360,30 +453,49 @@ struct WelcomeView: View {
                         }
                 }
             }
-            .frame(width: 100, height: 100)
+            .frame(width: 110, height: 110)
             .clipShape(Circle())
+            // ✅ POLISH: anillo de acento de 2pt — es lo que en el resto de la app
+            // convierte una miniatura en un elemento claramente tocable.
+            .overlay(
+                Circle()
+                    .strokeBorder(
+                        AngularGradient(
+                            colors: [
+                                AppTheme.accent.opacity(0.55),
+                                AppTheme.accent.opacity(0.15),
+                                AppTheme.accent.opacity(0.45)
+                            ],
+                            center: .center
+                        ),
+                        lineWidth: 2
+                    )
+            )
+            .shadow(color: .black.opacity(0.18), radius: 10, x: 0, y: 5)
 
             Text(artist.name)
                 .font(.system(size: 13, weight: .semibold, design: .rounded))
                 .foregroundStyle(.primary)
                 .lineLimit(1)
-                .frame(width: 100)
+                .frame(width: 110)
 
             Text(localizedSongCount(artist.songs.count))
                 .font(.system(size: 11))
+                .monospacedDigit()
                 .foregroundStyle(.secondary)
         }
     }
 
     // MARK: - 6. Estado vacío
 
+    /// ✅ POLISH: ilustración PROPIA de Bienvenida. Antes reutilizaba
+    /// `ContentUnavailableLibraryView`, que es literalmente el mismo estado vacío
+    /// de la Biblioteca → la portada no tenía identidad cuando la biblioteca estaba
+    /// vacía, que es justo cuando más se ve.
     private var emptyLibrarySection: some View {
-        VStack(spacing: 18) {
-            ContentUnavailableLibraryView(
-                icon: "music.note.list",
-                title: Localization.localized("welcome.emptyTitle"),
-                message: Localization.localized("welcome.emptyMessage")
-            )
+        VStack(spacing: 22) {
+            emptyHero
+            emptyTexts
 
             Button {
                 Haptics.light()
@@ -391,22 +503,62 @@ struct WelcomeView: View {
             } label: {
                 HStack(spacing: 8) {
                     Image(systemName: "plus.circle.fill")
-                        .font(.system(size: 15, weight: .semibold))
+                        .font(.system(size: 16, weight: .semibold))
                     Text(Localization.localized("actions.addFolder"))
                         .font(.system(size: 15, weight: .semibold, design: .rounded))
                 }
                 .foregroundStyle(.white)
-                .padding(.horizontal, 24)
-                .padding(.vertical, 14)
+                .padding(.horizontal, 26)
+                .frame(height: 48)
                 .background {
                     Capsule().fill(AppTheme.accentGradient)
                 }
-                .shadow(color: AppTheme.accent.opacity(0.35), radius: 10, x: 0, y: 5)
+                .shadow(color: AppTheme.accent.opacity(0.35), radius: 12, x: 0, y: 6)
             }
             .buttonStyle(PressableButtonStyle(scale: 0.96))
         }
         .padding(.horizontal, 20)
         .padding(.top, 30)
+    }
+
+    /// ✅ Disco de acento al 10% + símbolo grande con el gradiente de dos colores,
+    /// con anillo y sombra de tinte: mismo lenguaje que las cards destacadas.
+    private var emptyHero: some View {
+        ZStack {
+            Circle()
+                .fill(AppTheme.accentGradient(opacity: 0.1))
+                .frame(width: 120, height: 120)
+
+            Circle()
+                .strokeBorder(
+                    LinearGradient(
+                        colors: [AppTheme.accent.opacity(0.35), AppTheme.accent.opacity(0.05)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 1
+                )
+                .frame(width: 120, height: 120)
+
+            Image(systemName: "music.note.list")
+                .font(.system(size: 72, weight: .medium))
+                .foregroundStyle(AppTheme.accentGradient)
+        }
+        .shadow(color: AppTheme.accent.opacity(0.18), radius: 18, x: 0, y: 8)
+    }
+
+    private var emptyTexts: some View {
+        VStack(spacing: 8) {
+            Text(Localization.localized("welcome.emptyTitle"))
+                .font(.system(size: 24, weight: .bold, design: .rounded))
+                .foregroundStyle(.primary)
+                .multilineTextAlignment(.center)
+
+            Text(Localization.localized("welcome.emptyMessage"))
+                .font(.system(size: 15))
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+        }
     }
 
     // MARK: - Piezas compartidas

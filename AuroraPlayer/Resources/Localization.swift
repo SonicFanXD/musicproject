@@ -408,7 +408,7 @@ final class Localization: ObservableObject {
         "welcome.smartPlaylists": [.spanish: "Tus playlists", .english: "Your playlists"],
         "welcome.recommended": [.spanish: "Recomendadas para ti", .english: "Recommended for you"],
         "welcome.topArtists": [.spanish: "Tus artistas top", .english: "Your top artists"],
-        "welcome.emptyTitle": [.spanish: "Tu biblioteca está lista para empezar", .english: "Your library is ready to go"],
+        "welcome.emptyTitle": [.spanish: "Tu música. Tu ritmo.", .english: "Your music. Your rhythm."],
         "welcome.emptyMessage": [.spanish: "Añade una carpeta con tu música para comenzar", .english: "Add a folder with your music to get started"],
         "smart.playAll": [.spanish: "Reproducir", .english: "Play"],
 
