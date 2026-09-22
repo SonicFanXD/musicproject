@@ -51,6 +51,11 @@ final class VisualizerFrameRate: ObservableObject {
 struct AudioVisualizer: View {
     @ObservedObject var audioEngine: AudioEngine
     var tintColor: Color = AppTheme.accent
+    // ✅ SISTEMA DOS COLORES: segundo color de la carátula, el mismo que usan
+    // botones, chips, cards y PlayerBar (dominante + secundario reales).
+    // Opcional: si llega nil (acento manual o carátula sin secundario) se
+    // conserva el degradado de un solo color de siempre, sin romper nada.
+    var secondaryTintColor: Color? = nil
     // ✅ Observa el frame rate óptimo según batería/térmica para adaptarse
     // en tiempo real (60↔30fps) sin reiniciar el CADisplayLink.
     @ObservedObject private var frameRate = VisualizerFrameRate.shared
@@ -81,11 +86,7 @@ struct AudioVisualizer: View {
                     Capsule()
                         .fill(
                             LinearGradient(
-                                colors: [
-                                    tintColor.opacity(0.95),
-                                    tintColor.opacity(0.5),
-                                    tintColor.opacity(0.2)
-                                ],
+                                colors: barGradientColors,
                                 startPoint: .bottom,
                                 endPoint: .top
                             )
@@ -138,6 +139,17 @@ struct AudioVisualizer: View {
         }
     }
 
+    /// ✅ Degradado de las barras: DOS colores reales (dominante de la carátula +
+    /// su secundario) cuando hay secundario; si no, el degradado de un solo color
+    /// con tres paradas que usaba antes. Mismo criterio que `accentPair` del resto
+    /// de la app, pero sin tocar la dirección (abajo → arriba) de las barras.
+    private var barGradientColors: [Color] {
+        if let secondary = secondaryTintColor {
+            return [tintColor, secondary]
+        }
+        return [tintColor.opacity(0.95), tintColor.opacity(0.5), tintColor.opacity(0.2)]
+    }
+
     private func startVisualization() {
         stopVisualization()
         displayLink = CADisplayLink(target: VisualizerLinkTarget { [self] in
@@ -188,6 +200,9 @@ final class VisualizerLinkTarget: NSObject {
 // MARK: - Visualizador Circular (optimizado)
 struct CircularAudioVisualizer: View {
     @ObservedObject var audioEngine: AudioEngine
+    // ✅ SISTEMA DOS COLORES: mismo criterio que `AudioVisualizer`. Opcional: si
+    // llega nil se conserva la segunda parada al 40% del acento de siempre.
+    var secondaryTintColor: Color? = nil
     // ✅ Batería: mismo controlador de frame rate adaptativo (60↔30fps)
     @ObservedObject private var frameRate = VisualizerFrameRate.shared
     @State private var amplitudes: [CGFloat] = Array(repeating: 0, count: 48)
@@ -206,7 +221,7 @@ struct CircularAudioVisualizer: View {
                 Capsule()
                     .fill(
                         LinearGradient(
-                            colors: [AppTheme.accent, AppTheme.accent.opacity(0.4)],
+                            colors: [AppTheme.accent, secondaryTintColor ?? AppTheme.accent.opacity(0.4)],
                             startPoint: .bottom, endPoint: .top
                         )
                     )
