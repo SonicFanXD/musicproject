@@ -6,8 +6,13 @@ import SwiftUI
 /// estadísticas de reproducción) y se cachea en @State una vez por apertura:
 /// las consultas ordenan la biblioteca entera y NUNCA deben correr en un render.
 struct WelcomeView: View {
-    @ObservedObject var audioEngine: AudioEngine
-    @ObservedObject var fileAccessService: FileAccessService
+    /// ✅ FLUIDEZ 3.0.1: SIN @ObservedObject. WelcomeView no LEE ningún estado
+    /// observable del motor ni de la biblioteca (todo lo que pinta vive en sus
+    /// snapshots @State), así que observarlos solo servía para reconstruir la
+    /// portada entera —cuadrícula de recomendadas incluida— en cada reproducción
+    /// (playCounts/playTimes cambian con cada canción).
+    let audioEngine: AudioEngine
+    let fileAccessService: FileAccessService
     // ✅ Observar el idioma: los textos cambian al instante.
     @ObservedObject private var localization = Localization.shared
 
@@ -19,8 +24,16 @@ struct WelcomeView: View {
     /// ✅ Playlist automática abierta en el sheet (Identifiable por id).
     @State private var selectedPlaylist: SmartPlaylist?
     @State private var appeared = false
+    /// ✅ FLUIDEZ 3.0.1: número de canciones, alimentado por el publisher de
+    /// `songs`. Permite que la vista sepa si hay biblioteca sin observar el
+    /// servicio completo.
+    @State private var songCount = 0
+    /// ✅ MEMOIZACIÓN: último contenido calculado, su firma y cuándo se calculó.
+    /// Calcular las 5 playlists ordena la biblioteca varias veces y cada mezcla
+    /// baraja el catálogo completo dos veces: reabrir la pestaña no debe repetirlo.
+    @State private var cachedContent: CachedContent?
 
-    private var hasSongs: Bool { !fileAccessService.songs.isEmpty }
+    private var hasSongs: Bool { songCount > 0 }
     private var dailyMixSongs: [Song] { smartContent[SmartPlaylist.dailyMix.id] ?? [] }
 
     var body: some View {
@@ -42,6 +55,13 @@ struct WelcomeView: View {
                     }
                     // ✅ Espacio al pie para la PlayerBar flotante.
                     .padding(.bottom, 130)
+                    // ✅ FLUIDEZ 3.0.1: UNA sola entrada (fade) en el contenedor
+                    // raíz en lugar de 5 springs escalonados (5 transacciones
+                    // simultáneas al abrir la pestaña). Solo opacity → composición
+                    // en GPU; al ser `value:`-scoped, los cambios de contenido no
+                    // se animan.
+                    .opacity(appeared ? 1 : 0)
+                    .animation(.easeOut(duration: 0.25), value: appeared)
                 }
                 .scrollIndicators(.hidden)
             }
@@ -62,10 +82,14 @@ struct WelcomeView: View {
             )
         }
         .task { reloadContent() }
-        .onChange(of: fileAccessService.songs.count) { _ in reloadContent() }
-        .onAppear {
-            withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) { appeared = true }
+        // ✅ El publisher de `songs` sustituye a observar el servicio entero: solo
+        // re-acciona cuando cambia la biblioteca en sí (termina de cargar, se
+        // indexan canciones nuevas), nunca por estadísticas de reproducción.
+        .onReceive(fileAccessService.$songs) { songs in
+            songCount = songs.count
+            reloadContent()
         }
+        .onAppear { appeared = true }
     }
 
     // MARK: - 1. Header
@@ -90,7 +114,6 @@ struct WelcomeView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 20)
         .padding(.top, 16)
-        .sectionEntrance(0, appeared: appeared)
     }
 
     // MARK: - 2. Mezcla del día
@@ -139,7 +162,6 @@ struct WelcomeView: View {
         .disabled(dailyMixSongs.isEmpty)
         .opacity(dailyMixSongs.isEmpty ? 0.6 : 1)
         .padding(.horizontal, 20)
-        .sectionEntrance(1, appeared: appeared)
     }
 
     private var dailyMixLabels: some View {
@@ -190,7 +212,6 @@ struct WelcomeView: View {
                 .padding(.vertical, 4)
             }
         }
-        .sectionEntrance(2, appeared: appeared)
     }
 
     private func smartPlaylistCard(_ playlist: SmartPlaylist) -> some View {
@@ -254,7 +275,6 @@ struct WelcomeView: View {
             }
             .padding(.horizontal, 20)
         }
-        .sectionEntrance(3, appeared: appeared)
     }
 
     private func recommendedCell(_ song: Song) -> some View {
@@ -320,7 +340,6 @@ struct WelcomeView: View {
                 .padding(.vertical, 4)
             }
         }
-        .sectionEntrance(4, appeared: appeared)
     }
 
     private func artistCell(_ artist: Artist) -> some View {
@@ -388,7 +407,6 @@ struct WelcomeView: View {
         }
         .padding(.horizontal, 20)
         .padding(.top, 30)
-        .sectionEntrance(1, appeared: appeared)
     }
 
     // MARK: - Piezas compartidas
@@ -443,17 +461,82 @@ struct WelcomeView: View {
 
     // MARK: - Contenido y reproducción
 
-    /// ✅ Se recalcula al abrir la pestaña y cuando cambia el tamaño de la
-    /// biblioteca (termina de cargar o se indexan canciones nuevas).
-    private func reloadContent() {
+    /// ✅ Se recalcula al abrir la pestaña y cuando cambia la biblioteca (termina
+    /// de cargar o se indexan canciones nuevas), pero SIEMPRE con memoización: si
+    /// nada relevante cambió y el último cálculo es reciente, se reutiliza.
+    ///
+    /// Motivo: cada consulta recorre y ordena la biblioteca entera, y las dos
+    /// mezclas la barajan dos veces cada una. Con 1000+ canciones eso son varios
+    /// órdenes completos por apertura de pestaña — y la pestaña se reabre a menudo.
+    private func reloadContent(force: Bool = false) {
+        let signature = Self.signature(for: fileAccessService)
+        if !force,
+           let cached = cachedContent,
+           cached.signature == signature,
+           Date().timeIntervalSince(cached.computedAt) < Self.cacheLifetime {
+            AppLog.debug(.performance, "[Welcome] contenido reutilizado de caché (firma sin cambios)")
+            return
+        }
+
+        let started = CFAbsoluteTimeGetCurrent()
         let service = fileAccessService
         var snapshot: [String: [Song]] = [:]
         for playlist in SmartPlaylist.all {
-            snapshot[playlist.id] = playlist.songs(from: service)
+            snapshot[playlist.id] = measure(playlist.id) { playlist.songs(from: service) }
         }
         smartContent = snapshot
         recommendedSongs = Self.recommended(for: service)
         topArtists = Self.topArtists(for: service)
+        cachedContent = CachedContent(signature: signature, computedAt: Date())
+
+        let total = (CFAbsoluteTimeGetCurrent() - started) * 1000
+        AppLog.debug(.performance, String(format: "[Welcome] reloadContent en %.1f ms", total))
+    }
+
+    /// ✅ Cronometra cada playlist automática: si alguna pasa de 50 ms es la
+    /// culpable de los tirones al abrir la pestaña (diagnóstico de rendimiento).
+    private func measure<T>(_ id: String, _ work: () -> T) -> T {
+        let started = CFAbsoluteTimeGetCurrent()
+        let result = work()
+        let elapsed = (CFAbsoluteTimeGetCurrent() - started) * 1000
+        if elapsed > 50 {
+            AppLog.warning(.performance, String(format: "[Welcome] '%@' lenta: %.1f ms", id, elapsed))
+        } else {
+            AppLog.debug(.performance, String(format: "[Welcome] '%@' en %.1f ms", id, elapsed))
+        }
+        return result
+    }
+
+    // MARK: - Memoización del contenido
+
+    /// ✅ Firma BARATA de "lo que cambia el contenido": tamaño de la biblioteca,
+    /// reproducciones acumuladas, favoritos y el día/semana actuales (las mezclas
+    /// dependen de ellos). Recorrer `playCounts` es O(canciones reproducidas).
+    private struct ContentSignature: Equatable {
+        let songs: Int
+        let plays: Int
+        let liked: Int
+        let day: String
+        let week: String
+    }
+
+    private struct CachedContent {
+        let signature: ContentSignature
+        let computedAt: Date
+    }
+
+    /// ✅ Vigencia máxima de la caché: aunque la firma no cambie, a los 5 minutos
+    /// se recalcula (cubre "hace X horas" y cambios de hora del día).
+    private static let cacheLifetime: TimeInterval = 300
+
+    private static func signature(for service: FileAccessService) -> ContentSignature {
+        ContentSignature(
+            songs: service.songs.count,
+            plays: service.playCounts.values.reduce(0, +),
+            liked: service.likedSongs.count,
+            day: SmartPlaylist.dayKey(),
+            week: SmartPlaylist.weekKey()
+        )
     }
 
     private func playSongs(_ songs: [Song]) {
@@ -495,30 +578,5 @@ struct WelcomeView: View {
         }
         // ✅ Sin keypath de tupla (Swift no lo permite): extracción explícita.
         return ranked.prefix(10).map { $0.artist }
-    }
-}
-
-// MARK: - Entrada animada de secciones
-
-/// ✅ Entrada con spring y retardo incremental (0,05 s por sección). Solo cambia
-/// opacidad y desplazamiento: propiedades que renderiza la GPU → 60 fps estables.
-private struct SectionEntrance: ViewModifier {
-    let index: Int
-    let appeared: Bool
-
-    func body(content: Content) -> some View {
-        content
-            .opacity(appeared ? 1 : 0)
-            .offset(y: appeared ? 0 : 14)
-            .animation(
-                .spring(response: 0.4, dampingFraction: 0.8).delay(Double(index) * 0.05),
-                value: appeared
-            )
-    }
-}
-
-private extension View {
-    func sectionEntrance(_ index: Int, appeared: Bool) -> some View {
-        modifier(SectionEntrance(index: index, appeared: appeared))
     }
 }
