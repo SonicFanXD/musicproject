@@ -423,7 +423,7 @@ struct SettingsView: View {
                         }
 
                         // Avanzado
-                        settingsSection(icon: "wrench.and.screwdriver.fill", title: Localization.localized("settings.advanced"), color: .orange) {
+                        settingsSection(icon: "wrench.and.screwdriver.fill", title: Localization.localized("settings.advanced"), color: .orange, showsSeparator: false) {
                             settingsButton(title: Localization.localized("settings.logs"), subtitle: Localization.localized("settings.logsSubtitle"), icon: "doc.text.magnifyingglass", color: .gray) {
                                 showLogs = true
                             }
@@ -433,7 +433,10 @@ struct SettingsView: View {
                             }
                         }
                     }
-                    .padding(.horizontal, 20).padding(.top, 8).padding(.bottom, 30)
+                    // ✅ POLISH: 12pt arriba (antes 8, heredado del sheet: quedaba
+                    // pegado a la barra de estado). El fondo se mantiene en 30pt porque
+                    // el contenido YA reserva el alto de la PlayerBar vía safeAreaInset.
+                    .padding(.horizontal, 20).padding(.top, 12).padding(.bottom, 30)
                 }
                 .scrollIndicators(.hidden)
             }
@@ -458,63 +461,39 @@ struct SettingsView: View {
         }
     }
 
-    // MARK: - Header (diseño premium estilo NowPlayingView)
+    // MARK: - Header (compacto: Ajustes ya es una PESTAÑA, no un sheet)
+    // ✅ POLISH: antes era un header de sheet — círculo de 88pt con anillo,
+    // icono de 36pt, título de 26 y subtítulo — que se comía ~200pt de alto útil
+    // en una pantalla de 736pt. Ahora es una fila de 60pt: icono 28pt con el
+    // gradiente de acento, título 22pt y versión 12pt terciaria. Se conserva el
+    // contenedor de card para seguir el mismo lenguaje que las secciones.
     private var headerSection: some View {
-        VStack(spacing: 16) {
-            ZStack {
-                // ✅ Círculo con tinte suave (sin blur: cero re-muestreo en scroll)
-                Circle()
-                    .fill(AppTheme.accentGradient(opacity: 0.12))
-                    .frame(width: 88, height: 88)
-                    .overlay {
-                        Circle()
-                            .stroke(
-                                LinearGradient(
-                                    colors: [AppTheme.accent.opacity(0.5), AppTheme.accent.opacity(0.1), .clear],
-                                    startPoint: .topLeading, endPoint: .bottomTrailing
-                                ),
-                                lineWidth: 2
-                            )
-                    }
-                    .shadow(color: AppTheme.accent.opacity(0.2), radius: 12, x: 0, y: 6)
+        HStack(spacing: 12) {
+            Image(systemName: "gearshape.fill")
+                .font(.system(size: 28, weight: .semibold))
+                .foregroundStyle(AppTheme.accentGradient)
 
-                Image(systemName: "gearshape.fill")
-                    .font(.system(size: 36, weight: .medium))
-                    .foregroundStyle(
-                        LinearGradient(
-                            colors: [AppTheme.accent, AppTheme.accent.opacity(0.7)],
-                            startPoint: .top, endPoint: .bottom
-                        )
-                    )
-            }
-
-            VStack(spacing: 6) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(Localization.localized("settings.title"))
-                    .font(.system(size: 26, weight: .bold, design: .rounded))
+                    .font(.system(size: 22, weight: .bold, design: .rounded))
                     .foregroundStyle(.primary)
 
-                Text(Localization.localized("settings.subtitle"))
-                    .font(.system(size: 14))
-                    .foregroundStyle(.secondary)
-
-                // ✅ Versión visible en el header (los números de versión no se
-                // traducen, así que no hace falta una key de Localización).
                 Text(appVersionLabel)
                     .font(.system(size: 12, weight: .medium, design: .rounded))
                     .foregroundStyle(.tertiary)
-                    .padding(.top, 2)
             }
+
+            Spacer(minLength: 0)
         }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 18)
+        .padding(.horizontal, 16)
+        .frame(minHeight: 60)
         .background {
-            // ✅ Fondo opaco + borde gradiente sutil (look vidrio sin blur)
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
                 .fill(Color(UIColor.secondarySystemGroupedBackground))
-                .shadow(color: .black.opacity(0.06), radius: 10, x: 0, y: 4)
+                .shadow(color: .black.opacity(0.06), radius: 8, x: 0, y: 4)
         }
         .overlay {
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
                 .strokeBorder(
                     LinearGradient(
                         colors: [.white.opacity(0.14), .clear, .white.opacity(0.06)],
@@ -537,6 +516,8 @@ struct SettingsView: View {
     @ViewBuilder
     private func settingsSection<Content: View>(
         icon: String, title: String, color: Color,
+        // ✅ POLISH: separador sutil al pie de la sección (la última no lo lleva).
+        showsSeparator: Bool = true,
         @ViewBuilder content: () -> Content
     ) -> some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -562,8 +543,10 @@ struct SettingsView: View {
                             .strokeBorder(color.opacity(0.1), lineWidth: 0.5)
                     }
 
+                // ✅ POLISH: `.rounded` — era el único texto de Ajustes que rompía
+                // la identidad tipográfica de la app.
                 Text(title)
-                    .font(.system(size: 18, weight: .semibold))
+                    .font(.system(size: 18, weight: .semibold, design: .rounded))
                     .foregroundStyle(.primary)
             }
             .padding(.horizontal, 4)
@@ -577,6 +560,18 @@ struct SettingsView: View {
                 RoundedRectangle(cornerRadius: 20, style: .continuous)
                     .fill(Color(UIColor.secondarySystemGroupedBackground))
                     .shadow(color: .black.opacity(0.06), radius: 8, x: 0, y: 4)
+            }
+        }
+        // ✅ POLISH: separador de hairline centrado en el hueco entre secciones.
+        // Va como overlay (no como hijo del VStack) a propósito: el cuerpo de la
+        // vista ya está en el límite de 10 hijos del ViewBuilder, y añadir un
+        // `Divider` por sección no compilaría.
+        .overlay(alignment: .bottom) {
+            if showsSeparator {
+                Rectangle()
+                    .fill(Color.primary.opacity(0.06))
+                    .frame(height: 0.5)
+                    .offset(y: 11)
             }
         }
     }
