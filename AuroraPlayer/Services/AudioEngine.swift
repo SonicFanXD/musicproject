@@ -1132,10 +1132,17 @@ class AudioEngine: NSObject, ObservableObject {
         // En Bluetooth el codificador AAC/SBC puede saturar con picos entre
         // muestras: ~1 dB de margen (0.89) evita clipping del codec.
         let base: Float = isBluetoothRoute ? 0.89 : (isLimiterEnabled ? 0.99 : 1.0)
-        // ✅ HEADROOM DEL EQ: atenuación mínima necesaria (3 dB en lugar de 6-9 dB)
-        // para máxima dinámica y calidad de audio.
+        // ✅ 3.0.1 HEADROOM DEL EQ: antes se topaba en 3 dB (`min(maxGain, 3)`)
+        // mientras el máximo real calculado arriba es bastante mayor (Bass/Treble:
+        // single 8 dB, par contiguo 9 dB; Rock: 6.6 dB). Con material a 0 dBFS en
+        // graves —electrónica, hip-hop— el boost superaba el margen y RECORTABA en
+        // el conversor de salida del hardware (el mixer suma en float; el clip
+        // aparece al pasar a entero en el DAC).
+        // Ahora se aplica el máximo REAL: es el precio de no recortar — con EQ
+        // activo la salida queda más baja (Bass/Treble ~6 dB menos de nivel
+        // percibido) pero la curva del preset llega intacta a la salida.
         // Solo se aplica cuando el EQ está procesando (no flat).
-        let eqAttenuation: Float = maxGain > 0 ? pow(10, -min(maxGain, 3) / 20) : 1
+        let eqAttenuation: Float = maxGain > 0 ? pow(10, -maxGain / 20) : 1
         outputGain = base * eqAttenuation
         engine.mainMixerNode.outputVolume = outputGain * fadeFactor
         refreshBitPerfect(outputRate: outputSampleRate)
