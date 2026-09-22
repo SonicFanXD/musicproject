@@ -443,10 +443,16 @@ class AudioEngine: NSObject, ObservableObject {
                t == AVAudioSession.Port.bluetoothHFP.rawValue
     }
 
+    /// ✅ 3.0.1: `lineOut` (dock / salida digital del conector Lightning) es una
+    /// salida CABLEADA real y antes se clasificaba como inalámbrica: el indicador
+    /// bit-perfect se apagaba y no se pedía la tasa nativa del archivo. Esta misma
+    /// propiedad es la que usa `configureSession` para decidir el modo
+    /// `.measurement`, así que un dock cableado también recibe ese modo.
     private var isWiredRoute: Bool {
         let t = currentPortType
         return t == AVAudioSession.Port.headphones.rawValue ||
-               t == AVAudioSession.Port.usbAudio.rawValue
+               t == AVAudioSession.Port.usbAudio.rawValue ||
+               t == AVAudioSession.Port.lineOut.rawValue
     }
 
     // MARK: - Equalizador
