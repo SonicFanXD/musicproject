@@ -1099,7 +1099,12 @@ class AudioEngine: NSObject, ObservableObject {
     /// (3) no hay EQ ni mono procesando y (4) la ganancia es 1.0 (limiter OFF).
     /// iOS no ofrece modo exclusivo, asi que es la mejor garantia posible.
     private func refreshBitPerfect(outputRate: Double) {
-        let sourceRate = currentSong?.sampleRate ?? 0
+        // ✅ 3.0.1: la tasa fiable es la del ARCHIVO CARGADO (`sampleRate`, fijada
+        // en playCurrentSong desde file.processingFormat); `currentSong?.sampleRate`
+        // la escribió el indexador al leer los tags y con un header engañoso miente
+        // (el indicador decía "remuestreado" con la salida perfecta, o al revés).
+        // Se cae a la del índice solo si el motor todavía no tiene archivo cargado.
+        let sourceRate = (audioFile != nil && sampleRate > 0) ? sampleRate : (currentSong?.sampleRate ?? 0)
         let processing = (isEQEnabled && eqPreset != .flat) || isMonoAudioEnabled
         let unityGain = !isLimiterEnabled && isWiredRoute
         let value = sourceRate > 0 && abs(outputRate - sourceRate) < 1 && !processing && unityGain
