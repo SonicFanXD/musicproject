@@ -767,6 +767,13 @@ class AudioEngine: NSObject, ObservableObject {
                     AppLog.info(.playback, String(format: "Engine reconfigurado (E/S ahora: %.0f Hz · %d canales)", ioAfter.sampleRate, ioAfter.channelCount))
                     let position = min(max(self.currentTime, 0), self.duration)
                     self.anchorPlaybackPosition(position)
+                    // ✅ 3.0.1 BIT-PERFECT: reafirmar la tasa NATIVA antes de
+                    // reprogramar (la función solo actúa en ruta cableada). Sin
+                    // esto, una reconfiguración que deje la salida a 48 kHz con un
+                    // archivo de 44.1 sonaba REMUESTREADA hasta el siguiente
+                    // pause/play. Es idempotente: si la tasa ya coincide, sale sin
+                    // tocar la sesión (y sin re-disparar este observer).
+                    self.reassertNativeSampleRateIfNeeded()
                     self.scheduleFile(file, from: position, generation: self.scheduleGeneration)
                     self.scheduleAheadIfPossible()
                 } catch {
@@ -2684,6 +2691,11 @@ class AudioEngine: NSObject, ObservableObject {
                         do {
                             try self.startEngineSafely()
                             self.anchorPlaybackPosition(position)
+                            // ✅ 3.0.1 BIT-PERFECT: el dispositivo nuevo puede haber
+                            // negociado otra tasa; se recupera la nativa del archivo
+                            // antes de reprogramar (solo en ruta cableada, y solo si
+                            // realmente difiere).
+                            self.reassertNativeSampleRateIfNeeded()
                             self.scheduleFile(file, from: position, generation: self.scheduleGeneration)
                             self.scheduleAheadIfPossible()
                             AppLog.info(.playback, "Ruta cambiada a \(route?.portName ?? "?") en reproducción activa: grafo reconectado")
