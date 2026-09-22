@@ -1,22 +1,17 @@
 import SwiftUI
 
-// ✅ 3.0: ContentView es el contenido de la pestaña BIBLIOTECA del tab bar
-// inferior (RootTabView aporta el motor y la biblioteca compartidos).
-// El header float con el nombre de la app se renderiza como parte del layout;
-// el NavigationStack se conserva porque los NavigationLink de álbumes,
-// artistas y playlists siguen empujando sus vistas de detalle.
+// ✅ FIX header: ContentView ya no usa NavigationStack. El header float
+// con el nombre de la app se renderiza como parte del layout. La navegación
+// (songs → artista/detalle) se maneja con sheets, eliminando la barra
+// de navegación y su división visual con el fondo.
 struct ContentView: View {
-    // ✅ 3.0: servicios INYECTADOS por RootTabView (dueño único del motor y de
-    // la biblioteca). Antes eran @StateObject propios de esta vista: con el tab
-    // bar habría creado instancias duplicadas (dos sesiones de audio).
-    @ObservedObject var audioEngine: AudioEngine
-    @ObservedObject var fileAccessService: FileAccessService
+    @StateObject private var audioEngine = AudioEngine()
+    @StateObject private var fileAccessService = FileAccessService()
     @ObservedObject private var localization = Localization.shared
-    // ✅ 3.0: observar el modo captura para detener los indicadores decorativos
-    // (barras de "suena ahora") mientras se graba la pantalla.
-    @ObservedObject private var captureMode = CaptureModeManager.shared
 
     @State private var hasRestored = false
+    @State private var isInitialLoad = true
+    @State private var showSettings = false
     @State private var showPlaylists = false
     @State private var showFolderPicker = false
 
@@ -180,9 +175,34 @@ struct ContentView: View {
                 }
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbarBackground(.hidden, for: .navigationBar)
-                // ✅ 3.0: SIN toolbar. El botón de Ajustes pasó al tab bar y el de
-                // Playlists a la cabecera de su propia categoría (que es donde se
-                // crean y consultan las listas).
+                .toolbar {
+                    ToolbarItem(placement: .navigationBarTrailing) {
+                        HStack(spacing: 6) {
+                            Button {
+                                showPlaylists = true
+                            } label: {
+                                Image(systemName: "music.note.list")
+                                    .foregroundStyle(AppTheme.accentGradient)
+                                    .font(.system(size: 16, weight: .medium))
+                                    .frame(width: 44, height: 44)
+                                    .contentShape(Rectangle())
+                            }
+
+                            Button {
+                                showSettings = true
+                            } label: {
+                                Image(systemName: "gearshape.fill")
+                                    .foregroundStyle(AppTheme.accentGradient)
+                                    .font(.system(size: 16, weight: .medium))
+                                    .frame(width: 44, height: 44)
+                                    .contentShape(Rectangle())
+                            }
+                        }
+                    }
+                }
+                .sheet(isPresented: $showSettings) {
+                    SettingsView(audioEngine: audioEngine, fileAccessService: fileAccessService)
+                }
                 .sheet(isPresented: $showPlaylists) {
                     PlaylistsView(fileAccessService: fileAccessService, audioEngine: audioEngine)
                 }
@@ -193,6 +213,15 @@ struct ContentView: View {
                     // ✅ INDEXACIÓN: decidir tarjeta grande vs indicador compacto.
                     syncFirstTimeIndexing()
                     maybeAutoResume()
+                    if fileAccessService.isInitialLibraryLoaded {
+                        withAnimation(.easeOut(duration: 0.3)) { isInitialLoad = false }
+                    }
+                }
+                .task {
+                    try? await Task.sleep(nanoseconds: 8_000_000_000)
+                    if isInitialLoad {
+                        withAnimation(.easeOut(duration: 0.3)) { isInitialLoad = false }
+                    }
                 }
                 .sheet(isPresented: $showFolderPicker) {
                     FolderPickerView(fileAccessService: fileAccessService)
@@ -205,6 +234,9 @@ struct ContentView: View {
                         // biblioteca terminó de cargar DESPUÉS del onAppear, el
                         // restore recién ocurrió aquí — reintentar el auto-resume.
                         maybeAutoResume()
+                        withAnimation(.easeOut(duration: 0.3)) {
+                            isInitialLoad = false
+                        }
                     }
                 }
                 .onChange(of: audioEngine.currentSong?.id) { _ in
@@ -242,6 +274,19 @@ struct ContentView: View {
                 }
             }
 
+            if isInitialLoad {
+                SplashView()
+                    // ✅ Salida premium: la escala mínima acompaña al fundido (la
+                    // duración la marca el withAnimation del llamador, que no se
+                    // toca para no alterar la duración total del splash).
+                    .transition(.scale(scale: 0.96).combined(with: .opacity))
+                    .zIndex(1)
+            }
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            PlayerBar(audioEngine: audioEngine, fileAccessService: fileAccessService, clock: audioEngine.clock)
+                .padding(.horizontal, 10)
+                .padding(.bottom, 6)
         }
         .animation(.easeInOut(duration: 0.35), value: fileAccessService.isScanning)
         .onChange(of: fileAccessService.isScanning) { scanning in
@@ -770,10 +815,6 @@ struct ContentView: View {
     @ViewBuilder
     private var playlistsSection: some View {
         let playlists = fileAccessService.playlists
-        // ✅ 3.0: la creación de listas vive DENTRO de su categoría (antes colgaba
-        // del botón de la toolbar). Se reutiliza el mismo sheet de siempre
-        // (PlaylistsView), sin duplicar interfaz ni funcionalidad.
-        playlistsHeader
         if playlists.isEmpty {
             ContentUnavailableLibraryView(
                 icon: "music.note.list",
@@ -797,41 +838,6 @@ struct ContentView: View {
             }
             .padding(.vertical, 16)
         }
-    }
-
-    // ✅ Cabecera de la categoría Playlists: título + botón de crear lista. Es el
-    // único punto de entrada para crear una lista (con listas y sin ellas), en el
-    // lugar que ocupaba el botón retirado de la toolbar.
-    private var playlistsHeader: some View {
-        HStack(spacing: 12) {
-            Text(Localization.localized("library.playlists"))
-                .font(.system(size: 20, weight: .bold, design: .rounded))
-                .foregroundStyle(.primary)
-
-            Spacer()
-
-            Button {
-                Haptics.light()
-                showPlaylists = true
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "plus")
-                        .font(.system(size: 12, weight: .bold))
-                    Text(Localization.localized("playlists.createPlaylist"))
-                        .font(.system(size: 13, weight: .semibold, design: .rounded))
-                }
-                .foregroundStyle(.white)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 9)
-                .background {
-                    Capsule().fill(AppTheme.accentGradient)
-                }
-                .shadow(color: AppTheme.accent.opacity(0.3), radius: 8, y: 4)
-            }
-            .buttonStyle(PressableButtonStyle(scale: 0.95))
-        }
-        .padding(.horizontal, 20)
-        .padding(.top, 14)
     }
 
     @ViewBuilder
@@ -878,17 +884,6 @@ struct ContentView: View {
                         // ✅ 60fps: drawingGroup rasteriza las barras animadas
                         HStack(spacing: 2.5) {
                             ForEach(0..<3, id: \.self) { bar in
-                                // ✅ 3.0: el cálculo de la barra se separa en constantes
-                                // con tipo explícito. La expresión completa (ternarios +
-                                // DecorativeMotion) en una sola línea desbordaba al
-                                // verificador de tipos de Swift → "unable to type-check in
-                                // reasonable time".
-                                let animating: Bool = DecorativeMotion.isAnimating(audioEngine.isPlaying)
-                                let barHeight: CGFloat = animating ? (bar % 2 == 0 ? 12 : 7) : 4
-                                let barAnimation: Animation? = DecorativeMotion.animation(
-                                    Animation.easeInOut(duration: 0.4 + Double(bar) * 0.1).repeatForever(autoreverses: true),
-                                    isActive: audioEngine.isPlaying
-                                )
                                 RoundedRectangle(cornerRadius: 1)
                                     .fill(AppTheme.accentGradient)
                                     // ✅ El indicador ANIMA de verdad: la altura cambia
@@ -896,8 +891,16 @@ struct ContentView: View {
                                     // entre 4 y 12/7 pt (antes la animación no tenía
                                     // ninguna propiedad que cambiar → barras fijas).
                                     // ✅ BATERÍA: en pausa no hay bucle que animar.
-                                    .frame(width: 2.5, height: barHeight)
-                                    .animation(barAnimation, value: animating)
+                                    .frame(
+                                        width: 2.5,
+                                        height: audioEngine.isPlaying ? (bar % 2 == 0 ? 12 : 7) : 4
+                                    )
+                                    .animation(
+                                        audioEngine.isPlaying
+                                            ? Animation.easeInOut(duration: 0.4 + Double(bar) * 0.1).repeatForever(autoreverses: true)
+                                            : nil,
+                                        value: audioEngine.isPlaying
+                                    )
                             }
                         }
                         .drawingGroup()
@@ -1213,25 +1216,16 @@ struct SplashView: View {
     @State private var pulseScale: CGFloat = 1.0
     @State private var pulseOpacity: Double = 0
     // ✅ Halo "respirable": ciclo corto (≈1,5 s con autoreverses) y amplitud
-    // mínima. Vive solo mientras el splash está en pantalla: cuando RootTabView
-    // retira el splash, la vista sale del árbol y la animación se detiene con
-    // ella (no queda ningún bucle en background).
+    // mínima. Vive solo mientras el splash está en pantalla: al pasar
+    // isInitialLoad a false la vista sale del árbol y la animación se detiene
+    // con ella (no queda ningún bucle en background).
     @State private var breathing = false
-    // ✅ TEMAS: el splash usa el mismo fondo raíz que AppBackground
-    // (Medianoche / Crepúsculo / Papel).
-    @AppStorage(AppThemeMode.storageKey) private var savedThemeIndex = 0
     @Environment(\.colorScheme) private var colorScheme
     
     var body: some View {
         ZStack {
-            // ✅ Fondo raíz del tema actual (dos colores, como el resto de la
-            // identidad). En Sistema/Claro/Oscuro da el mismo resultado que el
-            // fondo sólido anterior porque delega en los colores dinámicos.
-            LinearGradient(
-                colors: AppThemeMode.mode(forStoredIndex: savedThemeIndex).backgroundColors,
-                startPoint: .top,
-                endPoint: .bottom
-            )
+            // ✅ Fondo sólido que respeta el esquema de color
+            (colorScheme == .dark ? Color.black : Color(UIColor.systemBackground))
                 .ignoresSafeArea()
             
             // ✅ Efecto de resplandor sutil (sin AngularGradient problemático)

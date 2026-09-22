@@ -684,30 +684,21 @@ struct EqualizerBars: View {
     /// gastados para nada) porque la animación nunca se retiraba.
     let isPlaying: Bool
     @State private var animate = false
-    // ✅ 3.0: observar el modo captura para detener el latido al grabar pantalla.
-    @ObservedObject private var captureMode = CaptureModeManager.shared
 
     var body: some View {
         HStack(spacing: 2.5) {
             ForEach(0..<3, id: \.self) { bar in
-                // ✅ 3.0: constantes con tipo explícito — la expresión en una sola
-                // línea desbordaba el verificador de tipos de Swift.
-                let animating: Bool = DecorativeMotion.isAnimating(animate)
-                let barHeight: CGFloat = animating
-                    ? (bar % 2 == 0 ? 13 : 8)
-                    : (bar % 2 == 0 ? 8 : 13)
-                let barAnimation: Animation? = DecorativeMotion.animation(
-                    Animation.easeInOut(duration: 0.5).repeatForever(autoreverses: true),
-                    isActive: animate
-                )
                 RoundedRectangle(cornerRadius: 1).fill(color)
                     // ✅ FIX iOS 16: la altura se deriva de @State y la animación
                     // repeatForever se lanza al aparecer. Con .animation(value:)
                     // la animación persiste (se re-aplica en cada cambio de @State)
                     // — antes, sin value:, iOS 16 la abandonaba al primer re-render
                     // y las barras del tema activo quedaban CONGELADAS.
-                    .frame(width: 2.5, height: barHeight)
-                    .animation(barAnimation, value: animating)
+                    .frame(width: 2.5, height: animate ? (bar % 2 == 0 ? 13 : 8) : (bar % 2 == 0 ? 8 : 13))
+                    .animation(
+                        animate ? Animation.easeInOut(duration: 0.5).repeatForever(autoreverses: true) : nil,
+                        value: animate
+                    )
             }
         }
         .frame(width: 24)
