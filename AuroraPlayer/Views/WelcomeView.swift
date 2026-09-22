@@ -554,6 +554,14 @@ struct WelcomeView: View {
     /// ✅ "Recomendadas": casi nunca escuchadas (≤ 1 reproducción) pero que te
     /// gustan o llevan tiempo en la biblioteca. Si todavía no hay historial ni
     /// favoritos, cae a las menos reproducidas para no dejar la sección vacía.
+    ///
+    /// ✅ 3.0.1: el orden ya NO es "menos reproducciones primero". Ese `sorted`
+    /// dejaba todos los empates al orden de la biblioteca (alfabético por título),
+    /// así que con biblioteca nueva —todas a 0 reproducciones— la cuadrícula eran
+    /// SIEMPRE las 10 primeras por título, y solo cambiaba "al consumirse" cuando
+    /// cada una sonaba una vez. Ahora se puntúa cada candidata y el azar de la
+    /// semilla del DÍA rompe los empates: favoritas y abandonadas pesan más,
+    /// la lista es estable durante el día y distinta al siguiente.
     private static func recommended(for service: FileAccessService) -> [Song] {
         let cutoff = Date().addingTimeInterval(-30 * 24 * 3600)
         let candidates = service.songs.filter { service.playCount(for: $0.id) <= 1 }
@@ -561,8 +569,34 @@ struct WelcomeView: View {
             service.isLiked(song) || SmartPlaylist.recency(song) < cutoff
         }
         let pool = preferred.isEmpty ? candidates : preferred
-        let ranked = pool.sorted { service.playCount(for: $0.id) < service.playCount(for: $1.id) }
-        return Array(ranked.prefix(10))
+
+        // ✅ PRNG determinista ya existente (SplitMix64 sembrado con un hash
+        // FNV-1a estable): NUNCA `String.hashValue`, que está aleatorizado por
+        // proceso y daría una lista distinta en cada arranque de la app.
+        var generator = SmartPlaylist.SeededGenerator(
+            seed: SmartPlaylist.stableSeed("recommended-" + SmartPlaylist.dayKey())
+        )
+
+        let scored = pool.map { song -> (song: Song, score: Double) in
+            var score = 0.0
+            if service.isLiked(song) { score += 2.0 }
+            if let last = service.lastPlayed(for: song.id) {
+                // Lleva más de 30 días sin sonar.
+                if last < cutoff { score += 1.5 }
+            } else {
+                // Nunca ha sonado.
+                score += 1.0
+            }
+            if service.playCount(for: song.id) == 0 { score += 0.5 }
+            // ✅ Azar con la semilla del día: rompe empates sin ser aleatorio
+            // entre aperturas de la misma jornada.
+            score += Double.random(in: 0...1, using: &generator)
+            return (song, score)
+        }
+
+        let ranked = scored.sorted { $0.score > $1.score }
+        // ✅ Sin keypath de tupla (Swift no lo permite): extracción explícita.
+        return ranked.prefix(10).map { $0.song }
     }
 
     /// ✅ Artistas ordenados por reproducciones AGREGADAS de sus canciones. En
