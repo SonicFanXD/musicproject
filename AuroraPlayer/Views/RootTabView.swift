@@ -112,7 +112,25 @@ struct RootTabView: View {
             ContentView(audioEngine: audioEngine, fileAccessService: fileAccessService)
         }
         .tabItem { Label(Localization.localized("tab.library"), systemImage: "music.note.list") }
+        // ✅ 3.0.1: badge NATIVO mientras se indexa. La barra nativa solo ofrece su
+        // píldora del sistema (no hay punto amarillo ni color propio; opacidad del
+        // inactivo y escala del activo tampoco son alcanzables con `tabItem`), así
+        // que se muestra el número de canciones que faltan por indexar: informa más
+        // que un punto y desaparece solo (badge nil) al no haber nada en curso.
+        .badge(indexingBadge)
         .tag(AppTab.library)
+    }
+
+    /// ✅ Canciones pendientes de indexar en la pestaña Biblioteca, o `nil` para
+    /// ocultar el badge. Se calcula con los contadores publicados del escaneo
+    /// (`scanTotal`/`scanProcessed`), que se actualizan varias veces por segundo
+    /// mientras indexa, así que el número avanza solo.
+    private var indexingBadge: Text? {
+        guard fileAccessService.isScanning else { return nil }
+        let remaining = max(fileAccessService.scanTotal - fileAccessService.scanProcessed, 0)
+        // Sin total conocido (detección silenciosa sin novedades) no hay badge.
+        guard remaining > 0 else { return nil }
+        return Text("\(remaining)")
     }
 
     private var settingsTab: some View {
