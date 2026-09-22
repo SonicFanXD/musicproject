@@ -732,7 +732,10 @@ class AudioEngine: NSObject, ObservableObject {
             queue: .main
         ) { [weak self] _ in
             guard let self = self else { return }
-            AppLog.info(.playback, "Configuración del engine cambió; reconfigurando")
+            // ✅ 3.0.1 DIAGNÓSTICO: formato de E/S ANTES de reconfigurar. Es la
+            // prueba de qué tasa/canales había negociado el hardware.
+            let ioBefore = self.engine.outputNode.outputFormat(forBus: 0)
+            AppLog.info(.playback, String(format: "Configuración del engine cambió; reconfigurando (E/S antes: %.0f Hz · %d canales)", ioBefore.sampleRate, ioBefore.channelCount))
             // ⚠️ Cualquier cambio de configuración (no solo cuando el engine
             // llega a detenerse del todo) puede invalidar lo que había en la
             // cola del playerNode — incluida una canción pre-encadenada por
@@ -758,6 +761,10 @@ class AudioEngine: NSObject, ObservableObject {
                 self.playerNode.stop()
                 do {
                     try self.startEngineSafely()
+                    // ✅ 3.0.1 DIAGNÓSTICO: y el formato DESPUÉS, para ver si la
+                    // reconfiguración cambió la tasa de salida.
+                    let ioAfter = self.engine.outputNode.outputFormat(forBus: 0)
+                    AppLog.info(.playback, String(format: "Engine reconfigurado (E/S ahora: %.0f Hz · %d canales)", ioAfter.sampleRate, ioAfter.channelCount))
                     let position = min(max(self.currentTime, 0), self.duration)
                     self.anchorPlaybackPosition(position)
                     self.scheduleFile(file, from: position, generation: self.scheduleGeneration)
@@ -1067,6 +1074,22 @@ class AudioEngine: NSObject, ObservableObject {
         DispatchQueue.main.async { [weak self] in
             guard let self = self, self.isBitPerfect != value else { return }
             self.isBitPerfect = value
+            // ✅ 3.0.1 DIAGNÓSTICO: se registra la TRANSICIÓN (no cada refresco)
+            // con la causa exacta: cuándo se gana y cuándo se pierde la salida
+            // bit-perfect.
+            if value {
+                AppLog.info(.playback, String(format: "Bit-perfect ACTIVADO (salida cableada a %.0f Hz, sin EQ/mono, ganancia unidad)", outputRate))
+            } else {
+                var cause = "ganancia != 1.0 (limiter activo o ruta no cableada)"
+                if sourceRate <= 0 {
+                    cause = "tasa de la fuente desconocida"
+                } else if abs(outputRate - sourceRate) >= 1 {
+                    cause = String(format: "remuestreo %.0f → %.0f Hz", sourceRate, outputRate)
+                } else if processing {
+                    cause = "EQ o mono procesando"
+                }
+                AppLog.info(.playback, "Bit-perfect DESACTIVADO (\(cause))")
+            }
         }
     }
 
@@ -1341,6 +1364,15 @@ class AudioEngine: NSObject, ObservableObject {
             let playBits = Int(file.fileFormat.streamDescription.pointee.mBitsPerChannel)
             let playChannels = Int(file.processingFormat.channelCount)
             AppLog.info(.playback, String(format: "▶ Reproduciendo '%@' (%@ · %.0f Hz · %d bits · %d canales · %.1fs)", song.displayName, song.formatDescription, sampleRate, playBits > 0 ? playBits : 0, playChannels, duration))
+
+            // ✅ 3.0.1 DIAGNÓSTICO: formato REAL de E/S del hardware (lo que
+            // negoció el sistema) + latencia y buffer concedidos al arrancar la
+            // pista. Solo lectura: no altera nada del arranque.
+            let ioFormat = engine.outputNode.outputFormat(forBus: 0)
+            let sessionInfo = AVAudioSession.sharedInstance()
+            AppLog.info(.playback, String(format: "Salida: HW %.0f Hz · %d canales · latencia %.2f ms · buffer %.2f ms (fuente %.0f Hz)",
+                                          ioFormat.sampleRate, ioFormat.channelCount,
+                                          sessionInfo.outputLatency * 1000, sessionInfo.ioBufferDuration * 1000, sampleRate))
 
             // ✅ Programar el segmento PRIMERO, luego anclar reloj y reproducir.
             // Esto elimina la ventana de carrera donde el timer marcaba 0
@@ -2739,6 +2771,9 @@ class AudioEngine: NSObject, ObservableObject {
                   let info = notification.userInfo,
                   let typeVal = info[AVAudioSessionInterruptionTypeKey] as? UInt,
                   let type = AVAudioSession.InterruptionType(rawValue: typeVal) else { return }
+            if type == .began {
+                AppLog.info(.playback, "Interrupción: BEGIN (\(self.isPlaying ? "reproduciendo → pausa" : "no estaba reproduciendo"))")
+            }
             if type == .began && self.isPlaying {
                 // ✅ GUARDAR estado antes de pausar para reanudación automática
                 self.wasPlayingBeforeRouteChange = true
@@ -2750,6 +2785,9 @@ class AudioEngine: NSObject, ObservableObject {
                 // ✅ FIX: Solo reanudar si iOS explícitamente lo indica (shouldResume)
                 // No reanudar automáticamente basado solo en wasPlayingBeforeRouteChange
                 // para evitar reanudaciones no deseadas al navegar por la app
+                // ✅ 3.0.1 DIAGNÓSTICO: sin este log, el caso "se paró tras una
+                // llamada" era completamente invisible.
+                AppLog.info(.playback, "Interrupción: END (shouldResume: \(shouldResume ? "sí" : "no"))")
                 if shouldResume {
                     // ✅ Pequeño delay para asegurar que el sistema esté listo
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
