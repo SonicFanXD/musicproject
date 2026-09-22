@@ -77,6 +77,12 @@ class AudioEngine: NSObject, ObservableObject {
     // Eliminada: la tasa de referencia real es `sampleRate` del motor.
     @Published var outputSampleRate: Double = 0
     @Published var outputChannelCount: Int = 0
+    // ✅ 3.0.1 TELEMETRÍA REAL DE LA SALIDA: son los ÚNICOS datos que iOS expone
+    // del dispositivo conectado (no existe API de "tasas que soporta el DAC").
+    // Solo lectura, para que la vista de calidad pueda mostrarlos.
+    @Published var maximumOutputChannels: Int = 0
+    @Published var outputLatencyMs: Double = 0
+    @Published var ioBufferDurationMs: Double = 0
     @Published var audioQualityInfo: String = ""
     // ✅ AUDIÓFILO: indicador de salida bit-perfect (sin remuestreo)
     @Published var isBitPerfect: Bool = false
@@ -2633,14 +2639,28 @@ class AudioEngine: NSObject, ObservableObject {
         let session = AVAudioSession.sharedInstance()
         let newRate = session.sampleRate
         let newChannels = Int(session.outputNumberOfChannels)
+        // ✅ 3.0.1: valores REALES negociados con el dispositivo (canales máximos,
+        // latencia y buffer concedido). No se inventan capacidades del DAC.
+        let newMaxChannels = session.maximumOutputNumberOfChannels
+        let newLatencyMs = session.outputLatency * 1000
+        let newBufferMs = session.ioBufferDuration * 1000
         // ✅ OPTIMIZACIÓN BATERÍA: no recrear el string de calidad ni publicar
         // si no hubo cambios reales en la salida (evita re-render UI + dispatch).
         // Recalcular SIEMPRE (cambia con la cancion aunque la tasa de salida no).
         refreshBitPerfect(outputRate: newRate)
-        guard outputSampleRate != newRate || outputChannelCount != newChannels else { return }
+        // ✅ 3.0.1: la latencia y el buffer también entran en la comparación (con
+        // umbral, para no publicar por ruido de coma flotante) — antes un cambio
+        // solo de latencia no refrescaba la telemetría.
+        guard outputSampleRate != newRate || outputChannelCount != newChannels
+            || maximumOutputChannels != newMaxChannels
+            || abs(outputLatencyMs - newLatencyMs) > 0.01
+            || abs(ioBufferDurationMs - newBufferMs) > 0.01 else { return }
         DispatchQueue.main.async {
             self.outputSampleRate = newRate
             self.outputChannelCount = newChannels
+            self.maximumOutputChannels = newMaxChannels
+            self.outputLatencyMs = newLatencyMs
+            self.ioBufferDurationMs = newBufferMs
             
             // ✅ AUDIÓFILO: determinar si la salida es bit-perfect
             // Bit-perfect = sample rate de salida coincide con el del archivo

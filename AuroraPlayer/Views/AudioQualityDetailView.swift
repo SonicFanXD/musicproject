@@ -372,6 +372,16 @@ struct AudioQualityDetailView: View {
             detailRow(Localization.localized("quality.outputFrequency"), audioEngine.outputSampleRate > 0 ? "\(Int(audioEngine.outputSampleRate)) Hz" : "—")
             detailRow(Localization.localized("quality.outputChannels"), audioEngine.outputChannelCount > 0 ? audioEngine.outputChannelCount.description : "—")
             detailRow(Localization.localized("quality.routeType"), outputTypeLabel)
+            // ✅ 3.0.1: telemetría REAL del enlace (lo único que iOS expone del
+            // dispositivo conectado): canales máximos, latencia y buffer concedido.
+            detailRow(Localization.localized("quality.maxOutputChannels"), maxOutputChannelsLabel)
+            detailRow(Localization.localized("quality.outputLatency"), outputLatencyLabel)
+            detailRow(Localization.localized("quality.ioBufferDuration"), ioBufferDurationLabel)
+            // ✅ Se dice explícitamente qué NO se puede saber, en vez de insinuar
+            // capacidades del DAC que iOS no publica.
+            detailRow("ℹ️", Localization.localized("quality.dacLimitNote"))
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
         }
     }
 
@@ -417,6 +427,20 @@ struct AudioQualityDetailView: View {
             detailRow(Localization.localized("quality.model"), audioEngine.deviceModelName)
             detailRow(Localization.localized("quality.system"), "\(UIDevice.current.systemName) \(UIDevice.current.systemVersion)")
         }
+    }
+
+    // MARK: - Labels de telemetría de salida (3.0.1)
+
+    private var maxOutputChannelsLabel: String {
+        audioEngine.maximumOutputChannels > 0 ? audioEngine.maximumOutputChannels.description : "—"
+    }
+
+    private var outputLatencyLabel: String {
+        audioEngine.outputLatencyMs > 0 ? String(format: "%.1f ms", audioEngine.outputLatencyMs) : "—"
+    }
+
+    private var ioBufferDurationLabel: String {
+        audioEngine.ioBufferDurationMs > 0 ? String(format: "%.2f ms", audioEngine.ioBufferDurationMs) : "—"
     }
 
     // MARK: - Labels calculados
