@@ -16,9 +16,10 @@ struct RootTabView: View {
     // de estado y se muestra una píldora "Grabando". No afecta al audio.
     @ObservedObject private var captureMode = CaptureModeManager.shared
 
-    /// ✅ La app abre en Biblioteca (donde abría siempre); Bienvenida queda a la
-    /// izquierda y Ajustes a la derecha.
-    @State private var selectedTab: AppTab = .library
+    /// ✅ FIX 3.0.1: la app SIEMPRE abre en Bienvenida (la portada). Deliberadamente
+    /// NO se persiste la última pestaña (ni en @AppStorage ni en UserDefaults):
+    /// cada arranque empieza en la portada, no donde se quedó la sesión anterior.
+    @State private var selectedTab: AppTab = .welcome
     /// ✅ El splash se dibuja por ENCIMA de todo (tab bar y PlayerBar incluidos)
     /// hasta que la biblioteca termina de cargar.
     @State private var isInitialLoad = true
