@@ -720,7 +720,7 @@ private struct LyricLineView: View, Equatable {
             ForEach(rows.indices, id: \.self) { index in
                 Text(rows[index].text)
                     .font(.system(size: rows[index].fontSize, weight: fontWeight))
-                    .foregroundStyle(Color.primary.opacity(0.35))
+                    .foregroundStyle(Color.primary.opacity(LyricDim.inactiveOpacity))
                     // ✅ Misma escala/tenuidad que en la capa activa: el texto no
                     // puede cambiar de tamaño al activarse la línea.
                     .opacity(rows[index].isBackground ? LyricBackgroundVoice.opacity : 1)
@@ -757,6 +757,15 @@ private struct LyricLineView: View, Equatable {
 
         return raw * raw * (3 - 2 * raw)
     }
+}
+
+// MARK: - Atenuación de la letra que no suena
+/// ✅ Apple Music pinta la letra inactiva al 40% de opacidad. Es la MISMA
+/// constante para (a) la capa atenuada de una línea inactiva y (b) la parte aún
+/// no cantada de la línea activa: así el texto no cambia de tenuidad al
+/// activarse su línea (el único cambio es el relleno y el glow).
+private enum LyricDim {
+    static let inactiveOpacity: Double = 0.4
 }
 
 // MARK: - Texto con relleno progresivo (dos capas + máscara)
@@ -797,7 +806,7 @@ private struct LyricFillText: View, Equatable {
     private var dimmedLayer: some View {
         Text(text)
             .font(font)
-            .foregroundStyle(Color.primary.opacity(0.35))
+            .foregroundStyle(Color.primary.opacity(LyricDim.inactiveOpacity))
     }
 
     private var brightLayers: some View {
