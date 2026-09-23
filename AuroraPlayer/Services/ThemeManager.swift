@@ -63,18 +63,14 @@ final class ThemeManager: ObservableObject {
             artworkSecondaryUIColor = nil
             return
         }
-        let cacheKey = song.id.uuidString as NSString
-        if let cached = AppTheme.artworkColorCache.object(forKey: cacheKey) {
-            artworkAccentUIColor = cached
-            artworkAccentColor = Self.normalizeArtworkAccent(cached)
-            // ✅ Dos colores: detectar secundario también (con caché: el
-            // clustering recorre la portada otra vez y esto está en el hilo
-            // principal)
-            if let secondary = AppTheme.cachedSecondaryDominantColor(
-                from: artwork,
-                key: song.id.uuidString,
-                primary: cached
-            ) {
+        // ✅ PUNTO ÚNICO: primario y secundario salen del MISMO par resuelto
+        // (una sola pasada de clustering) y se cachean JUNTOS bajo la huella
+        // de la imagen. Ni la lectura ni las claves dependen del id de la
+        // canción: la misma carátula comparte sus colores en toda la app.
+        if let cached = AppTheme.cachedAccentPair(for: artwork) {
+            artworkAccentUIColor = cached.primary
+            artworkAccentColor = Self.normalizeArtworkAccent(cached.primary)
+            if let secondary = cached.secondary {
                 artworkSecondaryUIColor = secondary
                 artworkSecondaryColor = Self.normalizeArtworkAccent(secondary)
                 AppLog.info(.playback, "✅ PALETA DOS COLORES: secundario encontrado (cache)")
@@ -85,19 +81,13 @@ final class ThemeManager: ObservableObject {
             return
         }
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let dominant = AppTheme.dominantColor(from: artwork)
-            guard let dominant else { return }
-            AppTheme.artworkColorCache.setObject(dominant, forKey: cacheKey)
-            let secondary = AppTheme.cachedSecondaryDominantColor(
-                from: artwork,
-                key: song.id.uuidString,
-                primary: dominant
-            )
+            guard let pair = AppTheme.resolvedAccentPair(from: artwork) else { return }
+            AppTheme.cacheAccentPair(pair, for: artwork)
             DispatchQueue.main.async {
                 guard let self, self.accentFromArtwork else { return }
-                self.artworkAccentUIColor = dominant
-                self.artworkAccentColor = Self.normalizeArtworkAccent(dominant)
-                if let secondary = secondary {
+                self.artworkAccentUIColor = pair.primary
+                self.artworkAccentColor = Self.normalizeArtworkAccent(pair.primary)
+                if let secondary = pair.secondary {
                     self.artworkSecondaryUIColor = secondary
                     self.artworkSecondaryColor = Self.normalizeArtworkAccent(secondary)
                     AppLog.info(.playback, "✅ PALETA DOS COLORES: secundario encontrado (nuevo)")
@@ -325,7 +315,9 @@ enum AppTheme {
 
     // ✅ Caché global COMPARTIDA: NowPlaying, AlbumDetail, ArtistDetail y
     // ThemeManager extraen de las MISMAS carátulas → un solo cálculo por arte.
-    // Clave = id de canción/álbum/artista. NSCache se limpia solo bajo presión.
+    // Clave = huella de imagen (accentCacheKey(for:)), NUNCA id de canción /
+    // álbum / artista: la misma carátula comparte sus colores tenga el origen
+    // que tenga. NSCache se limpia solo bajo presión.
     static let artworkColorCache: NSCache<NSString, UIColor> = {
         let cache = NSCache<NSString, UIColor>()
         // ✅ B1: era la ÚNICA caché del proyecto sin tope (la de secundarios ya
@@ -346,8 +338,40 @@ enum AppTheme {
         return color
     }
 
+    /// ✅ HUELLA DE IMAGEN: clave estable de caché para una carátula.
+    /// ObjectIdentifier + tamaño en píxeles (mismo criterio que
+    /// `thumbnail(from:size:)`): la MISMA instancia de carátula, compartida
+    /// entre canción/álbum/artista, comparte su par de colores sea cual sea
+    /// la vista que lo pida primero. Nada de ids de canción.
+    static func accentCacheKey(for artwork: UIImage) -> String {
+        "\(ObjectIdentifier(artwork).hashValue)-\(Int(artwork.size.width.rounded()))x\(Int(artwork.size.height.rounded()))"
+    }
+
+    /// ✅ Lee el PAR (primario, secundario) cacheado bajo la huella de la
+    /// imagen. `nil` si aún no está cacheado — NO recalcula: el cálculo es
+    /// una sola pasada (`resolvedAccentPair`) y se guarda con `cacheAccentPair`.
+    /// `artworkSecondaryColorCache` solo guarda aciertos, así que un
+    /// `secondary == nil` aquí significa "calculado y sin secundario" (mono),
+    /// nunca "pendiente de calcular".
+    static func cachedAccentPair(for artwork: UIImage) -> (primary: UIColor, secondary: UIColor?)? {
+        let key = accentCacheKey(for: artwork) as NSString
+        guard let primary = artworkColorCache.object(forKey: key) else { return nil }
+        return (primary, artworkSecondaryColorCache.object(forKey: key))
+    }
+
+    /// ✅ Guarda el par completo bajo la huella de la imagen. Único escritor
+    /// de las dos cachés de acento → primario y secundario SIEMPRE coherentes
+    /// (misma pasada de clustering, misma clave).
+    static func cacheAccentPair(_ pair: (primary: UIColor, secondary: UIColor?), for artwork: UIImage) {
+        let key = accentCacheKey(for: artwork) as NSString
+        artworkColorCache.setObject(pair.primary, forKey: key)
+        if let secondary = pair.secondary {
+            artworkSecondaryColorCache.setObject(secondary, forKey: key)
+        }
+    }
+
     /// ✅ Caché del SEGUNDO color: el clustering vuelve a recorrer la portada, así
-    /// que se cachea igual que el primario (misma clave = id de canción/álbum).
+    /// que se cachea igual que el primario (misma clave = huella de imagen).
     /// Solo se guardan aciertos: un `nil` (sin secundario) se recalcula, que es
     /// el caso barato (nunca hay gradiente que pintar).
     static let artworkSecondaryColorCache: NSCache<NSString, UIColor> = {
@@ -562,6 +586,20 @@ enum AppTheme {
     }
 
     // MARK: - API pública de extracción
+
+    /// ✅ PUNTO ÚNICO DE EXTRACCIÓN: resuelve primario + secundario de una
+    /// carátula en UNA sola pasada de clustering, con la normalización de
+    /// legibilidad (readableColor) ya aplicada a ambos. ThemeManager lo usa
+    /// como única fuente; las vistas consumen sus propiedades publicadas.
+    /// - `nil`: la carátula no aporta color suficiente (el llamador usa su fallback).
+    /// - `secondary == nil`: carátula monocromática → fallback a mono intacto.
+    static func resolvedAccentPair(from artwork: UIImage) -> (primary: UIColor, secondary: UIColor?)? {
+        guard let clustered = clusteredAccentColors(from: artwork) else { return nil }
+        return (
+            UIColor(AppTheme.readableColor(from: clustered.primary)),
+            clustered.secondary.map { UIColor(AppTheme.readableColor(from: $0)) }
+        )
+    }
 
     /// ⚡ Algoritmo por clustering de hue (estilo Apple Music):
     /// 1. Portada reducida a 64×64 (menos ruido, más rápido).
