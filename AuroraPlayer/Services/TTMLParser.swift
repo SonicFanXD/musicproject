@@ -75,7 +75,11 @@ struct TTMLParser {
             // que el LRC: nunca se estira la línea hasta el inicio de la
             // siguiente (un interludio de 30s no anima la línea 30s).
             let endMs = explicitEndMs
-                ?? LRCParser.estimatedEndMs(startMs: entry.beginMs, nextStartMs: nextStartMs)
+                ?? LRCParser.estimatedEndMs(
+                    startMs: entry.beginMs,
+                    nextStartMs: nextStartMs,
+                    text: entry.text
+                )
             let safeEndMs = max(endMs, entry.beginMs + 1)
 
             return LyricsLine(

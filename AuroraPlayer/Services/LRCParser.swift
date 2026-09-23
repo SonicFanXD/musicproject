@@ -24,6 +24,15 @@ struct LRCParser {
     /// (intro instrumental, interludio, outro): la línea NO se estira hasta la
     /// siguiente, termina con una duración razonable.
     private static let largeGapMs = 15_000
+    /// ✅ Velocidad de canto estimada (caracteres/segundo) para acotar la
+    /// duración NATURAL de un verso SIN timings por palabra. Con esto un
+    /// interludio largo ya no alarga la animación: la línea termina como mucho
+    /// `maxLineMarginMs` después de lo que tardaría en cantarse su texto.
+    private static let estimatedCharactersPerSecond = 14.0
+    /// ✅ Margen máximo (ms) que una línea sin timings puede exceder su duración
+    /// estimada. Antes se usaba el hueco completo (×0.7), así que un interludio
+    /// de 10 s producía 7 s de barrido sobre un verso ya cantado.
+    private static let maxLineMarginMs = 2_000
 
     // MARK: - Expresiones regulares precompiladas
     // ✅ PERF (#7): se compilan UNA vez al cargar el tipo. Antes se construía una
@@ -107,7 +116,12 @@ struct LRCParser {
             // cuándo empieza la siguiente. Antes `endMs = nextStartMs` estiraba
             // la animación durante todo el hueco (30s de interludio = 30s de
             // wipe). El hueco NO forma parte de la línea.
-            let endMs = estimatedEndMs(startMs: line.startMs, nextStartMs: nextStartMs, words: line.words)
+            let endMs = estimatedEndMs(
+                startMs: line.startMs,
+                nextStartMs: nextStartMs,
+                words: line.words,
+                text: line.text
+            )
 
             return LyricsLine(
                 id: index,
@@ -123,15 +137,20 @@ struct LRCParser {
     /// Calcula cuándo termina la línea a partir de lo que el formato SÍ sabe:
     /// - Con timings por palabra: termina con la última palabra (su `end`
     ///   explícito o, si el formato solo marca inicios, su duración estimada).
-    /// - Sin timings: `start + hueco × 0.7`, con un tope de 5s. Un hueco mayor
-    ///   de 15s es un silencio (intro/interludio) y no se extiende la línea.
+    /// - Sin timings: duración NATURAL estimada por el texto del verso
+    ///   (≈ 14 caracteres/segundo) más un margen máximo de 2s, y nunca más que
+    ///   `start + hueco × 0.7`. Un hueco mayor de 15s es un silencio
+    ///   (intro/interludio) y la línea no se extiende con él.
     /// - Sin siguiente línea: duración por defecto (5s).
     /// ✅ El resultado nunca invade el inicio de la siguiente línea, así las
     /// ventanas del motor de lyrics siguen sin solaparse.
+    /// ✅ `text` solo se usa para acotar el caso SIN timings por palabra; si no
+    /// se pasa (o está vacío) se conserva el cálculo anterior tal cual.
     static func estimatedEndMs(
         startMs: Int,
         nextStartMs: Int?,
-        words: [LyricWordToken] = []
+        words: [LyricWordToken] = [],
+        text: String? = nil
     ) -> Int {
         if let lastWord = words.last {
             let spoken = lastWord.endMs > lastWord.startMs
@@ -145,9 +164,20 @@ struct LRCParser {
         }
 
         let gap = nextStartMs - startMs
-        let duration = gap >= largeGapMs
+        let gapBasedMs = gap >= largeGapMs
             ? defaultLineDurationMs
             : Int((Double(gap) * spokenRatio).rounded())
+
+        // ✅ SIN texto no hay con qué estimar la duración natural: se mantiene
+        // el comportamiento histórico (hueco × 0.7 con el tope de 5s).
+        guard let text, !text.isEmpty else {
+            return clampEnd(startMs + max(gapBasedMs, 1), from: startMs, nextStartMs: nextStartMs)
+        }
+
+        // ✅ Duración natural del verso ≈ caracteres / velocidad de canto, más
+        // un margen máximo. El hueco instrumental restante NO se anima.
+        let naturalMs = max(1, Int((Double(text.count) / estimatedCharactersPerSecond * 1000).rounded()))
+        let duration = min(gapBasedMs, naturalMs + maxLineMarginMs)
         return clampEnd(startMs + max(duration, 1), from: startMs, nextStartMs: nextStartMs)
     }
 
