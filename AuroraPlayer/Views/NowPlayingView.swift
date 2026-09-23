@@ -842,8 +842,15 @@ struct NowPlayingView: View {
 
     // MARK: - Helpers
     private var controlBackground: AnyShapeStyle {
+        // ✅ C1 (accesibilidad): con "Reducir transparencia" en modo claro,
+        // `secondarySystemBackground` es casi blanco y los glifos de los cuatro
+        // controles circulares son SIEMPRE blancos (AppTheme.contrastingText
+        // devuelve .white sin mirar el color) → los iconos desaparecían dentro
+        // de su círculo. Un fondo oscuro translúcido da contraste en claro y en
+        // oscuro. Es el fix de `a9ddedc` que el revert al estado de PR #6
+        // deshizo.
         reduceTransparency
-            ? AnyShapeStyle(Color(UIColor.secondarySystemBackground))
+            ? AnyShapeStyle(Color.black.opacity(0.35))
             : AnyShapeStyle(.ultraThinMaterial)
     }
 

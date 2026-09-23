@@ -8,6 +8,14 @@ struct QueueView: View {
     @State private var selectedTab: QueueTab = .nextUp
     // ✅ Estado local editable de la cola "Siguiente" para reordenar/eliminar
     @State private var editableQueue: [Song] = []
+    // ✅ B2: disparador de la animación de las barras del ecualizador. Vive en
+    // @State (y no directamente en `audioEngine.isPlaying`) porque es lo que
+    // hace que la animación `repeatForever` ARRANQUE al reanudar y se DESTRUYA
+    // al pausar: al aparecer la versión estática se rearma a false.
+    @State private var barsExpanded = false
+    // ✅ C2: escala real del dispositivo (el iPhone 8 Plus es @3x). Se lee del
+    // entorno de SwiftUI (la API de pantalla global está en desuso).
+    @Environment(\.displayScale) private var displayScale
 
     enum QueueTab: String, CaseIterable {
         case nextUp
@@ -144,23 +152,18 @@ struct QueueView: View {
 
                         Spacer()
 
-                        HStack(spacing: 2.5) {
-                            ForEach(0..<3, id: \.self) { bar in
-                                RoundedRectangle(cornerRadius: 1.5)
-                                    .fill(LinearGradient(
-                                        colors: [AppTheme.accent, AppTheme.accent.opacity(0.5)],
-                                        startPoint: .top,
-                                        endPoint: .bottom
-                                    ))
-                                    .frame(width: 3, height: audioEngine.isPlaying ? (bar % 2 == 0 ? 14 : 9) : 6)
-                                    // ✅ BATERÍA: en pausa se retira la animación (antes el
-                                    // repeatForever seguía oscilando entre 6 y 14/9 pt).
-                                    .animation(
-                                        audioEngine.isPlaying
-                                            ? Animation.easeInOut(duration: 0.45 + Double(bar) * 0.12).repeatForever(autoreverses: true)
-                                            : nil,
-                                        value: audioEngine.isPlaying
-                                    )
+                        // ✅ B2 (batería): la versión animada y la estática son
+                        // subárboles DISTINTOS a propósito. `.animation(nil)` no
+                        // garantiza detener un `repeatForever` ya en curso (si
+                        // el valor animado no vuelve a cambiar, la transacción
+                        // no llega y la oscilación sigue viva en segundo plano).
+                        // Al pausar se descarta el subárbol entero y con él la
+                        // animación; al reanudar nace limpia desde el reposo.
+                        Group {
+                            if audioEngine.isPlaying {
+                                equalizerBars(animated: true)
+                            } else {
+                                equalizerBars(animated: false)
                             }
                         }
                     }
@@ -346,13 +349,52 @@ struct QueueView: View {
         .buttonStyle(PressableButtonStyle(scale: 0.98))
     }
 
+    /// ✅ B2: tres barras de ecualizador. Con `animated == false` se renderiza la
+    /// versión ESTÁTICA, sin un solo modificador de animación: no queda nada que
+    /// cancelar (el reposo mostrado, 6 pt, es el mismo punto de partida de la
+    /// oscilación, así que reanudar no da ningún salto visual).
+    @ViewBuilder
+    private func equalizerBars(animated: Bool) -> some View {
+        HStack(spacing: 2.5) {
+            ForEach(0..<3, id: \.self) { bar in
+                if animated {
+                    RoundedRectangle(cornerRadius: 1.5)
+                        .fill(equalizerBarGradient)
+                        .frame(width: 3, height: barsExpanded ? (bar % 2 == 0 ? 14 : 9) : 6)
+                        .animation(
+                            Animation.easeInOut(duration: 0.45 + Double(bar) * 0.12).repeatForever(autoreverses: true),
+                            value: barsExpanded
+                        )
+                } else {
+                    RoundedRectangle(cornerRadius: 1.5)
+                        .fill(equalizerBarGradient)
+                        .frame(width: 3, height: 6)
+                }
+            }
+        }
+        .onAppear { barsExpanded = animated }
+    }
+
+    private var equalizerBarGradient: LinearGradient {
+        LinearGradient(
+            colors: [AppTheme.accent, AppTheme.accent.opacity(0.5)],
+            startPoint: .top,
+            endPoint: .bottom
+        )
+    }
+
     // ✅ Componente reutilizable para miniaturas de artwork
     @ViewBuilder
     private func artworkMiniature(_ artwork: UIImage?, size: CGFloat, corner: CGFloat) -> some View {
         if let artwork = artwork {
-            // ✅ ANTI-JETSAM: reescalar al tamaño real ×2 (la fuente completa
-            // de 768px no debe retenerse en filas de 48pt → 160× menos RAM).
-            Image(uiImage: AppTheme.thumbnail(from: artwork, size: CGSize(width: size * 2, height: size * 2)))
+            // ✅ ANTI-JETSAM: reescalar al tamaño real (la fuente completa de
+            // 768px no debe retenerse en filas de 48pt → mucho menos RAM).
+            // ✅ C2 (nitidez): el factor era ×2 fijo, pero el iPhone 8 Plus es
+            // @3x, así que la miniatura de 96px se dibujaba a 144px y se veía
+            // blanda. Se pide en píxeles REALES con la escala del dispositivo
+            // (la del entorno de SwiftUI, no la API de pantalla global).
+            let scale = max(displayScale, 1)
+            Image(uiImage: AppTheme.thumbnail(from: artwork, size: CGSize(width: size * scale, height: size * scale)))
                 .resizable()
                 .interpolation(.high)
                 .scaledToFill()

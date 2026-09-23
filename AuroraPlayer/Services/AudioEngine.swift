@@ -108,6 +108,12 @@ class AudioEngine: NSObject, ObservableObject {
     private var shuffleIndex: Int = 0
     // ✅ MEJORA QUEUE: cola manual de canciones para reproducir después
     @Published var manualQueue: [Song] = []
+    // ✅ FIX cola larga: lista COMPLETA de lo que viene después (cola manual +
+    // resto de la playlist, SIN topar). `nextUpQueue` es solo la ventana de 10
+    // que pinta la vista de cola; reconstruir la playlist desde esa ventana
+    // truncaba la reproducción a 10 canciones en cuanto el usuario tocaba la
+    // cola (eliminar/reordenar una fila borraba el resto de la lista).
+    private var upcomingQueue: [Song] = []
     @Published var repeatMode: RepeatMode = {
         if let raw = UserDefaults.standard.string(forKey: "com.aurora.repeatMode"),
            let mode = RepeatMode(rawValue: raw) { return mode }
@@ -846,12 +852,19 @@ class AudioEngine: NSObject, ObservableObject {
                 options: options
             )
 
+            // ✅ AUDIÓFILO (BT): en A2DP la latencia la impone el ENLACE
+            // (100-300 ms), así que un buffer de render de 8 ms NO reduce la
+            // latencia percibida: solo multiplica las interrupciones de render
+            // por segundo en el A11 y arriesga underrun (microcortes/clicks que
+            // se oyen como pérdida de calidad). En Bluetooth no se pide buffer:
+            // se deja el que iOS tenga por defecto. Los buffers cortos solo se
+            // piden en ruta cableada (jack / DAC USB), donde sí bajan latencia.
             // ✅ Mejor calidad con latencia mínima: probamos buffers cortos en
             // orden descendente con fallback robusto. iOS 16 en A11 (iPhone 8)
             // devuelve error -50 (paramErr) con 0.02, así que vamos bajando
             // hasta encontrar el menor soportado por el hardware/DAC actual.
             // ✅ OPTIMIZACIÓN: buffers de 8-10ms para menor latencia sin glitches
-            let bufferDurations: [TimeInterval] = [0.008, 0.01, 0.015, 0.02]
+            let bufferDurations: [TimeInterval] = isBluetoothRoute ? [] : [0.008, 0.01, 0.015, 0.02]
             // ✅ DIAGNÓSTICO: se guarda el último valor PEDIDO para poder compararlo
             // con el CONCEDIDO (setPreferredIOBufferDuration no falla cuando el
             // hardware no lo soporta: redondea en silencio al más cercano).
@@ -872,7 +885,11 @@ class AudioEngine: NSObject, ObservableObject {
             // setPreferredIOBufferDuration no falla cuando el hardware no lo
             // soporta: redondea en silencio). El valor REAL se registra 0.3 s
             // después de activar la sesión.
-            AppLog.info(.playback, String(format: "Buffer I/O pedido: %.1f ms (el concedido se comprueba tras activar)", requestedBufferDuration * 1000))
+            if isBluetoothRoute {
+                AppLog.info(.playback, "Buffer I/O: sin petición en ruta Bluetooth (lo decide iOS)")
+            } else {
+                AppLog.info(.playback, String(format: "Buffer I/O pedido: %.1f ms (el concedido se comprueba tras activar)", requestedBufferDuration * 1000))
+            }
 
             // ✅ Línea base de sample rate SIN forzar 44.1 kHz: pedir siempre
             // 44100 al reconfigurar la sesión reclocaba el hardware si el archivo
@@ -882,8 +899,15 @@ class AudioEngine: NSObject, ObservableObject {
             // setPreferredSampleRate NO remuestrea la señal (solo selecciona el
             // reloj del DAC/hardware más cercano soportado); el ajuste por
             // canción (playCurrentSong) pide el rate NATIVO del archivo.
+            // ✅ AUDIÓFILO (BT): en Bluetooth la tasa la decide el ENLACE (A2DP
+            // negocia su propio reloj de 44.1 kHz — o 48 kHz en algunos
+            // receptores). Pedir aquí la tasa del archivo contradecía la regla
+            // de `playCurrentSong` (donde Bluetooth SÍ está excluido) y podía
+            // forzar una reconfiguración de ruta al abrir la app con unos
+            // auriculares BT ya conectados → click/microcorte audible. La tasa
+            // nativa solo se pide por cable (jack / DAC USB).
             let baselineRate = sampleRate > 0 ? sampleRate : session.sampleRate
-            if baselineRate > 0, abs(session.sampleRate - baselineRate) > 1 {
+            if !isBluetoothRoute, baselineRate > 0, abs(session.sampleRate - baselineRate) > 1 {
                 do {
                     try session.setPreferredSampleRate(baselineRate)
                 } catch {
@@ -1067,7 +1091,19 @@ class AudioEngine: NSObject, ObservableObject {
     func toggleLimiter() {
         isLimiterEnabled.toggle()
         updateEQBypassState()
-        AppLog.info(.playback, "Protección anti-clipping: \(isLimiterEnabled ? "activada (base 0.99)" : "desactivada (base 1.0, bit-perfect posible)")")
+        // ✅ FIX telemetría honesta: en Bluetooth la ganancia NO la fija este
+        // ajuste — la ruta impone su propio margen (0.89 ≈ -1 dB) para que el
+        // codificador AAC/SBC no sature con picos entre muestras, esté el
+        // limiter activado o no. El log anterior afirmaba "base 0.99" / "base
+        // 1.0" también en BT, así que el usuario leía un valor que no era el
+        // que sonaba. Ahora se declara la base REAL de la ruta activa.
+        let gainNote: String
+        if isBluetoothRoute {
+            gainNote = "margen de ruta Bluetooth (base 0.89 ≈ -1 dB) · este ajuste no cambia la ganancia en BT"
+        } else {
+            gainNote = isLimiterEnabled ? "base 0.99" : "base 1.0 (bit-perfect posible)"
+        }
+        AppLog.info(.playback, "Protección anti-clipping: \(isLimiterEnabled ? "activada" : "desactivada") · \(gainNote)")
     }
 
     /// ✅ BLUETOOTH OPTIMIZATION: activar optimizaciones para BT
@@ -1814,9 +1850,14 @@ class AudioEngine: NSObject, ObservableObject {
         saveState()
     }
 
-    /// Calcula el índice de la siguiente canción según shuffle/repeat-all.
+    /// Calcula el índice de la siguiente canción según shuffle/repeat.
     /// Retorna nil si se alcanzó el final de la playlist sin repeat.
-    /// NOTA: repeat-one se maneja aparte, en indexToChainAhead().
+    /// NOTA: el avance AUTOMÁTICO con repeat-one se maneja aparte, en
+    /// indexToChainAhead() (repite la MISMA canción). Aquí se resuelve el
+    /// avance MANUAL (botón siguiente de la app, del lock screen y del Centro
+    /// de Control), que con repeat-one sí debe cambiar de pista y, al llegar al
+    /// final de la lista, volver al principio: antes devolvía nil y pulsar
+    /// "siguiente" en la última canción no hacía absolutamente nada.
     /// ✅ MEJORA SHUFFLE: usa lista mezclada que se consume secuencialmente
     /// para evitar repeticiones hasta que todas las canciones hayan sonado.
     /// ✅ MEJORA QUEUE: prioriza cola manual sobre la playlist normal.
@@ -1868,8 +1909,10 @@ class AudioEngine: NSObject, ObservableObject {
             }
             // Obtener siguiente de la lista mezclada
             guard shuffleIndex < shuffledPlaylist.count else {
-                // Lista agotada, reiniciar con repeat-all o nil si no hay repeat
-                if repeatMode == .all {
+                // Lista agotada, reiniciar con repeat o nil si no hay repeat
+                // (repeat-one entra aquí también: el avance manual debe seguir
+                // dando canciones, no quedarse mudo en la última).
+                if repeatMode == .all || repeatMode == .one {
                     shuffledPlaylist = playlist.shuffled()
                     shuffleIndex = 0
                     return playlist.firstIndex(where: { $0.id == shuffledPlaylist[0].id })
@@ -1882,7 +1925,11 @@ class AudioEngine: NSObject, ObservableObject {
         }
         let next = currentIndex + 1
         if next >= playlist.count {
-            return repeatMode == .all ? 0 : nil
+            // ✅ FIX repeat-one: el avance manual con "repetir una" debe saltar
+            // a la siguiente pista y, en el final de la lista, volver al
+            // principio. Antes solo repeat-all envolvía, así que en la última
+            // canción con repeat-one el botón siguiente era un no-op.
+            return (repeatMode == .all || repeatMode == .one) ? 0 : nil
         }
         return next
     }
@@ -1908,9 +1955,12 @@ class AudioEngine: NSObject, ObservableObject {
         // Con una sola canción, solo repeat (.all/.one) permite avanzar.
         if playlist.count == 1 { return repeatMode == .all || repeatMode == .one }
         if isShuffleEnabled { return true }
-        // Secuencial: queda algo por delante, o repeat-all vuelve al principio.
+        // Secuencial: queda algo por delante, o repeat vuelve al principio
+        // (espejo exacto de computeNextIndex(): si aquí dijera que no hay
+        // siguiente, el lock screen respondería .noSuchContent a un botón que
+        // sí funciona).
         if currentIndex + 1 < playlist.count { return true }
-        return repeatMode == .all
+        return repeatMode == .all || repeatMode == .one
     }
 
     /// Índice de la siguiente canción SIN comprometerla.
@@ -1963,7 +2013,9 @@ class AudioEngine: NSObject, ObservableObject {
         // Secuencial
         let next = currentIndex + 1
         if next >= playlist.count {
-            return repeatMode == .all ? (0, playlist[0].url) : nil
+            // ✅ Espejo de computeNextIndex(): repeat-one también vuelve al
+            // principio en el avance manual.
+            return (repeatMode == .all || repeatMode == .one) ? (0, playlist[0].url) : nil
         }
         return (next, playlist[next].url)
     }
@@ -2283,28 +2335,54 @@ class AudioEngine: NSObject, ObservableObject {
 
     // ✅ Gestión de la cola "Siguiente" (reordenar, eliminar, limpiar)
     func removeFromNextUpQueue(_ song: Song) {
-        nextUpQueue.removeAll { $0.id == song.id }
+        // ✅ FIX: se elimina de las DOS fuentes (cola manual y lista completa),
+        // no solo de la ventana que pinta la UI. Si se quitaba solo de la
+        // ventana, la canción seguía estando en `upcomingQueue` y volvía a
+        // aparecer al rehacer la playlist.
+        manualQueue.removeAll { $0.id == song.id }
+        upcomingQueue.removeAll { $0.id == song.id }
         // Reconstruir playlist interna para reflejar el cambio
         rebuildPlaylistFromQueue()
     }
 
+    /// El usuario reordena la ventana visible (las PRIMERAS canciones de
+    /// `upcomingQueue`). Se reemplaza ese prefijo por el orden nuevo y se
+    /// conserva intacto el resto, así reordenar 10 filas nunca borra las demás.
     func reorderNextUpQueue(_ songs: [Song]) {
-        nextUpQueue = songs
+        let editedIDs = Set(songs.map { $0.id })
+        let untouched = upcomingQueue.filter { !editedIDs.contains($0.id) }
+        upcomingQueue = songs + untouched
+        // ✅ Las canciones de la cola manual ya están dentro de `upcomingQueue`
+        // en el orden elegido: se vacía la cola manual para que
+        // computeNextIndex() no vuelva a insertarlas (el mismo tema se
+        // reproducía dos veces: una por la playlist rehecha y otra al consumir
+        // la cola manual).
+        manualQueue.removeAll()
         rebuildPlaylistFromQueue()
     }
 
     func clearNextUpQueue() {
-        nextUpQueue.removeAll()
+        // Vaciar la cola es vaciarla ENTERA (también lo que no se ve en la
+        // ventana): la reproducción termina en la canción actual.
+        manualQueue.removeAll()
+        upcomingQueue.removeAll()
         rebuildPlaylistFromQueue()
     }
 
     private func rebuildPlaylistFromQueue() {
-        // La playlist actual = [canción actual] + cola siguiente
+        // La playlist actual = [canción actual] + cola siguiente COMPLETA.
+        // ✅ FIX truncamiento: antes se usaba `nextUpQueue` (la ventana de 10
+        // de la UI), así que cualquier edición de la cola recortaba la
+        // reproducción a esas 10 canciones + la actual.
         guard currentIndex >= 0, currentIndex < playlist.count else { return }
         let current = playlist[currentIndex]
-        playlist = [current] + nextUpQueue
+        playlist = [current] + upcomingQueue
         currentIndex = 0
         originalPlaylist = []
+        updatePlaybackQueue()
+        // Mantener la ventana de la UI coherente con la playlist recién rehecha
+        // (y con la cola manual ya volcada dentro de ella).
+        updateNextUpQueue()
     }
 
     private func startDisplayTimer(isBackground: Bool = false) {
@@ -2511,17 +2589,22 @@ class AudioEngine: NSObject, ObservableObject {
         
         // Luego añadir canciones de la playlist
         guard currentIndex < playlist.count else {
-            nextUpQueue = upcoming
+            upcomingQueue = upcoming
+            nextUpQueue = Array(upcoming.prefix(10))
             return
         }
         let nextIndex = currentIndex + 1
         guard nextIndex < playlist.count else {
-            nextUpQueue = upcoming
+            upcomingQueue = upcoming
+            nextUpQueue = Array(upcoming.prefix(10))
             return
         }
         let playlistUpcoming = Array(playlist.suffix(from: nextIndex))
         upcoming.append(contentsOf: playlistUpcoming)
         
+        // ✅ FIX cola larga: la lista completa (sin topar) es la que usa el
+        // motor para rehacer la playlist; la ventana de 10 es solo para la UI.
+        upcomingQueue = upcoming
         // ✅ MEJORA: mostrar 10 canciones en lugar de 3 para mejor visualización
         nextUpQueue = Array(upcoming.prefix(10))
     }
