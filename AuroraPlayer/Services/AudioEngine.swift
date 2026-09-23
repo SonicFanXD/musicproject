@@ -1744,6 +1744,16 @@ class AudioEngine: NSObject, ObservableObject {
     }
 
     func resume() {
+        // ✅ A2: sin canción NI archivo no hay absolutamente nada que reanudar.
+        // Tras stop() (p. ej. fin de playlist sin repeat) el engine sigue
+        // corriendo pero currentSong/audioFile son nil: reanudar a ciegas ponía
+        // isPlaying = true y publicaba rate 1.0 con duration 0, así que la barra
+        // del Centro de Control avanzaba sin que sonara nada. Salir aquí sin
+        // tocar el estado deja al sistema en .paused, que es la verdad.
+        if currentSong == nil && audioFile == nil {
+            AppLog.info(.playback, "resume() sin canción ni archivo: ignorado (nada que reanudar)")
+            return
+        }
         // ✅ ANTI-DOBLE-RESUME: ya reproduciendo + llamada duplicada en 100ms.
         let now = CACurrentMediaTime()
         if isPlaying, now - lastResumeCallTime < 0.1 {
@@ -3065,7 +3075,13 @@ class AudioEngine: NSObject, ObservableObject {
     private func setupRemoteCommandCenter() {
         let center = MPRemoteCommandCenter.shared()
         center.playCommand.addTarget { [weak self] _ in
-            self?.resume()
+            // ✅ A2: honestidad con el sistema — sin canción ni archivo no hay
+            // nada que reanudar. Antes respondía .success y la barra del
+            // Centro de Control arrancaba en silencio.
+            guard let self = self, self.currentSong != nil || self.audioFile != nil else {
+                return .commandFailed
+            }
+            self.resume()
             return .success
         }
         center.pauseCommand.addTarget { [weak self] _ in
@@ -3074,7 +3090,14 @@ class AudioEngine: NSObject, ObservableObject {
         }
         center.togglePlayPauseCommand.addTarget { [weak self] _ in
             guard let self = self else { return .commandFailed }
-            if self.isPlaying { self.pause() } else { self.resume() }
+            if self.isPlaying {
+                self.pause()
+            } else {
+                // ✅ A2: misma guarda que playCommand — con isPlaying == false y
+                // sin canción ni archivo, resume() no tendría nada que hacer.
+                guard self.currentSong != nil || self.audioFile != nil else { return .commandFailed }
+                self.resume()
+            }
             return .success
         }
         center.nextTrackCommand.addTarget { [weak self] _ in
