@@ -102,6 +102,14 @@ class FileAccessService: ObservableObject {
     // Solo si aparecen canciones NUEVAS se indexan e incorporan al final.
     private var isBackgroundDetecting = false
     private var activeSilentDiscoveries = 0
+    // ✅ A7: fuentes que TERMINARON de enumerar con éxito en el ciclo
+    // silencioso en curso. La poda de borrados solo se habilita si
+    // successCount == folders.count (ver finishSilentBatchIfDone): si una
+    // carpeta no resolvió su bookmark, no tenía acceso security-scoped o su
+    // enumerador no pudo crearse, sus claves NO están en seenOnDiskKeys y
+    // podar borraría la biblioteca COMPLETA de esa carpeta.
+    private var silentFoldersSucceeded = 0
+    private var silentFilesSucceeded = 0
     private var silentTotal = 0
     private var silentProcessed = 0
     private var silentBatches: [(urls: [URL], generation: Int, modifiedKeys: Set<String>)] = []
@@ -450,6 +458,11 @@ class FileAccessService: ObservableObject {
         // con miles de canciones → tirón al abrir).
         registrationClaims.removeAll(keepingCapacity: true)
         seenOnDiskKeys = []
+        // ✅ A7: los contadores de éxito arrancan en 0. La poda NO se habilita
+        // aquí: solo la habilita finishSilentBatchIfDone si TODAS las carpetas
+        // registradas (y los archivos sueltos) terminaron de enumerar bien.
+        silentFoldersSucceeded = 0
+        silentFilesSucceeded = 0
         // ✅ FIX metadata editada: forzar verificación de fechas de modificación
         // incluso en modo silencioso para detectar cambios de metadata externos
         pruneMissingOnFinish = false
@@ -461,6 +474,16 @@ class FileAccessService: ObservableObject {
         }
         for file in files {
             resolveAndScan(file, silent: true)
+        }
+        // ✅ A7: si NINGUNA enumeración llegó a arrancar (todos los bookmarks
+        // de carpeta fallaron, o solo hay archivos sueltos ya indexados y sin
+        // cambios → registerMetadataBatch los descarta y nadie invoca
+        // finishDiscovery), nadie cerraría el ciclo: isBackgroundDetecting
+        // quedaría atascado en true y la poda silenciosa jamás se evaluaría.
+        // Aquí NO se puede podar: con 0 carpetas enumeradas con éxito,
+        // successCount != folders.count y pruneMissingOnFinish sigue en false.
+        if activeSilentDiscoveries == 0 {
+            finishSilentBatchIfDone(generation: scanGeneration)
         }
     }
 
@@ -638,11 +661,16 @@ class FileAccessService: ObservableObject {
             // al main por carpeta (no uno por archivo): con 722 canciones
             // eran 722 dispatches que saturaban el main.
             let folderSeenKeys = seenKeys
-            if !folderSeenKeys.isEmpty {
-                DispatchQueue.main.async { [weak self] in
-                    guard let self, generation == self.scanGeneration else { return }
-                    self.seenOnDiskKeys.formUnion(folderSeenKeys)
-                }
+            // ✅ A7: se envía SIEMPRE (aunque no haya claves) para poder contar
+            // la carpeta como "enumerada con éxito" también cuando está vacía;
+            // con el envío condicional anterior, una carpeta vacía habría
+            // deshabilitado la poda para siempre.
+            DispatchQueue.main.async { [weak self] in
+                guard let self, generation == self.scanGeneration else { return }
+                self.seenOnDiskKeys.formUnion(folderSeenKeys)
+                // ✅ A7: el enumerador se creó y el recorrido terminó sin
+                // fallar → esta carpeta cuenta para la salvaguarda de poda.
+                if silent { self.silentFoldersSucceeded += 1 }
             }
         }
     }
@@ -655,6 +683,10 @@ class FileAccessService: ObservableObject {
         DispatchQueue.main.async { [weak self] in
             guard let self, generation == self.scanGeneration else { return }
             self.seenOnDiskKeys.insert(key)
+            // ✅ A7: mismo trato que las carpetas para los archivos sueltos:
+            // si su bookmark no se pudo resolver al arrancar, su clave no
+            // queda "vista en disco" y la poda silenciosa NO debe correr.
+            if silent { self.silentFilesSucceeded += 1 }
         }
         // ✅ FIX metadata editada: un archivo suelto (fuera de una carpeta)
         // también debe re-leerse si ya estaba indexado pero cambió su fecha
@@ -782,9 +814,38 @@ class FileAccessService: ObservableObject {
         let found = silentProcessed
         silentTotal = 0
         silentProcessed = 0
+        // ✅ A7: SALVAGUARDA de poda. Solo se poda si TODAS las fuentes
+        // registradas terminaron de enumerar con éxito
+        // (successCount == folders.count, y lo mismo para los archivos
+        // sueltos). Caso borde que evita: si iOS no concede el acceso
+        // security-scoped al arrancar (carpeta externa/iCloud aún no
+        // disponible, bookmark rancio, permisos reiniciados), las claves de
+        // esa carpeta NO están en seenOnDiskKeys → podar con ese conjunto
+        // incompleto borraría TODA la biblioteca de la carpeta. Carpeta
+        // ilegible ≠ canciones borradas: en ese caso pruneMissingOnFinish
+        // queda en false para este ciclo.
+        let allSourcesEnumerated = silentFoldersSucceeded == folders.count
+            && silentFilesSucceeded == files.count
+        silentFoldersSucceeded = 0
+        silentFilesSucceeded = 0
+        // ¿La poda eliminaría algo? Se decide ANTES de publicar nada: si no
+        // hay bajas, el arranque no re-renderiza la lista (mismo
+        // comportamiento que antes de A7).
+        let pruneDue = allSourcesEnumerated && !seenOnDiskKeys.isEmpty && songs.contains {
+            !seenOnDiskKeys.contains(Self.libraryKey(for: $0.url))
+        }
+        if pruneDue {
+            pruneMissingOnFinish = true
+            AppLog.info(.library, "Detección silenciosa: poda habilitada (\(folders.count) carpetas + \(files.count) archivos enumerados) · \(found) nuevas")
+            // ✅ Mismo cierre que el rescan normal: sort final + poda + UNA
+            // sola publicación. isScanning se mantiene false → sin tarjeta ni
+            // spinner durante todo el ciclo silencioso.
+            finalizeScanIfNeeded()
+            return
+        }
         // ✅ Las claves vistas por la detección silenciosa no se usan (sin
-        // poda: pruneMissingOnFinish = false). Liberarlas para no retener
-        // memoria del enumerado completo.
+        // poda en este ciclo). Liberarlas para no retener memoria del
+        // enumerado completo.
         seenOnDiskKeys = []
         guard !pendingSongs.isEmpty else {
             AppLog.info(.library, "Detección silenciosa: sin canciones nuevas")
@@ -991,52 +1052,63 @@ class FileAccessService: ObservableObject {
         // El rescan DIFERENCIAL también debe cerrar aunque NO haya canciones
         // nuevas (pendingSongs vacío): si no, la poda de borrados nunca corre
         // y el pruneMissingOnFinish quedaría pendiente para siempre.
-        if wasScanning && !isScanning && (!pendingSongs.isEmpty || pruneMissingOnFinish) && !isSortScheduled {
-            // ✅ Final sort en background para evitar congelamiento (sin sleep)
-            isSortScheduled = true
-            let shouldPrune = pruneMissingOnFinish
-            let seenKeys = seenOnDiskKeys
-            // ✅ Deduplicar al fusionar (mismos duplicados que en el sort de arriba).
-            // ✅ FIX metadata editada: mismo motivo que en scheduleSortAndCache
-            // — pendingSongs primero para que una actualización le gane a la
-            // versión vieja cacheada en el dedupe por URL.
-            var allSongs = dedupeSongsByUrl(pendingSongs + songs)
-            if shouldPrune, !seenKeys.isEmpty {
-                // ✅ Podar borrados: conserva las que se vieron en disco. Con
-                // Set vacío NO se poda (carpeta ilegible ≠ canciones borradas).
-                allSongs = allSongs.filter { seenKeys.contains(Self.libraryKey(for: $0.url)) }
-            }
-            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-                guard let self = self else { return }
-                // ✅ FIX: Orden alfabético por título como ordenamiento por defecto.
-                // Esto asegura que las canciones tengan un orden consistente al cargar
-                // desde disco, mientras las opciones del usuario pueden cambiar este orden.
-                let sortedSongs = allSongs.sorted {
-                    $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
-                }
+        if wasScanning && !isScanning {
+            finalizeScanIfNeeded()
+        }
+    }
 
-                DispatchQueue.main.async {
-                    self.isSortScheduled = false
-                    let addedCount = sortedSongs.count - self.songs.count
-                    self.songs = sortedSongs
-                    self.indexedSongKeys = Set(sortedSongs.map { Self.libraryKey(for: $0.url) })
-                    self.pruneMissingOnFinish = false
-                    self.seenOnDiskKeys = []
-                    // ✅ Solo descartar las canciones que entraron en el sort. Las
-                    // que llegaron mientras se ordenaba (p.ej. del lote final) NO
-                    // se borran: permanecen en pendingSongs para una pasada final.
-                    let includedIDs = Set(sortedSongs.map { $0.id })
-                    self.pendingSongs.removeAll { includedIDs.contains($0.id) }
-                    self.needsRebuild = true // ✅ Reconstruir álbumes/artistas con nuevas canciones
-                    self.scheduleCacheSave()
-                    if addedCount > 0 {
-                        AppLog.info(.library, "Indexación completada: \(sortedSongs.count) canciones (+\(addedCount) nuevas) · RAM \(self.residentMemoryMB) MB")
-                    } else {
-                        AppLog.info(.library, "Indexación completada: \(sortedSongs.count) canciones (sin cambios) · RAM \(self.residentMemoryMB) MB")
-                    }
-                    if !self.pendingSongs.isEmpty {
-                        self.updateScanningState()
-                    }
+    /// ✅ A7: cierre común de un escaneo (normal o silencioso), extraído de
+    /// updateScanningState SIN cambiar su semántica: fusiona pendingSongs +
+    /// songs, aplica la PODA de borrados si pruneMissingOnFinish está activo
+    /// y publica el resultado en UN solo sort + UNA sola publicación.
+    /// El escaneo silencioso lo usa para poder podar sin tocar `isScanning`
+    /// (sin tarjeta de progreso ni spinner).
+    private func finalizeScanIfNeeded() {
+        guard (!pendingSongs.isEmpty || pruneMissingOnFinish), !isSortScheduled else { return }
+        // ✅ Final sort en background para evitar congelamiento (sin sleep)
+        isSortScheduled = true
+        let shouldPrune = pruneMissingOnFinish
+        let seenKeys = seenOnDiskKeys
+        // ✅ Deduplicar al fusionar (mismos duplicados que en el sort de arriba).
+        // ✅ FIX metadata editada: mismo motivo que en scheduleSortAndCache
+        // — pendingSongs primero para que una actualización le gane a la
+        // versión vieja cacheada en el dedupe por URL.
+        var allSongs = dedupeSongsByUrl(pendingSongs + songs)
+        if shouldPrune, !seenKeys.isEmpty {
+            // ✅ Podar borrados: conserva las que se vieron en disco. Con
+            // Set vacío NO se poda (carpeta ilegible ≠ canciones borradas).
+            allSongs = allSongs.filter { seenKeys.contains(Self.libraryKey(for: $0.url)) }
+        }
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self else { return }
+            // ✅ FIX: Orden alfabético por título como ordenamiento por defecto.
+            // Esto asegura que las canciones tengan un orden consistente al cargar
+            // desde disco, mientras las opciones del usuario pueden cambiar este orden.
+            let sortedSongs = allSongs.sorted {
+                $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
+            }
+
+            DispatchQueue.main.async {
+                self.isSortScheduled = false
+                let addedCount = sortedSongs.count - self.songs.count
+                self.songs = sortedSongs
+                self.indexedSongKeys = Set(sortedSongs.map { Self.libraryKey(for: $0.url) })
+                self.pruneMissingOnFinish = false
+                self.seenOnDiskKeys = []
+                // ✅ Solo descartar las canciones que entraron en el sort. Las
+                // que llegaron mientras se ordenaba (p.ej. del lote final) NO
+                // se borran: permanecen en pendingSongs para una pasada final.
+                let includedIDs = Set(sortedSongs.map { $0.id })
+                self.pendingSongs.removeAll { includedIDs.contains($0.id) }
+                self.needsRebuild = true // ✅ Reconstruir álbumes/artistas con nuevas canciones
+                self.scheduleCacheSave()
+                if addedCount > 0 {
+                    AppLog.info(.library, "Indexación completada: \(sortedSongs.count) canciones (+\(addedCount) nuevas) · RAM \(self.residentMemoryMB) MB")
+                } else {
+                    AppLog.info(.library, "Indexación completada: \(sortedSongs.count) canciones (sin cambios) · RAM \(self.residentMemoryMB) MB")
+                }
+                if !self.pendingSongs.isEmpty {
+                    self.updateScanningState()
                 }
             }
         }
