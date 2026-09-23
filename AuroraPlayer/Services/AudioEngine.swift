@@ -1838,9 +1838,14 @@ class AudioEngine: NSObject, ObservableObject {
         saveState()
     }
 
-    /// Calcula el índice de la siguiente canción según shuffle/repeat-all.
+    /// Calcula el índice de la siguiente canción según shuffle/repeat.
     /// Retorna nil si se alcanzó el final de la playlist sin repeat.
-    /// NOTA: repeat-one se maneja aparte, en indexToChainAhead().
+    /// NOTA: el avance AUTOMÁTICO con repeat-one se maneja aparte, en
+    /// indexToChainAhead() (repite la MISMA canción). Aquí se resuelve el
+    /// avance MANUAL (botón siguiente de la app, del lock screen y del Centro
+    /// de Control), que con repeat-one sí debe cambiar de pista y, al llegar al
+    /// final de la lista, volver al principio: antes devolvía nil y pulsar
+    /// "siguiente" en la última canción no hacía absolutamente nada.
     /// ✅ MEJORA SHUFFLE: usa lista mezclada que se consume secuencialmente
     /// para evitar repeticiones hasta que todas las canciones hayan sonado.
     /// ✅ MEJORA QUEUE: prioriza cola manual sobre la playlist normal.
@@ -1892,8 +1897,10 @@ class AudioEngine: NSObject, ObservableObject {
             }
             // Obtener siguiente de la lista mezclada
             guard shuffleIndex < shuffledPlaylist.count else {
-                // Lista agotada, reiniciar con repeat-all o nil si no hay repeat
-                if repeatMode == .all {
+                // Lista agotada, reiniciar con repeat o nil si no hay repeat
+                // (repeat-one entra aquí también: el avance manual debe seguir
+                // dando canciones, no quedarse mudo en la última).
+                if repeatMode == .all || repeatMode == .one {
                     shuffledPlaylist = playlist.shuffled()
                     shuffleIndex = 0
                     return playlist.firstIndex(where: { $0.id == shuffledPlaylist[0].id })
@@ -1906,7 +1913,11 @@ class AudioEngine: NSObject, ObservableObject {
         }
         let next = currentIndex + 1
         if next >= playlist.count {
-            return repeatMode == .all ? 0 : nil
+            // ✅ FIX repeat-one: el avance manual con "repetir una" debe saltar
+            // a la siguiente pista y, en el final de la lista, volver al
+            // principio. Antes solo repeat-all envolvía, así que en la última
+            // canción con repeat-one el botón siguiente era un no-op.
+            return (repeatMode == .all || repeatMode == .one) ? 0 : nil
         }
         return next
     }
@@ -1932,9 +1943,12 @@ class AudioEngine: NSObject, ObservableObject {
         // Con una sola canción, solo repeat (.all/.one) permite avanzar.
         if playlist.count == 1 { return repeatMode == .all || repeatMode == .one }
         if isShuffleEnabled { return true }
-        // Secuencial: queda algo por delante, o repeat-all vuelve al principio.
+        // Secuencial: queda algo por delante, o repeat vuelve al principio
+        // (espejo exacto de computeNextIndex(): si aquí dijera que no hay
+        // siguiente, el lock screen respondería .noSuchContent a un botón que
+        // sí funciona).
         if currentIndex + 1 < playlist.count { return true }
-        return repeatMode == .all
+        return repeatMode == .all || repeatMode == .one
     }
 
     /// Índice de la siguiente canción SIN comprometerla.
@@ -1987,7 +2001,9 @@ class AudioEngine: NSObject, ObservableObject {
         // Secuencial
         let next = currentIndex + 1
         if next >= playlist.count {
-            return repeatMode == .all ? (0, playlist[0].url) : nil
+            // ✅ Espejo de computeNextIndex(): repeat-one también vuelve al
+            // principio en el avance manual.
+            return (repeatMode == .all || repeatMode == .one) ? (0, playlist[0].url) : nil
         }
         return (next, playlist[next].url)
     }
