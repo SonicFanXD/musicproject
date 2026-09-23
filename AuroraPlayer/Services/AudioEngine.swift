@@ -508,7 +508,12 @@ class AudioEngine: NSObject, ObservableObject {
     private var avPlayer: AVPlayer?
     private var avTimeObserver: Any?
     private var avEndObserver: NSObjectProtocol?
-    private var isUsingFallback = false
+    /// ✅ 3.0.2: era `private var` → la vista de calidad NO podía saber que el motor
+    /// propio estaba fuera de juego. Cuando `AVAudioEngine` falla (formato no
+    /// soportado, archivo corrupto, arranque imposible) la reproducción sigue por
+    /// `AVPlayer`… perdiendo SILENCIOSAMENTE el EQ, el mono, el headroom y el
+    /// indicador de bit-perfect, que seguían describiendo un grafo que ya no suena.
+    @Published private(set) var isUsingFallback = false
 
     private let stateDefaultsKey = "com.aurora.playbackState"
     private var hasRestored: Bool = false
@@ -1113,7 +1118,10 @@ class AudioEngine: NSObject, ObservableObject {
         // Se cae a la del índice solo si el motor todavía no tiene archivo cargado.
         let sourceRate = (audioFile != nil && sampleRate > 0) ? sampleRate : (currentSong?.sampleRate ?? 0)
         let processing = (isEQEnabled && eqPreset != .flat) || isMonoAudioEnabled
-        let unityGain = !isLimiterEnabled && isWiredRoute
+        // ✅ 3.0.2: en modo de respaldo (AVPlayer) el grafo propio —EQ, mono,
+        // headroom— NO está en uso, así que el indicador no puede decir
+        // "bit-perfect": describiría un motor que no es el que suena.
+        let unityGain = !isLimiterEnabled && isWiredRoute && !isUsingFallback
         let value = sourceRate > 0 && abs(outputRate - sourceRate) < 1 && !processing && unityGain
         DispatchQueue.main.async { [weak self] in
             guard let self = self, self.isBitPerfect != value else { return }
