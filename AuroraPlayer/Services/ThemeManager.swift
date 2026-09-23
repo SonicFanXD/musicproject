@@ -1,7 +1,5 @@
 import SwiftUI
 import Combine
-import UIKit       // explícito: UITraitCollection (escala del dispositivo para las miniaturas)
-import CoreImage   // fondo de carátula pre-difuminado (framework de Apple, sin dependencias)
 
 /// Gestor central del tema: color de acento aplicable en toda la app.
 /// Las vistas usan `AppTheme.accent` en lugar de `Color.accentColor`
@@ -524,41 +522,19 @@ enum AppTheme {
     static let thumbnailCache: NSCache<NSString, UIImage> = {
         let cache = NSCache<NSString, UIImage>()
         // ✅ ANTI-JETSAM (iPhone 8 Plus / 3GB): tope por MEMORIA, no por conteo.
-        // 12MB ≈ 150 miniaturas de 144px (fila de 48pt @3x) o ≈ 8 de 600px
-        // (portada hero de álbum @3x); las carátulas completas nunca entran aquí
-        // (siguen en Song.artworkCache).
+        // 12MB ≈ 330 miniaturas de 96px o ≈ 33 de 300px; las carátulas completas
+        // nunca entran aquí (siguen en Song.artworkCache).
         cache.countLimit = 400
         cache.totalCostLimit = 12 * 1024 * 1024
         return cache
     }()
 
-    /// Escala de píxeles del dispositivo para rasterizar miniaturas.
-    /// En iOS es 2x (iPhone no-Plus, iPad) o 3x (iPhone Plus / Pro).
-    /// - `UITraitCollection.current` es la vía NO deprecada (`UIScreen.main`
-    ///   está obsoleto en iOS 16). Durante el `body` de una vista SwiftUI
-    ///   devuelve la escala real de la pantalla.
-    /// - Si por el contexto de llamada (funciones libres de lista, body fuera
-    ///   de un ámbito de traits) llegara un valor no utilizable, se asume 3x:
-    ///   pedir de MÁS cuesta unos KB; pedir de MENOS se ve suave al ampliar.
-    private static var thumbnailScale: CGFloat {
-        let traitScale = UITraitCollection.current.displayScale
-        return traitScale >= 2 ? traitScale : 3
-    }
-
     /// Miniatura cacheada de una carátula. Mismo resultado que
     /// `artwork.preparingThumbnail(of:)` (y mismo fallback a la original),
     /// pero sin recomputarla en cada render de fila.
-    /// - Parameter size: tamaño en PUNTOS que ocupa la carátula en pantalla
-    ///   (NO píxeles). El helper multiplica por la escala del dispositivo para
-    ///   que el bitmap tenga exactamente los píxeles que se van a dibujar:
-    ///   ni uno menos (ampliar se ve suave — p. ej. pedir 96 px para una fila
-    ///   de 48 pt en un iPhone Plus, que es 3x y necesita 144 px) ni uno más
-    ///   (RAM extra en cada fila del scroll).
-    /// - Parameter scale: escala explícita (por defecto, la del dispositivo).
-    static func thumbnail(from artwork: UIImage, size: CGSize, scale: CGFloat? = nil) -> UIImage {
-        let deviceScale = scale ?? thumbnailScale
-        let width = max(1, Int((size.width * deviceScale).rounded(.up)))
-        let height = max(1, Int((size.height * deviceScale).rounded(.up)))
+    static func thumbnail(from artwork: UIImage, size: CGSize) -> UIImage {
+        let width = max(1, Int(size.width.rounded()))
+        let height = max(1, Int(size.height.rounded()))
         let key = "\(ObjectIdentifier(artwork).hashValue)-\(width)x\(height)" as NSString
 
         if let cached = thumbnailCache.object(forKey: key) { return cached }
@@ -568,123 +544,6 @@ enum AppTheme {
         // Costo = bytes del bitmap (RGBA) para que NSCache expulse por RAM real.
         thumbnailCache.setObject(thumbnail, forKey: key, cost: width * height * 4)
         return thumbnail
-    }
-
-    // MARK: - Fondo de carátula PRE-DIFUMINADO (identidad estilo Apple Music)
-
-    /// ✅ UN `CIContext` para toda la app. Crear uno por llamada es de las
-    /// operaciones más caras de Core Image (compila el kernel y prepara el
-    /// contexto de GPU); reutilizarlo hace que el desenfoque cueste milisegundos.
-    private static let filterContext = CIContext(options: [.useSoftwareRenderer: false])
-
-    /// Caché del fondo difuminado por canción. Bastan 4 entradas (la actual y las
-    /// de los saltos inmediatos: anterior/siguiente/repetir) y el tope de memoria
-    /// evita retener bitmaps que ya no se usan. `NSCache` se vacía solo bajo
-    /// presión de memoria, que es exactamente lo que queremos en el A11.
-    static let blurredArtworkCache: NSCache<NSString, UIImage> = {
-        let cache = NSCache<NSString, UIImage>()
-        cache.countLimit = 4
-        cache.totalCostLimit = 6 * 1024 * 1024
-        return cache
-    }()
-
-    /// Fondo ya calculado para esa canción (nil mientras no exista).
-    static func cachedBlurredArtwork(key: String) -> UIImage? {
-        blurredArtworkCache.object(forKey: key as NSString)
-    }
-
-    /// Difumina y OSCURECE la carátula UNA vez por canción. Pensado para llamarse
-    /// SIEMPRE desde un hilo de fondo (`DispatchQueue.global(qos: .userInitiated)`):
-    /// Core Image no toca el hilo principal y el resultado se guarda en caché, así
-    /// que durante la reproducción el coste en CPU/GPU es 0 — la vista solo sube
-    /// una textura ya lista.
-    ///
-    /// Pipeline (deliberadamente baratísimo: se trabaja sobre ~320px, no sobre la
-    /// carátula de 768px, porque el desenfoque destruye el detalle de todos modos):
-    /// 1. Reducción a un cuadrado de `edge` px (recorte centrado, sin ampliar nunca).
-    /// 2. `CIGaussianBlur` con un radio proporcional al tamaño reducido.
-    /// 3. `CIExposureAdjust`: oscurecido MULTIPLICATIVO (no aditivo). Es el velo
-    ///    del diseño clásico — la carátula al `opacity(0.45)` sobre fondo oscuro —
-    ///    pero horneado en el bitmap: así el texto blanco de NowPlaying se lee
-    ///    sobre CUALQUIER portada (incluida una blanca) sin pagar un velo extra
-    ///    por frame. Al ser multiplicativo, las portadas oscuras no se convierten
-    ///    en un rectángulo negro: conservan su color.
-    ///    El valor por defecto `-1.15 EV` **no es arbitrario**: 2^-1.15 = 0.45,
-    ///    el mismo brillo efectivo que tenía el `opacity(0.45)` original sobre el
-    ///    fondo oscuro de la ventana. Es la identidad de siempre, calculada una vez.
-    /// 4. `CIColorControls`: un poco de saturación, porque el oscurecido apaga el
-    ///    color y el fondo tiene que seguir siendo "el de la canción".
-    /// - Parameter edge: lado del cuadrado de trabajo en píxeles.
-    /// - Returns: `nil` si la carátula no es convertible (nunca se inventa un fondo).
-    static func blurredArtwork(from artwork: UIImage,
-                               key: String,
-                               edge: CGFloat = 320,
-                               radius: CGFloat = 18,
-                               exposure: Float = -1.15) -> UIImage? {
-        if let cached = blurredArtworkCache.object(forKey: key as NSString) { return cached }
-        guard let source = CIImage(image: artwork) else { return nil }
-
-        // 1) Normalizar el origen (algunas carátulas llegan con extent desplazado)
-        //    y reducir sin AMPLIAR: si la portada ya es pequeña, se queda igual.
-        let extent = source.extent
-        guard extent.width >= 1, extent.height >= 1 else { return nil }
-        let normalized = source.transformed(
-            by: CGAffineTransform(translationX: -extent.origin.x, y: -extent.origin.y)
-        )
-        let longest = max(normalized.extent.width, normalized.extent.height)
-        let scale = min(1, edge / longest)
-        let reduced = normalized.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
-
-        // 2) Recorte CENTRADO al cuadrado: el fondo cubre la pantalla con
-        //    `scaledToFill`, así que el encuadre tiene que ser el mismo.
-        let side = min(reduced.extent.width, reduced.extent.height)
-        guard side >= 1 else { return nil }
-        let square = reduced.cropped(to: CGRect(
-            x: reduced.extent.midX - side / 2,
-            y: reduced.extent.midY - side / 2,
-            width: side,
-            height: side
-        ))
-
-        // 3) Gaussiano. El radio va en píxeles de la imagen REDUCIDA: al
-        //    estirarse a pantalla completa el desenfoque aparente equivale al
-        //    radio × (ancho de pantalla / lado reducido), del orden del
-        //    `blur(radius: 25)` del diseño original.
-        //
-        //    ⚠️ `clampedToExtent()` ANTES de difuminar es imprescindible: el
-        //    gaussiano muestrea fuera de la imagen y, sin clamp, los píxeles de
-        //    fuera son TRANSPARENTES → los bordes del cuadrado se desvanecen a
-        //    negro y, al estirar el fondo a pantalla completa, eso se ve como
-        //    franjas oscuras arriba y abajo (el `+60` del diseño antiguo era el
-        //    parche de aquel bug). Con el clamp, Core Image repite el píxel del
-        //    borde y el recorte queda limpio de esquina a esquina.
-        let edgeClamped = square.clampedToExtent()
-        guard let blurFilter = CIFilter(name: "CIGaussianBlur") else { return nil }
-        blurFilter.setValue(edgeClamped, forKey: kCIInputImageKey)
-        blurFilter.setValue(radius, forKey: kCIInputRadiusKey)
-        guard let blurred = blurFilter.outputImage else { return nil }
-
-        // 4) Velo horneado + saturación.
-        guard let exposureFilter = CIFilter(name: "CIExposureAdjust") else { return nil }
-        exposureFilter.setValue(blurred, forKey: kCIInputImageKey)
-        exposureFilter.setValue(exposure, forKey: kCIInputEVKey)
-        guard let darkened = exposureFilter.outputImage else { return nil }
-
-        guard let colorFilter = CIFilter(name: "CIColorControls") else { return nil }
-        colorFilter.setValue(darkened, forKey: kCIInputImageKey)
-        colorFilter.setValue(1.18, forKey: kCIInputSaturationKey)
-        colorFilter.setValue(1.0, forKey: kCIInputContrastKey)
-        colorFilter.setValue(0.0, forKey: kCIInputBrightnessKey)
-        guard let final = colorFilter.outputImage else { return nil }
-
-        // 5) Rasterizar SOLO el cuadrado (el blur expande el extent y el clamp lo
-        //    hace infinito; pedir esa ROI concreta hace que Core Image calcule
-        //    únicamente esos píxeles, que es lo que abarata el proceso).
-        guard let cgImage = filterContext.createCGImage(final, from: square.extent) else { return nil }
-        let result = UIImage(cgImage: cgImage)
-        blurredArtworkCache.setObject(result, forKey: key as NSString,
-                                      cost: cgImage.width * cgImage.height * 4)
-        return result
     }
 
     // MARK: - API pública de extracción

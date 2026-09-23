@@ -1,8 +1,7 @@
 import Foundation
 
 // MARK: - Timing de una palabra (TTML / LRC híbrido)
-// ✅ La UI SÍ hace karaoke por palabra: cada token trae su ventana temporal y
-//    el relleno de la línea avanza palabra a palabra con esos timings.
+// ✅ SOLO DATOS: la UI no hace karaoke por palabra en esta iteración.
 struct LyricWordToken: Equatable {
     let text: String
     let startMs: Int
@@ -10,16 +9,12 @@ struct LyricWordToken: Equatable {
     /// ✅ Fila VISUAL a la que pertenece la palabra dentro de la línea lógica.
     /// TTML marca los saltos duros con `<br/>`; 0 en formatos sin filas.
     let rowIndex: Int
-    /// ✅ Voz de FONDO (`ttm:role="x-bg"` del TTML de Apple Music): se pinta más
-    /// pequeña y más tenue que la voz principal, como en la app de Apple.
-    let isBackground: Bool
 
-    init(text: String, startMs: Int, endMs: Int, rowIndex: Int = 0, isBackground: Bool = false) {
+    init(text: String, startMs: Int, endMs: Int, rowIndex: Int = 0) {
         self.text = text
         self.startMs = startMs
         self.endMs = endMs
         self.rowIndex = rowIndex
-        self.isBackground = isBackground
     }
 }
 
@@ -32,18 +27,6 @@ struct LyricVisualRow: Equatable {
     let text: String
     let startMs: Int
     let endMs: Int
-    /// ✅ Timings de las palabras de ESTA fila (vacío si el formato no los trae o
-    /// si el troceo por medición no pudo repartirlos con exactitud). Con ellos el
-    /// relleno avanza palabra por palabra, que es el karaoke de Apple Music; sin
-    /// ellos se conserva el reparto proporcional dentro de la ventana de la fila.
-    let words: [LyricWordToken]
-
-    init(text: String, startMs: Int, endMs: Int, words: [LyricWordToken] = []) {
-        self.text = text
-        self.startMs = startMs
-        self.endMs = endMs
-        self.words = words
-    }
 }
 
 // MARK: - Modelo de datos para lyrics línea por línea
@@ -90,36 +73,6 @@ struct LyricsLine: Identifiable, Equatable {
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// ✅ Recorta los timings de palabra al hueco REAL de su fila visual.
-    /// El fin de la última palabra de un `<p>` TTML suele cerrarse con el fin de
-    /// TODA la línea: sin este recorte, la fila de arriba de un verso con
-    /// `<br/>` seguiría iluminándose mientras suena la de abajo.
-    /// Los inicios se fuerzan monótonos porque el karaoke solo avanza de izquierda
-    /// a derecha: una palabra con timing solapado (armonías de fondo que entran
-    /// antes que la voz principal) no debe retroceder el borde del relleno.
-    static func clampedWords(_ words: [LyricWordToken], startMs: Int, endMs: Int) -> [LyricWordToken] {
-        guard !words.isEmpty, endMs > startMs else { return [] }
-
-        var result: [LyricWordToken] = []
-        result.reserveCapacity(words.count)
-        var floorMs = startMs
-
-        for word in words {
-            let wordStart = min(max(word.startMs, floorMs), endMs)
-            let wordEnd = min(max(word.endMs, wordStart), endMs)
-            result.append(LyricWordToken(
-                text: word.text,
-                startMs: wordStart,
-                endMs: wordEnd,
-                rowIndex: word.rowIndex,
-                isBackground: word.isBackground
-            ))
-            floorMs = max(floorMs, wordStart)
-        }
-
-        return result
-    }
-
     // MARK: - Filas visuales
     /// Construye las filas visuales y su ventana temporal (se calcula UNA sola
     /// vez, en el init: cero coste por frame).
@@ -151,21 +104,9 @@ struct LyricsLine: Identifiable, Equatable {
             if let firstWord = words.first,
                let lastWord = words.last,
                lastWord.endMs > firstWord.startMs {
-                let rowStartMs = firstWord.startMs
-                let rowEndMs = lastWord.endMs
-                return [LyricVisualRow(
-                    text: rowText,
-                    startMs: rowStartMs,
-                    endMs: rowEndMs,
-                    words: clampedWords(words, startMs: rowStartMs, endMs: rowEndMs)
-                )]
+                return [LyricVisualRow(text: rowText, startMs: firstWord.startMs, endMs: lastWord.endMs)]
             }
-            return [LyricVisualRow(
-                text: rowText,
-                startMs: startMs,
-                endMs: safeEndMs,
-                words: clampedWords(words, startMs: startMs, endMs: safeEndMs)
-            )]
+            return [LyricVisualRow(text: rowText, startMs: startMs, endMs: safeEndMs)]
         }
 
         let totalCharacters = max(1, rowTexts.reduce(0) { $0 + $1.count })
@@ -196,10 +137,7 @@ struct LyricsLine: Identifiable, Equatable {
             rows.append(LyricVisualRow(
                 text: rowText,
                 startMs: rowStartMs,
-                endMs: max(rowEndMs, rowStartMs + 1),
-                // ✅ Se guardan SIN recortar: las ventanas de las filas todavía
-                // pueden moverse en el reajuste final de aquí abajo.
-                words: rowWords
+                endMs: max(rowEndMs, rowStartMs + 1)
             ))
             charactersBefore += rowText.count
         }
@@ -212,21 +150,10 @@ struct LyricsLine: Identifiable, Equatable {
             rows[index] = LyricVisualRow(
                 text: current.text,
                 startMs: current.startMs,
-                endMs: max(rows[index + 1].startMs, current.startMs + 1),
-                words: current.words
+                endMs: max(rows[index + 1].startMs, current.startMs + 1)
             )
         }
 
-        // ✅ El recorte de los timings de palabra se hace AL FINAL, cuando las
-        // ventanas de las filas ya son definitivas (el bucle de arriba acaba de
-        // recortar el fin de la fila justo donde terminaba su última palabra).
-        return rows.map { row in
-            LyricVisualRow(
-                text: row.text,
-                startMs: row.startMs,
-                endMs: row.endMs,
-                words: clampedWords(row.words, startMs: row.startMs, endMs: row.endMs)
-            )
-        }
+        return rows
     }
 }
