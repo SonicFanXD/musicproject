@@ -227,8 +227,15 @@ class AudioEngine: NSObject, ObservableObject {
     private func indexToChainAhead() -> Int? {
         guard !playlist.isEmpty else { return nil }
         if repeatMode == .one {
-            // ✅ MEJORA: en repeat-one, verificar que la canción tenga duración válida
-            guard let current = currentSong, current.duration > 0 else { return nil }
+            // ✅ 3.0.2 — FIX "repetir uno se para": repetir-uno devuelve SIEMPRE la
+            // canción actual. Antes exigía `currentSong.duration > 0` y, con la
+            // duración desconocida (metadato que no cargó, canción restaurada al
+            // abrir la app, modo de respaldo), devolvía nil: el fin de pista caía
+            // en `chainGaplessPlayNext` → nil → `stop()` — es decir, con
+            // "repetir uno" activo la música se detenía en vez de repetir.
+            // No hay bucle infinito posible: si el archivo estuviera roto,
+            // `handlePlaybackFailure` avanza de pista (playNext no repite) y se
+            // detiene tras 5 fallos consecutivos, ya registrados.
             return currentIndex
         }
         // ✅ 3.0.2: el avance AUTOMÁTICO comparte el mismo cálculo posicional que
