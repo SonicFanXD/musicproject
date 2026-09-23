@@ -13,6 +13,9 @@ struct NowPlayingView: View {
     // ✅ Observar el idioma: al cambiar, esta vista se re-renderiza al instante
     @ObservedObject private var localization = Localization.shared
     @Environment(\.dismiss) private var dismiss
+    // ✅ Brillo de la base opaca del fondo (claro/oscuro), con el mismo criterio
+    // que `AuroraDynamicBackground`.
+    @Environment(\.colorScheme) private var colorScheme
 
     // Configuraciones de personalización
     @AppStorage("com.aurora.showVisualizer") private var showVisualizer = true
@@ -66,7 +69,13 @@ struct NowPlayingView: View {
         let screenHeight = UIScreen.main.bounds.height
         // ✅ MEJORADO: Portada más grande y mejor centrada
         let maxByWidth = screenWidth - 40
-        let maxByHeight = screenHeight * (isCompactScreen ? 0.32 : 0.42)
+        // ✅ FIX iPhone 8 Plus: el sheet es MÁS BAJO que la pantalla, así que
+        // dimensionar la portada contra `UIScreen.main.bounds.height`
+        // sobre-estimaba el hueco real y la columna (header + portada +
+        // visualizador + título + barra + controles) acababa saliéndose.
+        // 0.30 del alto de pantalla deja margen para el título a dos líneas en el
+        // iPhone 8 Plus sin encoger la portada en los equipos con holgura.
+        let maxByHeight = screenHeight * (isCompactScreen ? 0.30 : 0.42)
         return min(340, maxByWidth, maxByHeight)
     }
 
@@ -251,7 +260,16 @@ struct NowPlayingView: View {
                     Spacer(minLength: 0)
                 }
                 .padding(.horizontal, 24)
-                .fixedSize(horizontal: false, vertical: true)
+                // ✅ FIX iPhone 8 Plus: SIN `.fixedSize(horizontal: false,
+                // vertical: true)`. Ese modificador congelaba la columna en su
+                // alto IDEAL y colapsaba TODOS los `Spacer(minLength:)` a su
+                // mínimo, así que la "distribución equilibrada con Spacers
+                // flexibles" que describe el comentario de arriba no llegaba a
+                // ocurrir: si el alto ideal no cabía en el sheet, la columna se
+                // estiraba fuera de la pantalla (header comido por arriba y
+                // barra de progreso / botones fuera por abajo). Dejándola
+                // flexible, los Spacers reparten el hueco sobrante y, si falta
+                // espacio, se comprimen ellos ANTES de empujar nada fuera.
             }
             .onAppear {
                 extractColorFromArtwork()
@@ -338,23 +356,37 @@ struct NowPlayingView: View {
     /// pantalla completa: eso obligaba a la GPU a re-rasterizar un bitmap del
     /// tamaño de la pantalla (y su desenfoque) de forma continua.
     ///
-    /// Ahora el mismo aspecto se compone en TRES CAPAS, y ninguna hace trabajo
-    /// por frame:
+    /// El aspecto se compone en CUATRO CAPAS, y ninguna hace trabajo por frame:
     ///
+    /// 0. **Base opaca** — degradado oscuro TINTADO con el acento
+    ///    (`backdropBase`), para que el texto blanco se lea sobre cualquier
+    ///    portada y en cualquier apariencia.
     /// 1. **Carátula PRE-DIFUMINADA** — Core Image sobre ~320px en un hilo de
     ///    fondo, UNA vez por canción, con el velo y la saturación ya horneados en
     ///    el bitmap. En reproducción esto es una textura estática.
     /// 2. **Tinte dinámico** — `extractedColor` al 18%, como el 0.12 del diseño
     ///    original: le da vida al fondo con el color de la portada.
     /// 3. **Aurora sutil** — la misma `AuroraDynamicBackground` en modo
-    ///    `.overlay` (sin base opaca para no tapar la carátula) y con
-    ///    `.softLight`: aporta el dinamismo sin competir con la foto.
+    ///    `.overlay` y con `.softLight`: aporta el dinamismo sin competir con la
+    ///    foto.
     ///
-    /// Si no hay carátula, el desenfoque aún no está listo o el usuario tiene
-    /// "Reducir transparencia" activo, se usa la aurora AUTÓNOMA de siempre
-    /// (`.full`, opaca): nunca hay un hueco ni un parpadeo negro.
+    /// ✅ FIX "el fondo aparece de golpe": antes la capa 0 vivía DENTRO de la
+    /// aurora (estilo `.full`) y esta vista le pedía `.overlay` en cuanto llegaba
+    /// el desenfoque. Meter o quitar una capa —y cambiar los `stops` del velo—
+    /// son cambios ESTRUCTURALES, no propiedades animables, así que el fondo
+    /// daba un salto justo al abrirse el sheet. Ahora la base es fija de esta
+    /// vista y la aurora se queda SIEMPRE en `.overlay`/`.softLight`: su subárbol
+    /// nunca se reestructura y lo único que se anima es la opacidad de la
+    /// carátula y del tinte, que se funden en 0.45 s.
+    ///
+    /// Sin carátula, con el desenfoque aún en cola o con "Reducir transparencia",
+    /// la base opaca y la aurora siguen ahí: nunca hay un hueco ni un parpadeo.
     private var backgroundView: some View {
         ZStack {
+            // Capa 0 — base opaca SIEMPRE presente: es el hueco que dejaba la
+            // aurora al pasar de `.full` a `.overlay`.
+            backdropBase
+
             if showsArtworkBackdrop, let artworkBackdrop = blurredArtwork {
                 // Capa 1 — carátula pre-difuminada (estática).
                 Image(uiImage: artworkBackdrop)
@@ -364,6 +396,8 @@ struct NowPlayingView: View {
                     .interpolation(.medium)
                     .scaledToFill()
                     .ignoresSafeArea()
+                    // ✅ Aparece fundida (opacidad), nunca de golpe.
+                    .transition(.opacity)
 
                 // Capa 2 — tinte dinámico del color dominante.
                 extractedColor
@@ -371,13 +405,20 @@ struct NowPlayingView: View {
                     .ignoresSafeArea()
             }
 
-            // Capa 3 — aurora sutil (o autónoma si no hay carátula detrás).
+            // Capa 3 — aurora sutil, SIEMPRE sobre la base opaca de arriba.
             AuroraDynamicBackground(
                 primary: extractedColor,
                 secondary: extractedSecondaryColor,
-                style: showsArtworkBackdrop ? .overlay : .full
+                // ✅ CONSTANTE (antes alternaba con `showsArtworkBackdrop`):
+                // cambiar de estilo metía/quitaba la base opaca y cambiaba los
+                // `stops` del velo, dos saltos no animables. La base la pone ya
+                // `backdropBase`, así que este subárbol es siempre el mismo.
+                style: .overlay
             )
-            .blendMode(showsArtworkBackdrop ? .softLight : .normal)
+            // ✅ CONSTANTE también: el blend no es animable, así que alternarlo
+            // daría otro salto en el mismo instante. `.softLight` es el modo que
+            // ya usaba el fondo CON carátula (el caso normal).
+            .blendMode(.softLight)
         }
         .ignoresSafeArea()
         .allowsHitTesting(false)
@@ -390,6 +431,42 @@ struct NowPlayingView: View {
     /// fondo opaco y estático, así que se queda con la aurora autónoma.)
     private var showsArtworkBackdrop: Bool {
         !reduceTransparency && blurredArtwork != nil
+    }
+
+    /// ✅ BASE OPACA DEL FONDO — siempre presente.
+    /// Es la misma base que `AuroraDynamicBackground` pintaba en su modo `.full`
+    /// (degradado oscuro tintado con el acento, no negro plano ni
+    /// `systemBackground`, porque el texto de NowPlaying es siempre blanco), pero
+    /// vive aquí para que la aurora pueda quedarse fija en `.overlay` y su
+    /// subárbol no cambie de forma al llegar la carátula difuminada.
+    private var backdropBase: some View {
+        LinearGradient(
+            colors: [
+                Self.tone(extractedColor, brightness: colorScheme == .dark ? 0.20 : 0.34),
+                Self.tone(extractedSecondaryColor ?? extractedColor,
+                          brightness: colorScheme == .dark ? 0.06 : 0.16)
+            ],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+        .ignoresSafeArea()
+    }
+
+    /// Oscurece un color conservando su TONO con la saturación contenida: mismo
+    /// criterio que la base de `AuroraDynamicBackground`, para que el fondo no
+    /// cambie de aspecto al reordenar las capas.
+    private static func tone(_ color: Color, brightness: CGFloat) -> Color {
+        var hue: CGFloat = 0, saturation: CGFloat = 0, value: CGFloat = 0, alpha: CGFloat = 1
+        guard UIColor(color).getHue(&hue, saturation: &saturation, brightness: &value, alpha: &alpha) else {
+            // Color sin matiz (gris/blanco/negro puro): base neutra.
+            return Color(uiColor: UIColor(white: brightness, alpha: 1.0))
+        }
+        return Color(uiColor: UIColor(
+            hue: hue,
+            saturation: min(saturation * 0.6, 0.85),
+            brightness: brightness,
+            alpha: 1.0
+        ))
     }
 
     /// Calcula (una vez por canción, en hilo de fondo) la carátula difuminada que

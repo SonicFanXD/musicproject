@@ -10,6 +10,13 @@ import SwiftUI
 // ✅ Una línea lógica puede tener VARIAS filas visuales (TTML <br/>): cada fila
 //    lleva su propia máscara y su propia ventana temporal, así el relleno
 //    avanza de arriba abajo (nunca en paralelo) y respeta los silencios.
+// ✅ KARAOKE POR PALABRA (estilo Apple Music): cuando la fila trae timings por
+//    palabra (TTML `itunes:timing="Word"` o LRC híbrido), el borde del relleno lo
+//    marca la VOZ: cada palabra se revela dentro de SU ventana y las que todavía
+//    no han sonado quedan apagadas. Con una sola palabra, un LRC clásico o un
+//    reparto de timings no demostrable, se conserva el relleno lineal por fila.
+// ✅ La capa brillante lleva debajo una copia tintada con el acento y desenfocada
+//    (~2 pt) que produce el halo/"glow" del texto ya sonado.
 // ✅ Las filas que SwiftUI partiría por ANCHURA también se trocean (medición real
 //    con la fuente activa): el wipe avanza fila a fila, nunca en paralelo.
 // ✅ Sin temporizadores propios (ni en la vista ni en el modelo).
@@ -45,6 +52,11 @@ struct LyricsView: View {
     /// ✅ Padding horizontal del contenido de letras: el ancho ÚTIL para el texto
     /// (y para el troceo por medición) es el ancho de la vista menos el doble.
     private static let horizontalPadding: CGFloat = 24
+
+    /// ✅ Acento del karaoke: es el color con el que se tiñe la copia desenfocada
+    /// del texto (el "glow" de Apple Music). Sale de la CARÁTULA cuando el ajuste
+    /// de acento desde carátula está activo; si no, del acento elegido por el usuario.
+    private var glowColor: Color { AppTheme.accent }
 
     /// ✅ Centrado geométrico exacto: el relleno vertical debe ser al menos MEDIA
     /// ALTURA del área visible. Con menos, `scrollTo(anchor: .center)` no puede
@@ -255,7 +267,8 @@ struct LyricsView: View {
             viewModel: viewModel,
             // ✅ Ancho ÚTIL para el texto (sin el padding horizontal): es lo que
             // se mide para trocear las filas que SwiftUI envolvería.
-            availableWidth: max(0, contentWidth - Self.horizontalPadding * 2)
+            availableWidth: max(0, contentWidth - Self.horizontalPadding * 2),
+            glowColor: glowColor
         )
         // ✅ Solo las filas cuyo contenido ha cambiado vuelven a evaluar su body:
         // al cambiar de línea activa (o al hacer scroll) se evita re-evaluar todo
@@ -431,12 +444,35 @@ private enum LyricRowSplitter {
     }
 }
 
+// MARK: - Voces de fondo de Apple Music (`ttm:role="x-bg"`)
+/// ✅ En la app de Apple las voces de fondo se pintan más pequeñas y más tenues
+/// que la voz principal. Solo se aplica a filas COMPLETAS de voz de fondo: una
+/// fila con mezcla se pinta normal, porque mezclar tamaños dentro de una misma
+/// máscara rompería el reparto del relleno.
+/// ✅ La MISMA regla la usan el troceo por medición y el render, de modo que el
+/// tamaño con el que se mide una fila es el tamaño con el que se pinta.
+private enum LyricBackgroundVoice {
+    static let fontScale: CGFloat = 0.86
+    static let opacity: Double = 0.8
+
+    static func isOnlyBackground(_ row: LyricVisualRow) -> Bool {
+        !row.words.isEmpty && row.words.allSatisfy { $0.isBackground }
+    }
+
+    static func fontSize(_ base: CGFloat, for row: LyricVisualRow) -> CGFloat {
+        isOnlyBackground(row) ? base * fontScale : base
+    }
+}
+
 // MARK: - Filas reales (lógicas + troceo por medición)
 private enum LyricRowBuilder {
     /// ✅ Cada trozo hereda un sub-rango de la ventana de su fila lógica, en
     /// proporción al nº de caracteres (misma regla que el modelo cuando no hay
     /// timings por palabra), así las ventanas quedan encadenadas y el trozo N+1
     /// no empieza hasta que el N termina.
+    /// ✅ Cuando la fila SÍ trae timings de palabra y se pueden repartir entre los
+    /// trozos de forma demostrable, cada trozo usa la ventana real de sus palabras
+    /// (y se las lleva, que es lo que permite el karaoke por palabra).
     static func rows(
         from logicalRows: [LyricVisualRow],
         fontSize: CGFloat,
@@ -447,21 +483,48 @@ private enum LyricRowBuilder {
         result.reserveCapacity(logicalRows.count)
 
         for row in logicalRows {
-            let parts = LyricRowSplitter.split(row.text, fontSize: fontSize, weight: weight, maxWidth: maxWidth)
+            // ✅ El troceo usa el tamaño REAL con el que se va a pintar la fila: las
+            // voces de fondo van más pequeñas, así que caben más palabras por línea
+            // y no se parten antes de tiempo.
+            let rowFontSize = LyricBackgroundVoice.fontSize(fontSize, for: row)
+            let parts = LyricRowSplitter.split(row.text, fontSize: rowFontSize, weight: weight, maxWidth: maxWidth)
             guard parts.count > 1 else {
                 result.append(row)
                 continue
             }
 
+            // ✅ Si los timings de palabra se pueden repartir entre los trozos, cada
+            // trozo toma la ventana REAL de sus palabras; si no, se conserva el
+            // reparto proporcional al nº de caracteres.
+            let chunks = LyricWordAligner.split(words: row.words, parts: parts)
+
             let span = Double(max(row.endMs - row.startMs, 1))
             let totalCharacters = max(1, parts.reduce(0) { $0 + $1.count })
             var charactersBefore = 0
+            var previousEndMs = row.startMs
 
-            for part in parts {
-                let start = row.startMs + Int((span * Double(charactersBefore) / Double(totalCharacters)).rounded())
-                let end = row.startMs + Int((span * Double(charactersBefore + part.count) / Double(totalCharacters)).rounded())
-                result.append(LyricVisualRow(text: part, startMs: start, endMs: max(end, start + 1)))
+            for (index, part) in parts.enumerated() {
+                let characterStart = row.startMs + Int((span * Double(charactersBefore) / Double(totalCharacters)).rounded())
+                let characterEnd = row.startMs + Int((span * Double(charactersBefore + part.count) / Double(totalCharacters)).rounded())
                 charactersBefore += part.count
+
+                var startMs = max(characterStart, previousEndMs)
+                var endMs = max(characterEnd, startMs + 1)
+                var partWords: [LyricWordToken] = []
+
+                if let chunk = chunks?[index], let first = chunk.first, let last = chunk.last {
+                    startMs = max(min(first.startMs, row.endMs), previousEndMs)
+                    endMs = max(min(last.endMs, row.endMs), startMs + 1)
+                    partWords = LyricsLine.clampedWords(chunk, startMs: startMs, endMs: endMs)
+                }
+
+                previousEndMs = endMs
+                result.append(LyricVisualRow(
+                    text: part,
+                    startMs: startMs,
+                    endMs: endMs,
+                    words: partWords
+                ))
             }
         }
 
@@ -483,6 +546,9 @@ private struct LyricLineView: View, Equatable {
     let viewModel: LyricsViewModel
     /// ✅ Ancho útil para el texto: el troceo por medición real depende de él.
     let availableWidth: CGFloat
+    /// ✅ Acento (de la carátula si el ajuste está activo): con él se pinta el
+    /// "glow" de la capa brillante del karaoke.
+    let glowColor: Color
 
     /// ✅ Separación entre filas visuales de una misma línea lógica (también en
     /// la capa atenuada, para que el texto no salte al activarse la línea).
@@ -501,6 +567,23 @@ private struct LyricLineView: View, Equatable {
             && lhs.viewModel === rhs.viewModel
             && lhs.line == rhs.line
             && lhs.availableWidth == rhs.availableWidth
+            && lhs.glowColor == rhs.glowColor
+    }
+
+    /// ✅ Una fila LISTA para pintar. Todo lo caro (medición del texto, reparto de
+    /// los timings de palabra, tamaño de fuente) se resuelve aquí, FUERA del
+    /// TimelineView: el bucle de frames solo interpola `Double` y no vuelve a
+    /// medir texto ni a construir claves de caché.
+    private struct RenderRow {
+        let text: String
+        /// Fila del MODELO: su ventana y sus timings de palabra son los que
+        /// consume el motor de lyrics para calcular el relleno.
+        let source: LyricVisualRow
+        let fontSize: CGFloat
+        let isBackground: Bool
+        /// Fracciones de ancho acumuladas al final de cada palabra (nil = la fila
+        /// no tiene timings utilizables y se rellena de forma lineal por fila).
+        let wordFractions: [Double]?
     }
 
     private var fontSize: CGFloat {
@@ -513,9 +596,9 @@ private struct LyricLineView: View, Equatable {
 
     var body: some View {
         // ✅ Las filas REALES se calculan AQUÍ, fuera del TimelineView: el troceo
-        // por medición se paga una sola vez por línea (y queda cacheado), nunca
-        // por frame.
-        let rows = displayedRows
+        // por medición y el karaoke por palabra se pagan una sola vez por línea
+        // (y quedan cacheados), nunca por frame.
+        let rows = renderRows
 
         Group {
             if isActive {
@@ -564,11 +647,41 @@ private struct LyricLineView: View, Equatable {
         )
     }
 
+    /// ✅ Prepara las filas del render: tamaño de fuente real (las voces de fondo
+    /// van más pequeñas) y, SOLO en la línea activa (la única que hace karaoke),
+    /// las fracciones de ancho por palabra. Las líneas inactivas no pagan ni una
+    /// medición de texto.
+    private var renderRows: [RenderRow] {
+        let baseSize = fontSize
+        let weight: UIFont.Weight = isActive ? .bold : .regular
+
+        return displayedRows.map { row in
+            let isBackground = LyricBackgroundVoice.isOnlyBackground(row)
+            let rowFontSize = LyricBackgroundVoice.fontSize(baseSize, for: row)
+            let fractions = isActive && !row.words.isEmpty
+                ? LyricWordMeasure.fractions(
+                    text: row.text,
+                    words: row.words,
+                    fontSize: rowFontSize,
+                    weight: weight
+                )
+                : nil
+
+            return RenderRow(
+                text: row.text,
+                source: row,
+                fontSize: rowFontSize,
+                isBackground: isBackground,
+                wordFractions: fractions
+            )
+        }
+    }
+
     // MARK: Línea activa (relleno animado, fila a fila)
     /// ✅ Con reproducción activa se piden frames a 60 Hz; en pausa se dibuja el
     /// estado congelado una sola vez (sin gastar GPU/batería).
     @ViewBuilder
-    private func activeLine(_ rows: [LyricVisualRow]) -> some View {
+    private func activeLine(_ rows: [RenderRow]) -> some View {
         if isPlaying {
             TimelineView(.animation) { _ in
                 activeRows(rows)
@@ -581,14 +694,16 @@ private struct LyricLineView: View, Equatable {
     /// ✅ UN solo TimelineView para la línea completa: cada fila visual lleva su
     /// propia máscara y su propia ventana temporal, pero solo hay UNA
     /// suscripción de frames por línea activa (nunca una por fila).
-    private func activeRows(_ rows: [LyricVisualRow]) -> some View {
+    private func activeRows(_ rows: [RenderRow]) -> some View {
         VStack(alignment: .leading, spacing: Self.rowSpacing) {
             ForEach(rows.indices, id: \.self) { index in
                 LyricFillText(
                     text: rows[index].text,
-                    fontSize: fontSize,
+                    fontSize: rows[index].fontSize,
                     fontWeight: fontWeight,
-                    progress: easedProgress(rows: rows, index: index)
+                    progress: easedProgress(rows: rows, index: index),
+                    glowColor: glowColor,
+                    contentOpacity: rows[index].isBackground ? LyricBackgroundVoice.opacity : 1
                 )
                 // ✅ Las filas ya completadas (o aún sin empezar) tienen el mismo
                 // progreso frame a frame → no se redibujan; solo la fila que se
@@ -600,55 +715,103 @@ private struct LyricLineView: View, Equatable {
 
     /// ✅ Misma estructura de filas que la capa activa: el texto de una línea
     /// normal (una sola fila) se dibuja exactamente igual que antes.
-    private func dimmedRows(_ rows: [LyricVisualRow]) -> some View {
+    private func dimmedRows(_ rows: [RenderRow]) -> some View {
         VStack(alignment: .leading, spacing: Self.rowSpacing) {
             ForEach(rows.indices, id: \.self) { index in
                 Text(rows[index].text)
-                    .font(.system(size: fontSize, weight: fontWeight))
+                    .font(.system(size: rows[index].fontSize, weight: fontWeight))
                     .foregroundStyle(Color.primary.opacity(0.35))
+                    // ✅ Misma escala/tenuidad que en la capa activa: el texto no
+                    // puede cambiar de tamaño al activarse la línea.
+                    .opacity(rows[index].isBackground ? LyricBackgroundVoice.opacity : 1)
             }
         }
     }
 
     /// ✅ Smoothstep (t·t·(3−2t)) POR FILA: cada fila se rellena en su propio
     /// rango, así la fila de arriba se completa antes de que empiece la de abajo.
-    private func easedProgress(rows: [LyricVisualRow], index: Int) -> Double {
+    /// ✅ Con timings por palabra el progreso lo marca la VOZ (cada palabra se
+    /// revela en su propia ventana y las que aún no suenan quedan apagadas); sin
+    /// ellos se conserva el reparto lineal dentro de la ventana de la fila.
+    private func easedProgress(rows: [RenderRow], index: Int) -> Double {
         guard rows.indices.contains(index) else { return 0 }
 
-        let raw = viewModel.fillProgress(
-            forLineID: line.id,
-            row: rows[index],
-            isLastRow: index == rows.count - 1
-        )
+        let isLastRow = index == rows.count - 1
+        let raw: Double
+
+        if let fractions = rows[index].wordFractions,
+           let wordProgress = viewModel.wordFillProgress(
+               forLineID: line.id,
+               row: rows[index].source,
+               fractions: fractions,
+               isLastRow: isLastRow
+           ) {
+            raw = wordProgress
+        } else {
+            raw = viewModel.fillProgress(
+                forLineID: line.id,
+                row: rows[index].source,
+                isLastRow: isLastRow
+            )
+        }
+
         return raw * raw * (3 - 2 * raw)
     }
 }
 
 // MARK: - Texto con relleno progresivo (dos capas + máscara)
-// ✅ Sin blur ni capas extra: dos Text y una máscara rectangular por frame.
+// ✅ Dos capas de texto y una máscara rectangular por frame (es el coste que
+//    mantiene el karaoke a 60 fps en el A11).
+// ✅ La capa brillante va por DUPLICADO: debajo, una copia tintada con el acento
+//    de la carátula y desenfocada (el "glow" de Apple Music); encima, el texto
+//    nítido. La máscara recorta AMBAS, así el halo aparece progresivamente con
+//    el barrido y no ilumina lo que todavía no ha sonado.
 private struct LyricFillText: View, Equatable {
     let text: String
     let fontSize: CGFloat
     let fontWeight: Font.Weight
     let progress: Double
+    let glowColor: Color
+    /// ✅ Voz de fondo: la fila entera se pinta algo más tenue.
+    let contentOpacity: Double
+
+    /// ✅ Radio del halo: 2 pt. Es un blur sobre UNA línea de texto (no sobre la
+    /// pantalla) y su contenido no cambia, así que SwiftUI lo rasteriza de nuevo
+    /// solo cuando cambia la geometría del texto; lo que se recalcula por frame
+    /// es únicamente la máscara.
+    private static let glowRadius: CGFloat = 2
+    private static let glowOpacity: Double = 0.9
 
     var body: some View {
         ZStack(alignment: .leading) {
             dimmedLayer
-            brightLayer.mask(alignment: .leading) { progressMask }
+            brightLayers.mask(alignment: .leading) { progressMask }
         }
+        .opacity(contentOpacity)
+    }
+
+    private var font: Font {
+        .system(size: fontSize, weight: fontWeight)
     }
 
     private var dimmedLayer: some View {
         Text(text)
-            .font(.system(size: fontSize, weight: fontWeight))
+            .font(font)
             .foregroundStyle(Color.primary.opacity(0.35))
     }
 
-    private var brightLayer: some View {
-        Text(text)
-            .font(.system(size: fontSize, weight: fontWeight))
-            .foregroundStyle(Color.primary)
+    private var brightLayers: some View {
+        ZStack(alignment: .leading) {
+            Text(text)
+                .font(font)
+                .foregroundStyle(glowColor)
+                .blur(radius: Self.glowRadius)
+                .opacity(Self.glowOpacity)
+
+            Text(text)
+                .font(font)
+                .foregroundStyle(Color.primary)
+        }
     }
 
     /// ✅ Ancho de la máscara = ancho REAL del texto × progreso (0...1).
@@ -657,6 +820,148 @@ private struct LyricFillText: View, Equatable {
             Rectangle()
                 .frame(width: geometry.size.width * progress)
         }
+    }
+}
+
+// MARK: - Karaoke por palabra: fracciones de ancho por palabra
+/// ✅ Apple Music no reparte la ventana de la fila entre sus caracteres: cada
+/// palabra tiene su propio timing y se revela en él. Para pintarlo con UNA sola
+/// máscara rectangular se necesita saber QUÉ FRACCIÓN DEL ANCHO de la fila ocupa
+/// cada palabra, y eso exige medir el texto con la fuente real (la misma
+/// maquinaria que el troceo por anchura).
+/// ✅ Se mide UNA vez por (texto + fuente + palabras) y se cachea: el bucle de
+/// frames solo recorre un array de `Double`.
+/// ✅ El ancho se mide por PREFIJOS: el texto de una fila nunca se reconstruye,
+/// así que no hay deriva posible entre lo medido y lo dibujado.
+private enum LyricWordMeasure {
+    /// Tope de entradas: una canción larga en sus dos estados (activa 24pt e
+    /// inactiva 18pt) no debe crecer sin límite (iPhone 8 Plus / 3GB).
+    private static let cache: NSCache<NSString, NSArray> = {
+        let cache = NSCache<NSString, NSArray>()
+        cache.countLimit = 600
+        return cache
+    }()
+
+    /// Fracción de ancho acumulada al FINAL de cada palabra (la última siempre
+    /// vale 1). Devuelve nil si los timings no reproducen el texto de la fila:
+    /// en ese caso la fila se rellena de forma lineal, nunca desalineada.
+    static func fractions(
+        text: String,
+        words: [LyricWordToken],
+        fontSize: CGFloat,
+        weight: UIFont.Weight
+    ) -> [Double]? {
+        guard !text.isEmpty, !words.isEmpty else { return nil }
+
+        let key = "\(Int(fontSize.rounded()))|\(weight.rawValue)|\(text)|\(words.map(\.text).joined(separator: "\u{1}"))" as NSString
+        if let cached = cache.object(forKey: key) as? [Double] { return cached.isEmpty ? nil : cached }
+
+        guard let measured = measure(text: text, words: words, fontSize: fontSize, weight: weight) else {
+            // ✅ El fallo también se cachea (array vacío) para no remedir en cada render.
+            cache.setObject([] as NSArray, forKey: key)
+            return nil
+        }
+
+        cache.setObject(measured as NSArray, forKey: key)
+        return measured
+    }
+
+    /// ✅ Se recorre el texto con un cursor comprobando que cada palabra APARECE
+    /// ahí, en orden. Así se aceptan los dos espaciados reales del TTML (palabras
+    /// separadas por espacios y SÍLABAS pegadas: `<span>Te-</span><span>te-</span>`)
+    /// e incluso mezclas de ambos. Si una palabra no cuadra, no se devuelve nada:
+    /// el karaoke por palabra solo se pinta cuando el reparto es demostrable.
+    ///
+    /// ✅ La fracción de cada palabra se mide sobre el PREFIJO REAL del texto (no
+    /// sobre una reconstrucción), así el ancho incluye exactamente los mismos
+    /// espacios y el mismo kern que el texto que SwiftUI dibuja.
+    private static func measure(
+        text: String,
+        words: [LyricWordToken],
+        fontSize: CGFloat,
+        weight: UIFont.Weight
+    ) -> [Double]? {
+        let font = UIFont.systemFont(ofSize: fontSize, weight: weight)
+        let total = (text as NSString).size(withAttributes: [.font: font]).width
+        guard total > 0 else { return nil }
+
+        var fractions: [Double] = []
+        fractions.reserveCapacity(words.count)
+        var cursor = text.startIndex
+
+        for word in words {
+            // ✅ Los espacios entre palabras se saltan (el separador puede ser " "
+            // o nada, según cómo viniera el propio archivo).
+            while cursor < text.endIndex, text[cursor].isWhitespace {
+                cursor = text.index(after: cursor)
+            }
+            guard text[cursor...].hasPrefix(word.text) else { return nil }
+            cursor = text.index(cursor, offsetBy: word.text.count)
+
+            let prefix = String(text[text.startIndex..<cursor])
+            let width = (prefix as NSString).size(withAttributes: [.font: font]).width
+            fractions.append(min(max(width / total, 0), 1))
+        }
+
+        // ✅ Si sobra texto visible sin timing, el reparto no es demostrable.
+        guard !text[cursor...].contains(where: { !$0.isWhitespace }) else { return nil }
+
+        // ✅ El final de la última palabra ES el ancho completo de la fila: con el
+        // redondeo de la medición, deja el barrido cerrado al 100%.
+        fractions[fractions.count - 1] = 1
+        return fractions
+    }
+}
+
+// MARK: - Reparto EXACTO de los timings de palabra entre los trozos medidos
+/// ✅ El troceo por anchura parte la fila en trozos, y los timings de palabra
+/// tienen que viajar con su trozo: si no, el karaoke se desalinearía.
+/// ✅ El reparto solo se acepta cuando es DEMOSTRABLE: los textos de las palabras
+/// (unidos con el mismo separador con el que el modelo construyó la fila) tienen
+/// que reproducir EXACTAMENTE el texto de cada trozo. Cuando no cuadra se
+/// devuelve nil y esos trozos usan el relleno lineal: preferimos un karaoke por
+/// fila correcto a uno por palabra desalineado.
+private enum LyricWordAligner {
+    static func split(words: [LyricWordToken], parts: [String]) -> [[LyricWordToken]]? {
+        guard !words.isEmpty, parts.count > 1 else { return nil }
+
+        for separator in [" ", ""] {
+            if let assigned = assign(words: words, parts: parts, separator: separator) {
+                return assigned
+            }
+        }
+        return nil
+    }
+
+    private static func assign(
+        words: [LyricWordToken],
+        parts: [String],
+        separator: String
+    ) -> [[LyricWordToken]]? {
+        var result: [[LyricWordToken]] = []
+        result.reserveCapacity(parts.count)
+        var index = 0
+
+        for part in parts {
+            var chunk: [LyricWordToken] = []
+            var consumed = ""
+
+            while index < words.count {
+                let candidate = chunk.isEmpty
+                    ? words[index].text
+                    : consumed + separator + words[index].text
+                guard part.hasPrefix(candidate) else { break }
+                consumed = candidate
+                chunk.append(words[index])
+                index += 1
+            }
+
+            // ✅ Exactitud: lo consumido tiene que ser TODO el trozo, no un prefijo.
+            guard !chunk.isEmpty, consumed == part else { return nil }
+            result.append(chunk)
+        }
+
+        return index == words.count ? result : nil
     }
 }
 
