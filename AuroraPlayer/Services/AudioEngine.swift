@@ -890,15 +890,29 @@ class AudioEngine: NSObject, ObservableObject {
             // con el CONCEDIDO (setPreferredIOBufferDuration no falla cuando el
             // hardware no lo soporta: redondea en silencio al más cercano).
             var requestedBufferDuration: TimeInterval = session.ioBufferDuration
-            for duration in bufferDurations {
-                do {
-                    try session.setPreferredIOBufferDuration(duration)
-                    requestedBufferDuration = duration
-                    break
-                } catch {
-                    // ✅ Esperado en A11 (iPhone 8): no es un error real,
-                    // solo probamos el siguiente buffer más corto soportado.
-                    AppLog.debug(.playback, "Buffer \(Int(duration * 1000))ms no soportado, probando siguiente")
+            // ✅ FIX CALIDAD BT: en Bluetooth NO se pide buffer corto.
+            // La latencia en A2DP la impone el enlace (100-300 ms), así que 8 ms
+            // de render en la app no la mejoran; en cambio piden 125 despertares/s
+            // al hilo de render mientras el MISMO A11 codifica AAC/SBC y comparte
+            // la radio con Wi-Fi → es el escenario clásico de underrun, que se oye
+            // como microcortes. Al no pedir nada, la sesión conserva su valor por
+            // defecto (≈23 ms), que cuesta cero calidad y elimina ese riesgo.
+            // Es la conclusión que YA estaba escrita para el modo de optimización
+            // BT (ver `configureSessionWithBluetoothOptimization`), aplicada al
+            // camino que de verdad se ejecuta.
+            // Sin petición en BT: `requestedBufferDuration` se queda con el valor
+            // vigente de la sesión, que es lo que se registra más abajo.
+            if !isBluetoothRoute {
+                for duration in bufferDurations {
+                    do {
+                        try session.setPreferredIOBufferDuration(duration)
+                        requestedBufferDuration = duration
+                        break
+                    } catch {
+                        // ✅ Esperado en A11 (iPhone 8): no es un error real,
+                        // solo probamos el siguiente buffer más corto soportado.
+                        AppLog.debug(.playback, "Buffer \(Int(duration * 1000))ms no soportado, probando siguiente")
+                    }
                 }
             }
             // ✅ 3.0.1: aquí NO se puede leer el concedido — en el instante de la
@@ -906,7 +920,11 @@ class AudioEngine: NSObject, ObservableObject {
             // setPreferredIOBufferDuration no falla cuando el hardware no lo
             // soporta: redondea en silencio). El valor REAL se registra 0.3 s
             // después de activar la sesión.
-            AppLog.info(.playback, String(format: "Buffer I/O pedido: %.1f ms (el concedido se comprueba tras activar)", requestedBufferDuration * 1000))
+            if isBluetoothRoute {
+                AppLog.info(.playback, "Buffer I/O: sin petición en ruta Bluetooth (lo decide el sistema; el concedido se comprueba tras activar)")
+            } else {
+                AppLog.info(.playback, String(format: "Buffer I/O pedido: %.1f ms (el concedido se comprueba tras activar)", requestedBufferDuration * 1000))
+            }
 
             // ✅ Línea base de sample rate SIN forzar 44.1 kHz: pedir siempre
             // 44100 al reconfigurar la sesión reclocaba el hardware si el archivo
@@ -917,7 +935,13 @@ class AudioEngine: NSObject, ObservableObject {
             // reloj del DAC/hardware más cercano soportado); el ajuste por
             // canción (playCurrentSong) pide el rate NATIVO del archivo.
             let baselineRate = sampleRate > 0 ? sampleRate : session.sampleRate
-            if baselineRate > 0, abs(session.sampleRate - baselineRate) > 1 {
+            // ✅ FIX CALIDAD BT: en Bluetooth NO se pide tasa (MISMA regla que
+            // `playCurrentSong`, que la excluye a propósito). El reloj del enlace
+            // A2DP lo negocia iOS: pedir aquí la tasa del archivo podía
+            // reconfigurar la ruta en caliente (click / microcorte) y no aporta
+            // nada, porque iOS remuestrea al rate del códec de todas formas. En
+            // cable / DAC USB / altavoz sigue pidiéndose igual que antes.
+            if !isBluetoothRoute, baselineRate > 0, abs(session.sampleRate - baselineRate) > 1 {
                 do {
                     try session.setPreferredSampleRate(baselineRate)
                 } catch {
@@ -1107,7 +1131,15 @@ class AudioEngine: NSObject, ObservableObject {
     func toggleLimiter() {
         isLimiterEnabled.toggle()
         updateEQBypassState()
-        AppLog.info(.playback, "Protección anti-clipping: \(isLimiterEnabled ? "activada (base 0.99)" : "desactivada (base 1.0, bit-perfect posible)")")
+        // ✅ FIX HONESTIDAD DEL LOG: en Bluetooth la ganancia base es 0.89 FIJA
+        // (margen anti-clipping del codificador, ver `applyOutputGain`), así que
+        // el mensaje anterior ("base 0.99" / "base 1.0") describía una ganancia
+        // que en esa ruta NUNCA se aplica: leyendo los logs se concluía que no hay
+        // atenuación en Bluetooth cuando sí la hay.
+        let effectiveBase: String = isBluetoothRoute
+            ? "base 0.89 fija en Bluetooth (margen anti-clipping del códec)"
+            : (isLimiterEnabled ? "base 0.99" : "base 1.0, bit-perfect posible")
+        AppLog.info(.playback, "Protección anti-clipping: \(isLimiterEnabled ? "activada" : "desactivada") — \(effectiveBase)")
     }
 
     /// ✅ BLUETOOTH OPTIMIZATION: activar optimizaciones para BT

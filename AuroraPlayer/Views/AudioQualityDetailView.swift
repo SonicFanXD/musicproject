@@ -80,22 +80,55 @@ struct AudioQualityDetailView: View {
     }
 
     // MARK: - Contenido embebido (para tarjeta modal)
+    /// ✅ PATH A — el panel se ajusta al contenido y solo scrollea si no cabe.
+    ///
+    /// Antes esto era un `ScrollView` a secas. Un `ScrollView` es GLOTÓN (acepta
+    /// el alto que se le proponga), así que el `VStack` del panel medía siempre
+    /// los 500 pt de su `maxHeight` aunque el contenido ocupara 300: el hueco
+    /// vacío de abajo era inevitable, y NO se podía arreglar desde el frame del
+    /// panel (`qualityCardModal`), porque un `max` solo acota, nunca estira.
+    ///
+    /// `ViewThatFits(in: .vertical)` mide el alto IDEAL de cada variante contra
+    /// el alto realmente disponible y usa la primera que quepa:
+    /// · 1º — las secciones SIN scroll: si el contenido cabe, se elige esta, no
+    ///   es glotona, y el panel adopta exactamente su alto (sin hueco vacío).
+    /// · 2º — las mismas secciones dentro del `ScrollView`: si no cabe, se elige
+    ///   esta y el panel vuelve a medir el máximo con scroll interno.
+    /// Si ninguna cupiera se usaría la última, que es la que scrollea: nunca hay
+    /// contenido inalcanzable.
+    ///
+    /// El eje se restringe a `.vertical` a propósito: con el init por defecto
+    /// (que mira AMBOS ejes) la primera variante no cabría NUNCA, porque los
+    /// `Text` largos (notas del DAC, nota de Bit-Perfect) tienen un ancho IDEAL
+    /// sin envolver mayor que la tarjeta y `ViewThatFits` los descartaría por el
+    /// ancho. `ViewThatFits(in:)` es API de iOS 16.0.
+    /// Las dos variantes comparten `embeddedSections`, así que no pueden divergir.
     private var embeddedContent: some View {
-        ScrollView {
-            // ✅ OPTIMIZACIÓN: LazyVStack para que las secciones solo se
-            // rendericen cuando entran en pantalla (crítico en dispositivos
-            // antiguos o con muchas secciones visibles a la vez).
-            LazyVStack(spacing: 16) {
-                headerCard
-                signalChainSection
-                fileDetailsSection
-                outputDetailsSection
-                audiophileInfoSection
-                deviceSection
+        ViewThatFits(in: .vertical) {
+            embeddedSections
+
+            ScrollView {
+                embeddedSections
             }
-            .padding(.horizontal, 14).padding(.top, 10).padding(.bottom, 14)
+            .scrollIndicators(.hidden)
         }
-        .scrollIndicators(.hidden)
+    }
+
+    /// Las seis secciones del panel en un solo sitio: es lo que comparten la
+    /// variante que se ajusta al contenido y la que scrollea.
+    private var embeddedSections: some View {
+        // ✅ OPTIMIZACIÓN: LazyVStack para que las secciones solo se
+        // rendericen cuando entran en pantalla (crítico en dispositivos
+        // antiguos o con muchas secciones visibles a la vez).
+        LazyVStack(spacing: 16) {
+            headerCard
+            signalChainSection
+            fileDetailsSection
+            outputDetailsSection
+            audiophileInfoSection
+            deviceSection
+        }
+        .padding(.horizontal, 14).padding(.top, 10).padding(.bottom, 14)
     }
 
     // MARK: - Cuerpo completo con chrome de navegación
@@ -636,16 +669,27 @@ struct AudioQualityDetailView: View {
             }
             .drawingGroup()
 
+            // ✅ El texto RECLAMA el ancho sobrante con `maxWidth: .infinity`.
+            // Antes este VStack se encogía a su ancho IDEAL y el espacio lo
+            // absorbía el `Spacer` de la derecha: con un título o un detalle
+            // largos, el bloque se quedaba sin ancho propio y la fila truncaba.
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(.primary)
+                    // ✅ Un solo renglón, encogiendo antes que desbordar: era el
+                    // ÚNICO texto de la vista sin tope de líneas, así que un
+                    // título largo en otro idioma envolvía y dejaba la fila más
+                    // alta que sus vecinas (alturas desiguales en la cadena).
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
                 Text(detail)
                     .font(.system(size: 11, weight: .medium).monospacedDigit())
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
 
             Spacer()
 
@@ -713,7 +757,11 @@ struct AudioQualityDetailView: View {
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.leading)
                 .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 0)
+            // ✅ FIX: aquí había un `Spacer(minLength: 0)` que competía por el
+            // ancho con el propio texto de la nota. El comentario de arriba ya
+            // declara la intención ("el texto ocupa el ancho completo"): sin el
+            // Spacer, el `Text` se queda con TODO el sobrante y la nota envuelve
+            // con el ancho real en vez de partir antes de tiempo.
         }
         .padding(.horizontal, 14).padding(.vertical, 11)
         .background(

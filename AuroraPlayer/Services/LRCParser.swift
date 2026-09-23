@@ -281,9 +281,9 @@ struct LRCParser {
     }
 
     /// ✅ Formato híbrido: [mm:ss.xx]<mm:ss.xxx>palabra<mm:ss.xxx>palabra
-    /// Extrae los timings por palabra como DATOS: la UI de esta iteración no
-    /// pinta karaoke por palabra. El último token queda con end == start y se
-    /// cierra con el fin real de la línea en `closeWords`.
+    /// Los timings alimentan el KARAOKE POR PALABRA de la vista. El último token
+    /// queda con end == start y se cierra con el fin real de la línea en
+    /// `closeWords`.
     private static func extractWordTokens(_ line: String) -> [LyricWordToken] {
         guard let regex = wordTimestampRegex else { return [] }
 
