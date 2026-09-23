@@ -846,12 +846,19 @@ class AudioEngine: NSObject, ObservableObject {
                 options: options
             )
 
+            // ✅ AUDIÓFILO (BT): en A2DP la latencia la impone el ENLACE
+            // (100-300 ms), así que un buffer de render de 8 ms NO reduce la
+            // latencia percibida: solo multiplica las interrupciones de render
+            // por segundo en el A11 y arriesga underrun (microcortes/clicks que
+            // se oyen como pérdida de calidad). En Bluetooth no se pide buffer:
+            // se deja el que iOS tenga por defecto. Los buffers cortos solo se
+            // piden en ruta cableada (jack / DAC USB), donde sí bajan latencia.
             // ✅ Mejor calidad con latencia mínima: probamos buffers cortos en
             // orden descendente con fallback robusto. iOS 16 en A11 (iPhone 8)
             // devuelve error -50 (paramErr) con 0.02, así que vamos bajando
             // hasta encontrar el menor soportado por el hardware/DAC actual.
             // ✅ OPTIMIZACIÓN: buffers de 8-10ms para menor latencia sin glitches
-            let bufferDurations: [TimeInterval] = [0.008, 0.01, 0.015, 0.02]
+            let bufferDurations: [TimeInterval] = isBluetoothRoute ? [] : [0.008, 0.01, 0.015, 0.02]
             // ✅ DIAGNÓSTICO: se guarda el último valor PEDIDO para poder compararlo
             // con el CONCEDIDO (setPreferredIOBufferDuration no falla cuando el
             // hardware no lo soporta: redondea en silencio al más cercano).
@@ -872,7 +879,11 @@ class AudioEngine: NSObject, ObservableObject {
             // setPreferredIOBufferDuration no falla cuando el hardware no lo
             // soporta: redondea en silencio). El valor REAL se registra 0.3 s
             // después de activar la sesión.
-            AppLog.info(.playback, String(format: "Buffer I/O pedido: %.1f ms (el concedido se comprueba tras activar)", requestedBufferDuration * 1000))
+            if isBluetoothRoute {
+                AppLog.info(.playback, "Buffer I/O: sin petición en ruta Bluetooth (lo decide iOS)")
+            } else {
+                AppLog.info(.playback, String(format: "Buffer I/O pedido: %.1f ms (el concedido se comprueba tras activar)", requestedBufferDuration * 1000))
+            }
 
             // ✅ Línea base de sample rate SIN forzar 44.1 kHz: pedir siempre
             // 44100 al reconfigurar la sesión reclocaba el hardware si el archivo
@@ -882,8 +893,15 @@ class AudioEngine: NSObject, ObservableObject {
             // setPreferredSampleRate NO remuestrea la señal (solo selecciona el
             // reloj del DAC/hardware más cercano soportado); el ajuste por
             // canción (playCurrentSong) pide el rate NATIVO del archivo.
+            // ✅ AUDIÓFILO (BT): en Bluetooth la tasa la decide el ENLACE (A2DP
+            // negocia su propio reloj de 44.1 kHz — o 48 kHz en algunos
+            // receptores). Pedir aquí la tasa del archivo contradecía la regla
+            // de `playCurrentSong` (donde Bluetooth SÍ está excluido) y podía
+            // forzar una reconfiguración de ruta al abrir la app con unos
+            // auriculares BT ya conectados → click/microcorte audible. La tasa
+            // nativa solo se pide por cable (jack / DAC USB).
             let baselineRate = sampleRate > 0 ? sampleRate : session.sampleRate
-            if baselineRate > 0, abs(session.sampleRate - baselineRate) > 1 {
+            if !isBluetoothRoute, baselineRate > 0, abs(session.sampleRate - baselineRate) > 1 {
                 do {
                     try session.setPreferredSampleRate(baselineRate)
                 } catch {
