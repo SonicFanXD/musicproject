@@ -108,6 +108,12 @@ class AudioEngine: NSObject, ObservableObject {
     private var shuffleIndex: Int = 0
     // ✅ MEJORA QUEUE: cola manual de canciones para reproducir después
     @Published var manualQueue: [Song] = []
+    // ✅ FIX cola larga: lista COMPLETA de lo que viene después (cola manual +
+    // resto de la playlist, SIN topar). `nextUpQueue` es solo la ventana de 10
+    // que pinta la vista de cola; reconstruir la playlist desde esa ventana
+    // truncaba la reproducción a 10 canciones en cuanto el usuario tocaba la
+    // cola (eliminar/reordenar una fila borraba el resto de la lista).
+    private var upcomingQueue: [Song] = []
     @Published var repeatMode: RepeatMode = {
         if let raw = UserDefaults.standard.string(forKey: "com.aurora.repeatMode"),
            let mode = RepeatMode(rawValue: raw) { return mode }
@@ -2301,28 +2307,54 @@ class AudioEngine: NSObject, ObservableObject {
 
     // ✅ Gestión de la cola "Siguiente" (reordenar, eliminar, limpiar)
     func removeFromNextUpQueue(_ song: Song) {
-        nextUpQueue.removeAll { $0.id == song.id }
+        // ✅ FIX: se elimina de las DOS fuentes (cola manual y lista completa),
+        // no solo de la ventana que pinta la UI. Si se quitaba solo de la
+        // ventana, la canción seguía estando en `upcomingQueue` y volvía a
+        // aparecer al rehacer la playlist.
+        manualQueue.removeAll { $0.id == song.id }
+        upcomingQueue.removeAll { $0.id == song.id }
         // Reconstruir playlist interna para reflejar el cambio
         rebuildPlaylistFromQueue()
     }
 
+    /// El usuario reordena la ventana visible (las PRIMERAS canciones de
+    /// `upcomingQueue`). Se reemplaza ese prefijo por el orden nuevo y se
+    /// conserva intacto el resto, así reordenar 10 filas nunca borra las demás.
     func reorderNextUpQueue(_ songs: [Song]) {
-        nextUpQueue = songs
+        let editedIDs = Set(songs.map { $0.id })
+        let untouched = upcomingQueue.filter { !editedIDs.contains($0.id) }
+        upcomingQueue = songs + untouched
+        // ✅ Las canciones de la cola manual ya están dentro de `upcomingQueue`
+        // en el orden elegido: se vacía la cola manual para que
+        // computeNextIndex() no vuelva a insertarlas (el mismo tema se
+        // reproducía dos veces: una por la playlist rehecha y otra al consumir
+        // la cola manual).
+        manualQueue.removeAll()
         rebuildPlaylistFromQueue()
     }
 
     func clearNextUpQueue() {
-        nextUpQueue.removeAll()
+        // Vaciar la cola es vaciarla ENTERA (también lo que no se ve en la
+        // ventana): la reproducción termina en la canción actual.
+        manualQueue.removeAll()
+        upcomingQueue.removeAll()
         rebuildPlaylistFromQueue()
     }
 
     private func rebuildPlaylistFromQueue() {
-        // La playlist actual = [canción actual] + cola siguiente
+        // La playlist actual = [canción actual] + cola siguiente COMPLETA.
+        // ✅ FIX truncamiento: antes se usaba `nextUpQueue` (la ventana de 10
+        // de la UI), así que cualquier edición de la cola recortaba la
+        // reproducción a esas 10 canciones + la actual.
         guard currentIndex >= 0, currentIndex < playlist.count else { return }
         let current = playlist[currentIndex]
-        playlist = [current] + nextUpQueue
+        playlist = [current] + upcomingQueue
         currentIndex = 0
         originalPlaylist = []
+        updatePlaybackQueue()
+        // Mantener la ventana de la UI coherente con la playlist recién rehecha
+        // (y con la cola manual ya volcada dentro de ella).
+        updateNextUpQueue()
     }
 
     private func startDisplayTimer(isBackground: Bool = false) {
@@ -2529,17 +2561,22 @@ class AudioEngine: NSObject, ObservableObject {
         
         // Luego añadir canciones de la playlist
         guard currentIndex < playlist.count else {
-            nextUpQueue = upcoming
+            upcomingQueue = upcoming
+            nextUpQueue = Array(upcoming.prefix(10))
             return
         }
         let nextIndex = currentIndex + 1
         guard nextIndex < playlist.count else {
-            nextUpQueue = upcoming
+            upcomingQueue = upcoming
+            nextUpQueue = Array(upcoming.prefix(10))
             return
         }
         let playlistUpcoming = Array(playlist.suffix(from: nextIndex))
         upcoming.append(contentsOf: playlistUpcoming)
         
+        // ✅ FIX cola larga: la lista completa (sin topar) es la que usa el
+        // motor para rehacer la playlist; la ventana de 10 es solo para la UI.
+        upcomingQueue = upcoming
         // ✅ MEJORA: mostrar 10 canciones en lugar de 3 para mejor visualización
         nextUpQueue = Array(upcoming.prefix(10))
     }
