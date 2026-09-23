@@ -202,6 +202,12 @@ final class Localization: ObservableObject {
         "settings.limiterSubtitle": [.spanish: "Atenúa 0,09 dB para evitar saturación. Desactivada, la salida por cable puede ser bit-perfect", .english: "Attenuates 0.09 dB to prevent clipping. When off, wired output can be bit-perfect"],
         "settings.bluetoothOptimization": [.spanish: "Optimización Bluetooth", .english: "Bluetooth Optimization"],
         "settings.bluetoothOptimizationSubtitle": [.spanish: "Optimiza el enlace Bluetooth: el reloj y el búfer los decide iOS", .english: "Optimizes the Bluetooth link: clock and buffer are decided by iOS"],
+
+        // ✅ FASE C1: mantenimiento (acciones destructivas con confirmación)
+        "settings.resetSettings": [.spanish: "Restablecer ajustes", .english: "Reset Settings"],
+        "settings.resetSettingsSubtitle": [.spanish: "Vuelve apariencia, audio y reproducción a sus valores por defecto", .english: "Restores appearance, audio and playback to their defaults"],
+        "settings.resetSettingsMessage": [.spanish: "Se restablecerán TODOS los ajustes (apariencia, audio, reproducción e idioma). No se borrarán tu biblioteca, tus playlists ni tus \"Me gusta\". ¿Continuar?", .english: "ALL settings will be reset (appearance, audio, playback and language). Your library, playlists and likes will NOT be deleted. Continue?"],
+        "settings.resetConfirm": [.spanish: "Restablecer", .english: "Reset"],
         "audio.quality.title": [.spanish: "Calidad de audio", .english: "Audio Quality"],
         "audio.quality.close": [.spanish: "Cerrar", .english: "Close"],
         "audio.quality.stereo": [.spanish: "Estéreo", .english: "Stereo"],
