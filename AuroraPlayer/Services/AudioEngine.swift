@@ -2747,14 +2747,16 @@ class AudioEngine: NSObject, ObservableObject {
             if portType == AVAudioSession.Port.bluetoothA2DP.rawValue ||
                portType == AVAudioSession.Port.bluetoothLE.rawValue ||
                portType == AVAudioSession.Port.bluetoothHFP.rawValue {
-                // iOS no expone el codec (AAC/aptX/LDAC) directamente a las apps
-                // es una limitación del sistema. Documentamos esto en la UI.
+                // iOS no expone el codec (AAC/aptX/LDAC) directamente a las apps:
+                // es una limitación del sistema. Se publica solo el PERFIL, con su
+                // nombre técnico (neutro respecto al idioma); la vista de calidad
+                // añade la nota traducida que explica qué significa cada uno.
                 if portType == AVAudioSession.Port.bluetoothLE.rawValue {
-                    self.bluetoothCodec = "BLE (iOS maneja codec)"
+                    self.bluetoothCodec = "LE"
                 } else if portType == AVAudioSession.Port.bluetoothHFP.rawValue {
-                    self.bluetoothCodec = "HFP (llamadas, baja calidad)"
+                    self.bluetoothCodec = "HFP"
                 } else {
-                    self.bluetoothCodec = "A2DP (iOS maneja codec)"
+                    self.bluetoothCodec = "A2DP"
                 }
             } else {
                 self.bluetoothCodec = ""
@@ -2774,15 +2776,11 @@ class AudioEngine: NSObject, ObservableObject {
                 self.usbDACInfo = ""
             }
             
-            // ✅ AUDIÓFILO: modo actual de AVAudioSession
-            switch session.mode {
-            case .default:
-                self.audioSessionMode = "Default"
-            case .measurement:
-                self.audioSessionMode = "Measurement (bit-perfect)"
-            default:
-                self.audioSessionMode = session.mode.rawValue
-            }
+            // ✅ AUDIÓFILO / i18n: se publica el TOKEN de AVAudioSession
+            // (`Measurement`, `Default`, …), no una etiqueta escrita en un idioma
+            // fijo. La vista de calidad lo traduce, así que el panel deja de
+            // mostrar texto en español con la app en inglés (y al revés).
+            self.audioSessionMode = session.mode.rawValue
             
             // ✅ Localizado: antes "Estándar"/"Estéreo" quedaban fijos en español
             // aunque la app estuviera en inglés.
