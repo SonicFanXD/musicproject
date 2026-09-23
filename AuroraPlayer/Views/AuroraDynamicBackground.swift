@@ -16,6 +16,13 @@ import SwiftUI
 ///    ya extraídos (las conversiones HSB/RGB son aritmética puntual, sin bitmap).
 /// 4. `.allowsHitTesting(false)`: el fondo NUNCA intercepta toques.
 ///
+/// DOS MODOS (`style`):
+/// · `.full` (por defecto) — fondo autónomo: base opaca + manchas + velo. Es el
+///   que usan las vistas que no tienen nada detrás.
+/// · `.overlay` — aurora SUTIL encima de un fondo ya existente (NowPlaying pone
+///   debajo la carátula pre-difuminada): omite la base opaca y refuerza el velo
+///   para que el texto blanco se lea sobre una foto.
+///
 /// Fallbacks:
 /// · "Reducir transparencia"     → fondo OPACO y estático (sin blur ni deriva).
 /// · `accessibilityReduceMotion` → misma aurora, sin animación.
@@ -23,10 +30,23 @@ import SwiftUI
 ///   elegante de un solo color; nunca un hueco.
 /// · Sin carátula el llamador ya pasa `AppTheme.accent` como primario.
 struct AuroraDynamicBackground: View {
+    /// Cómo se compone la aurora con lo que tenga detrás.
+    enum Style {
+        /// Fondo de pantalla completo: base oscura tintada OPA­CA + manchas + velo.
+        /// Es el estilo autónomo (no necesita nada detrás).
+        case full
+        /// Aurora sutil sobre un fondo que ya existe (la carátula difuminada de
+        /// NowPlaying): se omite la base opaca para no taparla, y el velo sube
+        /// porque detrás hay una FOTO, no un degradado que ya nace oscuro.
+        case overlay
+    }
+
     /// Color dominante de la carátula (o el acento efectivo si no hay portada).
     var primary: Color = AppTheme.accent
     /// Segundo color dominante de la carátula. `nil` → un solo color.
     var secondary: Color?
+    /// Composición. Por defecto `.full`, el comportamiento autónomo de siempre.
+    var style: Style = .full
 
     @AppStorage("com.aurora.reduceTransparency") private var reduceTransparency = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -63,7 +83,11 @@ struct AuroraDynamicBackground: View {
 
     var body: some View {
         ZStack {
-            baseLayer
+            // ✅ La base opaca NO se pinta en `.overlay`: taparía la carátula
+            // difuminada que el llamador pone debajo (que es el fondo real).
+            if style == .full {
+                baseLayer
+            }
 
             if reduceTransparency {
                 // ✅ Opaco y estático: sin blur, sin animación, sin transparencia.
@@ -155,13 +179,29 @@ struct AuroraDynamicBackground: View {
     /// rate despreciable) que oscurece arriba y abajo, donde viven el header, el
     /// título y los controles.
     private var scrim: some View {
-        LinearGradient(
-            stops: [
+        // ✅ DOS PERFILES, no un compromiso a medias:
+        // · `.full` — la base ya nace oscura y tintada, así que el velo solo
+        //   tiene que rematar arriba (header) y abajo (controles).
+        // · `.overlay` — detrás hay una FOTO (la carátula difuminada), y el
+        //   bloque de título/artista vive al ~65% de la altura, donde ninguna
+        //   base oscura ayuda: el velo sube en el centro para garantizar el
+        //   contraste del texto blanco sobre una portada clara, sin borrar la
+        //   carátula (que sigue viéndose en el resto).
+        let stops: [Gradient.Stop] = style == .overlay
+            ? [
+                .init(color: .black.opacity(0.34), location: 0.0),
+                .init(color: .black.opacity(0.14), location: 0.38),
+                .init(color: .black.opacity(0.30), location: 0.62),
+                .init(color: .black.opacity(0.55), location: 1.0)
+            ]
+            : [
                 .init(color: .black.opacity(0.30), location: 0.0),
                 .init(color: .black.opacity(0.06), location: 0.38),
                 .init(color: .black.opacity(0.10), location: 0.62),
                 .init(color: .black.opacity(0.42), location: 1.0)
-            ],
+            ]
+        return LinearGradient(
+            stops: stops,
             startPoint: .top,
             endPoint: .bottom
         )

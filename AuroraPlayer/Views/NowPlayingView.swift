@@ -39,6 +39,16 @@ struct NowPlayingView: View {
     // ✅ FIX: usar accentUIColor en vez de systemPurple hardcodeado
     @State private var extractedUIColor: UIColor = AppTheme.accentUIColor
 
+    // ✅ IDENTIDAD VISUAL: fondo de carátula PRE-DIFUMINADO (estilo Apple Music).
+    // El desenfoque NO se hace por frame: se calcula con Core Image UNA vez por
+    // canción, en un hilo de fondo, y queda cacheado (ver
+    // `AppTheme.blurredArtwork`). Aquí solo se guarda la textura ya lista, así que
+    // durante la reproducción el coste es el de subir un bitmap de 320px.
+    @State private var blurredArtwork: UIImage?
+    // Id de la canción para la que se pidió el cálculo (evita lanzar el mismo
+    // desenfoque en cada re-render mientras el anterior sigue en cola).
+    @State private var blurredArtworkSongID: UUID?
+
     // ✅ Caché de color dominante por canción: evita recalcular el histograma
     // HSB al reabrir NowPlaying o re-entrar a la misma pista (60fps sin hitch)
 
@@ -245,6 +255,9 @@ struct NowPlayingView: View {
             }
             .onAppear {
                 extractColorFromArtwork()
+                // ✅ Fondo de carátula: el desenfoque ya está en caché si se
+                // vuelve a la vista, así que aparece al instante.
+                loadBlurredArtworkIfNeeded()
                 AppLog.info(.interface, "NowPlaying abierto: '\(audioEngine.currentSong?.displayName ?? "—")'")
                 withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
                     artworkScale = 1.0
@@ -261,9 +274,16 @@ struct NowPlayingView: View {
             }
             .onChange(of: audioEngine.currentSong?.id) { _ in
                 extractColorFromArtwork()
+                // ✅ Un desenfoque por canción (en hilo de fondo, cacheado).
+                loadBlurredArtworkIfNeeded()
                 // ✅ Propagar el color de acento a ThemeManager para que PlayerBar
                 // y todas las vistas que lo observen se actualicen al instante
                 ThemeManager.shared.updateArtworkAccent(from: audioEngine.currentSong)
+            }
+            .onChange(of: reduceTransparency) { _ in
+                // "Reducir transparencia" pide fondo opaco y estático: la carátula
+                // difuminada se retira (y se recupera al desactivar, desde caché).
+                loadBlurredArtworkIfNeeded()
             }
             .onChange(of: ThemeManager.shared.accentFromArtwork) { value in
                 // ✅ FIX: propaga el color a ThemeManager (que a su vez publica a
@@ -313,20 +333,102 @@ struct NowPlayingView: View {
     }
 
     // MARK: - Background (respeta "Reducir transparencia")
-    /// ✅ SUSTITUYE al antiguo `Image(artwork).blur(radius: 25)` de PANTALLA
-    /// COMPLETA: aquello difuminaba la carátula entera (una re-rasterización de
-    /// un bitmap del tamaño de la pantalla) y solo aprovechaba UN color del arte.
-    /// Ahora el fondo se construye con los DOS colores ya extraídos (`extractedColor`
-    /// y `extractedSecondaryColor`), sin crear ni una imagen en el ciclo de
-    /// render: las manchas se rasterizan una vez con `.drawingGroup()` y después
-    /// solo se les TRANSFORMA la capa (offset/escala) por Core Animation.
-    /// El fallback de "Reducir transparencia" (fondo opaco y estático) y el de
-    /// ausencia de secundario viven dentro de la propia vista.
+    /// ✅ IDENTIDAD RESTAURADA SIN VOLVER AL COSTE ANTIGUO.
+    /// El diseño clásico era `Image(artwork).blur(radius: 25).opacity(0.45)` a
+    /// pantalla completa: eso obligaba a la GPU a re-rasterizar un bitmap del
+    /// tamaño de la pantalla (y su desenfoque) de forma continua.
+    ///
+    /// Ahora el mismo aspecto se compone en TRES CAPAS, y ninguna hace trabajo
+    /// por frame:
+    ///
+    /// 1. **Carátula PRE-DIFUMINADA** — Core Image sobre ~320px en un hilo de
+    ///    fondo, UNA vez por canción, con el velo y la saturación ya horneados en
+    ///    el bitmap. En reproducción esto es una textura estática.
+    /// 2. **Tinte dinámico** — `extractedColor` al 18%, como el 0.12 del diseño
+    ///    original: le da vida al fondo con el color de la portada.
+    /// 3. **Aurora sutil** — la misma `AuroraDynamicBackground` en modo
+    ///    `.overlay` (sin base opaca para no tapar la carátula) y con
+    ///    `.softLight`: aporta el dinamismo sin competir con la foto.
+    ///
+    /// Si no hay carátula, el desenfoque aún no está listo o el usuario tiene
+    /// "Reducir transparencia" activo, se usa la aurora AUTÓNOMA de siempre
+    /// (`.full`, opaca): nunca hay un hueco ni un parpadeo negro.
     private var backgroundView: some View {
-        AuroraDynamicBackground(
-            primary: extractedColor,
-            secondary: extractedSecondaryColor
-        )
+        ZStack {
+            if showsArtworkBackdrop, let artworkBackdrop = blurredArtwork {
+                // Capa 1 — carátula pre-difuminada (estática).
+                Image(uiImage: artworkBackdrop)
+                    .resizable()
+                    // `.medium` basta: es un bitmap ya desenfocado y la ampliación
+                    // la hace la GPU al muestrear la textura.
+                    .interpolation(.medium)
+                    .scaledToFill()
+                    .ignoresSafeArea()
+
+                // Capa 2 — tinte dinámico del color dominante.
+                extractedColor
+                    .opacity(0.18)
+                    .ignoresSafeArea()
+            }
+
+            // Capa 3 — aurora sutil (o autónoma si no hay carátula detrás).
+            AuroraDynamicBackground(
+                primary: extractedColor,
+                secondary: extractedSecondaryColor,
+                style: showsArtworkBackdrop ? .overlay : .full
+            )
+            .blendMode(showsArtworkBackdrop ? .softLight : .normal)
+        }
+        .ignoresSafeArea()
+        .allowsHitTesting(false)
+        // ✅ El fondo se funde cuando el desenfoque llega (0.45s), en vez de
+        // aparecer de golpe. Es una transición de opacidad, no un re-render.
+        .animation(.easeInOut(duration: 0.45), value: blurredArtwork)
+    }
+
+    /// ¿Hay carátula difuminada que enseñar? ("Reducir transparencia" pide un
+    /// fondo opaco y estático, así que se queda con la aurora autónoma.)
+    private var showsArtworkBackdrop: Bool {
+        !reduceTransparency && blurredArtwork != nil
+    }
+
+    /// Calcula (una vez por canción, en hilo de fondo) la carátula difuminada que
+    /// hace de fondo. La caché compartida de `AppTheme` hace que reabrir NowPlaying
+    /// o volver a la misma pista sea instantáneo, y `blurredArtworkSongID` impide
+    /// lanzar el mismo trabajo dos veces mientras sigue en cola.
+    private func loadBlurredArtworkIfNeeded() {
+        guard !reduceTransparency,
+              let artwork = audioEngine.currentSong?.artwork,
+              let songID = audioEngine.currentSong?.id else {
+            blurredArtwork = nil
+            blurredArtworkSongID = nil
+            return
+        }
+
+        // Ya calculado antes (caché compartida): al instante, sin tocar la GPU.
+        if let cached = AppTheme.cachedBlurredArtwork(key: songID.uuidString) {
+            blurredArtwork = cached
+            blurredArtworkSongID = songID
+            return
+        }
+
+        // Mismo trabajo ya en curso → no duplicar.
+        guard blurredArtworkSongID != songID else { return }
+        blurredArtworkSongID = songID
+        // Mientras Core Image trabaja se ve la aurora autónoma (sin parpadeo).
+        blurredArtwork = nil
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            let blurred = AppTheme.blurredArtwork(from: artwork, key: songID.uuidString)
+            DispatchQueue.main.async {
+                // Si el usuario ya cambió de canción, este resultado llega tarde:
+                // se descarta (la caché se lo queda para cuando vuelva).
+                guard self.audioEngine.currentSong?.id == songID else { return }
+                withAnimation(.easeInOut(duration: 0.45)) {
+                    self.blurredArtwork = blurred
+                }
+            }
+        }
     }
 
     // MARK: - Artwork (mejorado con mejor sombras y efectos)
