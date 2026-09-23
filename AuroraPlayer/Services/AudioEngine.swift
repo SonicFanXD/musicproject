@@ -900,9 +900,15 @@ class AudioEngine: NSObject, ObservableObject {
             // ✅ 3.0.1: buffer REAL concedido, leído cuando el audio server ya
             // aplicó (o redondeó) la petición. Comparado con "pedido" dice si el
             // hardware aceptó los 8 ms o si sirvió su valor por defecto.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
                 let granted = AVAudioSession.sharedInstance().ioBufferDuration
                 AppLog.info(.playback, String(format: "Buffer I/O concedido: %.2f ms (pedido: %.1f ms)", granted * 1000, requestedBufferDuration * 1000))
+                // ✅ 3.0.2: la telemetría PUBLICADA se refresca aquí, cuando el audio
+                // server ya aplicó (o redondeó) el buffer. Antes este bloque solo
+                // registraba un log mientras las propiedades publicadas seguían
+                // leídas de la petición → "Búfer I/O real" mostraba el valor
+                // anterior hasta el siguiente cambio de canción o de ruta.
+                self?.updateAudioQuality()
             }
             updateRouteName()
             updateAudioQuality()
