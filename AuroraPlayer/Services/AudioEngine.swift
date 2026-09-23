@@ -1150,7 +1150,13 @@ class AudioEngine: NSObject, ObservableObject {
         // Se cae a la del índice solo si el motor todavía no tiene archivo cargado.
         let sourceRate = (audioFile != nil && sampleRate > 0) ? sampleRate : (currentSong?.sampleRate ?? 0)
         let processing = (isEQEnabled && eqPreset != .flat) || isMonoAudioEnabled
-        let unityGain = !isLimiterEnabled && isWiredRoute
+        // ✅ FIX A9+C3: en modo de respaldo (AVPlayer) el grafo propio —EQ, mono y
+        // headroom— NO está en uso, así que el indicador no puede afirmar
+        // "bit-perfect": describiría un motor que no es el que suena. Sin este
+        // término, con `audioFile == nil` (que es el caso en respaldo) la tasa caía
+        // a la del índice y la fila podía decir "Sí (sin remuestreo)" justo debajo
+        // del chip que avisa de que no hay bit-perfect.
+        let unityGain = !isLimiterEnabled && isWiredRoute && !isUsingFallback
         let value = sourceRate > 0 && abs(outputRate - sourceRate) < 1 && !processing && unityGain
         DispatchQueue.main.async { [weak self] in
             guard let self = self, self.isBitPerfect != value else { return }
@@ -1829,6 +1835,13 @@ class AudioEngine: NSObject, ObservableObject {
     func stop() {
         isStopping = true
         stopFallbackPlayback()
+        // ✅ FIX: detener TERMINA el modo de respaldo, así que el flag vuelve a
+        // false aquí. Antes solo lo hacía playCurrentSong(), de modo que tras
+        // detener con el motor caído el chip de AudioQualityDetailView seguía
+        // visible hasta la siguiente canción. Es seguro porque avPlayer ya quedó
+        // liberado arriba: las ramas que leen el flag (pause, resume,
+        // suspendForRouteLoss, anclaje de posición) son no-ops sin reproductor.
+        isUsingFallback = false
         if playerNode.isPlaying {
             playerNode.stop()
         }
