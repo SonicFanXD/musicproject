@@ -522,19 +522,41 @@ enum AppTheme {
     static let thumbnailCache: NSCache<NSString, UIImage> = {
         let cache = NSCache<NSString, UIImage>()
         // ✅ ANTI-JETSAM (iPhone 8 Plus / 3GB): tope por MEMORIA, no por conteo.
-        // 12MB ≈ 330 miniaturas de 96px o ≈ 33 de 300px; las carátulas completas
-        // nunca entran aquí (siguen en Song.artworkCache).
+        // 12MB ≈ 150 miniaturas de 144px (fila de 48pt @3x) o ≈ 8 de 600px
+        // (portada hero de álbum @3x); las carátulas completas nunca entran aquí
+        // (siguen en Song.artworkCache).
         cache.countLimit = 400
         cache.totalCostLimit = 12 * 1024 * 1024
         return cache
     }()
 
+    /// Escala de píxeles del dispositivo para rasterizar miniaturas.
+    /// En iOS es 2x (iPhone no-Plus, iPad) o 3x (iPhone Plus / Pro).
+    /// - `UITraitCollection.current` es la vía NO deprecada (`UIScreen.main`
+    ///   está obsoleto en iOS 16). Durante el `body` de una vista SwiftUI
+    ///   devuelve la escala real de la pantalla.
+    /// - Si por el contexto de llamada (funciones libres de lista, body fuera
+    ///   de un ámbito de traits) llegara un valor no utilizable, se asume 3x:
+    ///   pedir de MÁS cuesta unos KB; pedir de MENOS se ve suave al ampliar.
+    private static var thumbnailScale: CGFloat {
+        let traitScale = UITraitCollection.current.displayScale
+        return traitScale >= 2 ? traitScale : 3
+    }
+
     /// Miniatura cacheada de una carátula. Mismo resultado que
     /// `artwork.preparingThumbnail(of:)` (y mismo fallback a la original),
     /// pero sin recomputarla en cada render de fila.
-    static func thumbnail(from artwork: UIImage, size: CGSize) -> UIImage {
-        let width = max(1, Int(size.width.rounded()))
-        let height = max(1, Int(size.height.rounded()))
+    /// - Parameter size: tamaño en PUNTOS que ocupa la carátula en pantalla
+    ///   (NO píxeles). El helper multiplica por la escala del dispositivo para
+    ///   que el bitmap tenga exactamente los píxeles que se van a dibujar:
+    ///   ni uno menos (ampliar se ve suave — p. ej. pedir 96 px para una fila
+    ///   de 48 pt en un iPhone Plus, que es 3x y necesita 144 px) ni uno más
+    ///   (RAM extra en cada fila del scroll).
+    /// - Parameter scale: escala explícita (por defecto, la del dispositivo).
+    static func thumbnail(from artwork: UIImage, size: CGSize, scale: CGFloat? = nil) -> UIImage {
+        let deviceScale = scale ?? thumbnailScale
+        let width = max(1, Int((size.width * deviceScale).rounded(.up)))
+        let height = max(1, Int((size.height * deviceScale).rounded(.up)))
         let key = "\(ObjectIdentifier(artwork).hashValue)-\(width)x\(height)" as NSString
 
         if let cached = thumbnailCache.object(forKey: key) { return cached }
