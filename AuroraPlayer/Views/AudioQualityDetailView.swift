@@ -372,6 +372,14 @@ struct AudioQualityDetailView: View {
             detailRow(Localization.localized("quality.outputFrequency"), audioEngine.outputSampleRate > 0 ? "\(Int(audioEngine.outputSampleRate)) Hz" : "—")
             detailRow(Localization.localized("quality.outputChannels"), audioEngine.outputChannelCount > 0 ? audioEngine.outputChannelCount.description : "—")
             detailRow(Localization.localized("quality.routeType"), outputTypeLabel)
+            // ✅ 3.0.2: el modo de respaldo (AVPlayer) deja de ser invisible. Si el
+            // motor propio falló, el EQ, el mono y el headroom NO están aplicándose
+            // y el indicador de bit-perfect no puede afirmarse: había que poder
+            // verlo sin abrir los logs.
+            detailRow(Localization.localized("quality.playbackEngine"),
+                      audioEngine.isUsingFallback
+                      ? Localization.localized("quality.fallbackEngine")
+                      : "AVAudioEngine")
             // ✅ 3.0.1: telemetría REAL del enlace (lo único que iOS expone del
             // dispositivo conectado): canales máximos, latencia y buffer concedido.
             detailRow(Localization.localized("quality.maxOutputChannels"), maxOutputChannelsLabel)

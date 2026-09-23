@@ -313,42 +313,20 @@ struct NowPlayingView: View {
     }
 
     // MARK: - Background (respeta "Reducir transparencia")
+    /// ✅ SUSTITUYE al antiguo `Image(artwork).blur(radius: 25)` de PANTALLA
+    /// COMPLETA: aquello difuminaba la carátula entera (una re-rasterización de
+    /// un bitmap del tamaño de la pantalla) y solo aprovechaba UN color del arte.
+    /// Ahora el fondo se construye con los DOS colores ya extraídos (`extractedColor`
+    /// y `extractedSecondaryColor`), sin crear ni una imagen en el ciclo de
+    /// render: las manchas se rasterizan una vez con `.drawingGroup()` y después
+    /// solo se les TRANSFORMA la capa (offset/escala) por Core Animation.
+    /// El fallback de "Reducir transparencia" (fondo opaco y estático) y el de
+    /// ausencia de secundario viven dentro de la propia vista.
     private var backgroundView: some View {
-        Group {
-            if let artwork = audioEngine.currentSong?.artwork, !reduceTransparency {
-                GeometryReader { geometry in
-                    ZStack {
-                        // ✅ FIX barra negra: scaledToFill + clipped para cubrir
-                        // TODA la pantalla (scaledToFit dejaba franjas en pantallas
-                        // altas/anchas por encima y debajo de la imagen cuadrada).
-                        Image(uiImage: artwork)
-                            .resizable()
-                            .interpolation(.medium)
-                            .scaledToFill()
-                            .frame(width: geometry.size.width + 60, height: geometry.size.height + 60)
-                            .clipped()
-                            .blur(radius: 25)
-                            .opacity(0.45)
-
-                        extractedColor.opacity(0.12)
-                    }
-                }
-                .ignoresSafeArea()
-                .allowsHitTesting(false)
-                .drawingGroup(opaque: false)
-            } else {
-                LinearGradient(
-                    colors: [
-                        Color(UIColor.systemBackground),
-                        Color(UIColor.secondarySystemBackground)
-                    ],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-                .ignoresSafeArea()
-                .allowsHitTesting(false)
-            }
-        }
+        AuroraDynamicBackground(
+            primary: extractedColor,
+            secondary: extractedSecondaryColor
+        )
     }
 
     // MARK: - Artwork (mejorado con mejor sombras y efectos)
@@ -841,9 +819,21 @@ struct NowPlayingView: View {
     }
 
     // MARK: - Helpers
+    /// Fondo de los controles circulares (anterior / siguiente / aleatorio /
+    /// repetir).
+    /// ✅ 3.0.2 — BUG DE CONTRASTE CORREGIDO: con "Reducir transparencia" el
+    /// relleno opaco era `secondarySystemBackground` —casi BLANCO en modo
+    /// claro— mientras los glifos de esos botones son SIEMPRE blancos
+    /// (`playIconColor` = `AppTheme.contrastingText`, que devuelve `.white`
+    /// ignorando el color): en modo claro con ese ajuste activo los cuatro iconos
+    /// desaparecían dentro del círculo.
+    /// El fondo de NowPlaying (aurora) es opaco y oscuro en cualquier apariencia,
+    /// así que un velo negro sin blur mantiene el mismo aspecto que el vidrio y
+    /// garantiza el contraste con el glifo blanco. Sigue sin haber `.blur` ni
+    /// material, que es justo lo que el ajuste pide quitar.
     private var controlBackground: AnyShapeStyle {
         reduceTransparency
-            ? AnyShapeStyle(Color(UIColor.secondarySystemBackground))
+            ? AnyShapeStyle(Color.black.opacity(0.35))
             : AnyShapeStyle(.ultraThinMaterial)
     }
 

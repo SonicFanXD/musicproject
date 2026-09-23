@@ -101,7 +101,7 @@ private func detailTitleReveal(for progress: CGFloat) -> CGFloat {
     min(max((progress - 0.5) / 0.4, 0), 1)
 }
 
-// MARK: - Album Detail (dise�o inmersivo premium con color de car�tula)
+// MARK: - Album Detail (diseño inmersivo premium con color de carátula)
 struct AlbumDetailView: View {
     let album: Album
     @ObservedObject var audioEngine: AudioEngine
@@ -110,13 +110,13 @@ struct AlbumDetailView: View {
     @ObservedObject var fileAccessService: FileAccessService
     @Environment(\.dismiss) private var dismiss
 
-    // ? Color dominante VIVO (histograma HSB) extra�do en segundo plano
+    // ✅ Color dominante VIVO (histograma HSB) extraído en segundo plano
     @State private var liveDominantColor: UIColor? = nil
     @State private var appearAnimation = false
     // ? OPT: blur precalculado UNA vez (en background) en vez de re-renderizar .blur(50) en cada frame
     @State private var heroBlurredArtwork: UIImage? = nil
 
-    // ? OPT: cachear c�mputos costosos que se leen m�ltiples veces por frame
+    // ✅ OPT: cachear cómputos costosos que se leen múltiples veces por frame
     @State private var cachedSongs: [Song] = []
     @State private var cachedTotalDuration: TimeInterval = 0
     @State private var cachedHasMultipleDiscs: Bool = false
@@ -180,7 +180,7 @@ struct AlbumDetailView: View {
     }
 
     private var tintUIColor: UIColor { liveDominantColor ?? album.dominantColor ?? AppTheme.accentUIColor }
-    // ? Contraste: blanco o negro seg�n luminancia del color de la portada
+    // ✅ Contraste: blanco o negro según luminancia del color de la portada
     private var onTintColor: Color { AppTheme.contrastingText(on: tintUIColor) }
 
     var body: some View {
@@ -223,8 +223,8 @@ struct AlbumDetailView: View {
                     }
                 }
                 .padding(.horizontal, 20).padding(.top, 20)
-                // ? FIX: padding inferior amplio para que la �ltima canci�n
-                // no quede oculta detr�s del PlayerBar flotante.
+                // ✅ FIX: padding inferior amplio para que la última canción
+                // no quede oculta detrás del PlayerBar flotante.
                 .padding(.bottom, 130)
             }
         }
@@ -246,10 +246,10 @@ struct AlbumDetailView: View {
                     .opacity(detailTitleReveal(for: detailHeroProgress(for: scrollOffset)))
             }
         }
-        // ? Sin banda gris: el hero inmersivo fluye bajo la barra de navegaci�n
+        // ✅ Sin banda gris: el hero inmersivo fluye bajo la barra de navegación
         .toolbarBackground(.hidden, for: .navigationBar)
         .onAppear {
-            // ? Cachear c�mputos una sola vez
+            // ✅ Cachear cómputos una sola vez
             if cachedSongs.isEmpty {
                 cachedSongs = album.songs
                 cachedTotalDuration = cachedSongs.reduce(0) { $0 + $1.duration }
@@ -258,17 +258,17 @@ struct AlbumDetailView: View {
                 cachedSongsByDisc = grouped.keys.sorted().map { ($0, grouped[$0]!.sorted { $0.trackNumber < $1.trackNumber }) }
                 cachedQuality = Self.computeMajorityQuality(cachedSongs)
             }
-            // ? Animaci�n de entrada suave
+            // ✅ Animación de entrada suave
             withAnimation(.easeOut(duration: 0.4)) {
                 appearAnimation = true
             }
             // ? OPT: precalcular el blur del hero UNA vez en background
             prepareBlurredArtwork(from: album.artwork)
-            // ? Extraer el color dominante VIVO de la car�tula en hilo de fondo
+            // ✅ Extraer el color dominante VIVO de la carátula en hilo de fondo
             loadSecondaryArtworkColorIfNeeded()
             guard liveDominantColor == nil, let artwork = album.artwork else { return }
             DispatchQueue.global(qos: .userInitiated).async {
-                // ? Cach� compartida: mismo color que NowPlaying para este �lbum
+                // ✅ Caché compartida: mismo color que NowPlaying para este álbum
                 let dominant = AppTheme.cachedDominantColor(from: artwork, key: album.id)
                 DispatchQueue.main.async {
                     withAnimation(.easeInOut(duration: 0.3)) {
@@ -290,14 +290,15 @@ struct AlbumDetailView: View {
 
     private var heroSection: some View {
         VStack(spacing: 14) {
-            // ? Artwork con animaci�n de entrada y brillo sutil
-            // ? 60fps: sombra �NICA consolidada (la doble sombra = 2 pasadas
+            // ✅ Artwork con animación de entrada y brillo sutil
+            // ✅ 60fps: sombra ÚNICA consolidada (la doble sombra = 2 pasadas
             // de offscreen rendering por frame en A11; visualmente equivalente).
             Group {
                 if let artwork = album.artwork {
-                    // ✅ ANTI-JETSAM: 200pt de display → miniatura de 400px
-                    // cacheada en vez de decodificar la carátula completa.
-                    Image(uiImage: AppTheme.thumbnail(from: artwork, size: CGSize(width: 400, height: 400)))
+                    // ✅ ANTI-JETSAM: 200pt de display → miniatura a 200pt
+                    // (600px en @3x, los que realmente se dibujan) cacheada en
+                    // vez de decodificar la carátula completa.
+                    Image(uiImage: AppTheme.thumbnail(from: artwork, size: CGSize(width: 200, height: 200)))
                         .resizable().interpolation(.high).scaledToFill()
                         .frame(width: 200, height: 200)
                         .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
@@ -334,7 +335,7 @@ struct AlbumDetailView: View {
             .opacity(appearAnimation ? 1.0 : 0)
             .animation(.spring(response: 0.5, dampingFraction: 0.8), value: appearAnimation)
 
-            // ? Info del �lbum con mejor jerarqu�a visual
+            // ✅ Info del álbum con mejor jerarquía visual
             VStack(spacing: 6) {
                 Text(album.name)
                     .font(.system(size: 24, weight: .bold, design: .rounded))
@@ -351,7 +352,7 @@ struct AlbumDetailView: View {
             .opacity(appearAnimation ? 1.0 : 0)
             .animation(.easeOut(duration: 0.5).delay(0.1), value: appearAnimation)
 
-            // ? Estad�sticas con dise�o mejorado
+            // ✅ Estadísticas con diseño mejorado
             FlowLayout(horizontalSpacing: 10, verticalSpacing: 8) {
                 statPill(icon: "music.note", text: localizedSongCount(songs.count))
                 if totalDuration > 60 {
@@ -412,7 +413,7 @@ struct AlbumDetailView: View {
                 .scaleEffect(1 + detailHeroProgress(for: scrollOffset) * 0.14)
                 .opacity(1 - detailHeroProgress(for: scrollOffset) * 0.55)
                 .clipped().ignoresSafeArea(edges: .top)
-                .drawingGroup() // ? Optimizaci�n GPU para 60fps
+                .drawingGroup() // ✅ Optimización GPU para 60fps
             }
         }
     }
@@ -561,13 +562,22 @@ struct AlbumDetailView: View {
 
     // ✅ Formatear año de salida del álbum (locale/calendario/zona FIJOS:
     // "yyyy" estable y consistente con el parser de fechas)
-    private func formatYear(_ date: Date) -> String {
+    /// ✅ 3.0.2 RENDIMIENTO: el `DateFormatter` se crea UNA vez (`static`) en lugar
+    /// de en cada evaluación del `body`. Construir un DateFormatter es de las
+    /// operaciones más caras de Foundation (tabla de locale + ICU) y hacerlo
+    /// dentro del ciclo de render es el patrón clásico que provoca micro-tirones
+    /// al abrir o seleccionar un álbum. El resultado mostrado es idéntico.
+    private static let yearFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.calendar = Calendar(identifier: .gregorian)
         formatter.timeZone = TimeZone.current
         formatter.dateFormat = "yyyy"
-        return formatter.string(from: date)
+        return formatter
+    }()
+
+    private func formatYear(_ date: Date) -> String {
+        Self.yearFormatter.string(from: date)
     }
 
     private func formatLongDuration(_ seconds: TimeInterval) -> String {
@@ -676,7 +686,7 @@ struct AlbumSongRow: View {
     }
 }
 
-// MARK: - Equalizer Bars (animaci�n optimizada sin bloqueo de hilo)
+// MARK: - Equalizer Bars (animación optimizada sin bloqueo de hilo)
 struct EqualizerBars: View {
     let color: Color
     /// ✅ BATERÍA: el latido solo corre mientras hay reproducción. Antes el
@@ -711,7 +721,7 @@ struct EqualizerBars: View {
     }
 }
 
-// MARK: - Header de secci�n reutilizable (con gradiente sutil y color din�mico)
+// MARK: - Header de sección reutilizable (con gradiente sutil y color dinámico)
 private func sectionHeader(icon: String, title: String, accent: DetailAccent) -> some View {
     return HStack(spacing: 8) {
         Image(systemName: icon)
@@ -737,7 +747,7 @@ struct ArtistDetailView: View {
     // ? OPT: blur precalculado UNA vez (en background)
     @State private var heroBlurredArtwork: UIImage? = nil
 
-    // ? OPT: cachear c�mputos
+    // ✅ OPT: cachear cómputos
     @State private var cachedAlbums: [Album] = []
     @State private var cachedSongs: [Song] = []
     @State private var cachedTotalDuration: TimeInterval = 0
@@ -861,7 +871,7 @@ struct ArtistDetailView: View {
         // ? Sin banda gris (coherente con AlbumDetailView)
         .toolbarBackground(.hidden, for: .navigationBar)
         .onAppear {
-            // ? Cachear c�mputos una sola vez
+            // ✅ Cachear cómputos una sola vez
             if cachedAlbums.isEmpty {
                 cachedAlbums = artist.albums
                 cachedSongs = artist.songs
@@ -872,11 +882,11 @@ struct ArtistDetailView: View {
             }
             // ? OPT: precalcular el blur del hero UNA vez en background
             prepareBlurredArtwork(from: artist.artwork)
-            // ? Extraer color del primer �lbum
+            // ✅ Extraer color del primer álbum
             loadSecondaryArtworkColorIfNeeded()
             guard liveDominantColor == nil, let artwork = artist.artwork else { return }
                 DispatchQueue.global(qos: .userInitiated).async {
-                    // ? Cach� compartida por id de artista
+                    // ✅ Caché compartida por id de artista
                     let dominant = AppTheme.cachedDominantColor(from: artwork, key: "artist-" + artist.id)
                     DispatchQueue.main.async {
                         withAnimation(.easeInOut(duration: 0.3)) {
@@ -898,11 +908,12 @@ struct ArtistDetailView: View {
 
     private var artistHeroSection: some View {
         VStack(spacing: 22) {
-            // ? Avatar del artista con animaci�n y efectos mejorados
+            // ✅ Avatar del artista con animación y efectos mejorados
             Group {
                 if let artwork = artist.artwork {
-                    // ✅ ANTI-JETSAM: avatar de 170pt → miniatura de 340px.
-                    Image(uiImage: AppTheme.thumbnail(from: artwork, size: CGSize(width: 340, height: 340)))
+                    // ✅ ANTI-JETSAM: avatar de 170pt → miniatura a 170pt
+                    // (510px en @3x).
+                    Image(uiImage: AppTheme.thumbnail(from: artwork, size: CGSize(width: 170, height: 170)))
                         .resizable().interpolation(.high).scaledToFill()
                         .frame(width: 170, height: 170)
                         .clipShape(Circle())
@@ -916,7 +927,7 @@ struct ArtistDetailView: View {
                                 lineWidth: 3.5
                             )
                         }
-                        // ? 60fps: sombra �nica consolidada (antes: doble)
+                        // ✅ 60fps: sombra única consolidada (antes: doble)
                         .shadow(color: tintColor.opacity(0.3), radius: 22, x: 0, y: 10)
                 } else {
                     ZStack {
@@ -939,7 +950,7 @@ struct ArtistDetailView: View {
             .opacity(appearAnimation ? 1.0 : 0)
             .animation(.spring(response: 0.5, dampingFraction: 0.8), value: appearAnimation)
 
-            // ? Info del artista con mejor jerarqu�a visual
+            // ✅ Info del artista con mejor jerarquía visual
             VStack(spacing: 10) {
                 Text(artist.name)
                     .font(.system(size: 30, weight: .bold, design: .rounded))
@@ -992,7 +1003,7 @@ struct ArtistDetailView: View {
                 .scaleEffect(1 + detailHeroProgress(for: scrollOffset) * 0.14)
                 .opacity(1 - detailHeroProgress(for: scrollOffset) * 0.55)
                 .clipped().ignoresSafeArea(edges: .top)
-                .drawingGroup() // ? Optimizaci�n GPU para 60fps
+                .drawingGroup() // ✅ Optimización GPU para 60fps
             }
         }
     }
@@ -1112,8 +1123,9 @@ struct ArtistAlbumCard: View {
         VStack(alignment: .leading, spacing: 10) {
             Group {
                 if let artwork = album.artwork {
-                    // ✅ ANTI-JETSAM: card de 150pt → miniatura de 300px.
-                    Image(uiImage: AppTheme.thumbnail(from: artwork, size: CGSize(width: 300, height: 300)))
+                    // ✅ ANTI-JETSAM: card de 150pt → miniatura a 150pt (450px
+                    // en @3x).
+                    Image(uiImage: AppTheme.thumbnail(from: artwork, size: CGSize(width: 150, height: 150)))
                         .resizable().scaledToFill()
                         .frame(width: 150, height: 150)
                         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
@@ -1211,7 +1223,7 @@ struct ArtistSongRow: View {
                 }
             }
         }
-        // ? Feedback de presi�n al tocar (micro-escala, animaci�n GPU)
+        // ✅ Feedback de presión al tocar (micro-escala, animación GPU)
         .buttonStyle(PressableButtonStyle(scale: 0.98))
         // ✅ Acciones rápidas (mantener pulsada la fila): añadir a la cola y me
         // gusta. Menú contextual en vez de swipeActions por lo explicado arriba.

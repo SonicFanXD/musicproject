@@ -179,6 +179,32 @@ class FileAccessService: ObservableObject {
         return 0                                     // zona gris (48001–95999 Hz): no inferimos
     }
 
+    /// ✅ 3.0.2 AUDIÓFILO: profundidad REAL de un FLAC, leída de su bloque
+    /// STREAMINFO (obligatorio y siempre el primero del archivo). Ahí viven, en 64
+    /// bits empaquetados, sample rate (20) + canales−1 (3) + bits por muestra −1
+    /// (5) + nº de muestras (36).
+    /// El motivo: la heurística por tasa de muestreo marcaba **16 bits** un FLAC
+    /// 24/44.1, que es el master Hi-Res más común que se compra — es decir, la
+    /// ficha de calidad mentía justo en el caso que un oído entrenado mira.
+    /// Lee 42 bytes (dos `read`), no abre el archivo entero ni decodifica nada; se
+    /// valida la firma "fLaC" y que el primer bloque sea STREAMINFO antes de
+    /// interpretar nada.
+    static func flacBitDepth(from url: URL) -> Int {
+        guard url.pathExtension.lowercased() == "flac",
+              let handle = try? FileHandle(forReadingFrom: url) else { return 0 }
+        defer { try? handle.close() }
+        guard let data = try? handle.read(upToCount: 42) else { return 0 }
+        let bytes = [UInt8](data)
+        guard bytes.count >= 22 else { return 0 }
+        // Firma "fLaC" + primer bloque con tipo 0 (STREAMINFO).
+        guard bytes[0] == 0x66, bytes[1] == 0x4C, bytes[2] == 0x61, bytes[3] == 0x43,
+              (bytes[4] & 0x7F) == 0 else { return 0 }
+        // bits por muestra −1: bit 0 del byte 20 (el más bajo del campo de 5 bits
+        // que empieza tras los 3 de canales) + nibble alto del byte 21.
+        let bits = Int(((bytes[20] & 0x01) << 4) | (bytes[21] >> 4)) + 1
+        return (1...32).contains(bits) ? bits : 0
+    }
+
     /// Etiqueta legible del formato según la extensión (DD+/Dolby Digital).
     private static func formatLabel(for ext: String) -> String {
         switch ext.lowercased() {
@@ -1331,14 +1357,20 @@ class FileAccessService: ObservableObject {
                 sampleRate = Double(asbd.pointee.mSampleRate)
                 channelCount = Int(asbd.pointee.mChannelsPerFrame)
                 let fileBits = Int(asbd.pointee.mBitsPerChannel)
+                // ✅ 3.0.2: en FLAC la profundidad REAL está en el archivo
+                // (STREAMINFO), así que se lee de ahí y la heurística por tasa
+                // queda solo como respaldo del resto de formatos.
+                bitDepth = Self.flacBitDepth(from: url)
                 // ✅ FIX bit depth FLAC/ALAC: inferir del bitrate cuando el ASBD
                 // reporta 0 (ver inferBitDepth).
-                bitDepth = Self.inferBitDepth(
-                    fileBits: fileBits,
-                    formatID: asbd.pointee.mFormatID,
-                    ext: url.pathExtension,
-                    sampleRate: sampleRate
-                )
+                if bitDepth == 0 {
+                    bitDepth = Self.inferBitDepth(
+                        fileBits: fileBits,
+                        formatID: asbd.pointee.mFormatID,
+                        ext: url.pathExtension,
+                        sampleRate: sampleRate
+                    )
+                }
                 // ✅ DEBUG: Log para verificar extracción de bitDepth
                 AppLog.debug(.metadata, "Archivo: \(url.lastPathComponent) - bitDepth extraído: \(bitDepth) (raw: \(fileBits))")
             }
@@ -1472,12 +1504,17 @@ class FileAccessService: ObservableObject {
             fileBits = 0
             channels = 0
         }
-        let bits = Self.inferBitDepth(
-            fileBits: fileBits,
-            formatID: 0, // fallback: decisión por extensión
-            ext: url.pathExtension,
-            sampleRate: sampleRate
-        )
+        // ✅ 3.0.2: en FLAC, profundidad REAL del bloque STREAMINFO (ver
+        // flacBitDepth); el resto de formatos sigue con la heurística por tasa.
+        var bits = Self.flacBitDepth(from: url)
+        if bits == 0 {
+            bits = Self.inferBitDepth(
+                fileBits: fileBits,
+                formatID: 0, // fallback: decisión por extensión
+                ext: url.pathExtension,
+                sampleRate: sampleRate
+            )
+        }
         // ✅ LOSSLESS → bits reales; LOSSY (bitDepth 0) → bitrate medio kbps.
         var lastFormatBitrate: Int?
         if bits == 0, let track = audioTrack {
