@@ -1091,7 +1091,19 @@ class AudioEngine: NSObject, ObservableObject {
     func toggleLimiter() {
         isLimiterEnabled.toggle()
         updateEQBypassState()
-        AppLog.info(.playback, "Protección anti-clipping: \(isLimiterEnabled ? "activada (base 0.99)" : "desactivada (base 1.0, bit-perfect posible)")")
+        // ✅ FIX telemetría honesta: en Bluetooth la ganancia NO la fija este
+        // ajuste — la ruta impone su propio margen (0.89 ≈ -1 dB) para que el
+        // codificador AAC/SBC no sature con picos entre muestras, esté el
+        // limiter activado o no. El log anterior afirmaba "base 0.99" / "base
+        // 1.0" también en BT, así que el usuario leía un valor que no era el
+        // que sonaba. Ahora se declara la base REAL de la ruta activa.
+        let gainNote: String
+        if isBluetoothRoute {
+            gainNote = "margen de ruta Bluetooth (base 0.89 ≈ -1 dB) · este ajuste no cambia la ganancia en BT"
+        } else {
+            gainNote = isLimiterEnabled ? "base 0.99" : "base 1.0 (bit-perfect posible)"
+        }
+        AppLog.info(.playback, "Protección anti-clipping: \(isLimiterEnabled ? "activada" : "desactivada") · \(gainNote)")
     }
 
     /// ✅ BLUETOOTH OPTIMIZATION: activar optimizaciones para BT
