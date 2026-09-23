@@ -168,108 +168,129 @@ struct NowPlayingView: View {
             ?? fileAccessService.albums.first { $0.name == song.album }
     }
 
+    // MARK: - Columna de contenido (una sola definición)
+    /// ✅ La columna se declara UNA vez y la usan las DOS variantes de layout del
+    /// body: si se duplicara, cualquier retoque futuro podría quedar aplicado a una
+    /// sola de ellas y el modo scroll se desincronizaría del compacto.
+    private var contentColumn: some View {
+        VStack(spacing: 0) {
+            // ✅ Header integrado al fondo difuminado — sin cuadro negro.
+            // Antes usaba safeAreaInset con fondo del sistema que pintaba
+            // un rectángulo negro/opaco sobre el blur. Ahora es la primera
+            // fila del VStack, completamente transparente sobre el mismo
+            // backgroundView difuminado.
+            HStack(spacing: 0) {
+                Button {
+                    dismiss()
+                } label: {
+                    Image(systemName: "chevron.down")
+                        .foregroundStyle(playIconColor)
+                        .font(.system(size: 17, weight: .semibold))
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(Localization.localized("nowPlaying.close"))
+
+                Spacer()
+
+                Text(Localization.localized("nowPlaying.title"))
+                    .font(.system(size: 16, weight: .semibold, design: .rounded))
+                    .foregroundStyle(playIconColor.opacity(0.9))
+                    .shadow(color: .black.opacity(0.15), radius: 4, y: 1)
+
+                Spacer()
+                Color.clear.frame(width: 44, height: 44)
+            }
+            .padding(.horizontal, 8)
+
+            Spacer(minLength: isCompactScreen ? 4 : 10)
+
+            artworkView
+                // ✅ MEJORADO: la portada solo anima al CAMBIAR de canción,
+                // no al pausar/resumir. Antes había una animación rara de
+                // escala (1.02 → 1.0) que se veía artificial al tocar play/pause.
+                .animation(.easeInOut(duration: 0.3), value: audioEngine.currentSong?.id)
+
+            Spacer(minLength: isCompactScreen ? 10 : 16)
+
+            if showVisualizer {
+                // ✅ MEJORADO: AudioVisualizer ya rasteriza internamente
+                // con .drawingGroup() y maneja la atenuación al pausar.
+                // Nada de animaciones raras de escala aquí.
+                // ✅ Mismo sistema de DOS colores que el resto de la vista:
+                // dominante de la carátula + su secundario real (nil si no
+                // hay secundario → cae al degradado de un solo color).
+                AudioVisualizer(
+                    audioEngine: audioEngine,
+                    tintColor: extractedColor,
+                    secondaryTintColor: extractedSecondaryColor
+                )
+                    .frame(height: isCompactScreen ? 32 : 48)
+                    .padding(.horizontal, 36)
+            }
+
+            Spacer(minLength: isCompactScreen ? 8 : 14)
+
+            songInfoView
+                .animation(.easeInOut(duration: 0.25), value: audioEngine.currentSong?.id)
+
+            Spacer(minLength: isCompactScreen ? 8 : 14)
+
+            ProgressScrubView(
+                audioEngine: audioEngine,
+                clock: clock,
+                extractedColor: extractedColor,
+                extractedSecondaryColor: extractedSecondaryColor,
+                extractedUIColor: extractedUIColor,
+                playIconColor: playIconColor,
+                isCompactScreen: isCompactScreen
+            )
+
+            Spacer(minLength: isCompactScreen ? 10 : 18)
+
+            controlsView
+
+            Spacer(minLength: isCompactScreen ? 8 : 14)
+
+            featureButtonsView
+
+            Spacer(minLength: 0)
+        }
+        // ✅ Padding horizontal de la columna: va AQUÍ (dentro de la definición
+        // compartida) para que las dos variantes midan exactamente el mismo ancho.
+        .padding(.horizontal, 24)
+    }
+
     var body: some View {
         ZStack {
             backgroundView
 
-                // ✅ DISEÑO MEJORADO: distribución equilibrada con Spacers
-                // flexibles (la proporción se adapta a cualquier pantalla,
-                // iPhone 8 Plus incluido) en lugar de espaciados fijos.
-                VStack(spacing: 0) {
-                    // ✅ Header integrado al fondo difuminado — sin cuadro negro.
-                    // Antes usaba safeAreaInset con fondo del sistema que pintaba
-                    // un rectángulo negro/opaco sobre el blur. Ahora es la primera
-                    // fila del VStack, completamente transparente sobre el mismo
-                    // backgroundView difuminado.
-                    HStack(spacing: 0) {
-                        Button {
-                            dismiss()
-                        } label: {
-                            Image(systemName: "chevron.down")
-                                .foregroundStyle(playIconColor)
-                                .font(.system(size: 17, weight: .semibold))
-                                .frame(width: 44, height: 44)
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel(Localization.localized("nowPlaying.close"))
+            // ✅ ESTABILIDAD DE LAYOUT (iPhone 8 Plus): dos estrategias, elegidas
+            // por el alto IDEAL de la columna medido con el ANCHO REAL del sheet.
+            //
+            // 1. **Compacta** (el look de siempre): `.fixedSize(vertical:)` congela
+            //    la columna en su alto ideal, así que los `Spacer(minLength:)` se
+            //    quedan en su mínimo y el hueco sobrante sale FUERA (el ZStack
+            //    centra la columna). Sin ese `fixedSize` los Spacers se reparten el
+            //    sobrante y la vista se ve estirada, con los elementos demasiado
+            //    separados entre sí.
+            // 2. **Scroll** (red de seguridad): si el alto ideal NO cabe (título a
+            //    dos líneas, mucha info), se elige esta y nada se sale de pantalla.
+            //
+            // ✅ El `.fixedSize` de la variante 1 NO sobra: `ViewThatFits` mide el
+            // alto IDEAL de cada variante, pero al MOSTRAR la elegida le propone el
+            // alto REAL del contenedor, así que sin él la variante compacta se
+            // volvería a estirar justo al ser elegida.
+            ViewThatFits(in: .vertical) {
+                contentColumn
+                    .fixedSize(horizontal: false, vertical: true)
 
-                        Spacer()
-
-                        Text(Localization.localized("nowPlaying.title"))
-                            .font(.system(size: 16, weight: .semibold, design: .rounded))
-                            .foregroundStyle(playIconColor.opacity(0.9))
-                            .shadow(color: .black.opacity(0.15), radius: 4, y: 1)
-
-                        Spacer()
-                        Color.clear.frame(width: 44, height: 44)
-                    }
-                    .padding(.horizontal, 8)
-
-                    Spacer(minLength: isCompactScreen ? 4 : 10)
-
-                    artworkView
-                        // ✅ MEJORADO: la portada solo anima al CAMBIAR de canción,
-                        // no al pausar/resumir. Antes había una animación rara de
-                        // escala (1.02 → 1.0) que se veía artificial al tocar play/pause.
-                        .animation(.easeInOut(duration: 0.3), value: audioEngine.currentSong?.id)
-
-                    Spacer(minLength: isCompactScreen ? 10 : 16)
-
-                    if showVisualizer {
-                        // ✅ MEJORADO: AudioVisualizer ya rasteriza internamente
-                        // con .drawingGroup() y maneja la atenuación al pausar.
-                        // Nada de animaciones raras de escala aquí.
-                        // ✅ Mismo sistema de DOS colores que el resto de la vista:
-                        // dominante de la carátula + su secundario real (nil si no
-                        // hay secundario → cae al degradado de un solo color).
-                        AudioVisualizer(
-                            audioEngine: audioEngine,
-                            tintColor: extractedColor,
-                            secondaryTintColor: extractedSecondaryColor
-                        )
-                            .frame(height: isCompactScreen ? 32 : 48)
-                            .padding(.horizontal, 36)
-                    }
-
-                    Spacer(minLength: isCompactScreen ? 8 : 14)
-
-                    songInfoView
-                        .animation(.easeInOut(duration: 0.25), value: audioEngine.currentSong?.id)
-
-                    Spacer(minLength: isCompactScreen ? 8 : 14)
-
-                    ProgressScrubView(
-                        audioEngine: audioEngine,
-                        clock: clock,
-                        extractedColor: extractedColor,
-                        extractedSecondaryColor: extractedSecondaryColor,
-                        extractedUIColor: extractedUIColor,
-                        playIconColor: playIconColor,
-                        isCompactScreen: isCompactScreen
-                    )
-
-                    Spacer(minLength: isCompactScreen ? 10 : 18)
-
-                    controlsView
-
-                    Spacer(minLength: isCompactScreen ? 8 : 14)
-
-                    featureButtonsView
-
-                    Spacer(minLength: 0)
+                ScrollView {
+                    contentColumn
                 }
-                .padding(.horizontal, 24)
-                // ✅ FIX iPhone 8 Plus: SIN `.fixedSize(horizontal: false,
-                // vertical: true)`. Ese modificador congelaba la columna en su
-                // alto IDEAL y colapsaba TODOS los `Spacer(minLength:)` a su
-                // mínimo, así que la "distribución equilibrada con Spacers
-                // flexibles" que describe el comentario de arriba no llegaba a
-                // ocurrir: si el alto ideal no cabía en el sheet, la columna se
-                // estiraba fuera de la pantalla (header comido por arriba y
-                // barra de progreso / botones fuera por abajo). Dejándola
-                // flexible, los Spacers reparten el hueco sobrante y, si falta
-                // espacio, se comprimen ellos ANTES de empujar nada fuera.
+                .scrollIndicators(.hidden)
+            }
             }
             .onAppear {
                 extractColorFromArtwork()
