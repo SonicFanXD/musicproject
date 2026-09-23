@@ -73,6 +73,48 @@ enum EQPreset: String, CaseIterable, Codable {
     }
 }
 
+/// ✅ CÓDEC REAL del stream de audio (FourCC), con su nombre comercial y si el
+/// motor propio puede decodificarlo.
+///
+/// Motivo: iOS envuelve Dolby Digital Plus (E-AC-3) en un contenedor MP4, así
+/// que un archivo ".m4a"/".mp4" puede ser Dolby y no AAC. La extensión no dice
+/// nada del codec: hay que leer el ASBD del track de audio
+/// (`CMFormatDescriptionGetMediaSubType`) y guardar el FourCC real.
+/// AVAudioEngine/AVAudioFile NO decodifican E-AC-3 ni AC-3 (iOS no expone
+/// decodificador Dolby a apps de terceros), pero AVPlayer sí de forma nativa.
+enum AudioCodec {
+    /// ✅ ¿Es un codec Dolby (E-AC-3/AC-3) que el motor propio no decodifica?
+    static func isDolby(_ fourCC: String?) -> Bool {
+        let code = normalized(fourCC)
+        return code == "ec-3" || code == "ec3" || code == "ac-3" || code == "ac3"
+    }
+
+    /// ✅ FourCC → nombre comercial legible. Devuelve nil sin datos y el propio
+    /// FourCC (en mayúsculas) para codecs sin nombre conocido.
+    static func displayName(for fourCC: String?) -> String? {
+        guard let raw = fourCC?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else { return nil }
+        switch normalized(raw) {
+        case "ec-3", "ec3", "eac3", "ddp": return "Dolby Digital Plus (E-AC-3)"
+        case "ac-3", "ac3": return "Dolby Digital (AC-3)"
+        case "mp4a": return "AAC"
+        case "alac": return "ALAC"
+        case "flac": return "FLAC"
+        case "lpcm", "sowt", "twos": return "PCM"
+        default: return raw.uppercased()
+        }
+    }
+
+    /// ✅ Normaliza el FourCC para comparar: minúsculas y sin espacios (los
+    /// FourCC de 3 letras llegan con relleno, p. ej. "mp3 " → "mp3").
+    private static func normalized(_ fourCC: String?) -> String {
+        (fourCC ?? "").lowercased().trimmingCharacters(in: .whitespaces)
+    }
+
+    /// ✅ Contenedores cuyo nombre de formato (y su codec) NO se puede deducir de
+    /// la extensión: dentro de un .mp4/.m4a puede haber AAC, ALAC o Dolby.
+    static let containerExtensions: Set<String> = ["mp4", "m4a", "m4v", "mov", "m4b"]
+}
+
 struct Song: Identifiable, Equatable, Codable {
     let id: UUID
     let url: URL
@@ -101,6 +143,14 @@ struct Song: Identifiable, Equatable, Codable {
     // este campo) siga decodificando bien: Codable lo trata como ausente → nil.
     let fileModificationDate: Date?
 
+    /// ✅ CÓDEC REAL del stream de audio (FourCC leído del ASBD del asset:
+    /// "ec-3", "ac-3", "mp4a", "alac", "lpcm"…). La extensión NO basta: iOS
+    /// envuelve Dolby Digital Plus (E-AC-3) en un contenedor MP4/M4A, así que
+    /// un ".m4a"/".mp4" puede ser Dolby aunque se anunciara como AAC.
+    /// Optional para que el caché viejo (sin este campo) siga decodificando
+    /// bien: Codable lo trata como ausente → nil.
+    let codecName: String?
+
     init(
         id: UUID = UUID(),
         url: URL,
@@ -119,7 +169,8 @@ struct Song: Identifiable, Equatable, Codable {
         bitDepth: Int = 0,
         channelCount: Int = 0,
         bitrate: Int? = nil,
-        fileModificationDate: Date? = nil
+        fileModificationDate: Date? = nil,
+        codecName: String? = nil
     ) {
         self.id = id
         self.url = url
@@ -139,6 +190,36 @@ struct Song: Identifiable, Equatable, Codable {
         self.channelCount = channelCount
         self.bitrate = bitrate
         self.fileModificationDate = fileModificationDate
+        self.codecName = codecName
+    }
+
+    /// ✅ ¿Hay que reproducir este archivo con AVPlayer? El motor propio
+    /// (AVAudioEngine/AVAudioFile) NO decodifica Dolby: iOS no expone
+    /// decodificador E-AC-3/AC-3 a apps de terceros. AVPlayer sí lo hace de
+    /// forma nativa (desde iOS 9.3), así que estas pistas van directas a esa
+    /// ruta — es un modo INTENCIONAL, no un fallo del motor.
+    var requiresAVPlayerPlayback: Bool {
+        if AudioCodec.isDolby(codecName) { return true }
+        // ✅ Caché viejo (indexado antes de la detección por FourCC): sin
+        // `codecName` se cae a la extensión, que ya delataba los .ac3/.ec3/.ddp.
+        // Un .m4a/.mp4 Dolby necesita re-indexarse para entrar por aquí.
+        guard codecName == nil else { return false }
+        return ["ac3", "ec3", "eac3", "ddp"].contains(url.pathExtension.lowercased())
+    }
+
+    /// ✅ Nombre legible del códec detectado (nil si el archivo no se ha
+    /// re-indexado todavía con la detección por FourCC).
+    var codecDisplayName: String? {
+        AudioCodec.displayName(for: codecName)
+    }
+
+    /// ✅ ¿Hay que re-leer la metadata para conocer el codec? Solo para
+    /// contenedores (.mp4/.m4a/.m4v/.mov), donde la extensión no dice nada: el
+    /// caché se escribió antes de que la app leyera el FourCC del track y sin él
+    /// no se puede saber si hay que reproducir con AVPlayer (Dolby) o con el
+    /// motor propio (AAC/ALAC). Se re-lee UNA vez; después `codecName` ya está.
+    var needsCodecDetection: Bool {
+        codecName == nil && AudioCodec.containerExtensions.contains(url.pathExtension.lowercased())
     }
 
     static func == (lhs: Song, rhs: Song) -> Bool {
@@ -171,7 +252,8 @@ struct Song: Identifiable, Equatable, Codable {
             bitDepth: bitDepth,
             channelCount: channelCount,
             bitrate: bitrate,
-            fileModificationDate: fileModificationDate
+            fileModificationDate: fileModificationDate,
+            codecName: codecName
         )
     }
 

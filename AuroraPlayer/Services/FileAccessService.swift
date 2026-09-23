@@ -159,8 +159,19 @@ class FileAccessService: ObservableObject {
         // ✅ Dolby Digital (AC-3) y Dolby Digital Plus (E-AC-3): se indexan y se
         // reproducen vía el reproductor de respaldo (AVPlayer), porque
         // AVAudioFile no decodifica estos codecs (audio envolvente).
-        "ac3", "ec3", "eac3", "ddp"
+        "ac3", "ec3", "eac3", "ddp",
+        // ✅ CONTENEDORES MP4/M4V: iOS envuelve Dolby Digital Plus (E-AC-3) en
+        // MP4, así que el codec real solo se conoce leyendo el FourCC del track
+        // de audio. Se indexan SOLO si el archivo es de audio (ver
+        // videoContainerExtensions): un .mp4 de película no es una canción.
+        "mp4", "m4v"
     ]
+
+    /// ✅ Contenedores que pueden llevar vídeo además de audio: para estos,
+    /// `makeSong` confirma que el archivo es de audio antes de indexarlo (una
+    /// carpeta con películas llenaría la biblioteca de "canciones" que no
+    /// suenan). Un .mp4/.m4v con Dolby sí entra: es audio puro.
+    private static let videoContainerExtensions: Set<String> = ["mp4", "m4v", "mov"]
 
     /// ✅ FIX bit depth FLAC/ALAC (replica del fix fd5cddf que se perdió con
     /// el restore): AVFoundation reporta mBitsPerChannel = 0 vía ASBD para
@@ -187,15 +198,47 @@ class FileAccessService: ObservableObject {
         return 0                                     // zona gris (48001–95999 Hz): no inferimos
     }
 
-    /// Etiqueta legible del formato según la extensión (DD+/Dolby Digital).
-    private static func formatLabel(for ext: String) -> String {
-        switch ext.lowercased() {
+    /// Etiqueta legible del formato. `codecName` es el FourCC REAL del stream de
+    /// audio (leído del ASBD del asset): cuando aporta información manda sobre la
+    /// extensión, porque un E-AC-3 dentro de un contenedor MP4/M4A se anunciaba
+    /// como "MP4"/"M4A" aunque el motor propio no pueda decodificarlo.
+    private static func formatLabel(for ext: String, codecName: String? = nil) -> String {
+        if AudioCodec.isDolby(codecName), let dolby = AudioCodec.displayName(for: codecName) {
+            return dolby
+        }
+        let e = ext.lowercased()
+        if AudioCodec.containerExtensions.contains(e), let codec = AudioCodec.displayName(for: codecName) {
+            return codec
+        }
+        switch e {
         case "ec3", "eac3", "ddp": return "Dolby Digital Plus"
         case "ac3": return "Dolby Digital"
         case "wav", "wave": return "WAV"
         case "aiff", "aif": return "AIFF"
         default: return ext.uppercased()
         }
+    }
+
+    /// ✅ FourCC → texto. `CMFormatDescriptionGetMediaSubType` devuelve el codec
+    /// del stream tal como lo declara el contenedor: 'ec-3' (Dolby Digital
+    /// Plus), 'ac-3' (Dolby Digital), 'mp4a' (AAC), 'alac', 'lpcm'… Es la única
+    /// forma de saber el codec real: el ASBD de un E-AC-3 dice 2 canales a
+    /// 48 kHz, exactamente igual que un AAC estéreo.
+    private static func fourCCString(_ code: FourCharCode) -> String? {
+        guard code != 0 else { return nil }
+        let bytes: [UInt8] = [
+            UInt8((code >> 24) & 0xFF),
+            UInt8((code >> 16) & 0xFF),
+            UInt8((code >> 8) & 0xFF),
+            UInt8(code & 0xFF)
+        ]
+        // Si algún byte no es ASCII imprimible el FourCC no es texto: se guarda
+        // en hexadecimal para no inventar un nombre de codec.
+        guard bytes.allSatisfy({ $0 >= 32 && $0 < 127 }) else {
+            return String(format: "0x%08X", code)
+        }
+        let text = (String(bytes: bytes, encoding: .ascii) ?? "").trimmingCharacters(in: .whitespaces)
+        return text.isEmpty ? nil : text
     }
 
     init() {
@@ -552,6 +595,14 @@ class FileAccessService: ObservableObject {
             guard let modDate = song.fileModificationDate else { continue }
             knownModDates[Self.libraryKey(for: song.url)] = modDate
         }
+        // ✅ UPGRADE DE METADATOS (detección de códec): canciones ya indexadas
+        // cuyo contenedor (.mp4/.m4a/.m4v/.mov) aún no tiene leído el FourCC del
+        // track de audio. Se re-leen UNA vez para poder elegir la ruta de
+        // reproducción correcta (Dolby → AVPlayer); después ya traen `codecName`
+        // y esta lista queda vacía.
+        let knownCodecUpgradeKeys = Set(
+            songs.filter { $0.needsCodecDetection }.map { Self.libraryKey(for: $0.url) }
+        )
         if silent {
             // ✅ Detección silenciosa: NO toca isScanning/scanTotal → sin
             // tarjeta compacta, sin indicador, sin re-renders. Los contadores
@@ -629,9 +680,16 @@ class FileAccessService: ObservableObject {
                     // indexado, solo se re-lee cuando su fecha de
                     // modificación en disco es MÁS RECIENTE que la que se
                     // guardó la última vez (edición externa de tags).
+                    // ✅ UPGRADE DE CÓDEC: además se re-lee si su contenedor
+                    // todavía no tiene el FourCC leído (ver
+                    // knownCodecUpgradeKeys) — una sola vez por canción.
+                    var shouldRefresh = knownCodecUpgradeKeys.contains(key)
                     if let diskDate = values?.contentModificationDate,
                        let savedDate = knownModDates[key],
                        diskDate > savedDate {
+                        shouldRefresh = true
+                    }
+                    if shouldRefresh {
                         batchModifiedKeys.insert(key)
                         batch.append(fileURL)
                         if batch.count == self.metadataBatchSize {
@@ -693,7 +751,14 @@ class FileAccessService: ObservableObject {
         // de modificación en disco (antes nunca se refrescaba una vez
         // indexado, igual que las carpetas).
         if indexedSongKeys.contains(key) {
-            let knownDate = songs.first(where: { Self.libraryKey(for: $0.url) == key })?.fileModificationDate
+            let knownSong = songs.first(where: { Self.libraryKey(for: $0.url) == key })
+            // ✅ UPGRADE DE CÓDEC: un archivo suelto cuyo contenedor aún no tiene
+            // el FourCC leído se re-lee una vez (misma razón que en scanFolder).
+            if knownSong?.needsCodecDetection == true {
+                registerMetadataBatch([url], generation: generation, silent: silent, modifiedKeys: [key])
+                return
+            }
+            let knownDate = knownSong?.fileModificationDate
             let diskDate = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
             guard let knownDate, let diskDate, diskDate > knownDate else { return }
             registerMetadataBatch([url], generation: generation, silent: silent, modifiedKeys: [key])
@@ -1157,14 +1222,29 @@ class FileAccessService: ObservableObject {
         }
     }
 
-    private func makeSong(from url: URL) async -> Song {
+    private func makeSong(from url: URL) async -> Song? {
+        // ✅ CONTENEDORES MP4/M4V: iOS envuelve Dolby Digital Plus (E-AC-3) en
+        // MP4. Se indexan para poder detectar el códec real y reproducirlo con
+        // AVPlayer, pero SOLO si son audio: un .mp4 de vídeo (película,
+        // videoclip) no es una canción y no debe entrar en la biblioteca. Los
+        // dos llamadores ya tratan el resultado como opcional
+        // (`withTaskGroup(of: (Int, Song?))` + `compactMap`), así que devolver
+        // nil aquí descarta el archivo sin tocar el resto del escaneo.
+        if Self.videoContainerExtensions.contains(url.pathExtension.lowercased()) {
+            let asset = AVAsset(url: url)
+            let videoTracks = (try? await asset.loadTracks(withMediaType: .video)) ?? []
+            guard videoTracks.isEmpty else {
+                AppLog.info(.metadata, "Omitido \(url.lastPathComponent): contenedor de vídeo (no es audio)")
+                return nil
+            }
+        }
         let metadata = await readMetadata(from: url)
         // ✅ FIX metadata editada: guardar la fecha de modificación del
         // archivo tal como estaba AL MOMENTO de esta lectura. scanFolder
         // compara este valor contra la fecha actual en disco en el próximo
         // escaneo para decidir si hace falta re-leer metadata.
         let modDate: Date? = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
-        return Song(url: url, title: metadata.title, artist: metadata.artist, albumArtist: metadata.albumArtist, album: metadata.album, artworkData: metadata.artworkData, duration: metadata.duration, lyrics: metadata.lyrics, formatDescription: metadata.formatDescription, discNumber: metadata.discNumber, trackNumber: metadata.trackNumber, releaseDate: metadata.releaseDate, sampleRate: metadata.sampleRate, bitDepth: metadata.bitDepth, channelCount: metadata.channelCount, bitrate: metadata.bitrate, fileModificationDate: modDate)
+        return Song(url: url, title: metadata.title, artist: metadata.artist, albumArtist: metadata.albumArtist, album: metadata.album, artworkData: metadata.artworkData, duration: metadata.duration, lyrics: metadata.lyrics, formatDescription: metadata.formatDescription, discNumber: metadata.discNumber, trackNumber: metadata.trackNumber, releaseDate: metadata.releaseDate, sampleRate: metadata.sampleRate, bitDepth: metadata.bitDepth, channelCount: metadata.channelCount, bitrate: metadata.bitrate, fileModificationDate: modDate, codecName: metadata.codecName)
     }
 
     private struct SongMetadata {
@@ -1183,6 +1263,8 @@ class FileAccessService: ObservableObject {
         let bitDepth: Int
         let channelCount: Int
         let bitrate: Int?
+        /// ✅ CÓDEC REAL del stream (FourCC): "ec-3", "ac-3", "mp4a"…
+        let codecName: String?
     }
 
     // MARK: - readMetadata (OPTIMIZADO: una sola apertura de archivo, sin lecturas redundantes, con timeout)
@@ -1395,11 +1477,19 @@ class FileAccessService: ObservableObject {
         var bitDepth: Int = 0
         var channelCount: Int = 0
         var bitrateKbps: Int?
+        /// ✅ CÓDEC REAL del stream de audio (FourCC del track, no la extensión).
+        var detectedCodec: String?
         let audioTrack: AVAssetTrack? = (try? await asset.loadTracks(withMediaType: .audio))?.first
         if let track = audioTrack {
             let formatDescriptions = try? await track.load(.formatDescriptions)
             if let firstDesc = formatDescriptions?.first,
                let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(firstDesc) {
+                // ✅ DETECCIÓN DE CÓDEC: CMFormatDescriptionGetMediaSubType da el
+                // FourCC del stream (el ASBD no distingue E-AC-3 de AAC).
+                detectedCodec = Self.fourCCString(CMFormatDescriptionGetMediaSubType(firstDesc))
+                if AudioCodec.isDolby(detectedCodec) {
+                    AppLog.info(.metadata, "Dolby detectado (\(detectedCodec ?? "?")) en \(url.lastPathComponent) → reproducción por AVPlayer")
+                }
                 sampleRate = Double(asbd.pointee.mSampleRate)
                 channelCount = Int(asbd.pointee.mChannelsPerFrame)
                 let fileBits = Int(asbd.pointee.mBitsPerChannel)
@@ -1421,9 +1511,10 @@ class FileAccessService: ObservableObject {
             let rate = try? await track.load(.estimatedDataRate)
             if let rate = rate, rate.isFinite, rate > 0 { bitrateKbps = Int(rate / 1000) }
         }
-        // Formato: usar solo la extensión (evita abrir AVAudioFile innecesariamente)
+        // Formato: la etiqueta sale del códec REAL cuando se conoce (evita abrir
+        // AVAudioFile y evita anunciar "MP4" un archivo Dolby).
         let formatDescription = [
-            Self.formatLabel(for: url.pathExtension),
+            Self.formatLabel(for: url.pathExtension, codecName: detectedCodec),
             bitDepth > 0 ? "\(bitDepth) bits" : nil,
             bitrateKbps.map { "~\($0) kbps" } ?? nil,
             sampleRate > 0 ? "\(Int(sampleRate / 1000)) kHz" : nil
@@ -1446,7 +1537,8 @@ class FileAccessService: ObservableObject {
             sampleRate: sampleRate,
             bitDepth: bitDepth,
             channelCount: channelCount,
-            bitrate: bitrateKbps
+            bitrate: bitrateKbps,
+            codecName: detectedCodec
         )
     }
 
@@ -1527,10 +1619,15 @@ class FileAccessService: ObservableObject {
         let sampleRate: Double
         let fileBits: Int
         let channels: Int
+        /// ✅ CÓDEC REAL del stream (FourCC): mismo criterio que en readMetadata
+        /// (aquí el archivo no se pudo leer con AVAsset completo, pero el track
+        /// de audio sí está y su FourCC es la única fuente fiable del codec).
+        var fallbackCodec: String?
         if let track = audioTrack {
             let formatDescriptions = try? await track.load(.formatDescriptions)
             if let firstDesc = formatDescriptions?.first,
                let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(firstDesc) {
+                fallbackCodec = Self.fourCCString(CMFormatDescriptionGetMediaSubType(firstDesc))
                 sampleRate = Double(asbd.pointee.mSampleRate)
                 fileBits = Int(asbd.pointee.mBitsPerChannel)
                 channels = Int(asbd.pointee.mChannelsPerFrame)
@@ -1556,7 +1653,7 @@ class FileAccessService: ObservableObject {
             let rate = try? await track.load(.estimatedDataRate)
             if let rate = rate, rate.isFinite, rate > 0 { lastFormatBitrate = Int(rate / 1000) }
         }
-        let formatDescription = [Self.formatLabel(for: url.pathExtension), bits > 0 ? "\(bits) bits" : nil, lastFormatBitrate.map { "~\($0) kbps" } ?? nil, sampleRate > 0 ? "\(Int(sampleRate / 1000)) kHz" : nil]
+        let formatDescription = [Self.formatLabel(for: url.pathExtension, codecName: fallbackCodec), bits > 0 ? "\(bits) bits" : nil, lastFormatBitrate.map { "~\($0) kbps" } ?? nil, sampleRate > 0 ? "\(Int(sampleRate / 1000)) kHz" : nil]
             .compactMap { $0 }
             .joined(separator: " · ")
 
@@ -1575,7 +1672,8 @@ class FileAccessService: ObservableObject {
             sampleRate: sampleRate,
             bitDepth: Int(bits),
             channelCount: Int(channels),
-            bitrate: lastFormatBitrate
+            bitrate: lastFormatBitrate,
+            codecName: fallbackCodec
         )
     }
 

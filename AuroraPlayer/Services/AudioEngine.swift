@@ -379,13 +379,13 @@ class AudioEngine: NSObject, ObservableObject {
     // el audio realmente terminó. El clamp a duration impedía que el watchdog
     // se disparara (wallClockTime NUNCA podía >= duration + margen).
     private var wallClockTimeUnclamped: TimeInterval {
-        guard isPlaying, !isUsingFallback else { return posAnchor }
+        guard isPlaying, !isAVPlayerActive else { return posAnchor }
         let t = posAnchor + (CACurrentMediaTime() - wallAnchor)
         return max(t, 0)
     }
 
     private var wallClockTime: TimeInterval {
-        guard isPlaying, !isUsingFallback else { return posAnchor }
+        guard isPlaying, !isAVPlayerActive else { return posAnchor }
         let t = posAnchor + (CACurrentMediaTime() - wallAnchor)
         // ✅ Clampear para la UI (barra de progreso no debe pasar 100%).
         return duration > 0 ? min(max(t, 0), duration) : max(t, 0)
@@ -534,6 +534,25 @@ class AudioEngine: NSObject, ObservableObject {
     /// ninguna otra vista lo lee. El threading no cambia: se asigna junto a
     /// `currentSong`/`currentTime`/`duration`, que ya eran @Published.
     @Published private(set) var isUsingFallback = false
+    /// ✅ AVPlayer es el BACKEND que está sonando: respaldo por fallo del motor
+    /// propio O modo Dolby intencional. Todo lo que pregunta "¿quién reproduce?"
+    /// (anclaje de posición, pausa, seek, watchdog, observadores del AVPlayer,
+    /// reconexión de ruta, bit-perfect) lee ESTE flag. `isUsingFallback` queda
+    /// solo para lo que es un problema de verdad (el chip de calidad).
+    private(set) var isAVPlayerActive = false
+    /// ✅ MODO DOLBY: AVPlayer porque el codec del archivo (E-AC-3/AC-3) no lo
+    /// decodifica AVAudioEngine. Es intencional: no marca el chip de respaldo
+    /// ni se registra como error.
+    @Published private(set) var isDolbyPlayback = false
+
+    /// ✅ Motivo por el que AVPlayer pasa a ser el reproductor activo.
+    enum FallbackReason: Equatable {
+        /// El motor propio no pudo cargar/arrancar el archivo (fallo real).
+        case engineFailure
+        /// El codec no es decodificable por AVAudioEngine (Dolby E-AC-3/AC-3):
+        /// modo intencional.
+        case codecUnsupported
+    }
 
     private let stateDefaultsKey = "com.aurora.playbackState"
     private var hasRestored: Bool = false
@@ -1168,7 +1187,7 @@ class AudioEngine: NSObject, ObservableObject {
         // término, con `audioFile == nil` (que es el caso en respaldo) la tasa caía
         // a la del índice y la fila podía decir "Sí (sin remuestreo)" justo debajo
         // del chip que avisa de que no hay bit-perfect.
-        let unityGain = !isLimiterEnabled && isWiredRoute && !isUsingFallback
+        let unityGain = !isLimiterEnabled && isWiredRoute && !isAVPlayerActive
         let value = sourceRate > 0 && abs(outputRate - sourceRate) < 1 && !processing && unityGain
         DispatchQueue.main.async { [weak self] in
             guard let self = self, self.isBitPerfect != value else { return }
@@ -1180,7 +1199,12 @@ class AudioEngine: NSObject, ObservableObject {
                 AppLog.info(.playback, String(format: "Bit-perfect ACTIVADO (salida cableada a %.0f Hz, sin EQ/mono, ganancia unidad)", outputRate))
             } else {
                 var cause = "ganancia != 1.0 (limiter activo o ruta no cableada)"
-                if sourceRate <= 0 {
+                if isDolbyPlayback {
+                    // ✅ Dolby (E-AC-3/AC-3) va por AVPlayer: el grafo propio no
+                    // participa, así que el bit-perfect no aplica. Se dice el
+                    // motivo real en vez de culpar a la ganancia.
+                    cause = "codec Dolby decodificado por AVPlayer (fuera del grafo propio)"
+                } else if sourceRate <= 0 {
                     cause = "tasa de la fuente desconocida"
                 } else if abs(outputRate - sourceRate) >= 1 {
                     cause = String(format: "remuestreo %.0f → %.0f Hz", sourceRate, outputRate)
@@ -1438,6 +1462,19 @@ class AudioEngine: NSObject, ObservableObject {
             return
         }
 
+        // ✅ DOLBY DIGITAL PLUS / DOLBY DIGITAL (E-AC-3 / AC-3): el motor propio
+        // NO decodifica estos codecs — iOS no expone decodificador Dolby a apps
+        // de terceros, así que AVAudioFile falla siempre. AVPlayer sí los
+        // decodifica de forma nativa (desde iOS 9.3), así que estas pistas van
+        // DIRECTAS a esa ruta, sin pasar por el fallo: es un modo intencional
+        // (log de info, sin chip de respaldo) y la pista suena igual.
+        if song.requiresAVPlayerPlayback {
+            isStopping = false
+            AppLog.info(.playback, "Dolby \(song.codecDisplayName ?? song.codecName ?? "?") en '\(song.displayName)' (\(song.formatName)): reproducción por AVPlayer (AVAudioEngine no decodifica E-AC-3/AC-3)")
+            startFallbackPlayback(song: song, reason: .codecUnsupported, startAt: position ?? 0)
+            return
+        }
+
         do {
             // PRECARGA: si la siguiente cancion ya se precargo en background,
             // se usa directamente en vez de leerla de disco (elimina el hueco).
@@ -1669,7 +1706,7 @@ class AudioEngine: NSObject, ObservableObject {
     /// Se llama ANTES de subir el volumen con el fade anti-pop para que el
     /// reclock del DAC quede tapado por la rampa.
     private func reassertNativeSampleRateIfNeeded() {
-        guard !isUsingFallback, isWiredRoute, sampleRate > 0 else { return }
+        guard !isAVPlayerActive, isWiredRoute, sampleRate > 0 else { return }
         let session = AVAudioSession.sharedInstance()
         let previousRate = session.sampleRate
         guard abs(previousRate - sampleRate) > 1 else { return }
@@ -1688,7 +1725,7 @@ class AudioEngine: NSObject, ObservableObject {
         // ✅ RELOJ DE PARED: congelar la posición extrapolada como nueva ancla.
         // Independiente del timeline del nodo (que queda congelado a medias
         // tras engine.pause() y era la fuente del doble conteo al reanudar).
-        if isUsingFallback, let current = avPlayer?.currentTime().seconds, current.isFinite, current >= 0 {
+        if isAVPlayerActive, let current = avPlayer?.currentTime().seconds, current.isFinite, current >= 0 {
             currentTime = current
             posAnchor = current
         } else {
@@ -1707,7 +1744,7 @@ class AudioEngine: NSObject, ObservableObject {
                 self.playerNode.pause()
             }
             self.avPlayer?.pause()
-            if !self.isUsingFallback, self.engine.isRunning {
+            if !self.isAVPlayerActive, self.engine.isRunning {
                 self.engine.pause()
             }
         }
@@ -1742,7 +1779,7 @@ class AudioEngine: NSObject, ObservableObject {
     ///     (se acabó el "reproduciendo" con la barra congelada).
     private func suspendForRouteLoss() {
         AppLog.warning(.playback, "⚠️ Ruta de audio perdida: suspendiendo reproducción en \(String(format: "%.1fs", currentTime)) — '\(currentSong?.displayName ?? "—")'")
-        if isUsingFallback {
+        if isAVPlayerActive {
             avPlayer?.pause()
             isPlaying = false
             updateNowPlayingInfo()
@@ -1787,7 +1824,7 @@ class AudioEngine: NSObject, ObservableObject {
             return
         }
         lastResumeCallTime = now
-        if isUsingFallback {
+        if isAVPlayerActive {
             avPlayer?.play()
         } else {
             // ✅ FIX: si la app estuvo en segundo plano sin reproducir, iOS puede
@@ -1863,7 +1900,7 @@ class AudioEngine: NSObject, ObservableObject {
         Task { @MainActor in
             lyricsViewModel.startMonitoring()
         }
-        if !isUsingFallback {
+        if !isAVPlayerActive {
             scheduleAheadIfPossible()
         }
         saveState()
@@ -2111,6 +2148,13 @@ class AudioEngine: NSObject, ObservableObject {
         }
         let index = next.index
         let url = next.url
+        // ✅ DOLBY: el motor propio no decodifica E-AC-3/AC-3, así que precargar
+        // su AVAudioFile solo gastaría una apertura de disco para fallar. La
+        // siguiente canción Dolby se resolverá por AVPlayer en playCurrentSong().
+        if playlist.indices.contains(index), playlist[index].requiresAVPlayerPlayback {
+            clearPreloadedNext()
+            return
+        }
         // Ya está precargada la misma siguiente → no volver a abrirla.
         guard url != preloadedNextURL else { return }
         preloadedNextIndex = index
@@ -2181,7 +2225,7 @@ class AudioEngine: NSObject, ObservableObject {
 
     func seek(to time: TimeInterval) {
         guard let file = audioFile else {
-            if isUsingFallback {
+            if isAVPlayerActive {
                 let cmTime = CMTime(seconds: time, preferredTimescale: 1000)
                 avPlayer?.seek(to: cmTime)
             }
@@ -2499,12 +2543,12 @@ class AudioEngine: NSObject, ObservableObject {
             // Seguro: el engine siempre corre mientras isPlaying=true en modo
             // engine (los cambios de ruta se detectan y re-programan aparte),
             // y el modo respaldo (AVPlayer) queda excluido por isUsingFallback.
-            if !self.isUsingFallback, !self.engine.isRunning {
+            if !self.isAVPlayerActive, !self.engine.isRunning {
                 AppLog.warning(.playback, "Watchdog: engine detenido con isPlaying=true — suspendiendo por pérdida de ruta")
                 self.suspendForRouteLoss()
                 return
             }
-            if self.isUsingFallback {
+            if self.isAVPlayerActive {
                 if let current = self.avPlayer?.currentTime().seconds, !current.isNaN {
                     self.currentTime = current
                 }
@@ -2599,9 +2643,17 @@ class AudioEngine: NSObject, ObservableObject {
         }
         avPlayer?.pause()
         avPlayer = nil
+        // ✅ Sin reproductor AVPlayer, el backend activo vuelve a ser el motor
+        // propio: las ramas que preguntan "¿quién reproduce?" (pausa, seek,
+        // watchdog, anclaje de posición) no deben quedarse esperando un
+        // reproductor que ya no existe.
+        isAVPlayerActive = false
+        isDolbyPlayback = false
     }
 
-    private func startFallbackPlayback(song: Song) {
+    /// ✅ `reason` decide cómo se registra y si el chip de calidad avisa:
+    /// Dolby es un modo intencional; el fallo del motor sí es un problema.
+    private func startFallbackPlayback(song: Song, reason: FallbackReason = .engineFailure, startAt position: TimeInterval = 0) {
         scheduleGeneration += 1
         stopFallbackPlayback()
         if playerNode.isPlaying {
@@ -2610,19 +2662,30 @@ class AudioEngine: NSObject, ObservableObject {
         audioFile = nil
         stopDisplayTimer()
 
-        isUsingFallback = true
+        isAVPlayerActive = true
+        isDolbyPlayback = (reason == .codecUnsupported)
+        isUsingFallback = (reason == .engineFailure)
         currentSong = song
-        currentTime = 0
+        // ✅ Posición inicial: la restauración al relanzar la app y la
+        // reanudación tras un cambio de ruta pasan por aquí; antes el respaldo
+        // empezaba siempre en 0 y una canción Dolby reanudaba desde el principio.
+        let start = max(0, position)
+        currentTime = start
         duration = song.duration > 0 ? song.duration : 0
-        posAnchor = 0
+        posAnchor = start
         playbackErrorCount = 0
 
         let player = AVPlayer(url: song.url)
         avPlayer = player
+        // ✅ El seek se aplica antes de play(): AVPlayer arranca en esa posición
+        // sin pasar por el 0 (y sin depender del seek asíncrono).
+        if start > 0 {
+            player.seek(to: CMTime(seconds: start, preferredTimescale: CMTimeScale(NSEC_PER_SEC)), toleranceBefore: .zero, toleranceAfter: .zero)
+        }
 
         let interval = CMTime(seconds: 0.5, preferredTimescale: CMTimeScale(NSEC_PER_SEC))
         avTimeObserver = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] time in
-            guard let self = self, self.isUsingFallback else { return }
+            guard let self = self, self.isAVPlayerActive else { return }
             self.currentTime = time.seconds
         }
 
@@ -2631,7 +2694,7 @@ class AudioEngine: NSObject, ObservableObject {
             object: player.currentItem,
             queue: .main
         ) { [weak self] _ in
-            guard let self = self, self.isUsingFallback else { return }
+            guard let self = self, self.isAVPlayerActive else { return }
             // El modo de respaldo (AVPlayer) nunca pre-encadena por adelantado,
             // así que commitChainedSong() siempre tomará la rama de reinicio
             // atómico (chainGaplessPlayNext → playCurrentSong), que es lo que
@@ -2890,7 +2953,7 @@ class AudioEngine: NSObject, ObservableObject {
                     if wasPlaying && !self.isPlaying {
                         self.resume()
                         AppLog.info(.playback, "Ruta cambiada a \(route?.portName ?? "?"): reproducción reanudada")
-                    } else if wasPlaying && self.isPlaying, !self.isUsingFallback, let file = self.audioFile {
+                    } else if wasPlaying && self.isPlaying, !self.isAVPlayerActive, let file = self.audioFile {
                         // ✅ FIX simétrico: si la reproducción NUNCA se pausó
                         // (el motor siguió "corriendo" durante el cambio de
                         // ruta), su conexión puede haber quedado con el
