@@ -819,9 +819,21 @@ struct NowPlayingView: View {
     }
 
     // MARK: - Helpers
+    /// Fondo de los controles circulares (anterior / siguiente / aleatorio /
+    /// repetir).
+    /// ✅ 3.0.2 — BUG DE CONTRASTE CORREGIDO: con "Reducir transparencia" el
+    /// relleno opaco era `secondarySystemBackground` —casi BLANCO en modo
+    /// claro— mientras los glifos de esos botones son SIEMPRE blancos
+    /// (`playIconColor` = `AppTheme.contrastingText`, que devuelve `.white`
+    /// ignorando el color): en modo claro con ese ajuste activo los cuatro iconos
+    /// desaparecían dentro del círculo.
+    /// El fondo de NowPlaying (aurora) es opaco y oscuro en cualquier apariencia,
+    /// así que un velo negro sin blur mantiene el mismo aspecto que el vidrio y
+    /// garantiza el contraste con el glifo blanco. Sigue sin haber `.blur` ni
+    /// material, que es justo lo que el ajuste pide quitar.
     private var controlBackground: AnyShapeStyle {
         reduceTransparency
-            ? AnyShapeStyle(Color(UIColor.secondarySystemBackground))
+            ? AnyShapeStyle(Color.black.opacity(0.35))
             : AnyShapeStyle(.ultraThinMaterial)
     }
 
