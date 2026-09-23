@@ -609,14 +609,14 @@ class FileAccessService: ObservableObject {
                 // ✅ SEGURIDAD: capturar excepciones de recursos corruptos
                 // para que un archivo problemático no detenga toda la carpeta
                 let values = try? fileURL.resourceValues(forKeys: Set(keys))
+                // ✅ A8: los directorios se saltan aquí y basta. El
+                // FileManager.enumerator ya es recursivo (no se pasa
+                // .skipsSubdirectoryDescendants) y su enumeración se recorre
+                // en ESTE mismo bucle, así que las subcarpetas se escanean
+                // sin recursión manual. La rama recursiva que había debajo
+                // era INALCANZABLE (este mismo `if` con `continue` la
+                // precedía) y se eliminó sin pérdida de funcionalidad.
                 if values?.isDirectory == true { continue }
-                // ✅ FIX subcarpetas: si es directorio, escanear recursivamente
-                if values?.isDirectory == true {
-                    DispatchQueue.global(qos: .utility).async { [weak self] in
-                        self?.scanFolder(fileURL, silent: silent)
-                    }
-                    continue
-                }
                 
                 guard self.supportedExtensions.contains(fileURL.pathExtension.lowercased()) else { continue }
 
