@@ -1347,13 +1347,31 @@ class AudioEngine: NSObject, ObservableObject {
                     playlist.insert(current, at: 0)
                     currentIndex = 0
                 }
+                // ✅ FIX BUG (shuffle de álbum se queda mudo): la lista mezclada
+                // (shuffledPlaylist/shuffleIndex) es estado del MOTOR y
+                // sobrevivía al cambio de playlist. computeNextIndex() la veía
+                // "vigente", tomaba una canción de la playlist ANTERIOR y su
+                // firstIndex(where:) devolvía nil → indexToChainAhead() nil →
+                // chainGaplessPlayNext() → stop() (silencio). Se reconstruye
+                // SIEMPRE para la playlist nueva y con la canción actual
+                // excluida (así nunca se re-encadena a sí misma).
+                shuffledPlaylist = playlist.filter { $0.id != current.id }.shuffled()
+                shuffleIndex = 0
             } else {
                 originalPlaylist = []
+                // ✅ Mismo motivo: el puntero viejo podía quedar apuntando a una
+                // playlist que ya no existe (y con shuffle activo, a una sola
+                // canción, se consulta en cuanto haya más de una).
+                shuffledPlaylist = []
+                shuffleIndex = 0
             }
         } else {
             self.playlist = [song]
             currentIndex = 0
             originalPlaylist = []
+            // ✅ Cola de una sola canción: no hay "siguiente" que mezclar.
+            shuffledPlaylist = []
+            shuffleIndex = 0
         }
 
         updatePlaybackQueue()
@@ -1960,7 +1978,24 @@ class AudioEngine: NSObject, ObservableObject {
             }
             let nextSong = shuffledPlaylist[shuffleIndex]
             shuffleIndex += 1
-            return playlist.firstIndex(where: { $0.id == nextSong.id })
+            if let nextIndex = playlist.firstIndex(where: { $0.id == nextSong.id }) {
+                return nextIndex
+            }
+            // ✅ FIX BUG (shuffle de álbum se queda mudo): si la lista mezclada
+            // quedó obsoleta (apuntaba a otra playlist), firstIndex() devolvía
+            // nil y el fin de canción acababa en stop() (silencio). Se regenera
+            // con la playlist ACTUAL —excluyendo la canción en curso— y se
+            // reintenta UNA vez. Solo si la playlist no aporta ninguna canción
+            // se devuelve nil (fin real → stop() limpio).
+            let currentID = playlist.indices.contains(currentIndex) ? playlist[currentIndex].id : nil
+            shuffledPlaylist = playlist.filter { $0.id != currentID }.shuffled()
+            guard let retrySong = shuffledPlaylist.first,
+                  let retryIndex = playlist.firstIndex(where: { $0.id == retrySong.id }) else {
+                shuffleIndex = 0
+                return nil
+            }
+            shuffleIndex = 1 // el primero ya se consume como "siguiente"
+            return retryIndex
         }
         let next = currentIndex + 1
         if next >= playlist.count {
@@ -2198,10 +2233,14 @@ class AudioEngine: NSObject, ObservableObject {
         guard !playlist.isEmpty else { return }
         if isShuffleEnabled {
             originalPlaylist = playlist
-            // ✅ MEJORA: inicializar lista mezclada nueva
-            shuffledPlaylist = playlist.shuffled()
-            shuffleIndex = 0
             let current = playlist[currentIndex]
+            // ✅ MEJORA: inicializar lista mezclada nueva.
+            // ✅ FIX BUG (shuffle se queda mudo): la canción ACTUAL se excluye de
+            // la lista mezclada. Si entraba, al llegar el puntero a su posición
+            // computeNextIndex() devolvía su propio índice y el motor se
+            // re-encadenaba a sí misma en vez de pasar a otra canción.
+            shuffledPlaylist = playlist.filter { $0.id != current.id }.shuffled()
+            shuffleIndex = 0
             playlist.shuffle()
             if let newIndex = playlist.firstIndex(where: { $0.id == current.id }) {
                 playlist.remove(at: newIndex)

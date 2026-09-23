@@ -110,8 +110,9 @@ struct AlbumDetailView: View {
     @ObservedObject var fileAccessService: FileAccessService
     @Environment(\.dismiss) private var dismiss
 
-    // ? Color dominante VIVO (histograma HSB) extra�do en segundo plano
-    @State private var liveDominantColor: UIColor? = nil
+    // ✅ ACENTO UNIFICADO: el par de la carátula lo resuelve y publica
+    // ThemeManager (una sola pasada + caché por huella de imagen).
+    // Esta vista SOLO LEE: aquí no se computa ningún color.
     @State private var appearAnimation = false
     // ? OPT: blur precalculado UNA vez (en background) en vez de re-renderizar .blur(50) en cada frame
     @State private var heroBlurredArtwork: UIImage? = nil
@@ -130,23 +131,23 @@ struct AlbumDetailView: View {
     // todo). Alimenta únicamente transform y opacidad del fondo del hero.
     @State private var scrollOffset: CGFloat = 0
 
-    // ✅ Acento de DOS colores: primario + secundario real de la carátula.
-    // El secundario solo se usa con "Acento desde portada" activo.
+    // ✅ Acento de DOS colores: primario + secundario publicados por ThemeManager
+    // (fuente unificada = carátula de la canción actual). El secundario solo se
+    // usa con "Acento desde portada" activo.
     @ObservedObject private var theme = ThemeManager.shared
-    @State private var liveSecondaryColor: UIColor? = nil
     private var songs: [Song] { cachedSongs }
     private var totalDuration: TimeInterval { cachedTotalDuration }
     private var hasMultipleDiscs: Bool { cachedHasMultipleDiscs }
     private var songsByDisc: [(disc: Int, songs: [Song])] { cachedSongsByDisc }
-    // ? FIX: color normalizado para legibilidad; usa el vivo si ya se extrajo
-    /// ✅ Acento de la vista, SIEMPRE de dos colores (primario + secundario real
-    /// de la carátula). Con "Acento desde portada" activo usa el color de ESTE
-    /// álbum y su secundario; con el modo desactivado, el acento manual con su
-    /// segunda parada al 40%, igual que el resto de la app.
+    /// ✅ Acento de la vista, SIEMPRE de dos colores. Lee el par publicado por
+    /// ThemeManager (fuente unificada = carátula de la canción actual); el hero
+    /// sigue mostrando la carátula del álbum, solo el acento cambia de fuente.
+    /// Con el modo desactivado, el acento manual con su segunda parada al 40%,
+    /// igual que el resto de la app.
     private var accent: DetailAccent {
         DetailAccent.resolve(
-            artworkColor: liveDominantColor ?? album.dominantColor,
-            artworkSecondaryColor: liveSecondaryColor,
+            artworkColor: theme.artworkAccentUIColor,
+            artworkSecondaryColor: theme.artworkSecondaryUIColor,
             fromArtwork: theme.accentFromArtwork
         )
     }
@@ -155,23 +156,9 @@ struct AlbumDetailView: View {
     /// del gradiente, para que la pantalla entera respete el modo activo.
     private var tintColor: Color { accent.primary }
 
-    /// ✅ Secundario de la carátula del álbum (segundo color dominante) para el
-    /// gradiente. Solo se calcula con el modo portada activo y queda en la caché
-    /// compartida, así que volver a la vista no repite el trabajo.
-    private func loadSecondaryArtworkColorIfNeeded() {
-        guard theme.accentFromArtwork, liveSecondaryColor == nil, let artwork = album.artwork else { return }
-
-        DispatchQueue.global(qos: .userInitiated).async {
-            let dominant = AppTheme.cachedDominantColor(from: artwork, key: album.id)
-            let secondary = dominant.flatMap {
-                AppTheme.cachedSecondaryDominantColor(from: artwork, key: "album-secondary-" + album.id, primary: $0)
-            }
-            DispatchQueue.main.async {
-                guard let secondary, self.liveSecondaryColor == nil else { return }
-                withAnimation(.easeInOut(duration: 0.3)) { self.liveSecondaryColor = secondary }
-            }
-        }
-    }
+    // ✅ El secundario ya no se carga aquí: ThemeManager lo publica (fuente
+    // unificada, una sola pasada) y `accent` lo lee. Sin extracción local ni
+    // pop de color al entrar.
     // ? UIColor crudo para calcular contraste de textos/botones
     /// ✅ Estado real del motor para ESTE álbum (ver el pill de bit-perfect).
     private var isAlbumBitPerfect: Bool {
@@ -179,7 +166,7 @@ struct AlbumDetailView: View {
         return audioEngine.isBitPerfect && songs.contains { $0.id == current.id }
     }
 
-    private var tintUIColor: UIColor { liveDominantColor ?? album.dominantColor ?? AppTheme.accentUIColor }
+    private var tintUIColor: UIColor { theme.artworkAccentUIColor ?? AppTheme.accentUIColor }
     // ? Contraste: blanco o negro seg�n luminancia del color de la portada
     private var onTintColor: Color { AppTheme.contrastingText(on: tintUIColor) }
 
@@ -264,18 +251,6 @@ struct AlbumDetailView: View {
             }
             // ? OPT: precalcular el blur del hero UNA vez en background
             prepareBlurredArtwork(from: album.artwork)
-            // ? Extraer el color dominante VIVO de la car�tula en hilo de fondo
-            loadSecondaryArtworkColorIfNeeded()
-            guard liveDominantColor == nil, let artwork = album.artwork else { return }
-            DispatchQueue.global(qos: .userInitiated).async {
-                // ? Cach� compartida: mismo color que NowPlaying para este �lbum
-                let dominant = AppTheme.cachedDominantColor(from: artwork, key: album.id)
-                DispatchQueue.main.async {
-                    withAnimation(.easeInOut(duration: 0.3)) {
-                        self.liveDominantColor = dominant
-                    }
-                }
-            }
         }
     }
 
@@ -733,7 +708,6 @@ struct ArtistDetailView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var appearAnimation = false
-    @State private var liveDominantColor: UIColor? = nil
     // ? OPT: blur precalculado UNA vez (en background)
     @State private var heroBlurredArtwork: UIImage? = nil
 
@@ -744,20 +718,21 @@ struct ArtistDetailView: View {
     private var songs: [Song] { cachedSongs }
     private var albums: [Album] { cachedAlbums }
 
-    // ✅ Acento de DOS colores: primario + secundario real de la carátula.
-    // El secundario solo se usa con "Acento desde portada" activo.
+    // ✅ Acento de DOS colores: primario + secundario publicados por ThemeManager
+    // (fuente unificada = carátula de la canción actual). El secundario solo se
+    // usa con "Acento desde portada" activo.
     @ObservedObject private var theme = ThemeManager.shared
-    @State private var liveSecondaryColor: UIColor? = nil
     // ✅ PARALLAX / BARRA EMERGENTE (mismo criterio que AlbumDetailView).
     @State private var scrollOffset: CGFloat = 0
     private var totalDuration: TimeInterval { cachedTotalDuration }
     /// ✅ Acento de la vista, SIEMPRE de dos colores (mismo criterio que Album
-    /// Detail): color del artista + su secundario con el modo portada activo;
-    /// acento manual con su segunda parada al 40% si el modo está desactivado.
+    /// Detail): lee el par publicado por ThemeManager (fuente unificada =
+    /// carátula de la canción actual); el hero sigue mostrando la carátula del
+    /// artista. Acento manual con su segunda parada al 40% si el modo está off.
     private var accent: DetailAccent {
         DetailAccent.resolve(
-            artworkColor: liveDominantColor ?? artist.albums.first?.dominantColor,
-            artworkSecondaryColor: liveSecondaryColor,
+            artworkColor: theme.artworkAccentUIColor,
+            artworkSecondaryColor: theme.artworkSecondaryUIColor,
             fromArtwork: theme.accentFromArtwork
         )
     }
@@ -766,22 +741,10 @@ struct ArtistDetailView: View {
     /// del gradiente, para que la pantalla entera respete el modo activo.
     private var tintColor: Color { accent.primary }
 
-    /// ✅ Secundario de la carátula del artista para el gradiente de dos colores.
-    private func loadSecondaryArtworkColorIfNeeded() {
-        guard theme.accentFromArtwork, liveSecondaryColor == nil, let artwork = artist.artwork else { return }
-
-        DispatchQueue.global(qos: .userInitiated).async {
-            let dominant = AppTheme.cachedDominantColor(from: artwork, key: "artist-" + artist.id)
-            let secondary = dominant.flatMap {
-                AppTheme.cachedSecondaryDominantColor(from: artwork, key: "artist-secondary-" + artist.id, primary: $0)
-            }
-            DispatchQueue.main.async {
-                guard let secondary, self.liveSecondaryColor == nil else { return }
-                withAnimation(.easeInOut(duration: 0.3)) { self.liveSecondaryColor = secondary }
-            }
-        }
-    }
-    private var tintUIColor: UIColor { liveDominantColor ?? artist.albums.first?.dominantColor ?? AppTheme.accentUIColor }
+    // ✅ El secundario ya no se carga aquí: ThemeManager lo publica (fuente
+    // unificada, una sola pasada) y `accent` lo lee. Sin extracción local ni
+    // pop de color al entrar.
+    private var tintUIColor: UIColor { theme.artworkAccentUIColor ?? AppTheme.accentUIColor }
     // ? Contraste para botones (igual que AlbumDetailView)
     private var onTintColor: Color { AppTheme.contrastingText(on: tintUIColor) }
 
@@ -872,18 +835,6 @@ struct ArtistDetailView: View {
             }
             // ? OPT: precalcular el blur del hero UNA vez en background
             prepareBlurredArtwork(from: artist.artwork)
-            // ? Extraer color del primer �lbum
-            loadSecondaryArtworkColorIfNeeded()
-            guard liveDominantColor == nil, let artwork = artist.artwork else { return }
-                DispatchQueue.global(qos: .userInitiated).async {
-                    // ? Cach� compartida por id de artista
-                    let dominant = AppTheme.cachedDominantColor(from: artwork, key: "artist-" + artist.id)
-                    DispatchQueue.main.async {
-                        withAnimation(.easeInOut(duration: 0.3)) {
-                            self.liveDominantColor = dominant
-                        }
-                    }
-                }
             }
         }
 

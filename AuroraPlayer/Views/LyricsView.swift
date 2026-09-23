@@ -33,6 +33,18 @@ struct LyricsView: View {
     // ✅ Observado para que los textos se re-rendericen al cambiar de idioma en vivo.
     @ObservedObject private var localization = Localization.shared
     @Environment(\.dismiss) private var dismiss
+    /// ✅ Fase de la escena: al abrir el Centro de Control (o cualquier overlay del
+    /// sistema) la app pasa a `.inactive`. El karaoke no debe pedir frames
+    /// entonces —la GPU la necesita el panel del sistema y el run loop está en
+    /// modo de gesto— así que el wipe se congela y, al volver, se re-ancla el
+    /// reloj con la posición REAL del motor: retoma donde toca, no desde cero.
+    @Environment(\.scenePhase) private var scenePhase
+    /// ✅ Detector de grabación de pantalla (`UIScreen.isCaptured`): mientras se
+    /// graba, el sistema pide TODOS los frames que dibujamos y el wipe compite
+    /// con el codificador. Con esto el karaoke baja a 30 fps alineados con el
+    /// vsync y se sueltan las pasadas más caras.
+    /// ✅ Mismo patrón que `VisualizerFrameRate`: singleton observado por la vista.
+    @ObservedObject private var captureMonitor = LyricCaptureMonitor.shared
 
     /// ✅ Petición de centrado: el `token` garantiza que SwiftUI reciba un
     /// cambio aunque la línea destino sea la misma (al cambiar de canción), así
@@ -118,6 +130,15 @@ struct LyricsView: View {
         .onChange(of: song?.id) { _ in
             parseLyricsIfNeeded()
             syncScrollToActiveLine()
+        }
+        // ✅ Vuelta del overlay del sistema (Centro de Control, notificación…):
+        // se re-ancla el reloj de interpolación con la posición real del motor.
+        // Sin esto, el wipe reaparecía con el estado "atrasado" (o directamente
+        // al principio de la línea) y daba un salto visible al volver.
+        .onChange(of: scenePhase) { newPhase in
+            if newPhase == .active {
+                viewModel.syncToCurrentTime()
+            }
         }
     }
 
@@ -240,8 +261,12 @@ struct LyricsView: View {
     private func scrollToActiveLine(_ request: ScrollRequest?, proxy: ScrollViewProxy) {
         guard let request else { return }
 
-        if hasDoneInitialScroll {
-            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+        // ✅ Con un overlay del sistema encima (Centro de Control) el scroll se
+        // hace SIN animación: animar aquí es robarle frames al panel del sistema
+        // por un movimiento que el usuario ni ve. Al volver, la lista ya está en
+        // el sitio correcto.
+        if hasDoneInitialScroll, renderState.isSceneActive {
+            withAnimation(scrollAnimation) {
                 proxy.scrollTo(request.lineID, anchor: .center)
             }
         } else {
@@ -252,6 +277,26 @@ struct LyricsView: View {
             }
             hasDoneInitialScroll = true
         }
+    }
+
+    /// ✅ Animación del auto-scroll. El spring de 0.35 s es el tacto de Apple
+    /// Music, pero durante la grabación genera frames intermedios que la captura
+    /// no siempre completa (el desplazamiento se veía "a saltos" en el vídeo):
+    /// bajo captura se usa un easeOut corto, casi idéntico a la vista y mucho más
+    /// estable en la grabación.
+    private var scrollAnimation: Animation {
+        captureMonitor.isCaptured
+            ? .easeOut(duration: 0.3)
+            : .spring(response: 0.35, dampingFraction: 0.85)
+    }
+
+    /// ✅ Condiciones de render que comparten la vista y TODAS las filas: se
+    /// calculan en un solo sitio para que el criterio no se pueda desincronizar.
+    private var renderState: LyricRenderState {
+        LyricRenderState(
+            isSceneActive: scenePhase == .active,
+            isCaptured: captureMonitor.isCaptured
+        )
     }
 
     // MARK: - Línea individual
@@ -268,7 +313,11 @@ struct LyricsView: View {
             // ✅ Ancho ÚTIL para el texto (sin el padding horizontal): es lo que
             // se mide para trocear las filas que SwiftUI envolvería.
             availableWidth: max(0, contentWidth - Self.horizontalPadding * 2),
-            glowColor: glowColor
+            glowColor: glowColor,
+            // ✅ Condiciones de render (overlay del sistema / grabación): van como
+            // valor para que formen parte de la igualdad de la fila; si no, el
+            // diff de `.equatable()` no las vería cambiar.
+            renderState: renderState
         )
         // ✅ Solo las filas cuyo contenido ha cambiado vuelven a evaluar su body:
         // al cambiar de línea activa (o al hacer scroll) se evita re-evaluar todo
@@ -549,6 +598,9 @@ private struct LyricLineView: View, Equatable {
     /// ✅ Acento (de la carátula si el ajuste está activo): con él se pinta el
     /// "glow" de la capa brillante del karaoke.
     let glowColor: Color
+    /// ✅ Overlay del sistema / grabación de pantalla: cambia el ritmo del reloj
+    /// de frames y qué pasadas caras (halo, desenfoque) se pagan.
+    let renderState: LyricRenderState
 
     /// ✅ Separación entre filas visuales de una misma línea lógica (también en
     /// la capa atenuada, para que el texto no salte al activarse la línea).
@@ -568,6 +620,7 @@ private struct LyricLineView: View, Equatable {
             && lhs.line == rhs.line
             && lhs.availableWidth == rhs.availableWidth
             && lhs.glowColor == rhs.glowColor
+            && lhs.renderState == rhs.renderState
     }
 
     /// ✅ Una fila LISTA para pintar. Todo lo caro (medición del texto, reparto de
@@ -616,7 +669,10 @@ private struct LyricLineView: View, Equatable {
                     // inactivas: la activa es la que pide frames a 60 Hz y no
                     // debe pagar ninguna pasada de blur. Si en el iPhone 8 Plus
                     // no convence, basta con borrar esta línea.
-                    .blur(radius: 0.5)
+                    // ✅ Bajo grabación se suelta: cada blur es una pasada fuera de
+                    // pantalla por línea y la captura no siempre la completa, así
+                    // que en el vídeo se veía como parpadeo.
+                    .modifier(InactiveDepthBlur(enabled: renderState.usesInactiveDepthBlur))
                     .transition(.opacity)
             }
         }
@@ -682,11 +738,27 @@ private struct LyricLineView: View, Equatable {
     /// estado congelado una sola vez (sin gastar GPU/batería).
     @ViewBuilder
     private func activeLine(_ rows: [RenderRow]) -> some View {
-        if isPlaying {
-            TimelineView(.animation) { _ in
-                activeRows(rows)
+        if isPlaying, renderState.isSceneActive {
+            if renderState.isCaptured {
+                // ✅ Grabación de pantalla activa: el sistema captura cada frame
+                // que dibujamos, así que el karaoke baja a 30 fps. Es
+                // `TimelineView(.animation(minimumInterval:))` y NO `.periodic`:
+                // sigue colgado del vsync (frames alineados con la pantalla y con
+                // el codificador) y solo limita el ritmo; un timer periódico no
+                // está alineado y produciría justo el síntoma a evitar (frames
+                // duplicados o saltados en el vídeo).
+                TimelineView(.animation(minimumInterval: LyricCapturePolicy.capturedFrameInterval)) { _ in
+                    activeRows(rows)
+                }
+            } else {
+                TimelineView(.animation) { _ in
+                    activeRows(rows)
+                }
             }
         } else {
+            // ✅ En pausa o con un overlay del sistema encima (Centro de Control,
+            // notificación): UN solo dibujo, sin pedir frames. Al volver, el
+            // TimelineView se rearma y el wipe retoma en la posición re-anclada.
             activeRows(rows)
         }
     }
@@ -703,7 +775,8 @@ private struct LyricLineView: View, Equatable {
                     fontWeight: fontWeight,
                     progress: easedProgress(rows: rows, index: index),
                     glowColor: glowColor,
-                    contentOpacity: rows[index].isBackground ? LyricBackgroundVoice.opacity : 1
+                    contentOpacity: rows[index].isBackground ? LyricBackgroundVoice.opacity : 1,
+                    glowEnabled: renderState.showsGlow
                 )
                 // ✅ Las filas ya completadas (o aún sin empezar) tienen el mismo
                 // progreso frame a frame → no se redibujan; solo la fila que se
@@ -720,7 +793,7 @@ private struct LyricLineView: View, Equatable {
             ForEach(rows.indices, id: \.self) { index in
                 Text(rows[index].text)
                     .font(.system(size: rows[index].fontSize, weight: fontWeight))
-                    .foregroundStyle(Color.primary.opacity(0.35))
+                    .foregroundStyle(Color.primary.opacity(LyricDim.inactiveOpacity))
                     // ✅ Misma escala/tenuidad que en la capa activa: el texto no
                     // puede cambiar de tamaño al activarse la línea.
                     .opacity(rows[index].isBackground ? LyricBackgroundVoice.opacity : 1)
@@ -759,6 +832,15 @@ private struct LyricLineView: View, Equatable {
     }
 }
 
+// MARK: - Atenuación de la letra que no suena
+/// ✅ Apple Music pinta la letra inactiva al 40% de opacidad. Es la MISMA
+/// constante para (a) la capa atenuada de una línea inactiva y (b) la parte aún
+/// no cantada de la línea activa: así el texto no cambia de tenuidad al
+/// activarse su línea (el único cambio es el relleno y el glow).
+private enum LyricDim {
+    static let inactiveOpacity: Double = 0.4
+}
+
 // MARK: - Texto con relleno progresivo (dos capas + máscara)
 // ✅ Dos capas de texto y una máscara rectangular por frame (es el coste que
 //    mantiene el karaoke a 60 fps en el A11).
@@ -774,6 +856,9 @@ private struct LyricFillText: View, Equatable {
     let glowColor: Color
     /// ✅ Voz de fondo: la fila entera se pinta algo más tenue.
     let contentOpacity: Double
+    /// ✅ ¿Se pinta el halo? Bajo grabación se suelta la capa más cara por frame
+    /// (copia tintada con el acento + blur) y queda solo el texto brillante.
+    let glowEnabled: Bool
 
     /// ✅ Radio del halo: 2 pt. Es un blur sobre UNA línea de texto (no sobre la
     /// pantalla) y su contenido no cambia, así que SwiftUI lo rasteriza de nuevo
@@ -797,17 +882,26 @@ private struct LyricFillText: View, Equatable {
     private var dimmedLayer: some View {
         Text(text)
             .font(font)
-            .foregroundStyle(Color.primary.opacity(0.35))
+            .foregroundStyle(Color.primary.opacity(LyricDim.inactiveOpacity))
     }
 
+    @ViewBuilder
     private var brightLayers: some View {
-        ZStack(alignment: .leading) {
-            Text(text)
-                .font(font)
-                .foregroundStyle(glowColor)
-                .blur(radius: Self.glowRadius)
-                .opacity(Self.glowOpacity)
+        if glowEnabled {
+            ZStack(alignment: .leading) {
+                Text(text)
+                    .font(font)
+                    .foregroundStyle(glowColor)
+                    .blur(radius: Self.glowRadius)
+                    .opacity(Self.glowOpacity)
 
+                Text(text)
+                    .font(font)
+                    .foregroundStyle(Color.primary)
+            }
+        } else {
+            // ✅ Sin halo: el texto ya sonado se sigue viendo nítido y a plena
+            // intensidad (el "ya cantado" no pierde legibilidad, solo el halo).
             Text(text)
                 .font(font)
                 .foregroundStyle(Color.primary)
@@ -962,6 +1056,89 @@ private enum LyricWordAligner {
         }
 
         return index == words.count ? result : nil
+    }
+}
+
+// MARK: - Render bajo presión (grabación de pantalla / overlay del sistema)
+/// ✅ Condiciones que NO dependen del reloj y que, aun así, cambian cómo se pinta
+/// el karaoke. Van como VALOR (no leídas dentro de la fila) porque los diffs de
+/// `.equatable()` solo comparan las propiedades de la vista: si no formaran parte
+/// de la igualdad, la fila no se enteraría de que cambió la condición.
+private struct LyricRenderState: Equatable {
+    /// ✅ La escena está en primer plano. Con el Centro de Control encima (o
+    /// cualquier overlay del sistema) iOS pone la app en `.inactive`.
+    let isSceneActive: Bool
+    /// ✅ Grabación de pantalla activa (`UIScreen.isCaptured`).
+    let isCaptured: Bool
+
+    /// ✅ ¿Se pinta el halo del karaoke (copia tintada + blur bajo la máscara)?
+    var showsGlow: Bool {
+        !(isCaptured && LyricCapturePolicy.dropsGlowWhileCaptured)
+    }
+
+    /// ✅ ¿Se aplica el desenfoque sutil de las líneas inactivas?
+    var usesInactiveDepthBlur: Bool {
+        !(isCaptured && LyricCapturePolicy.dropsInactiveBlurWhileCaptured)
+    }
+}
+
+/// ✅ Política de render bajo captura, en constantes y en un solo sitio para
+/// poder calibrarla sin rastrear cada punto de decisión.
+private enum LyricCapturePolicy {
+    /// ✅ 30 fps al grabar en lugar de 60.
+    static let capturedFrameInterval: Double = 1.0 / 30.0
+
+    /// ✅ Sin halo mientras se graba.
+    /// ⚠️ Contrapartida CONSCIENTE: el vídeo queda sin el halo que SÍ se ve en
+    /// pantalla (el síntoma "la grabación se ve distinta" se acepta aquí a cambio
+    /// de fluidez). Si se prefiere que la grabación sea idéntica a la pantalla —el
+    /// blur del halo se rasteriza una sola vez, no se repaga por frame—, basta
+    /// con poner esto en `false`.
+    static let dropsGlowWhileCaptured = true
+
+    /// ✅ Sin desenfoque en las líneas inactivas mientras se graba.
+    static let dropsInactiveBlurWhileCaptured = true
+}
+
+/// ✅ Desenfoque sutil SOLO de las líneas inactivas, evitable: `.blur(radius: 0)`
+/// seguiría creando la pasada fuera de pantalla, así que bajo captura se quita el
+/// modificador entero en vez de anular el radio.
+private struct InactiveDepthBlur: ViewModifier {
+    let enabled: Bool
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if enabled {
+            content.blur(radius: 0.5)
+        } else {
+            content
+        }
+    }
+}
+
+/// ✅ Detector de grabación de pantalla (`UIScreen.isCaptured`, iOS 11+), con el
+/// MISMO patrón que `VisualizerFrameRate`: singleton `@MainActor` observado por la
+/// vista. `capturedDidChangeNotification` avisa tanto al empezar como al terminar
+/// de grabar, así que el karaoke pasa a 30 fps durante la grabación y vuelve a 60
+/// al parar, sin intervención del usuario.
+@MainActor
+final class LyricCaptureMonitor: ObservableObject {
+    static let shared = LyricCaptureMonitor()
+
+    @Published private(set) var isCaptured: Bool = UIScreen.main.isCaptured
+
+    private init() {
+        // ✅ `object: nil`: el aviso es de la pantalla, no de una pantalla
+        // concreta, así que no se depende de la instancia al registrarlo.
+        NotificationCenter.default.addObserver(
+            forName: UIScreen.capturedDidChangeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.isCaptured = UIScreen.main.isCaptured
+            }
+        }
     }
 }
 

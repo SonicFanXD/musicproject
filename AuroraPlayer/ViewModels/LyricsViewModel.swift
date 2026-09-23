@@ -41,6 +41,11 @@ final class LyricsViewModel: ObservableObject {
     // MARK: - Ventana de la línea activa (cache O(1) para el wipe)
     private var activeStartMs: Int = 0
     private var activeEndMs: Int = 0
+    /// ✅ Margen máximo (ms) que la ÚLTIMA palabra cantada sigue rellenándose
+    /// después de su propio fin. Apple Music cierra el barrido con la VOZ: si la
+    /// línea declara un fin mucho más tardío que sus palabras (un `<p end>` del
+    /// TTML que cubre el interludio), ese sobrante NO se anima.
+    private static let maxLastWordTailMs: Double = 250
 
     // MARK: - Parseo (token de vigencia)
     /// ✅ Cada llamada a `parseLyrics` invalida el parseo pendiente anterior: si el
@@ -265,10 +270,12 @@ final class LyricsViewModel: ObservableObject {
             let startMs = Double(words[index].startMs)
             var finishMs = Double(max(words[index].endMs, words[index].startMs))
             // ✅ La última palabra de la última fila se cierra con el fin EFECTIVO
-            // de la línea (el buffer adaptativo del motor), igual que el relleno
-            // lineal: la línea no se queda a medias mientras sigue sonando.
+            // de la línea (el buffer adaptativo del motor) PERO solo hasta un
+            // margen corto: si el fin declarado de la línea se alarga más allá de
+            // las palabras cantadas (interludio/outro), el barrido se cierra con
+            // la voz y no sigue avanzando sobre el silencio.
             if isLastRow, index == words.count - 1 {
-                finishMs = max(finishMs, endMs)
+                finishMs = max(finishMs, min(endMs, finishMs + Self.maxLastWordTailMs))
             }
 
             // Todavía no ha empezado: lo que queda por delante permanece apagado.

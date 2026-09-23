@@ -10,6 +10,10 @@ struct SettingsView: View {
     @State private var showLogs = false
     @State private var showAbout = false
     @State private var showEqualizerSheet = false
+    // ✅ FASE C1: confirmación destructiva del reset de ajustes
+    @State private var showResetSettingsAlert = false
+    // ✅ FASE C1: confirmación del reset de caché de biblioteca
+    @State private var showResetCacheAlert = false
     @State private var selectedThemeIndex: Int
 
     /// ✅ Gestión embebida de biblioteca (sin pantalla aparte):
@@ -412,6 +416,18 @@ struct SettingsView: View {
                             settingsButton(title: Localization.localized("settings.about"), subtitle: "Aurora Player v\(appVersion)", icon: "info.circle.fill", color: .blue) {
                                 showAbout = true
                             }
+                            settingsDivider
+                            // ✅ FASE C1: reset de ajustes (destructivo, con confirmación).
+                            // NO toca biblioteca, playlists ni "Me gusta".
+                            settingsButton(title: Localization.localized("settings.resetSettings"), subtitle: Localization.localized("settings.resetSettingsSubtitle"), icon: "arrow.counterclockwise", color: .red) {
+                                showResetSettingsAlert = true
+                            }
+                            settingsDivider
+                            // ✅ FASE C1: reset de caché derivada (colores, miniaturas,
+                            // índice de búsqueda). No borra canciones ni carpetas.
+                            settingsButton(title: Localization.localized("settings.resetCache"), subtitle: Localization.localized("settings.resetCacheSubtitle"), icon: "arrow.triangle.2.circlepath", color: .teal) {
+                                showResetCacheAlert = true
+                            }
                         }
                     }
                     .padding(.horizontal, 20).padding(.top, 8).padding(.bottom, 30)
@@ -458,6 +474,24 @@ struct SettingsView: View {
                 Button(Localization.localized("common.ok"), role: .cancel) {}
             } message: {
                 Text(Localization.localized("settings.description"))
+            }
+            // ✅ FASE C1: confirmación destructiva antes de restablecer ajustes
+            .alert(Localization.localized("settings.resetSettings"), isPresented: $showResetSettingsAlert) {
+                Button(Localization.localized("actions.cancel"), role: .cancel) {}
+                Button(Localization.localized("settings.resetConfirm"), role: .destructive) {
+                    resetAllSettings()
+                }
+            } message: {
+                Text(Localization.localized("settings.resetSettingsMessage"))
+            }
+            // ✅ FASE C1: confirmación del reset de caché de biblioteca
+            .alert(Localization.localized("settings.resetCache"), isPresented: $showResetCacheAlert) {
+                Button(Localization.localized("actions.cancel"), role: .cancel) {}
+                Button(Localization.localized("settings.resetConfirm"), role: .destructive) {
+                    resetLibraryCache()
+                }
+            } message: {
+                Text(Localization.localized("settings.resetCacheMessage"))
             }
         }
     }
@@ -790,6 +824,122 @@ struct SettingsView: View {
         Divider()
             .opacity(0.1)
             .padding(.leading, 60)
+    }
+
+    // MARK: - Fase C1: reset de ajustes a valores por defecto
+
+    /// ✅ SOLO preferencias de usuario. NO incluye claves de DATOS: biblioteca
+    /// (`musicFolders`/`musicFiles`), playlists, "Me gusta", estado de
+    /// reproducción, primera indexación ni la categoría seleccionada — el reset
+    /// de ajustes nunca borra contenido del usuario.
+    private static let userSettingsKeys: [String] = [
+        // Apariencia / reproducción
+        "com.aurora.showVisualizer",
+        "com.aurora.enableHaptics",
+        "com.aurora.keepScreenOn",
+        "com.aurora.artworkCorner",
+        "com.aurora.reduceTransparency",
+        "com.aurora.hapticIntensity",
+        "com.aurora.showLyricsByDefault",
+        "com.aurora.autoPlayOnStart",
+        "com.aurora.showVisualizerInBar",
+        "com.aurora.compactPlayerBar",
+        "com.aurora.language",
+        "com.aurora.showFPS",
+        "com.aurora.uiTheme",
+        // Biblioteca: comportamiento del botón "Actualizar"
+        "com.aurora.scanOnlyNewSongs",
+        // Audio
+        "com.aurora.audioSessionMode",
+        "com.aurora.eqEnabled",
+        "com.aurora.eqPreset",
+        "com.aurora.limiterEnabled",
+        "com.aurora.monoAudio",
+        // Acento
+        "com.aurora.accentColor",
+        "com.aurora.accentFromArtwork",
+        // Controles de reproducción persistentes
+        "com.aurora.shuffleEnabled",
+        "com.aurora.repeatMode",
+        // Ordenación de la biblioteca
+        "com.aurora.songSort",
+        "com.aurora.songSortAscending",
+        "com.aurora.albumSort",
+        "com.aurora.albumSortAscending",
+        "com.aurora.artistSort",
+        "com.aurora.artistSortAscending"
+    ]
+
+    /// ✅ Restablece los ajustes a los valores de una instalación nueva:
+    /// borra las claves de preferencias y vuelve a aplicar los defaults
+    /// (los mismos declarados en los `@AppStorage` de esta vista). El motor se
+    /// toca SOLO por sus APIs públicas, que son las que re-aplican el cambio al
+    /// grafo de audio (un simple `UserDefaults.removeObject` no lo haría).
+    private func resetAllSettings() {
+        for key in Self.userSettingsKeys {
+            UserDefaults.standard.removeObject(forKey: key)
+        }
+
+        // 1) @AppStorage de esta vista → defaults declarados arriba
+        showVisualizer = true
+        enableHaptics = true
+        keepScreenOn = false
+        artworkCorner = 22
+        reduceTransparency = false
+        hapticIntensity = 1.0
+        showLyricsByDefault = false
+        autoPlayOnStart = false
+        showVisualizerInBar = true
+        compactPlayerBar = false
+        selectedLanguage = 0
+        showFPS = false
+        scanOnlyNewSongs = true
+        audioSessionMode = 0
+
+        // 2) Tema (0 = Sistema). La raíz lee `com.aurora.uiTheme` con @AppStorage,
+        // así que se re-aplica al instante sin reiniciar.
+        selectedThemeIndex = 0
+        UserDefaults.standard.set(0, forKey: themeDefaultsKey)
+
+        // 3) Motor: apagar solo lo que esté activo (los toggles re-aplican al
+        // grafo: bypass del EQ, ganancia de salida, downmix mono, etc.)
+        if audioEngine.isEQEnabled { audioEngine.toggleEQ() }
+        audioEngine.setEQPreset(.flat)
+        audioEngine.eqPreset = .flat // garantiza valor+persistencia si no hay nodo EQ
+        if audioEngine.isLimiterEnabled { audioEngine.toggleLimiter() }
+        if audioEngine.isMonoAudioEnabled { audioEngine.toggleMonoAudio() }
+        if audioEngine.isKeepScreenOnEnabled { audioEngine.isKeepScreenOnEnabled = false }
+        audioEngine.setAudioSessionMode(0)
+
+        // 4) Cola: shuffle y repeat a su estado inicial
+        if audioEngine.isShuffleEnabled { audioEngine.isShuffleEnabled = false }
+        if audioEngine.repeatMode != .off { audioEngine.repeatMode = .off }
+
+        // 5) Acento: manual (índice 0) y sin "acento desde carátula"
+        if theme.accentFromArtwork { theme.accentFromArtwork = false }
+        theme.setAccent(0)
+
+        // 6) Idioma: español
+        localization.currentLanguage = .spanish
+
+        // 7) HUD de FPS: apagado inmediato (la raíz observa la clave)
+        FPSOverlayController.shared.setEnabled(false)
+
+        AppLog.info(.settings, "Ajustes restablecidos a valores por defecto (biblioteca y playlists intactas)")
+    }
+
+    /// ✅ Reset de caché de biblioteca: descarta todo lo DERIVADO en memoria
+    /// (colores de acento de las carátulas, miniaturas y el índice de búsqueda)
+    /// y pide una reindexación. Nunca borra canciones, carpetas ni playlists —
+    /// la biblioteca se vuelve a leer desde los archivos y las cachés se
+    /// reconstruyen solas en el siguiente uso.
+    private func resetLibraryCache() {
+        AppTheme.artworkColorCache.removeAllObjects()
+        AppTheme.artworkSecondaryColorCache.removeAllObjects()
+        AppTheme.thumbnailCache.removeAllObjects()
+        LibrarySearchIndex.shared.invalidate()
+        fileAccessService.refreshAllFolders()
+        AppLog.info(.settings, "Caché de biblioteca restablecida (colores, miniaturas e índice) · reindexando")
     }
 
     // MARK: - Importación embebida (carpetas / canciones individuales)

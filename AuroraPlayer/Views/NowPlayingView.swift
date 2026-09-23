@@ -30,17 +30,33 @@ struct NowPlayingView: View {
     @State private var showArtistDetail = false
     @State private var showAlbumDetail = false
     @State private var artworkScale: CGFloat = 1.0
-    @State private var extractedColor: Color = AppTheme.accent
+    // ✅ FUENTE ÚNICA: ThemeManager resuelve y publica el par de acento
+    // (resolvedAccentPair + caché por huella de imagen). Esta vista SOLO LEE:
+    // aquí no se extrae ni se computa ningún color.
+    @ObservedObject private var theme = ThemeManager.shared
+
+    // ✅ ESPEJOS DE VISTA (solo lectura; mismas firmas que antes para NO tocar
+    // el layout ni las subvistas). Con "Acento desde portada" devuelven el par
+    // publicado por ThemeManager; con el modo apagado, el acento manual.
+    private var extractedColor: Color {
+        if theme.accentFromArtwork, let c = theme.artworkAccentColor { return c }
+        return AppTheme.accent
+    }
     // ✅ Segundo color dominante de la carátula (solo con "Acento desde
     // portada" activo). Alimenta los gradientes de DOS colores, igual que en
     // PlayerBar y en Album/Artist detail.
-    @State private var extractedSecondaryColor: Color?
-    // ✅ Guardamos el UIColor dominante crudo para calcular contraste
-    // ✅ FIX: usar accentUIColor en vez de systemPurple hardcodeado
-    @State private var extractedUIColor: UIColor = AppTheme.accentUIColor
+    private var extractedSecondaryColor: Color? {
+        guard theme.accentFromArtwork else { return nil }
+        return theme.artworkSecondaryColor
+    }
+    // ✅ UIColor dominante crudo para calcular contraste
+    private var extractedUIColor: UIColor {
+        if theme.accentFromArtwork, let c = theme.artworkAccentUIColor { return c }
+        return AppTheme.accentUIColor
+    }
 
-    // ✅ Caché de color dominante por canción: evita recalcular el histograma
-    // HSB al reabrir NowPlaying o re-entrar a la misma pista (60fps sin hitch)
+    // ✅ Sin caché local ni extracción: el clustering corre UNA vez por
+    // carátula en ThemeManager (caché compartida por huella de imagen).
 
 
     // ✅ Scrub optimizado: preview local a 60fps, seek real solo al soltar.
@@ -113,27 +129,9 @@ struct NowPlayingView: View {
         )
     }
 
-    /// ✅ Secundario de la carátula de la canción actual. El clustering se hace
-    /// en segundo plano (nunca en el hilo principal) y queda en la caché
-    /// compartida con ThemeManager, así que no se repite al volver a la vista.
-    private func loadSecondaryArtworkColorIfNeeded() {
-        guard ThemeManager.shared.accentFromArtwork,
-              let artwork = audioEngine.currentSong?.artwork,
-              let songID = audioEngine.currentSong?.id else { return }
-
-        DispatchQueue.global(qos: .userInitiated).async {
-            let dominant = AppTheme.cachedDominantColor(from: artwork, key: songID.uuidString)
-            let secondary = dominant.flatMap {
-                AppTheme.cachedSecondaryDominantColor(from: artwork, key: songID.uuidString, primary: $0)
-            }
-            guard let secondary else { return }
-            DispatchQueue.main.async {
-                withAnimation(.easeInOut(duration: 0.3)) {
-                    self.extractedSecondaryColor = AppTheme.readableColor(from: secondary)
-                }
-            }
-        }
-    }
+    // ✅ I-3 RESUELTO: la carga async duplicada del secundario (con su
+    // animación de 0.3s, causa del parpadeo al abrir) ya no existe. El
+    // secundario llega publicado desde ThemeManager y la vista solo lo lee.
 
     // ✅ NUEVO: resoluciones para el menú de 3 puntos (artista/álbum actuales)
     private var currentArtist: Artist? {
@@ -244,7 +242,6 @@ struct NowPlayingView: View {
                 .fixedSize(horizontal: false, vertical: true)
             }
             .onAppear {
-                extractColorFromArtwork()
                 AppLog.info(.interface, "NowPlaying abierto: '\(audioEngine.currentSong?.displayName ?? "—")'")
                 withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
                     artworkScale = 1.0
@@ -260,9 +257,9 @@ struct NowPlayingView: View {
                 UIApplication.shared.isIdleTimerDisabled = keepScreenOn && isPlaying
             }
             .onChange(of: audioEngine.currentSong?.id) { _ in
-                extractColorFromArtwork()
                 // ✅ Propagar el color de acento a ThemeManager para que PlayerBar
                 // y todas las vistas que lo observen se actualicen al instante
+                // (ThemeManager resuelve y cachea; aquí no se extrae nada).
                 ThemeManager.shared.updateArtworkAccent(from: audioEngine.currentSong)
             }
             .onChange(of: ThemeManager.shared.accentFromArtwork) { value in
@@ -272,7 +269,6 @@ struct NowPlayingView: View {
                 // en Settings sin esperar a un cambio de canción.
                 if value, let song = audioEngine.currentSong {
                     ThemeManager.shared.updateArtworkAccent(from: song)
-                    extractColorFromArtwork()
                 }
             }
             // ✅ NUEVO: destinos del menú de 3 puntos
@@ -866,33 +862,6 @@ struct NowPlayingView: View {
         }
     }
 
-private func extractColorFromArtwork() {
-        // UNIFICADO: un solo ajuste maestro (ThemeManager.accentFromArtwork)
-        // controla el acento de portada en TODOS los entornos.
-        guard ThemeManager.shared.accentFromArtwork else {
-            extractedColor = AppTheme.accent
-            extractedSecondaryColor = nil
-            return
-        }
-
-        guard let artwork = audioEngine.currentSong?.artwork, let songID = audioEngine.currentSong?.id else {
-            extractedColor = AppTheme.accent
-            extractedSecondaryColor = nil
-            return
-        }
-
-        // Cache compartida: mismo color que AlbumDetail/ArtistDetail.
-        if let cached = AppTheme.cachedDominantColor(from: artwork, key: songID.uuidString) {
-            extractedColor = AppTheme.readableColor(from: cached)
-            extractedUIColor = cached
-            // ✅ Segundo color de la carátula (gradiente de dos colores).
-            extractedSecondaryColor = nil
-            loadSecondaryArtworkColorIfNeeded()
-            return
-        }
-        extractedColor = AppTheme.accent
-        extractedSecondaryColor = nil
-    }
 }
 
 // MARK: - Barra de progreso AISLADA del reloj (patrón PlayerBar)

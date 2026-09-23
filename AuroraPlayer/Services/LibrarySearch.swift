@@ -143,6 +143,21 @@ final class LibrarySearchIndex {
         artistEntries = newArtists
     }
 
+    /// ✅ RESET DE CACHÉ (Ajustes → Avanzado): descarta el índice completo para
+    /// que el próximo `update(...)` lo reconstruya desde cero. Solo libera
+    /// memoria derivada; la biblioteca no se toca. Las firmas se vacían para
+    /// forzar el rebuild (con la biblioteca vacía el índice también queda vacío,
+    /// así que el guard de `update` no puede omitir el trabajo por error).
+    func invalidate() {
+        songEntries = [:]
+        albumEntries = [:]
+        artistEntries = [:]
+        songSignature = []
+        albumSignature = []
+        artistSignature = []
+        contentSignature = 0
+    }
+
     // MARK: - Matching por palabras
 
     /// Palabras normalizadas de la consulta (ignora vacías).
