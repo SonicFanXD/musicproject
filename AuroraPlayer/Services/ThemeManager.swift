@@ -1,5 +1,6 @@
 import SwiftUI
 import Combine
+import UIKit   // explícito: UITraitCollection (escala del dispositivo para las miniaturas)
 
 /// Gestor central del tema: color de acento aplicable en toda la app.
 /// Las vistas usan `AppTheme.accent` en lugar de `Color.accentColor`
