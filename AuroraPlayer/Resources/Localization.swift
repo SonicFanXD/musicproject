@@ -210,12 +210,20 @@ final class Localization: ObservableObject {
         "quality.standard": [.spanish: "Estándar", .english: "Standard"],
         "quality.bitPerfect": [.spanish: "Bit-Perfect", .english: "Bit-Perfect"],
         "quality.bitPerfectYes": [.spanish: "Sí (sin remuestreo)", .english: "Yes (no resampling)"],
-        "quality.bitPerfectNo": [.spanish: "No (remuestreado)", .english: "No (resampled)"],
-        "quality.bitPerfectHint": [.spanish: "Para bit-perfect: salida por cable (jack/DAC USB), sin EQ ni mono activos y protección anti-clipping desactivada.", .english: "For bit-perfect: wired output (jack/USB DAC), no EQ or mono active, and anti-clipping protection off."],
+        // ✅ FIX veracidad: antes decía "No (remuestreado)", que atribuye el fallo
+        // SIEMPRE al remuestreo — pero el indicador también se apaga por EQ activo,
+        // mono, limitador, motor en respaldo o ruta inalámbrica, sin remuestreo
+        // alguno. La nota de debajo es la que enumera los motivos reales.
+        "quality.bitPerfectNo": [.spanish: "No", .english: "No"],
+        "quality.bitPerfectHint": [.spanish: "Para bit-perfect: salida por cable (jack/DAC USB/lineOut), sin EQ ni mono activos, protección anti-clipping desactivada y motor AVAudioEngine (no el de respaldo).", .english: "For bit-perfect: wired output (jack/USB DAC/lineOut), no EQ or mono active, anti-clipping protection off, and the AVAudioEngine path (not the fallback)."],
         "quality.bluetoothCodec": [.spanish: "Codec Bluetooth", .english: "Bluetooth Codec"],
         "quality.usbDAC": [.spanish: "DAC USB", .english: "USB DAC"],
         "quality.sessionMode": [.spanish: "Modo de sesión", .english: "Session Mode"],
+        "quality.audiophile": [.spanish: "Audiófilo", .english: "Audiophile"],
+        "quality.sessionDefault": [.spanish: "Predeterminado (procesado del sistema)", .english: "Default (system processing)"],
+        "quality.sessionMeasurement": [.spanish: "Medición (sin procesado del sistema)", .english: "Measurement (no system processing)"],
         "quality.iosBluetoothLimit": [.spanish: "iOS controla el codec automáticamente", .english: "iOS controls codec automatically"],
+        "quality.btCallProfileLimit": [.spanish: "Perfil de llamadas (SCO): audio mono de banda estrecha, no es el perfil de música.", .english: "Call profile (SCO): narrowband mono audio, not the music profile."],
         "settings.audioOutput": [.spanish: "Salida de audio", .english: "Audio Output"],
         "settings.playbackRoute": [.spanish: "Ruta de reproducción", .english: "Playback Route"],
         "settings.device": [.spanish: "Dispositivo", .english: "Device"],
