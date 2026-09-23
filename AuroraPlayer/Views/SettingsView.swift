@@ -12,6 +12,8 @@ struct SettingsView: View {
     @State private var showEqualizerSheet = false
     // ✅ FASE C1: confirmación destructiva del reset de ajustes
     @State private var showResetSettingsAlert = false
+    // ✅ FASE C1: confirmación del reset de caché de biblioteca
+    @State private var showResetCacheAlert = false
     @State private var selectedThemeIndex: Int
 
     /// ✅ Gestión embebida de biblioteca (sin pantalla aparte):
@@ -420,6 +422,12 @@ struct SettingsView: View {
                             settingsButton(title: Localization.localized("settings.resetSettings"), subtitle: Localization.localized("settings.resetSettingsSubtitle"), icon: "arrow.counterclockwise", color: .red) {
                                 showResetSettingsAlert = true
                             }
+                            settingsDivider
+                            // ✅ FASE C1: reset de caché derivada (colores, miniaturas,
+                            // índice de búsqueda). No borra canciones ni carpetas.
+                            settingsButton(title: Localization.localized("settings.resetCache"), subtitle: Localization.localized("settings.resetCacheSubtitle"), icon: "arrow.triangle.2.circlepath", color: .teal) {
+                                showResetCacheAlert = true
+                            }
                         }
                     }
                     .padding(.horizontal, 20).padding(.top, 8).padding(.bottom, 30)
@@ -475,6 +483,15 @@ struct SettingsView: View {
                 }
             } message: {
                 Text(Localization.localized("settings.resetSettingsMessage"))
+            }
+            // ✅ FASE C1: confirmación del reset de caché de biblioteca
+            .alert(Localization.localized("settings.resetCache"), isPresented: $showResetCacheAlert) {
+                Button(Localization.localized("actions.cancel"), role: .cancel) {}
+                Button(Localization.localized("settings.resetConfirm"), role: .destructive) {
+                    resetLibraryCache()
+                }
+            } message: {
+                Text(Localization.localized("settings.resetCacheMessage"))
             }
         }
     }
@@ -909,6 +926,20 @@ struct SettingsView: View {
         FPSOverlayController.shared.setEnabled(false)
 
         AppLog.info(.settings, "Ajustes restablecidos a valores por defecto (biblioteca y playlists intactas)")
+    }
+
+    /// ✅ Reset de caché de biblioteca: descarta todo lo DERIVADO en memoria
+    /// (colores de acento de las carátulas, miniaturas y el índice de búsqueda)
+    /// y pide una reindexación. Nunca borra canciones, carpetas ni playlists —
+    /// la biblioteca se vuelve a leer desde los archivos y las cachés se
+    /// reconstruyen solas en el siguiente uso.
+    private func resetLibraryCache() {
+        AppTheme.artworkColorCache.removeAllObjects()
+        AppTheme.artworkSecondaryColorCache.removeAllObjects()
+        AppTheme.thumbnailCache.removeAllObjects()
+        LibrarySearchIndex.shared.invalidate()
+        fileAccessService.refreshAllFolders()
+        AppLog.info(.settings, "Caché de biblioteca restablecida (colores, miniaturas e índice) · reindexando")
     }
 
     // MARK: - Importación embebida (carpetas / canciones individuales)
