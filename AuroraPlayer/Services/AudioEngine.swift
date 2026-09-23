@@ -234,6 +234,21 @@ class AudioEngine: NSObject, ObservableObject {
         chainedAheadToken = 0
     }
 
+    /// ✅ B5: anula la transición YA ENCOLADA sin parar el nodo.
+    /// `AVAudioPlayerNode` no permite desprogramar un segmento suelto (`stop()`
+    /// descarta toda la cola, incluido el que está sonando), así que el audio
+    /// huérfano no se puede borrar: se conserva el índice A PROPÓSITO — con él
+    /// puesto, `scheduleAheadIfPossible()` no apila OTRA transición encima de
+    /// ese audio huérfano (su guardia es `chainedAheadIndex == nil`) — y se deja
+    /// el token en 0. Al terminar la canción actual, `commitChainedSong()` ve
+    /// el token inválido, cae al reinicio atómico (`playCurrentSong` →
+    /// `playerNode.stop()` descarta el huérfano) y programa la siguiente con el
+    /// modo/orden ya actualizados. Coste: esa transición deja de ser gapless.
+    private func invalidateChainedAhead() {
+        guard chainedAheadIndex != nil else { return }
+        chainedAheadToken = 0
+    }
+
     /// Programa por adelantado, en el mismo nodo (at: nil), la canción que
     /// sigue a la que está sonando AHORA MISMO — sin esperar a que termine.
     /// Así el nodo siempre tiene el siguiente buffer listo y la transición
@@ -331,7 +346,6 @@ class AudioEngine: NSObject, ObservableObject {
         currentTime = 0
         clock.time = 0
         anchorPlaybackPosition(0)
-        hasScheduledFile = true
         updateNowPlayingInfo()
         updateAudioQuality()
         addToHistory(song)
@@ -361,8 +375,6 @@ class AudioEngine: NSObject, ObservableObject {
     }
     
    
-    private var hasScheduledFile = false
-
     /// Posición EXACTA sin clamp — usada por el watchdog para detectar cuándo
     // el audio realmente terminó. El clamp a duration impedía que el watchdog
     // se disparara (wallClockTime NUNCA podía >= duration + margen).
@@ -514,7 +526,14 @@ class AudioEngine: NSObject, ObservableObject {
     private var avPlayer: AVPlayer?
     private var avTimeObserver: Any?
     private var avEndObserver: NSObjectProtocol?
-    private var isUsingFallback = false
+    /// ✅ A9+C3: era `private var` → la vista de calidad NO podía saber que el
+    /// motor propio estaba fuera de juego, así que la caída al reproductor de
+    /// respaldo (AVPlayer), que pierde EQ, mono, headroom y bit-perfect, ocurría
+    /// EN SILENCIO. Publicado para que el chip de AudioQualityDetailView aparezca
+    /// y desaparezca solo. No cambia ninguno de los usos internos del flag y
+    /// ninguna otra vista lo lee. El threading no cambia: se asigna junto a
+    /// `currentSong`/`currentTime`/`duration`, que ya eran @Published.
+    @Published private(set) var isUsingFallback = false
 
     private let stateDefaultsKey = "com.aurora.playbackState"
     private var hasRestored: Bool = false
@@ -1143,7 +1162,13 @@ class AudioEngine: NSObject, ObservableObject {
         // Se cae a la del índice solo si el motor todavía no tiene archivo cargado.
         let sourceRate = (audioFile != nil && sampleRate > 0) ? sampleRate : (currentSong?.sampleRate ?? 0)
         let processing = (isEQEnabled && eqPreset != .flat) || isMonoAudioEnabled
-        let unityGain = !isLimiterEnabled && isWiredRoute
+        // ✅ FIX A9+C3: en modo de respaldo (AVPlayer) el grafo propio —EQ, mono y
+        // headroom— NO está en uso, así que el indicador no puede afirmar
+        // "bit-perfect": describiría un motor que no es el que suena. Sin este
+        // término, con `audioFile == nil` (que es el caso en respaldo) la tasa caía
+        // a la del índice y la fila podía decir "Sí (sin remuestreo)" justo debajo
+        // del chip que avisa de que no hay bit-perfect.
+        let unityGain = !isLimiterEnabled && isWiredRoute && !isUsingFallback
         let value = sourceRate > 0 && abs(outputRate - sourceRate) < 1 && !processing && unityGain
         DispatchQueue.main.async { [weak self] in
             guard let self = self, self.isBitPerfect != value else { return }
@@ -1261,7 +1286,6 @@ class AudioEngine: NSObject, ObservableObject {
             // playerNode.stop() también descarta cualquier canción
             // pre-encadenada por adelantado.
             clearChainedAhead()
-            hasScheduledFile = false
             anchorPlaybackPosition(position)
             // Reprogramar en el siguiente runloop (el engine ya está corriendo
             // si había audio; el formato mono/estéreo ya tomó efecto).
@@ -1563,8 +1587,6 @@ class AudioEngine: NSObject, ObservableObject {
             }
         }
 
-        hasScheduledFile = true
-
         // ✅ FIX sincronización: `autostart=false` permite reprogramar el nodo
         // SIN iniciar la reproducción (ej. seek en pausa). Antes scheduleFile
         // reproducía siempre: al buscar con la app en pausa el audio sonaba con
@@ -1731,6 +1753,16 @@ class AudioEngine: NSObject, ObservableObject {
     }
 
     func resume() {
+        // ✅ A2: sin canción NI archivo no hay absolutamente nada que reanudar.
+        // Tras stop() (p. ej. fin de playlist sin repeat) el engine sigue
+        // corriendo pero currentSong/audioFile son nil: reanudar a ciegas ponía
+        // isPlaying = true y publicaba rate 1.0 con duration 0, así que la barra
+        // del Centro de Control avanzaba sin que sonara nada. Salir aquí sin
+        // tocar el estado deja al sistema en .paused, que es la verdad.
+        if currentSong == nil && audioFile == nil {
+            AppLog.info(.playback, "resume() sin canción ni archivo: ignorado (nada que reanudar)")
+            return
+        }
         // ✅ ANTI-DOBLE-RESUME: ya reproduciendo + llamada duplicada en 100ms.
         let now = CACurrentMediaTime()
         if isPlaying, now - lastResumeCallTime < 0.1 {
@@ -1822,6 +1854,13 @@ class AudioEngine: NSObject, ObservableObject {
     func stop() {
         isStopping = true
         stopFallbackPlayback()
+        // ✅ FIX: detener TERMINA el modo de respaldo, así que el flag vuelve a
+        // false aquí. Antes solo lo hacía playCurrentSong(), de modo que tras
+        // detener con el motor caído el chip de AudioQualityDetailView seguía
+        // visible hasta la siguiente canción. Es seguro porque avPlayer ya quedó
+        // liberado arriba: las ramas que leen el flag (pause, resume,
+        // suspendForRouteLoss, anclaje de posición) son no-ops sin reproductor.
+        isUsingFallback = false
         if playerNode.isPlaying {
             playerNode.stop()
         }
@@ -2193,6 +2232,10 @@ class AudioEngine: NSObject, ObservableObject {
         if let song = chainedAheadSong, let newIndex = playlist.firstIndex(where: { $0.id == song.id }) {
             chainedAheadIndex = newIndex
         }
+        // ✅ B5: el audio ya encolado no cambia con el orden nuevo (y no se
+        // puede desprogramar sin parar el nodo), así que se anula su
+        // transición: al terminar la actual se reprograma según el orden nuevo.
+        invalidateChainedAhead()
 
         AppLog.info(.playback, "Aleatorio: \(isShuffleEnabled ? "activado" : "desactivado") (\(playlist.count) canciones)")
     }
@@ -2209,6 +2252,11 @@ class AudioEngine: NSObject, ObservableObject {
         case .all: name = "repetir todo"
         case .one: name = "repetir uno"
         }
+        // ✅ B5: cambiar el modo a mitad de canción deja desfasada la canción
+        // YA ENCOLADA en el nodo (terminaría sonando la del modo anterior).
+        // Se anula esa transición: al terminar la actual se reprograma según
+        // el modo nuevo.
+        invalidateChainedAhead()
         AppLog.info(.playback, "Repetición: \(name)")
     }
 
@@ -3045,7 +3093,13 @@ class AudioEngine: NSObject, ObservableObject {
     private func setupRemoteCommandCenter() {
         let center = MPRemoteCommandCenter.shared()
         center.playCommand.addTarget { [weak self] _ in
-            self?.resume()
+            // ✅ A2: honestidad con el sistema — sin canción ni archivo no hay
+            // nada que reanudar. Antes respondía .success y la barra del
+            // Centro de Control arrancaba en silencio.
+            guard let self = self, self.currentSong != nil || self.audioFile != nil else {
+                return .commandFailed
+            }
+            self.resume()
             return .success
         }
         center.pauseCommand.addTarget { [weak self] _ in
@@ -3054,7 +3108,14 @@ class AudioEngine: NSObject, ObservableObject {
         }
         center.togglePlayPauseCommand.addTarget { [weak self] _ in
             guard let self = self else { return .commandFailed }
-            if self.isPlaying { self.pause() } else { self.resume() }
+            if self.isPlaying {
+                self.pause()
+            } else {
+                // ✅ A2: misma guarda que playCommand — con isPlaying == false y
+                // sin canción ni archivo, resume() no tendría nada que hacer.
+                guard self.currentSong != nil || self.audioFile != nil else { return .commandFailed }
+                self.resume()
+            }
             return .success
         }
         center.nextTrackCommand.addTarget { [weak self] _ in

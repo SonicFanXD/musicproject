@@ -359,6 +359,8 @@ final class Localization: ObservableObject {
         "quality.maxOutputChannels": [.spanish: "Canales máximos", .english: "Max channels"],
         "quality.outputLatency": [.spanish: "Latencia de salida", .english: "Output latency"],
         "quality.ioBufferDuration": [.spanish: "Búfer I/O real", .english: "Actual I/O buffer"],
+        "quality.fallbackEngine": [.spanish: "Motor de respaldo (AVPlayer)", .english: "Fallback engine (AVPlayer)"],
+        "quality.fallbackEngineHint": [.spanish: "El motor principal falló. EQ y bit-perfect no están disponibles en esta sesión.", .english: "Primary engine failed. EQ and bit-perfect are unavailable in this session."],
         "quality.dacLimitNote": [.spanish: "iOS no publica las tasas que soporta el DAC: estos son los valores que el sistema ha negociado.", .english: "iOS doesn't publish the sample rates a DAC supports: these are the values negotiated by the system."],
         "quality.unknown": [.spanish: "Desconocido", .english: "Unknown"],
         "quality.noSong": [.spanish: "Sin canción", .english: "No song"],

@@ -388,6 +388,37 @@ struct AudioQualityDetailView: View {
     // MARK: - Información Audiófila
     private var audiophileInfoSection: some View {
         settingsSection(title: "Audiófilo", icon: "waveform.circle") {
+            // ✅ A9+C3: el fallback a AVPlayer deja de ser invisible. Si el motor
+            // propio falló (formato no soportado, archivo ilegible, engine que no
+            // arranca), la reproducción sigue por AVPlayer perdiendo EQ, mono,
+            // headroom y bit-perfect: había que poder verlo sin abrir los logs.
+            // Aparece y desaparece SOLO (condición isUsingFallback): `audioEngine`
+            // es @ObservedObject y el flag es @Published. Reutiliza el mismo chrome
+            // que detailRow (18/14 de padding, radio 12 y el mismo relleno) y el
+            // naranja que ya usa la vista: no hay colores ni paddings nuevos.
+            if audioEngine.isUsingFallback {
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(.orange)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(Localization.localized("quality.fallbackEngine"))
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(.primary)
+                        Text(Localization.localized("quality.fallbackEngineHint"))
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 18).padding(.vertical, 14)
+                .background(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(Color(UIColor.tertiarySystemBackground).opacity(0.4))
+                )
+            }
+
             // ✅ AUDIÓFILO: Indicador Bit-Perfect
             detailRow(Localization.localized("quality.bitPerfect"), 
                       audioEngine.isBitPerfect ? Localization.localized("quality.bitPerfectYes") : Localization.localized("quality.bitPerfectNo"),
