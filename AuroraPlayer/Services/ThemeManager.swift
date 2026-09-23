@@ -256,24 +256,30 @@ enum AppTheme {
             return ThemeManager.shared.accent
         }
 
-        // ✅ MEJORA: Rangos más conservadores para respetar el color original.
-        // Solo se corrige cuando es estrictamente necesario para legibilidad.
-        // Esto permite que colores pastel, oscuros o neón mantengan su identidad.
+        // ✅ D2: umbrales de presencia. El piso de saturación sube de 0.15 a
+        // 0.25 y el de brillo de 0.20 a 0.28, para que los colores pastel y
+        // los casi negros no salgan apagados sobre la carátula. Los MÁXIMOS no
+        // se tocan (>0.98 → 0.95 y >0.92 → 0.90): los colores ya vivos
+        // conservan su identidad. Los valores de destino suben en la misma
+        // proporción (0.20 → 0.30 y 0.25 → 0.33) para no crear el caso
+        // inverso: con el destino viejo, una saturación de 0.24 habría BAJADO
+        // a 0.20 al cruzar el umbral nuevo. El hue (sector de clustering) NO
+        // se toca: esto solo reescala el color ya extraído.
         let newSaturation: CGFloat
         let newBrightness: CGFloat
         
-        // Saturación: solo corregir si es muy baja (<0.15) o muy alta (>0.98)
-        if saturation < 0.15 {
-            newSaturation = 0.20
+        // Saturación: solo corregir si es muy baja (<0.25) o muy alta (>0.98)
+        if saturation < 0.25 {
+            newSaturation = 0.30
         } else if saturation > 0.98 {
             newSaturation = 0.95
         } else {
             newSaturation = saturation
         }
         
-        // Brillo: solo corregir si es muy bajo (<0.20) o muy alto (>0.92)
-        if brightness < 0.20 {
-            newBrightness = 0.25
+        // Brillo: solo corregir si es muy bajo (<0.28) o muy alto (>0.92)
+        if brightness < 0.28 {
+            newBrightness = 0.33
         } else if brightness > 0.92 {
             newBrightness = 0.90
         } else {
