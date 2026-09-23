@@ -514,7 +514,14 @@ class AudioEngine: NSObject, ObservableObject {
     private var avPlayer: AVPlayer?
     private var avTimeObserver: Any?
     private var avEndObserver: NSObjectProtocol?
-    private var isUsingFallback = false
+    /// ✅ A9+C3: era `private var` → la vista de calidad NO podía saber que el
+    /// motor propio estaba fuera de juego, así que la caída al reproductor de
+    /// respaldo (AVPlayer), que pierde EQ, mono, headroom y bit-perfect, ocurría
+    /// EN SILENCIO. Publicado para que el chip de AudioQualityDetailView aparezca
+    /// y desaparezca solo. No cambia ninguno de los usos internos del flag y
+    /// ninguna otra vista lo lee. El threading no cambia: se asigna junto a
+    /// `currentSong`/`currentTime`/`duration`, que ya eran @Published.
+    @Published private(set) var isUsingFallback = false
 
     private let stateDefaultsKey = "com.aurora.playbackState"
     private var hasRestored: Bool = false
