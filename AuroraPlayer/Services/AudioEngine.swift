@@ -234,6 +234,21 @@ class AudioEngine: NSObject, ObservableObject {
         chainedAheadToken = 0
     }
 
+    /// ✅ B5: anula la transición YA ENCOLADA sin parar el nodo.
+    /// `AVAudioPlayerNode` no permite desprogramar un segmento suelto (`stop()`
+    /// descarta toda la cola, incluido el que está sonando), así que el audio
+    /// huérfano no se puede borrar: se conserva el índice A PROPÓSITO — con él
+    /// puesto, `scheduleAheadIfPossible()` no apila OTRA transición encima de
+    /// ese audio huérfano (su guardia es `chainedAheadIndex == nil`) — y se deja
+    /// el token en 0. Al terminar la canción actual, `commitChainedSong()` ve
+    /// el token inválido, cae al reinicio atómico (`playCurrentSong` →
+    /// `playerNode.stop()` descarta el huérfano) y programa la siguiente con el
+    /// modo/orden ya actualizados. Coste: esa transición deja de ser gapless.
+    private func invalidateChainedAhead() {
+        guard chainedAheadIndex != nil else { return }
+        chainedAheadToken = 0
+    }
+
     /// Programa por adelantado, en el mismo nodo (at: nil), la canción que
     /// sigue a la que está sonando AHORA MISMO — sin esperar a que termine.
     /// Así el nodo siempre tiene el siguiente buffer listo y la transición
@@ -2223,6 +2238,10 @@ class AudioEngine: NSObject, ObservableObject {
         if let song = chainedAheadSong, let newIndex = playlist.firstIndex(where: { $0.id == song.id }) {
             chainedAheadIndex = newIndex
         }
+        // ✅ B5: el audio ya encolado no cambia con el orden nuevo (y no se
+        // puede desprogramar sin parar el nodo), así que se anula su
+        // transición: al terminar la actual se reprograma según el orden nuevo.
+        invalidateChainedAhead()
 
         AppLog.info(.playback, "Aleatorio: \(isShuffleEnabled ? "activado" : "desactivado") (\(playlist.count) canciones)")
     }
@@ -2239,6 +2258,11 @@ class AudioEngine: NSObject, ObservableObject {
         case .all: name = "repetir todo"
         case .one: name = "repetir uno"
         }
+        // ✅ B5: cambiar el modo a mitad de canción deja desfasada la canción
+        // YA ENCOLADA en el nodo (terminaría sonando la del modo anterior).
+        // Se anula esa transición: al terminar la actual se reprograma según
+        // el modo nuevo.
+        invalidateChainedAhead()
         AppLog.info(.playback, "Repetición: \(name)")
     }
 
