@@ -5,12 +5,8 @@ import Foundation
 //    Apple Music, con timings por línea (<p begin/end>) y por palabra (<span>).
 // ✅ Solo se acepta si el documento usa el namespace oficial
 //    http://www.w3.org/ns/ttml → nunca se confunde un LRC con un TTML.
-// ✅ Las palabras se extraen con sus timings (`LyricWordToken`) y la vista las
-//    usa para el KARAOKE POR PALABRA: el relleno de la línea avanza palabra a
-//    palabra, y las voces de fondo (`ttm:role="x-bg"`) se marcan para pintarse
-//    más pequeñas y más tenues.
-// ✅ `itunes:timing="Word"` (del `<tt>` raíz o de un `<p>`) se lee de verdad:
-//    con él, un `<span>` sin `begin` se encadena al fin de la palabra anterior.
+// ✅ Las palabras se extraen como DATOS (`LyricWordToken`): la UI de esta
+//    iteración NO hace karaoke por palabra (prohibido), así que no se pintan.
 // ✅ Si algo falla se devuelve nil y el llamador sigue con LRCParser (fallback).
 struct TTMLParser {
     static let namespace = "http://www.w3.org/ns/ttml"
@@ -51,8 +47,6 @@ struct TTMLParser {
         let text: String
         /// Fila visual dentro de la línea (0 si el verso no tiene `<br/>`).
         let rowIndex: Int
-        /// Voz de fondo (`ttm:role="x-bg"`).
-        let isBackground: Bool
     }
 
     struct Line {
@@ -98,36 +92,9 @@ struct TTMLParser {
                 text: word.text,
                 startMs: word.beginMs,
                 endMs: max(endMs, word.beginMs),
-                rowIndex: word.rowIndex,
-                isBackground: word.isBackground
+                rowIndex: word.rowIndex
             )
         }
-    }
-
-    // MARK: - Atributos con prefijo
-    /// ✅ Busca un atributo por su nombre LOCAL: con `shouldProcessNamespaces`
-    /// XMLParser entrega las claves tal cual vienen en el documento, así que
-    /// `itunes:timing` o `ttm:role` no se pueden leer con `dict["timing"]`.
-    static func attribute(_ attributes: [String: String], named name: String) -> String? {
-        if let direct = attributes[name] { return direct }
-        for (key, value) in attributes {
-            guard let local = key.split(separator: ":").last,
-                  local.caseInsensitiveCompare(name) == .orderedSame else { continue }
-            return value
-        }
-        return nil
-    }
-
-    /// ✅ `itunes:timing="Word"`: el documento (o el `<p>`) marca que sus
-    /// `<span>` traen timings POR PALABRA. Solo se usa para encadenar un `<span>`
-    /// sin `begin` al fin de la palabra anterior en vez de al inicio de la línea.
-    static func declaresWordTiming(_ attributes: [String: String]) -> Bool {
-        attribute(attributes, named: "timing")?.caseInsensitiveCompare("Word") == .orderedSame
-    }
-
-    /// ✅ Voz de fondo: `ttm:role="x-bg"`.
-    static func isBackgroundRole(_ attributes: [String: String]) -> Bool {
-        attribute(attributes, named: "role")?.caseInsensitiveCompare("x-bg") == .orderedSame
     }
 
     // MARK: - Expresiones de tiempo
@@ -188,19 +155,11 @@ struct TTMLParser {
         private var lineWords: [Word] = []
         /// Fila visual actual dentro de la línea (sube con cada `<br/>`).
         private var lineRowIndex = 0
-        /// ✅ `itunes:timing="Word"` del documento y de la línea en curso.
-        private var documentUsesWordTiming = false
-        private var lineUsesWordTiming = false
-        /// ✅ Pila de `<span>` que abren un ámbito de voz de fondo: los `<span>`
-        /// anidados dentro de uno `x-bg` también son voz de fondo.
-        private var backgroundSpanStack: [Bool] = []
-        private var backgroundDepth = 0
 
         private var wordBeginMs = 0
         private var wordEndMs: Int?
         private var wordText = ""
         private var wordRowIndex = 0
-        private var wordIsBackground = false
 
         func parser(
             _ parser: XMLParser,
@@ -214,10 +173,6 @@ struct TTMLParser {
             }
 
             switch localName(elementName, qualifiedName: qName) {
-            case "tt":
-                // ✅ El `<tt>` raíz declara el modo de todo el documento
-                // (`itunes:timing="Word"` es el karaoke por palabra de Apple Music).
-                documentUsesWordTiming = TTMLParser.declaresWordTiming(attributeDict)
             case "p":
                 isInsideLine = true
                 // ✅ Sin `begin` queda como desconocido y lo resuelve el primer
@@ -227,15 +182,7 @@ struct TTMLParser {
                 lineText = ""
                 lineWords = []
                 lineRowIndex = 0
-                lineUsesWordTiming = documentUsesWordTiming || TTMLParser.declaresWordTiming(attributeDict)
             case "span":
-                // ✅ El ámbito de voz de fondo se registra SIEMPRE (y se cierra en
-                // `didEndElement` con la misma pila), aunque el `<span>` esté fuera
-                // de un `<p>`: así la pila nunca se desempareja.
-                let opensBackground = TTMLParser.isBackgroundRole(attributeDict)
-                backgroundSpanStack.append(opensBackground)
-                if opensBackground { backgroundDepth += 1 }
-
                 guard isInsideLine else { return }
                 isInsideWord = true
                 let spanBeginMs = TTMLParser.milliseconds(attributeDict["begin"])
@@ -245,17 +192,10 @@ struct TTMLParser {
                 if lineBeginMs == TTMLParser.unknownBeginMs, let spanBeginMs {
                     lineBeginMs = spanBeginMs
                 }
-                // ✅ Con `timing="Word"`, un `<span>` sin `begin` se encadena al
-                // fin de la palabra anterior: heredar el inicio de la línea
-                // adelantaría el karaoke al primer segundo del verso.
-                let inheritedBeginMs = lineUsesWordTiming
-                    ? (lineWords.last?.endMs ?? max(lineBeginMs, 0))
-                    : max(lineBeginMs, 0)
-                wordBeginMs = spanBeginMs ?? inheritedBeginMs
+                wordBeginMs = spanBeginMs ?? max(lineBeginMs, 0)
                 wordEndMs = TTMLParser.milliseconds(attributeDict["end"])
                 wordText = ""
                 wordRowIndex = lineRowIndex
-                wordIsBackground = backgroundDepth > 0
             case "br":
                 markHardBreak()
             default:
@@ -278,19 +218,12 @@ struct TTMLParser {
             switch localName(elementName, qualifiedName: qName) {
             case "span":
                 finishWord()
-                closeBackgroundSpan()
             case "p":
                 finishWord()
                 finishLine()
             default:
                 break
             }
-        }
-
-        /// ✅ Cierra el ámbito de voz de fondo del `<span>` que acaba de terminar.
-        private func closeBackgroundSpan() {
-            guard backgroundSpanStack.popLast() == true else { return }
-            backgroundDepth = max(0, backgroundDepth - 1)
         }
 
         // MARK: Acumuladores
@@ -308,12 +241,10 @@ struct TTMLParser {
                     beginMs: wordBeginMs,
                     endMs: wordEndMs,
                     text: text,
-                    rowIndex: wordRowIndex,
-                    isBackground: wordIsBackground
+                    rowIndex: wordRowIndex
                 ))
             }
             wordText = ""
-            wordIsBackground = false
         }
 
         /// ✅ `<br/>` = fila nueva. Los saltos repetidos o al principio de la
@@ -342,11 +273,6 @@ struct TTMLParser {
             }
             lineText = ""
             lineWords = []
-            lineUsesWordTiming = false
-            // ✅ Red de seguridad ante un TTML mal formado que no cierra su
-            // `<span x-bg>`: el ámbito de voz de fondo no debe sobrevivir a la línea.
-            backgroundSpanStack.removeAll(keepingCapacity: true)
-            backgroundDepth = 0
         }
 
         private func localName(_ name: String, qualifiedName: String?) -> String {
@@ -431,46 +357,6 @@ extension TTMLParser {
         assert(lateLine.words.count == 2, "TTML Test 2c falló: Expected 2 word tokens")
         assert(lateLine.words[0].startMs == 6000, "TTML Test 2c falló: primera palabra mal fechada")
         print("✅ TTML Test 2c (línea sin begin) passed")
-
-        // ✅ Test 2d: karaoke por palabra de Apple Music
-        //  · `itunes:timing="Word"` en el `<tt>` raíz
-        //  · un `<span>` de voz principal sin `begin` se encadena al fin del anterior
-        //  · `ttm:role="x-bg"` marca la voz de fondo
-        let wordTimed = """
-        <tt xmlns="http://www.w3.org/ns/ttml" xmlns:itunes="http://music.apple.com/lyric-ttml-internal"
-            xmlns:ttm="http://www.w3.org/ns/ttml#metadata" itunes:timing="Word">
-          <body><div>
-            <p begin="00:00:10.000" end="00:00:12.000" itunes:timing="Word">
-              <span begin="00:00:10.000" end="00:00:10.500">Bri</span><span end="00:00:11.000">llando</span>
-              <span ttm:role="x-bg" begin="00:00:11.000" end="00:00:12.000">oh-oh</span>
-            </p>
-          </div></body>
-        </tt>
-        """
-        guard let wordLine = parse(wordTimed)?.first else {
-            assertionFailure("TTML Test 2d falló: no se parseó la línea")
-            return
-        }
-        assert(wordLine.words.count == 3, "TTML Test 2d falló: Expected 3 word tokens (got \(wordLine.words.count))")
-        assert(wordLine.words[0].isBackground == false, "TTML Test 2d falló: la voz principal no es de fondo")
-        assert(wordLine.words[1].startMs == 10_500, "TTML Test 2d falló: span sin begin mal encadenado (got \(wordLine.words[1].startMs))")
-        assert(wordLine.words[2].isBackground == true, "TTML Test 2d falló: ttm:role=x-bg no detectado")
-        assert(wordLine.words[2].text == "oh-oh", "TTML Test 2d falló: texto de la voz de fondo")
-        assert(wordLine.visualRows.first?.words.count == 3, "TTML Test 2d falló: la fila no recibió los timings de palabra")
-        assert(wordLine.visualRows.first?.words.last?.isBackground == true, "TTML Test 2d falló: la fila perdió la marca de voz de fondo")
-        print("✅ TTML Test 2d (timing=\"Word\" + voz de fondo) passed")
-
-        // ✅ Test 2e: sin `timing="Word"`, un `<span>` sin `begin` hereda el
-        // inicio de la LÍNEA (comportamiento de siempre, no se rompe).
-        let legacySpans = """
-        <tt xmlns="http://www.w3.org/ns/ttml"><body><div>
-        <p begin="00:00:20.000" end="00:00:22.000">
-          <span>Uno</span><span end="00:00:22.000">dos</span>
-        </p>
-        </div></body></tt>
-        """
-        assert(parse(legacySpans)?.first?.words.first?.startMs == 20_000, "TTML Test 2e falló: herencia clásica del begin de la línea")
-        print("✅ TTML Test 2e (span sin begin sin timing=\"Word\") passed")
 
         assert(milliseconds("00:00:12.500") == 12_500, "TTML Test 3 falló: Clock time")
         assert(milliseconds("01:02:03") == 3_723_000, "TTML Test 3 falló: Clock time con horas")

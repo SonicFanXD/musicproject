@@ -350,10 +350,9 @@ struct QueueView: View {
     @ViewBuilder
     private func artworkMiniature(_ artwork: UIImage?, size: CGFloat, corner: CGFloat) -> some View {
         if let artwork = artwork {
-            // ✅ ANTI-JETSAM: miniatura al tamaño REAL de display (el helper ya
-            // multiplica los puntos por la escala del dispositivo: 48pt → 144px
-            // en @3x). La carátula completa de 768px no se retiene en filas.
-            Image(uiImage: AppTheme.thumbnail(from: artwork, size: CGSize(width: size, height: size)))
+            // ✅ ANTI-JETSAM: reescalar al tamaño real ×2 (la fuente completa
+            // de 768px no debe retenerse en filas de 48pt → 160× menos RAM).
+            Image(uiImage: AppTheme.thumbnail(from: artwork, size: CGSize(width: size * 2, height: size * 2)))
                 .resizable()
                 .interpolation(.high)
                 .scaledToFill()

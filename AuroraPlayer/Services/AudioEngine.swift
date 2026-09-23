@@ -102,6 +102,10 @@ class AudioEngine: NSObject, ObservableObject {
             }
         }
     }
+    // ✅ MEJORA SHUFFLE: lista de canciones mezcladas que se consume secuencialmente
+    // Evita repeticiones hasta que todas las canciones hayan sonado
+    private var shuffledPlaylist: [Song] = []
+    private var shuffleIndex: Int = 0
     // ✅ MEJORA QUEUE: cola manual de canciones para reproducir después
     @Published var manualQueue: [Song] = []
     @Published var repeatMode: RepeatMode = {
@@ -120,25 +124,7 @@ class AudioEngine: NSObject, ObservableObject {
     @Published var nextUpQueue: [Song] = []
     @Published var playHistory: [Song] = []
 
-    // MARK: - Cola de reproducción interna (UNA sola fuente de verdad)
-    /// ✅ 3.0.2 — REFACTOR DE COLA. `playlist` es EL orden que suena: con el
-    /// aleatorio activo es una permutación suya, barajada UNA vez (la canción
-    /// actual queda fija donde estaba).
-    ///
-    /// Ya NO existen `shuffledPlaylist` ni `shuffleIndex`: eran una SEGUNDA
-    /// lista de orden en paralelo, y esa fragmentación era la raíz de los bugs
-    /// reportados — (1) "siguiente" recorría una permutación y "anterior" otra,
-    /// (2) al cambiar de álbum con el aleatorio activo la lista paralela no se
-    /// regeneraba, sus canciones ya no existían en la playlist nueva y
-    /// `playlist.firstIndex(where: id)` devolvía nil → sin encadenado → `stop()`
-    /// en mitad de la escucha (el "se queda en silencio"), y (3) con repeat OFF
-    /// se regeneraba sola al agotarse, así que la cola nunca terminaba y las
-    /// canciones se repetían antes de dar una vuelta completa.
-    ///
-    /// `originalPlaylist` guarda el MISMO conjunto en su orden de origen: solo
-    /// sirve para volver a él al desactivar el aleatorio. Invariante: mientras el
-    /// aleatorio está activo ambas listas contienen las mismas canciones (por eso
-    /// la cola manual se inserta en las DOS — ver `consumeManualQueueNext`).
+    // MARK: - Cola de reproducción interna
     private var playlist: [Song] = []
     private var originalPlaylist: [Song] = []
     private(set) var currentIndex: Int = 0
@@ -227,21 +213,11 @@ class AudioEngine: NSObject, ObservableObject {
     private func indexToChainAhead() -> Int? {
         guard !playlist.isEmpty else { return nil }
         if repeatMode == .one {
-            // ✅ 3.0.2 — FIX "repetir uno se para": repetir-uno devuelve SIEMPRE la
-            // canción actual. Antes exigía `currentSong.duration > 0` y, con la
-            // duración desconocida (metadato que no cargó, canción restaurada al
-            // abrir la app, modo de respaldo), devolvía nil: el fin de pista caía
-            // en `chainGaplessPlayNext` → nil → `stop()` — es decir, con
-            // "repetir uno" activo la música se detenía en vez de repetir.
-            // No hay bucle infinito posible: si el archivo estuviera roto,
-            // `handlePlaybackFailure` avanza de pista (playNext no repite) y se
-            // detiene tras 5 fallos consecutivos, ya registrados.
+            // ✅ MEJORA: en repeat-one, verificar que la canción tenga duración válida
+            guard let current = currentSong, current.duration > 0 else { return nil }
             return currentIndex
         }
-        // ✅ 3.0.2: el avance AUTOMÁTICO comparte el mismo cálculo posicional que
-        // el salto manual. repeat-one se queda fuera A PROPÓSITO: repetir es un
-        // caso del fin de pista, no del botón "siguiente".
-        return nextIndex(after: currentIndex)
+        return computeNextIndex()
     }
 
     private func clearChainedAhead() {
@@ -370,11 +346,6 @@ class AudioEngine: NSObject, ObservableObject {
     @discardableResult
     private func chainGaplessPlayNext() -> Bool {
         guard let index = indexToChainAhead() else {
-            // ✅ 3.0.2 AUDITORÍA: este es el ÚNICO final legítimo de la cola
-            // (sin repeat, última canción). Se registra para que un silencio
-            // inesperado se distinga en los logs de un final real — antes ambos
-            // casos eran el mismo `stop()` mudo.
-            AppLog.info(.playback, "Fin de la cola (repeat: \(repeatMode.rawValue), aleatorio: \(isShuffleEnabled ? "sí" : "no")): deteniendo reproducción")
             stop()
             return true
         }
@@ -537,12 +508,7 @@ class AudioEngine: NSObject, ObservableObject {
     private var avPlayer: AVPlayer?
     private var avTimeObserver: Any?
     private var avEndObserver: NSObjectProtocol?
-    /// ✅ 3.0.2: era `private var` → la vista de calidad NO podía saber que el motor
-    /// propio estaba fuera de juego. Cuando `AVAudioEngine` falla (formato no
-    /// soportado, archivo corrupto, arranque imposible) la reproducción sigue por
-    /// `AVPlayer`… perdiendo SILENCIOSAMENTE el EQ, el mono, el headroom y el
-    /// indicador de bit-perfect, que seguían describiendo un grafo que ya no suena.
-    @Published private(set) var isUsingFallback = false
+    private var isUsingFallback = false
 
     private let stateDefaultsKey = "com.aurora.playbackState"
     private var hasRestored: Bool = false
@@ -890,29 +856,15 @@ class AudioEngine: NSObject, ObservableObject {
             // con el CONCEDIDO (setPreferredIOBufferDuration no falla cuando el
             // hardware no lo soporta: redondea en silencio al más cercano).
             var requestedBufferDuration: TimeInterval = session.ioBufferDuration
-            // ✅ FIX CALIDAD BT: en Bluetooth NO se pide buffer corto.
-            // La latencia en A2DP la impone el enlace (100-300 ms), así que 8 ms
-            // de render en la app no la mejoran; en cambio piden 125 despertares/s
-            // al hilo de render mientras el MISMO A11 codifica AAC/SBC y comparte
-            // la radio con Wi-Fi → es el escenario clásico de underrun, que se oye
-            // como microcortes. Al no pedir nada, la sesión conserva su valor por
-            // defecto (≈23 ms), que cuesta cero calidad y elimina ese riesgo.
-            // Es la conclusión que YA estaba escrita para el modo de optimización
-            // BT (ver `configureSessionWithBluetoothOptimization`), aplicada al
-            // camino que de verdad se ejecuta.
-            // Sin petición en BT: `requestedBufferDuration` se queda con el valor
-            // vigente de la sesión, que es lo que se registra más abajo.
-            if !isBluetoothRoute {
-                for duration in bufferDurations {
-                    do {
-                        try session.setPreferredIOBufferDuration(duration)
-                        requestedBufferDuration = duration
-                        break
-                    } catch {
-                        // ✅ Esperado en A11 (iPhone 8): no es un error real,
-                        // solo probamos el siguiente buffer más corto soportado.
-                        AppLog.debug(.playback, "Buffer \(Int(duration * 1000))ms no soportado, probando siguiente")
-                    }
+            for duration in bufferDurations {
+                do {
+                    try session.setPreferredIOBufferDuration(duration)
+                    requestedBufferDuration = duration
+                    break
+                } catch {
+                    // ✅ Esperado en A11 (iPhone 8): no es un error real,
+                    // solo probamos el siguiente buffer más corto soportado.
+                    AppLog.debug(.playback, "Buffer \(Int(duration * 1000))ms no soportado, probando siguiente")
                 }
             }
             // ✅ 3.0.1: aquí NO se puede leer el concedido — en el instante de la
@@ -920,11 +872,7 @@ class AudioEngine: NSObject, ObservableObject {
             // setPreferredIOBufferDuration no falla cuando el hardware no lo
             // soporta: redondea en silencio). El valor REAL se registra 0.3 s
             // después de activar la sesión.
-            if isBluetoothRoute {
-                AppLog.info(.playback, "Buffer I/O: sin petición en ruta Bluetooth (lo decide el sistema; el concedido se comprueba tras activar)")
-            } else {
-                AppLog.info(.playback, String(format: "Buffer I/O pedido: %.1f ms (el concedido se comprueba tras activar)", requestedBufferDuration * 1000))
-            }
+            AppLog.info(.playback, String(format: "Buffer I/O pedido: %.1f ms (el concedido se comprueba tras activar)", requestedBufferDuration * 1000))
 
             // ✅ Línea base de sample rate SIN forzar 44.1 kHz: pedir siempre
             // 44100 al reconfigurar la sesión reclocaba el hardware si el archivo
@@ -935,13 +883,7 @@ class AudioEngine: NSObject, ObservableObject {
             // reloj del DAC/hardware más cercano soportado); el ajuste por
             // canción (playCurrentSong) pide el rate NATIVO del archivo.
             let baselineRate = sampleRate > 0 ? sampleRate : session.sampleRate
-            // ✅ FIX CALIDAD BT: en Bluetooth NO se pide tasa (MISMA regla que
-            // `playCurrentSong`, que la excluye a propósito). El reloj del enlace
-            // A2DP lo negocia iOS: pedir aquí la tasa del archivo podía
-            // reconfigurar la ruta en caliente (click / microcorte) y no aporta
-            // nada, porque iOS remuestrea al rate del códec de todas formas. En
-            // cable / DAC USB / altavoz sigue pidiéndose igual que antes.
-            if !isBluetoothRoute, baselineRate > 0, abs(session.sampleRate - baselineRate) > 1 {
+            if baselineRate > 0, abs(session.sampleRate - baselineRate) > 1 {
                 do {
                     try session.setPreferredSampleRate(baselineRate)
                 } catch {
@@ -958,15 +900,9 @@ class AudioEngine: NSObject, ObservableObject {
             // ✅ 3.0.1: buffer REAL concedido, leído cuando el audio server ya
             // aplicó (o redondeó) la petición. Comparado con "pedido" dice si el
             // hardware aceptó los 8 ms o si sirvió su valor por defecto.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                 let granted = AVAudioSession.sharedInstance().ioBufferDuration
                 AppLog.info(.playback, String(format: "Buffer I/O concedido: %.2f ms (pedido: %.1f ms)", granted * 1000, requestedBufferDuration * 1000))
-                // ✅ 3.0.2: la telemetría PUBLICADA se refresca aquí, cuando el audio
-                // server ya aplicó (o redondeó) el buffer. Antes este bloque solo
-                // registraba un log mientras las propiedades publicadas seguían
-                // leídas de la petición → "Búfer I/O real" mostraba el valor
-                // anterior hasta el siguiente cambio de canción o de ruta.
-                self?.updateAudioQuality()
             }
             updateRouteName()
             updateAudioQuality()
@@ -1131,15 +1067,7 @@ class AudioEngine: NSObject, ObservableObject {
     func toggleLimiter() {
         isLimiterEnabled.toggle()
         updateEQBypassState()
-        // ✅ FIX HONESTIDAD DEL LOG: en Bluetooth la ganancia base es 0.89 FIJA
-        // (margen anti-clipping del codificador, ver `applyOutputGain`), así que
-        // el mensaje anterior ("base 0.99" / "base 1.0") describía una ganancia
-        // que en esa ruta NUNCA se aplica: leyendo los logs se concluía que no hay
-        // atenuación en Bluetooth cuando sí la hay.
-        let effectiveBase: String = isBluetoothRoute
-            ? "base 0.89 fija en Bluetooth (margen anti-clipping del códec)"
-            : (isLimiterEnabled ? "base 0.99" : "base 1.0, bit-perfect posible")
-        AppLog.info(.playback, "Protección anti-clipping: \(isLimiterEnabled ? "activada" : "desactivada") — \(effectiveBase)")
+        AppLog.info(.playback, "Protección anti-clipping: \(isLimiterEnabled ? "activada (base 0.99)" : "desactivada (base 1.0, bit-perfect posible)")")
     }
 
     /// ✅ BLUETOOTH OPTIMIZATION: activar optimizaciones para BT
@@ -1179,10 +1107,7 @@ class AudioEngine: NSObject, ObservableObject {
         // Se cae a la del índice solo si el motor todavía no tiene archivo cargado.
         let sourceRate = (audioFile != nil && sampleRate > 0) ? sampleRate : (currentSong?.sampleRate ?? 0)
         let processing = (isEQEnabled && eqPreset != .flat) || isMonoAudioEnabled
-        // ✅ 3.0.2: en modo de respaldo (AVPlayer) el grafo propio —EQ, mono,
-        // headroom— NO está en uso, así que el indicador no puede decir
-        // "bit-perfect": describiría un motor que no es el que suena.
-        let unityGain = !isLimiterEnabled && isWiredRoute && !isUsingFallback
+        let unityGain = !isLimiterEnabled && isWiredRoute
         let value = sourceRate > 0 && abs(outputRate - sourceRate) < 1 && !processing && unityGain
         DispatchQueue.main.async { [weak self] in
             guard let self = self, self.isBitPerfect != value else { return }
@@ -1352,17 +1277,16 @@ class AudioEngine: NSObject, ObservableObject {
             // aleatorio con la canción actual fija en la posición 0, igual
             // que hace toggleShuffle().
             if isShuffleEnabled, playlist.count > 1 {
-                // ✅ 3.0.2: `originalPlaylist` guarda SIEMPRE el orden de origen
-                // completo, y como ya no existe una segunda lista de orden, aquí
-                // NO queda ningún estado obsoleto de la reproducción anterior. Era
-                // el bug del "silencio a mitad de álbum": la lista mezclada vieja
-                // seguía viva, sus canciones no existían en esta playlist nueva y
-                // el cálculo de la siguiente devolvía nil → fin de cola → stop().
                 originalPlaylist = songPlaylist.contains(where: { $0.id == song.id })
                     ? songPlaylist
                     : playlist
-                let current = playlist.indices.contains(currentIndex) ? playlist[currentIndex] : song
-                shuffleKeepingFirst(current)
+                let current = playlist[currentIndex]
+                playlist.shuffle()
+                if let newIndex = playlist.firstIndex(where: { $0.id == current.id }) {
+                    playlist.remove(at: newIndex)
+                    playlist.insert(current, at: 0)
+                    currentIndex = 0
+                }
             } else {
                 originalPlaylist = []
             }
@@ -1890,116 +1814,90 @@ class AudioEngine: NSObject, ObservableObject {
         saveState()
     }
 
-    /// Calcula el índice de la siguiente canción. Devuelve nil al final de la
-    /// cola sin repeat. NOTA: repeat-one se maneja aparte, en indexToChainAhead().
-    ///
-    /// ✅ 3.0.2: ÚNICO lugar donde se decide "qué índice va después" (el aleatorio
-    /// ya no tiene su propia rama aquí: su orden ES `playlist`).
-    ///
-    /// Es puramente POSICIONAL y no toca la cola manual: por eso puede usarse
-    /// tanto desde el avance real como desde los espejos "sin efectos
-    /// secundarios" (hasNextTrack / peekNextTrack) sin poder desincronizarlos.
-    ///
-    /// No busca canciones por `id` en ningún momento. Ese `firstIndex(where: id)`
-    /// era el culpable silencioso de "salta a la canción equivocada": con la
-    /// misma canción dos veces en la lista (álbum con duplicados, canción añadida
-    /// a la cola que ya estaba) devolvía la OTRA instancia y el `currentIndex`
-    /// derivaba canción a canción.
-    ///
-    /// `repeat-one` no entra aquí a propósito: repetir es un caso del FIN DE
-    /// PISTA (ver `indexToChainAhead`), así que pulsar "siguiente" en repetir-uno
-    /// avanza de verdad, como en Apple Music.
-    private func nextIndex(after index: Int) -> Int? {
+    /// Calcula el índice de la siguiente canción según shuffle/repeat-all.
+    /// Retorna nil si se alcanzó el final de la playlist sin repeat.
+    /// NOTA: repeat-one se maneja aparte, en indexToChainAhead().
+    /// ✅ MEJORA SHUFFLE: usa lista mezclada que se consume secuencialmente
+    /// para evitar repeticiones hasta que todas las canciones hayan sonado.
+    /// ✅ MEJORA QUEUE: prioriza cola manual sobre la playlist normal.
+    private func computeNextIndex() -> Int? {
+        // ✅ MEJORA QUEUE: primero revisar cola manual
+        if !manualQueue.isEmpty {
+            // Añadir primera canción de cola manual a la playlist y reproducirla
+            let nextSong = manualQueue.removeFirst()
+            // ✅ FIX crash (Array index out of range): `insert(_:at:)` exige
+            // 0...playlist.count. Si la playlist está VACÍA (nada reproduciéndose)
+            // o currentIndex quedó fuera de rango, insertar en currentIndex + 1
+            // abortaba el proceso. El clamp no cambia nada cuando el índice es
+            // válido (caso normal) y sanea el caso borde.
+            let insertionIndex = min(max(currentIndex + 1, 0), playlist.count)
+            playlist.insert(nextSong, at: insertionIndex)
+            currentIndex = insertionIndex
+            updateNextUpQueue()
+            return currentIndex
+        }
+        
         guard !playlist.isEmpty else { return nil }
-        // Con una sola canción: solo repeat (.all/.one) la vuelve a poner.
-        if playlist.count == 1 { return repeatMode == .off ? nil : 0 }
-        let next = index + 1
-        if next >= playlist.count {
-            guard repeatMode == .all else { return nil }
-            // ✅ Nueva pasada del aleatorio: se REBARAJAR para no repetir el
-            // mismo orden, y la canción actual pasa al final, así la vuelta
-            // sigue fluyendo 0…n−1 justo después de ella.
-            if isShuffleEnabled, playlist.indices.contains(currentIndex) {
-                reshuffleKeepingLast(playlist[currentIndex])
+        if playlist.count == 1 {
+            return repeatMode == .all || repeatMode == .one ? 0 : nil
+        }
+        if isShuffleEnabled {
+            // ✅ MEJORA: usar lista mezclada en lugar de RNG cada vez
+            if shuffledPlaylist.isEmpty || shuffleIndex >= shuffledPlaylist.count {
+                // Regenerar lista mezclada cuando se agota
+                shuffledPlaylist = playlist.shuffled()
+                shuffleIndex = 0
+                // ✅ CRÍTICO - ESTABILIDAD: verificar que la lista mezclada no quede vacía
+                // después de remover la canción actual. Si la playlist tiene solo 1 canción
+                // o todas las canciones son la misma, la mezcla podría dejar la lista vacía.
+                guard !shuffledPlaylist.isEmpty else {
+                    // Fallback: reproducir la misma canción (repeat-one behavior)
+                    return currentIndex
+                }
+                // Asegurar que la primera no sea la actual
+                if let currentIdx = shuffledPlaylist.firstIndex(where: { $0.id == playlist[currentIndex].id }) {
+                    shuffledPlaylist.remove(at: currentIdx)
+                    if shuffleIndex >= shuffledPlaylist.count {
+                        shuffleIndex = 0
+                    }
+                }
+                // ✅ Verificar nuevamente después de remover la canción actual
+                guard !shuffledPlaylist.isEmpty else {
+                    return currentIndex
+                }
             }
-            return 0
+            // Obtener siguiente de la lista mezclada
+            guard shuffleIndex < shuffledPlaylist.count else {
+                // Lista agotada, reiniciar con repeat-all o nil si no hay repeat
+                if repeatMode == .all {
+                    shuffledPlaylist = playlist.shuffled()
+                    shuffleIndex = 0
+                    return playlist.firstIndex(where: { $0.id == shuffledPlaylist[0].id })
+                }
+                return nil
+            }
+            let nextSong = shuffledPlaylist[shuffleIndex]
+            shuffleIndex += 1
+            return playlist.firstIndex(where: { $0.id == nextSong.id })
+        }
+        let next = currentIndex + 1
+        if next >= playlist.count {
+            return repeatMode == .all ? 0 : nil
         }
         return next
     }
 
-    /// Siguiente índice COMPROMETIDO (con efectos): consume la cola manual y
-    /// avanza en el orden vigente. Lo usan `playNext()` y el avance por fin de
-    /// pista cuando no se pudo encadenar por adelantado.
-    private func computeNextIndex() -> Int? {
-        if let queued = consumeManualQueueNext() { return queued }
-        return nextIndex(after: currentIndex)
-    }
-
-    /// ✅ COLA MANUAL: saca la primera canción de la cola y la inserta justo
-    /// después de la actual, devolviendo su índice nuevo.
-    private func consumeManualQueueNext() -> Int? {
-        guard !manualQueue.isEmpty else { return nil }
-        let nextSong = manualQueue.removeFirst()
-        // ✅ FIX crash (Array index out of range): `insert(_:at:)` exige
-        // 0...playlist.count. Si la playlist está VACÍA (nada reproduciéndose)
-        // o currentIndex quedó fuera de rango, insertar en currentIndex + 1
-        // abortaba el proceso. El clamp no cambia nada cuando el índice es
-        // válido (caso normal) y sanea el caso borde.
-        let insertionIndex = min(max(currentIndex + 1, 0), playlist.count)
-        let anchor: Song? = playlist.indices.contains(currentIndex) ? playlist[currentIndex] : nil
-        playlist.insert(nextSong, at: insertionIndex)
-        // ✅ 3.0.2: la canción en cola entra TAMBIÉN en el orden original, justo
-        // detrás de la actual. Sin esto, desactivar el aleatorio hacía
-        // `playlist = originalPlaylist` y la canción en cola DESAPARECÍA mientras
-        // el índice actual quedaba apuntando a otra → "suena la canción
-        // equivocada".
-        if !originalPlaylist.isEmpty, let anchor {
-            if let anchorOriginalIndex = originalPlaylist.firstIndex(where: { $0.id == anchor.id }) {
-                originalPlaylist.insert(nextSong, at: min(anchorOriginalIndex + 1, originalPlaylist.count))
-            } else {
-                originalPlaylist.append(nextSong)
-            }
-        }
-        currentIndex = insertionIndex
-        updateNextUpQueue()
-        return currentIndex
-    }
-
-    /// Baraja el orden vigente dejando `song` la PRIMERA. Lo usan `play()` y
-    /// `toggleShuffle()`: tras (re)ordenar, el motor espera la canción actual en
-    /// la posición 0.
-    private func shuffleKeepingFirst(_ song: Song) {
-        guard playlist.count > 1,
-              let index = playlist.firstIndex(where: { $0.id == song.id }) else { return }
-        playlist.remove(at: index)
-        playlist.shuffle()
-        playlist.insert(song, at: 0)
-        currentIndex = 0
-    }
-
-    /// Baraja el orden vigente dejando `song` la ÚLTIMA: la nueva pasada del
-    /// aleatorio (repeat-all) sigue fluyendo 0…n−1 justo después de ella.
-    private func reshuffleKeepingLast(_ song: Song) {
-        guard playlist.count > 1,
-              let index = playlist.firstIndex(where: { $0.id == song.id }) else { return }
-        playlist.remove(at: index)
-        playlist.shuffle()
-        playlist.append(song)
-        currentIndex = playlist.count - 1
-    }
-
     /// ¿Hay una canción siguiente que el motor pueda reproducir ahora mismo?
-    /// Espejo PURO de `computeNextIndex()`/`nextIndex(after:)`: NO consume la
-    /// cola manual, NO inserta en la playlist y no muta nada. Lo usan los
-    /// comandos remotos (lock screen / Centro de Control) para responder
-    /// `.noSuchContent` en lugar de `.success` cuando un "siguiente" no haría
-    /// absolutamente nada.
+    /// Réplica de `computeNextIndex()` **sin efectos secundarios**: NO consume
+    /// la cola manual, NO inserta en la playlist y NO modifica `shuffleIndex`.
+    /// Lo usan los comandos remotos (lock screen / Centro de Control) para
+    /// responder `.noSuchContent` en lugar de `.success` cuando un "siguiente"
+    /// no haría absolutamente nada.
     ///
-    /// ✅ 3.0.2: antes, con el aleatorio activo respondía SIEMPRE `true` porque la
-    /// lista mezclada en paralelo se regeneraba sin fin: el botón prometía una
-    /// siguiente que nunca llegaba al agotarse la cola sin repeat. Ahora el orden
-    /// vigente es la única fuente de verdad y la respuesta coincide con lo que
-    /// hará `computeNextIndex()` de verdad.
+    /// Nota sobre el aleatorio: con 2+ canciones, `computeNextIndex()` regenera
+    /// `shuffledPlaylist` cuando se agota (rama en la que solo devuelve nil si la
+    /// lista mezclada queda vacía), así que siempre hay siguiente — igual que
+    /// hace Apple Music al saltar en modo aleatorio.
     var hasNextTrack: Bool {
         // Una canción ya programada por adelantado (gapless) sonará sí o sí al
         // terminar la actual, incluso si el estado de la playlist cambia después.
@@ -2009,8 +1907,8 @@ class AudioEngine: NSObject, ObservableObject {
         guard !playlist.isEmpty else { return false }
         // Con una sola canción, solo repeat (.all/.one) permite avanzar.
         if playlist.count == 1 { return repeatMode == .all || repeatMode == .one }
-        // Orden vigente (secuencial o permutación del aleatorio, da igual):
-        // queda algo por delante, o repeat-all vuelve al principio.
+        if isShuffleEnabled { return true }
+        // Secuencial: queda algo por delante, o repeat-all vuelve al principio.
         if currentIndex + 1 < playlist.count { return true }
         return repeatMode == .all
     }
@@ -2026,10 +1924,11 @@ class AudioEngine: NSObject, ObservableObject {
     /// y la URL que realmente va a sonar.
     ///
     /// Es un espejo de `computeNextIndex()` **sin mutar nada**: ni
-    /// `manualQueue.removeFirst()`, ni `playlist.insert(_:at:)`. Los índices
-    /// devueltos coinciden con los que devolverá `computeNextIndex()` cuando
-    /// llegue el momento real (mientras la playlist y el índice actual no cambien
-    /// entre medias), para que la caché de precarga siga acertando.
+    /// `manualQueue.removeFirst()`, ni `playlist.insert(_:at:)`, ni
+    /// `shuffledPlaylist`/`shuffleIndex`. Los índices devueltos coinciden con
+    /// los que devolverá `computeNextIndex()` cuando llegue el momento real
+    /// (mientras la playlist y el índice actual no cambien entre medias), para
+    /// que la caché de precarga siga acertando.
     private func peekNextTrack() -> (index: Int, url: URL)? {
         // Rama 1 — cola manual: se insertará justo después de la actual. Ese es
         // el índice que devolverá computeNextIndex() (`min(max(currentIndex+1,0),
@@ -2045,11 +1944,23 @@ class AudioEngine: NSObject, ObservableObject {
         if playlist.count == 1 {
             return (repeatMode == .all || repeatMode == .one) ? (0, playlist[0].url) : nil
         }
-        // ✅ 3.0.2: el aleatorio ya no tiene rama propia aquí. Su orden ES
-        // `playlist` (una permutación barajada una vez), así que la siguiente es
-        // simplemente la de al lado — predecible y sin mutar nada. Antes esta
-        // rama devolvía nil cuando la lista paralela estaba agotada y la precarga
-        // se perdía justo en la transición que sí encadenaba.
+        if isShuffleEnabled {
+            // Espejo del camino real: si la lista mezclada está vigente, la
+            // siguiente es `shuffledPlaylist[shuffleIndex]` — se devuelve su
+            // índice en la playlist SIN avanzar el puntero.
+            if !shuffledPlaylist.isEmpty, shuffleIndex < shuffledPlaylist.count {
+                let nextSong = shuffledPlaylist[shuffleIndex]
+                if let idx = playlist.firstIndex(where: { $0.id == nextSong.id }) {
+                    return (idx, nextSong.url)
+                }
+            }
+            // Lista agotada o aún sin generar: computeNextIndex() regeneraría
+            // (mutación) y elegiría una canción al azar, así que no es predecible
+            // sin mutar. Devolver nil aquí solo significa "no precargar": la
+            // transición real abrirá el archivo en su momento.
+            return nil
+        }
+        // Secuencial
         let next = currentIndex + 1
         if next >= playlist.count {
             return repeatMode == .all ? (0, playlist[0].url) : nil
@@ -2112,9 +2023,7 @@ class AudioEngine: NSObject, ObservableObject {
     }
 
     func playNext() {
-        // ✅ 3.0.2: además del nil (final legítimo de la cola), se sanea el índice
-        // por si la playlist cambió de tamaño en medio de la transición.
-        guard let index = computeNextIndex(), playlist.indices.contains(index) else {
+        guard let index = computeNextIndex() else {
             AppLog.info(.playback, "Fin de la playlist (repeat: \(repeatMode.rawValue)). No hay siguiente.")
             return
         }
@@ -2137,17 +2046,10 @@ class AudioEngine: NSObject, ObservableObject {
             seek(to: 0)
             return
         }
-        // ✅ 3.0.2: retroceso POSICIONAL sobre el orden vigente. Si `currentIndex`
-        // quedara fuera de rango (playlist reemplazada mientras sonaba), restar 1
-        // lo dejaba negativo o apuntando a otra canción y el "anterior"
-        // reproducía algo inesperado; ahora se sanea antes de usarlo.
-        guard playlist.indices.contains(currentIndex) else {
-            currentIndex = 0
-            playCurrentSong()
-            return
+        currentIndex -= 1
+        if currentIndex < 0 {
+            currentIndex = repeatMode == .all ? playlist.count - 1 : 0
         }
-        let previous = currentIndex - 1
-        currentIndex = previous >= 0 ? previous : (repeatMode == .all ? playlist.count - 1 : 0)
         playCurrentSong()
     }
 
@@ -2201,28 +2103,32 @@ class AudioEngine: NSObject, ObservableObject {
     func toggleShuffle() {
         isShuffleEnabled.toggle()
         // ✅ Guarda anti-crash: playlist vacía (cola terminada) no debe
-        // indexar sobre []; el estado visual ON/OFF igual se actualiza. Se
-        // comprueba TAMBIÉN que `currentIndex` sea válido: aquí se lee
-        // `playlist[currentIndex]` y una playlist reemplazada por otra acción
-        // podía dejarlo fuera de rango.
-        guard !playlist.isEmpty, playlist.indices.contains(currentIndex) else {
-            AppLog.info(.playback, "Aleatorio: \(isShuffleEnabled ? "activado" : "desactivado") (sin cola cargada)")
-            return
-        }
-        let current = playlist[currentIndex]
+        // indexar sobre []; el estado visual ON/OFF igual se actualiza.
+        guard !playlist.isEmpty else { return }
         if isShuffleEnabled {
-            // ✅ 3.0.2: UNA sola operación — se baraja el propio orden vigente. No
-            // hay lista paralela que mantener ni puntero que avanzar, así que
-            // "siguiente" y "anterior" recorren la MISMA permutación (antes cada
-            // uno seguía la suya y "anterior" no devolvía a la canción de la que
-            // se venía).
             originalPlaylist = playlist
-            shuffleKeepingFirst(current)
-        } else if !originalPlaylist.isEmpty {
-            // ✅ Volver al orden de origen conservando la canción actual.
-            playlist = originalPlaylist
-            originalPlaylist = []
-            currentIndex = playlist.firstIndex(where: { $0.id == current.id }) ?? 0
+            // ✅ MEJORA: inicializar lista mezclada nueva
+            shuffledPlaylist = playlist.shuffled()
+            shuffleIndex = 0
+            let current = playlist[currentIndex]
+            playlist.shuffle()
+            if let newIndex = playlist.firstIndex(where: { $0.id == current.id }) {
+                playlist.remove(at: newIndex)
+                playlist.insert(current, at: 0)
+                currentIndex = 0
+            }
+        } else {
+            // ✅ MEJORA: limpiar lista mezclada al desactivar
+            shuffledPlaylist = []
+            shuffleIndex = 0
+            if !originalPlaylist.isEmpty {
+                let current = playlist[currentIndex]
+                playlist = originalPlaylist
+                if let newIndex = playlist.firstIndex(where: { $0.id == current.id }) {
+                    currentIndex = newIndex
+                }
+                originalPlaylist = []
+            }
         }
         updatePlaybackQueue()
         updateNextUpQueue()
@@ -2244,15 +2150,6 @@ class AudioEngine: NSObject, ObservableObject {
         case .off: repeatMode = .all
         case .all: repeatMode = .one
         case .one: repeatMode = .off
-        }
-        // ✅ 3.0.2 AUDITORÍA: si ya hay OTRA canción encolada en el nodo de audio
-        // (la programó `scheduleAheadIfPossible` con el modo anterior), NO se
-        // puede desencolar: AVAudioPlayerNode no permite cancelar un segmento sin
-        // detener la reproducción en curso, y detenerla cortaría la canción que
-        // está sonando. Se registra para que la transición no sea "misteriosa" en
-        // los logs y quede claro que el modo nuevo se aplica DESPUÉS de esa pista.
-        if repeatMode == .one, let chainedIndex = chainedAheadIndex, chainedIndex != currentIndex {
-            AppLog.info(.playback, "Repetir-uno activado con '\(chainedAheadSong?.displayName ?? "—")' ya encolada: sonará antes de empezar a repetir")
         }
         let name: String
         switch repeatMode {
@@ -2354,19 +2251,6 @@ class AudioEngine: NSObject, ObservableObject {
         let song = songs[index]
         self.playlist = songs
         self.currentIndex = index
-        // ✅ 3.0.2: el aleatorio es PERSISTENTE ("com.aurora.shuffleEnabled"), así
-        // que al reabrir la app tiene que estar aplicado de verdad. Antes se
-        // restauraba el orden original con el botón de aleatorio encendido: sonaba
-        // secuencial, "siguiente" era predecible y desactivarlo no recuperaba
-        // ningún orden (no había `originalPlaylist`). Se baraja solo lo que queda
-        // POR DELANTE: lo ya reproducido y la canción actual se respetan.
-        if isShuffleEnabled, songs.count > 1 {
-            originalPlaylist = songs
-            let tailStart = index + 1
-            var reordered = Array(songs[0..<tailStart])
-            reordered.append(contentsOf: songs[tailStart...].shuffled())
-            self.playlist = reordered
-        }
         self.currentSong = song
         self.duration = song.duration
         let savedTime = (state["currentTime"] as? TimeInterval) ?? 0
@@ -2398,59 +2282,29 @@ class AudioEngine: NSObject, ObservableObject {
     }
 
     // ✅ Gestión de la cola "Siguiente" (reordenar, eliminar, limpiar)
-    //
-    // ✅ 3.0.2 — BUG CORREGIDO (pérdida de canciones): las tres acciones
-    // reconstruían la playlist a partir de `nextUpQueue`, que es la lista VISIBLE
-    // y está truncada a 10 canciones (`updateNextUpQueue`). Resultado: reordenar
-    // o quitar UNA canción BORRABA el resto del álbum, tiraba lo ya reproducido,
-    // reiniciaba `currentIndex` a 0 y vaciaba `originalPlaylist` (con el aleatorio
-    // ya no se podía volver al orden original). Ahora se opera sobre la playlist
-    // REAL, sin reconstruirla — y `nextUpQueue` queda como lo que es: una lista
-    // de PRESENTACIÓN.
     func removeFromNextUpQueue(_ song: Song) {
-        // Si estaba en la cola manual, sale de ahí.
-        manualQueue.removeAll { $0.id == song.id }
-        // Y se quita UNA ocurrencia situada POR DELANTE de la actual (nunca la
-        // que está sonando ni las ya reproducidas). También del orden de origen,
-        // para que las dos listas sigan siendo el mismo conjunto.
-        if let index = playlist.indices.first(where: { $0 > currentIndex && playlist[$0].id == song.id }) {
-            playlist.remove(at: index)
-            if let originalIndex = originalPlaylist.firstIndex(where: { $0.id == song.id }) {
-                originalPlaylist.remove(at: originalIndex)
-            }
-        }
-        updatePlaybackQueue()
-        updateNextUpQueue()
+        nextUpQueue.removeAll { $0.id == song.id }
+        // Reconstruir playlist interna para reflejar el cambio
+        rebuildPlaylistFromQueue()
     }
 
     func reorderNextUpQueue(_ songs: [Song]) {
-        // `songs` es la lista visible (hasta 10) ya reordenada. Se aplica ESE
-        // orden a las canciones que ocupaban esas posiciones y el resto de la
-        // cola se conserva tal cual: reordenar no puede perder canciones.
-        let start = min(currentIndex + 1, playlist.count)
-        let tail = Array(playlist.suffix(from: start))
-        let visibleIDs = Set(songs.map(\.id))
-        var reordered = songs
-        reordered.append(contentsOf: tail.filter { !visibleIDs.contains($0.id) })
-        // Si los conjuntos no cuadran (la cola cambió mientras se arrastraba), no
-        // se toca nada en lugar de arriesgar una pérdida de canciones.
-        guard reordered.count == tail.count else {
-            updateNextUpQueue()
-            return
-        }
-        playlist.replaceSubrange(start..<playlist.count, with: reordered)
-        updatePlaybackQueue()
-        updateNextUpQueue()
+        nextUpQueue = songs
+        rebuildPlaylistFromQueue()
     }
 
     func clearNextUpQueue() {
-        manualQueue.removeAll()
-        if playlist.indices.contains(currentIndex) {
-            playlist.removeSubrange((currentIndex + 1)..<playlist.count)
-        }
         nextUpQueue.removeAll()
-        updatePlaybackQueue()
-        updateNextUpQueue()
+        rebuildPlaylistFromQueue()
+    }
+
+    private func rebuildPlaylistFromQueue() {
+        // La playlist actual = [canción actual] + cola siguiente
+        guard currentIndex >= 0, currentIndex < playlist.count else { return }
+        let current = playlist[currentIndex]
+        playlist = [current] + nextUpQueue
+        currentIndex = 0
+        originalPlaylist = []
     }
 
     private func startDisplayTimer(isBackground: Bool = false) {
@@ -2779,16 +2633,14 @@ class AudioEngine: NSObject, ObservableObject {
             if portType == AVAudioSession.Port.bluetoothA2DP.rawValue ||
                portType == AVAudioSession.Port.bluetoothLE.rawValue ||
                portType == AVAudioSession.Port.bluetoothHFP.rawValue {
-                // iOS no expone el codec (AAC/aptX/LDAC) directamente a las apps:
-                // es una limitación del sistema. Se publica solo el PERFIL, con su
-                // nombre técnico (neutro respecto al idioma); la vista de calidad
-                // añade la nota traducida que explica qué significa cada uno.
+                // iOS no expone el codec (AAC/aptX/LDAC) directamente a las apps
+                // es una limitación del sistema. Documentamos esto en la UI.
                 if portType == AVAudioSession.Port.bluetoothLE.rawValue {
-                    self.bluetoothCodec = "LE"
+                    self.bluetoothCodec = "BLE (iOS maneja codec)"
                 } else if portType == AVAudioSession.Port.bluetoothHFP.rawValue {
-                    self.bluetoothCodec = "HFP"
+                    self.bluetoothCodec = "HFP (llamadas, baja calidad)"
                 } else {
-                    self.bluetoothCodec = "A2DP"
+                    self.bluetoothCodec = "A2DP (iOS maneja codec)"
                 }
             } else {
                 self.bluetoothCodec = ""
@@ -2808,11 +2660,15 @@ class AudioEngine: NSObject, ObservableObject {
                 self.usbDACInfo = ""
             }
             
-            // ✅ AUDIÓFILO / i18n: se publica el TOKEN de AVAudioSession
-            // (`Measurement`, `Default`, …), no una etiqueta escrita en un idioma
-            // fijo. La vista de calidad lo traduce, así que el panel deja de
-            // mostrar texto en español con la app en inglés (y al revés).
-            self.audioSessionMode = session.mode.rawValue
+            // ✅ AUDIÓFILO: modo actual de AVAudioSession
+            switch session.mode {
+            case .default:
+                self.audioSessionMode = "Default"
+            case .measurement:
+                self.audioSessionMode = "Measurement (bit-perfect)"
+            default:
+                self.audioSessionMode = session.mode.rawValue
+            }
             
             // ✅ Localizado: antes "Estándar"/"Estéreo" quedaban fijos en español
             // aunque la app estuviera en inglés.

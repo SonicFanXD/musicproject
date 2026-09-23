@@ -13,9 +13,6 @@ struct NowPlayingView: View {
     // ✅ Observar el idioma: al cambiar, esta vista se re-renderiza al instante
     @ObservedObject private var localization = Localization.shared
     @Environment(\.dismiss) private var dismiss
-    // ✅ Brillo de la base opaca del fondo (claro/oscuro), con el mismo criterio
-    // que `AuroraDynamicBackground`.
-    @Environment(\.colorScheme) private var colorScheme
 
     // Configuraciones de personalización
     @AppStorage("com.aurora.showVisualizer") private var showVisualizer = true
@@ -42,16 +39,6 @@ struct NowPlayingView: View {
     // ✅ FIX: usar accentUIColor en vez de systemPurple hardcodeado
     @State private var extractedUIColor: UIColor = AppTheme.accentUIColor
 
-    // ✅ IDENTIDAD VISUAL: fondo de carátula PRE-DIFUMINADO (estilo Apple Music).
-    // El desenfoque NO se hace por frame: se calcula con Core Image UNA vez por
-    // canción, en un hilo de fondo, y queda cacheado (ver
-    // `AppTheme.blurredArtwork`). Aquí solo se guarda la textura ya lista, así que
-    // durante la reproducción el coste es el de subir un bitmap de 320px.
-    @State private var blurredArtwork: UIImage?
-    // Id de la canción para la que se pidió el cálculo (evita lanzar el mismo
-    // desenfoque en cada re-render mientras el anterior sigue en cola).
-    @State private var blurredArtworkSongID: UUID?
-
     // ✅ Caché de color dominante por canción: evita recalcular el histograma
     // HSB al reabrir NowPlaying o re-entrar a la misma pista (60fps sin hitch)
 
@@ -69,13 +56,7 @@ struct NowPlayingView: View {
         let screenHeight = UIScreen.main.bounds.height
         // ✅ MEJORADO: Portada más grande y mejor centrada
         let maxByWidth = screenWidth - 40
-        // ✅ FIX iPhone 8 Plus: el sheet es MÁS BAJO que la pantalla, así que
-        // dimensionar la portada contra `UIScreen.main.bounds.height`
-        // sobre-estimaba el hueco real y la columna (header + portada +
-        // visualizador + título + barra + controles) acababa saliéndose.
-        // 0.30 del alto de pantalla deja margen para el título a dos líneas en el
-        // iPhone 8 Plus sin encoger la portada en los equipos con holgura.
-        let maxByHeight = screenHeight * (isCompactScreen ? 0.30 : 0.42)
+        let maxByHeight = screenHeight * (isCompactScreen ? 0.32 : 0.42)
         return min(340, maxByWidth, maxByHeight)
     }
 
@@ -168,135 +149,102 @@ struct NowPlayingView: View {
             ?? fileAccessService.albums.first { $0.name == song.album }
     }
 
-    // MARK: - Columna de contenido (una sola definición)
-    /// ✅ La columna se declara UNA vez y la usan las DOS variantes de layout del
-    /// body: si se duplicara, cualquier retoque futuro podría quedar aplicado a una
-    /// sola de ellas y el modo scroll se desincronizaría del compacto.
-    private var contentColumn: some View {
-        VStack(spacing: 0) {
-            // ✅ Header integrado al fondo difuminado — sin cuadro negro.
-            // Antes usaba safeAreaInset con fondo del sistema que pintaba
-            // un rectángulo negro/opaco sobre el blur. Ahora es la primera
-            // fila del VStack, completamente transparente sobre el mismo
-            // backgroundView difuminado.
-            HStack(spacing: 0) {
-                Button {
-                    dismiss()
-                } label: {
-                    Image(systemName: "chevron.down")
-                        .foregroundStyle(playIconColor)
-                        .font(.system(size: 17, weight: .semibold))
-                        .frame(width: 44, height: 44)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(Localization.localized("nowPlaying.close"))
-
-                Spacer()
-
-                Text(Localization.localized("nowPlaying.title"))
-                    .font(.system(size: 16, weight: .semibold, design: .rounded))
-                    .foregroundStyle(playIconColor.opacity(0.9))
-                    .shadow(color: .black.opacity(0.15), radius: 4, y: 1)
-
-                Spacer()
-                Color.clear.frame(width: 44, height: 44)
-            }
-            .padding(.horizontal, 8)
-
-            Spacer(minLength: isCompactScreen ? 4 : 10)
-
-            artworkView
-                // ✅ MEJORADO: la portada solo anima al CAMBIAR de canción,
-                // no al pausar/resumir. Antes había una animación rara de
-                // escala (1.02 → 1.0) que se veía artificial al tocar play/pause.
-                .animation(.easeInOut(duration: 0.3), value: audioEngine.currentSong?.id)
-
-            Spacer(minLength: isCompactScreen ? 10 : 16)
-
-            if showVisualizer {
-                // ✅ MEJORADO: AudioVisualizer ya rasteriza internamente
-                // con .drawingGroup() y maneja la atenuación al pausar.
-                // Nada de animaciones raras de escala aquí.
-                // ✅ Mismo sistema de DOS colores que el resto de la vista:
-                // dominante de la carátula + su secundario real (nil si no
-                // hay secundario → cae al degradado de un solo color).
-                AudioVisualizer(
-                    audioEngine: audioEngine,
-                    tintColor: extractedColor,
-                    secondaryTintColor: extractedSecondaryColor
-                )
-                    .frame(height: isCompactScreen ? 32 : 48)
-                    .padding(.horizontal, 36)
-            }
-
-            Spacer(minLength: isCompactScreen ? 8 : 14)
-
-            songInfoView
-                .animation(.easeInOut(duration: 0.25), value: audioEngine.currentSong?.id)
-
-            Spacer(minLength: isCompactScreen ? 8 : 14)
-
-            ProgressScrubView(
-                audioEngine: audioEngine,
-                clock: clock,
-                extractedColor: extractedColor,
-                extractedSecondaryColor: extractedSecondaryColor,
-                extractedUIColor: extractedUIColor,
-                playIconColor: playIconColor,
-                isCompactScreen: isCompactScreen
-            )
-
-            Spacer(minLength: isCompactScreen ? 10 : 18)
-
-            controlsView
-
-            Spacer(minLength: isCompactScreen ? 8 : 14)
-
-            featureButtonsView
-
-            Spacer(minLength: 0)
-        }
-        // ✅ Padding horizontal de la columna: va AQUÍ (dentro de la definición
-        // compartida) para que las dos variantes midan exactamente el mismo ancho.
-        .padding(.horizontal, 24)
-    }
-
     var body: some View {
         ZStack {
             backgroundView
 
-            // ✅ ESTABILIDAD DE LAYOUT (iPhone 8 Plus): dos estrategias, elegidas
-            // por el alto IDEAL de la columna medido con el ANCHO REAL del sheet.
-            //
-            // 1. **Compacta** (el look de siempre): `.fixedSize(vertical:)` congela
-            //    la columna en su alto ideal, así que los `Spacer(minLength:)` se
-            //    quedan en su mínimo y el hueco sobrante sale FUERA (el ZStack
-            //    centra la columna). Sin ese `fixedSize` los Spacers se reparten el
-            //    sobrante y la vista se ve estirada, con los elementos demasiado
-            //    separados entre sí.
-            // 2. **Scroll** (red de seguridad): si el alto ideal NO cabe (título a
-            //    dos líneas, mucha info), se elige esta y nada se sale de pantalla.
-            //
-            // ✅ El `.fixedSize` de la variante 1 NO sobra: `ViewThatFits` mide el
-            // alto IDEAL de cada variante, pero al MOSTRAR la elegida le propone el
-            // alto REAL del contenedor, así que sin él la variante compacta se
-            // volvería a estirar justo al ser elegida.
-            ViewThatFits(in: .vertical) {
-                contentColumn
-                    .fixedSize(horizontal: false, vertical: true)
+                // ✅ DISEÑO MEJORADO: distribución equilibrada con Spacers
+                // flexibles (la proporción se adapta a cualquier pantalla,
+                // iPhone 8 Plus incluido) en lugar de espaciados fijos.
+                VStack(spacing: 0) {
+                    // ✅ Header integrado al fondo difuminado — sin cuadro negro.
+                    // Antes usaba safeAreaInset con fondo del sistema que pintaba
+                    // un rectángulo negro/opaco sobre el blur. Ahora es la primera
+                    // fila del VStack, completamente transparente sobre el mismo
+                    // backgroundView difuminado.
+                    HStack(spacing: 0) {
+                        Button {
+                            dismiss()
+                        } label: {
+                            Image(systemName: "chevron.down")
+                                .foregroundStyle(playIconColor)
+                                .font(.system(size: 17, weight: .semibold))
+                                .frame(width: 44, height: 44)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(Localization.localized("nowPlaying.close"))
 
-                ScrollView {
-                    contentColumn
+                        Spacer()
+
+                        Text(Localization.localized("nowPlaying.title"))
+                            .font(.system(size: 16, weight: .semibold, design: .rounded))
+                            .foregroundStyle(playIconColor.opacity(0.9))
+                            .shadow(color: .black.opacity(0.15), radius: 4, y: 1)
+
+                        Spacer()
+                        Color.clear.frame(width: 44, height: 44)
+                    }
+                    .padding(.horizontal, 8)
+
+                    Spacer(minLength: isCompactScreen ? 4 : 10)
+
+                    artworkView
+                        // ✅ MEJORADO: la portada solo anima al CAMBIAR de canción,
+                        // no al pausar/resumir. Antes había una animación rara de
+                        // escala (1.02 → 1.0) que se veía artificial al tocar play/pause.
+                        .animation(.easeInOut(duration: 0.3), value: audioEngine.currentSong?.id)
+
+                    Spacer(minLength: isCompactScreen ? 10 : 16)
+
+                    if showVisualizer {
+                        // ✅ MEJORADO: AudioVisualizer ya rasteriza internamente
+                        // con .drawingGroup() y maneja la atenuación al pausar.
+                        // Nada de animaciones raras de escala aquí.
+                        // ✅ Mismo sistema de DOS colores que el resto de la vista:
+                        // dominante de la carátula + su secundario real (nil si no
+                        // hay secundario → cae al degradado de un solo color).
+                        AudioVisualizer(
+                            audioEngine: audioEngine,
+                            tintColor: extractedColor,
+                            secondaryTintColor: extractedSecondaryColor
+                        )
+                            .frame(height: isCompactScreen ? 32 : 48)
+                            .padding(.horizontal, 36)
+                    }
+
+                    Spacer(minLength: isCompactScreen ? 8 : 14)
+
+                    songInfoView
+                        .animation(.easeInOut(duration: 0.25), value: audioEngine.currentSong?.id)
+
+                    Spacer(minLength: isCompactScreen ? 8 : 14)
+
+                    ProgressScrubView(
+                        audioEngine: audioEngine,
+                        clock: clock,
+                        extractedColor: extractedColor,
+                        extractedSecondaryColor: extractedSecondaryColor,
+                        extractedUIColor: extractedUIColor,
+                        playIconColor: playIconColor,
+                        isCompactScreen: isCompactScreen
+                    )
+
+                    Spacer(minLength: isCompactScreen ? 10 : 18)
+
+                    controlsView
+
+                    Spacer(minLength: isCompactScreen ? 8 : 14)
+
+                    featureButtonsView
+
+                    Spacer(minLength: 0)
                 }
-                .scrollIndicators(.hidden)
-            }
+                .padding(.horizontal, 24)
+                .fixedSize(horizontal: false, vertical: true)
             }
             .onAppear {
                 extractColorFromArtwork()
-                // ✅ Fondo de carátula: el desenfoque ya está en caché si se
-                // vuelve a la vista, así que aparece al instante.
-                loadBlurredArtworkIfNeeded()
                 AppLog.info(.interface, "NowPlaying abierto: '\(audioEngine.currentSong?.displayName ?? "—")'")
                 withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
                     artworkScale = 1.0
@@ -313,16 +261,9 @@ struct NowPlayingView: View {
             }
             .onChange(of: audioEngine.currentSong?.id) { _ in
                 extractColorFromArtwork()
-                // ✅ Un desenfoque por canción (en hilo de fondo, cacheado).
-                loadBlurredArtworkIfNeeded()
                 // ✅ Propagar el color de acento a ThemeManager para que PlayerBar
                 // y todas las vistas que lo observen se actualicen al instante
                 ThemeManager.shared.updateArtworkAccent(from: audioEngine.currentSong)
-            }
-            .onChange(of: reduceTransparency) { _ in
-                // "Reducir transparencia" pide fondo opaco y estático: la carátula
-                // difuminada se retira (y se recupera al desactivar, desde caché).
-                loadBlurredArtworkIfNeeded()
             }
             .onChange(of: ThemeManager.shared.accentFromArtwork) { value in
                 // ✅ FIX: propaga el color a ThemeManager (que a su vez publica a
@@ -372,159 +313,40 @@ struct NowPlayingView: View {
     }
 
     // MARK: - Background (respeta "Reducir transparencia")
-    /// ✅ IDENTIDAD RESTAURADA SIN VOLVER AL COSTE ANTIGUO.
-    /// El diseño clásico era `Image(artwork).blur(radius: 25).opacity(0.45)` a
-    /// pantalla completa: eso obligaba a la GPU a re-rasterizar un bitmap del
-    /// tamaño de la pantalla (y su desenfoque) de forma continua.
-    ///
-    /// El aspecto se compone en CUATRO CAPAS, y ninguna hace trabajo por frame:
-    ///
-    /// 0. **Base opaca** — degradado oscuro TINTADO con el acento
-    ///    (`backdropBase`), para que el texto blanco se lea sobre cualquier
-    ///    portada y en cualquier apariencia.
-    /// 1. **Carátula PRE-DIFUMINADA** — Core Image sobre ~320px en un hilo de
-    ///    fondo, UNA vez por canción, con el velo y la saturación ya horneados en
-    ///    el bitmap. En reproducción esto es una textura estática.
-    /// 2. **Tinte dinámico** — `extractedColor` al 18%, como el 0.12 del diseño
-    ///    original: le da vida al fondo con el color de la portada.
-    /// 3. **Aurora sutil** — la misma `AuroraDynamicBackground` en modo
-    ///    `.overlay` y con `.softLight`: aporta el dinamismo sin competir con la
-    ///    foto.
-    ///
-    /// ✅ FIX "el fondo aparece de golpe": antes la capa 0 vivía DENTRO de la
-    /// aurora (estilo `.full`) y esta vista le pedía `.overlay` en cuanto llegaba
-    /// el desenfoque. Meter o quitar una capa —y cambiar los `stops` del velo—
-    /// son cambios ESTRUCTURALES, no propiedades animables, así que el fondo
-    /// daba un salto justo al abrirse el sheet. Ahora la base es fija de esta
-    /// vista y la aurora se queda SIEMPRE en `.overlay`/`.softLight`: su subárbol
-    /// nunca se reestructura y lo único que se anima es la opacidad de la
-    /// carátula y del tinte, que se funden en 0.45 s.
-    ///
-    /// Sin carátula, con el desenfoque aún en cola o con "Reducir transparencia",
-    /// la base opaca y la aurora siguen ahí: nunca hay un hueco ni un parpadeo.
     private var backgroundView: some View {
-        ZStack {
-            // Capa 0 — base opaca SIEMPRE presente: es el hueco que dejaba la
-            // aurora al pasar de `.full` a `.overlay`.
-            backdropBase
+        Group {
+            if let artwork = audioEngine.currentSong?.artwork, !reduceTransparency {
+                GeometryReader { geometry in
+                    ZStack {
+                        // ✅ FIX barra negra: scaledToFill + clipped para cubrir
+                        // TODA la pantalla (scaledToFit dejaba franjas en pantallas
+                        // altas/anchas por encima y debajo de la imagen cuadrada).
+                        Image(uiImage: artwork)
+                            .resizable()
+                            .interpolation(.medium)
+                            .scaledToFill()
+                            .frame(width: geometry.size.width + 60, height: geometry.size.height + 60)
+                            .clipped()
+                            .blur(radius: 25)
+                            .opacity(0.45)
 
-            if showsArtworkBackdrop, let artworkBackdrop = blurredArtwork {
-                // Capa 1 — carátula pre-difuminada (estática).
-                Image(uiImage: artworkBackdrop)
-                    .resizable()
-                    // `.medium` basta: es un bitmap ya desenfocado y la ampliación
-                    // la hace la GPU al muestrear la textura.
-                    .interpolation(.medium)
-                    .scaledToFill()
-                    .ignoresSafeArea()
-                    // ✅ Aparece fundida (opacidad), nunca de golpe.
-                    .transition(.opacity)
-
-                // Capa 2 — tinte dinámico del color dominante.
-                extractedColor
-                    .opacity(0.18)
-                    .ignoresSafeArea()
-            }
-
-            // Capa 3 — aurora sutil, SIEMPRE sobre la base opaca de arriba.
-            AuroraDynamicBackground(
-                primary: extractedColor,
-                secondary: extractedSecondaryColor,
-                // ✅ CONSTANTE (antes alternaba con `showsArtworkBackdrop`):
-                // cambiar de estilo metía/quitaba la base opaca y cambiaba los
-                // `stops` del velo, dos saltos no animables. La base la pone ya
-                // `backdropBase`, así que este subárbol es siempre el mismo.
-                style: .overlay
-            )
-            // ✅ CONSTANTE también: el blend no es animable, así que alternarlo
-            // daría otro salto en el mismo instante. `.softLight` es el modo que
-            // ya usaba el fondo CON carátula (el caso normal).
-            .blendMode(.softLight)
-        }
-        .ignoresSafeArea()
-        .allowsHitTesting(false)
-        // ✅ El fondo se funde cuando el desenfoque llega (0.45s), en vez de
-        // aparecer de golpe. Es una transición de opacidad, no un re-render.
-        .animation(.easeInOut(duration: 0.45), value: blurredArtwork)
-    }
-
-    /// ¿Hay carátula difuminada que enseñar? ("Reducir transparencia" pide un
-    /// fondo opaco y estático, así que se queda con la aurora autónoma.)
-    private var showsArtworkBackdrop: Bool {
-        !reduceTransparency && blurredArtwork != nil
-    }
-
-    /// ✅ BASE OPACA DEL FONDO — siempre presente.
-    /// Es la misma base que `AuroraDynamicBackground` pintaba en su modo `.full`
-    /// (degradado oscuro tintado con el acento, no negro plano ni
-    /// `systemBackground`, porque el texto de NowPlaying es siempre blanco), pero
-    /// vive aquí para que la aurora pueda quedarse fija en `.overlay` y su
-    /// subárbol no cambie de forma al llegar la carátula difuminada.
-    private var backdropBase: some View {
-        LinearGradient(
-            colors: [
-                Self.tone(extractedColor, brightness: colorScheme == .dark ? 0.20 : 0.34),
-                Self.tone(extractedSecondaryColor ?? extractedColor,
-                          brightness: colorScheme == .dark ? 0.06 : 0.16)
-            ],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
-        .ignoresSafeArea()
-    }
-
-    /// Oscurece un color conservando su TONO con la saturación contenida: mismo
-    /// criterio que la base de `AuroraDynamicBackground`, para que el fondo no
-    /// cambie de aspecto al reordenar las capas.
-    private static func tone(_ color: Color, brightness: CGFloat) -> Color {
-        var hue: CGFloat = 0, saturation: CGFloat = 0, value: CGFloat = 0, alpha: CGFloat = 1
-        guard UIColor(color).getHue(&hue, saturation: &saturation, brightness: &value, alpha: &alpha) else {
-            // Color sin matiz (gris/blanco/negro puro): base neutra.
-            return Color(uiColor: UIColor(white: brightness, alpha: 1.0))
-        }
-        return Color(uiColor: UIColor(
-            hue: hue,
-            saturation: min(saturation * 0.6, 0.85),
-            brightness: brightness,
-            alpha: 1.0
-        ))
-    }
-
-    /// Calcula (una vez por canción, en hilo de fondo) la carátula difuminada que
-    /// hace de fondo. La caché compartida de `AppTheme` hace que reabrir NowPlaying
-    /// o volver a la misma pista sea instantáneo, y `blurredArtworkSongID` impide
-    /// lanzar el mismo trabajo dos veces mientras sigue en cola.
-    private func loadBlurredArtworkIfNeeded() {
-        guard !reduceTransparency,
-              let artwork = audioEngine.currentSong?.artwork,
-              let songID = audioEngine.currentSong?.id else {
-            blurredArtwork = nil
-            blurredArtworkSongID = nil
-            return
-        }
-
-        // Ya calculado antes (caché compartida): al instante, sin tocar la GPU.
-        if let cached = AppTheme.cachedBlurredArtwork(key: songID.uuidString) {
-            blurredArtwork = cached
-            blurredArtworkSongID = songID
-            return
-        }
-
-        // Mismo trabajo ya en curso → no duplicar.
-        guard blurredArtworkSongID != songID else { return }
-        blurredArtworkSongID = songID
-        // Mientras Core Image trabaja se ve la aurora autónoma (sin parpadeo).
-        blurredArtwork = nil
-
-        DispatchQueue.global(qos: .userInitiated).async {
-            let blurred = AppTheme.blurredArtwork(from: artwork, key: songID.uuidString)
-            DispatchQueue.main.async {
-                // Si el usuario ya cambió de canción, este resultado llega tarde:
-                // se descarta (la caché se lo queda para cuando vuelva).
-                guard self.audioEngine.currentSong?.id == songID else { return }
-                withAnimation(.easeInOut(duration: 0.45)) {
-                    self.blurredArtwork = blurred
+                        extractedColor.opacity(0.12)
+                    }
                 }
+                .ignoresSafeArea()
+                .allowsHitTesting(false)
+                .drawingGroup(opaque: false)
+            } else {
+                LinearGradient(
+                    colors: [
+                        Color(UIColor.systemBackground),
+                        Color(UIColor.secondarySystemBackground)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .ignoresSafeArea()
+                .allowsHitTesting(false)
             }
         }
     }
@@ -1019,21 +841,9 @@ struct NowPlayingView: View {
     }
 
     // MARK: - Helpers
-    /// Fondo de los controles circulares (anterior / siguiente / aleatorio /
-    /// repetir).
-    /// ✅ 3.0.2 — BUG DE CONTRASTE CORREGIDO: con "Reducir transparencia" el
-    /// relleno opaco era `secondarySystemBackground` —casi BLANCO en modo
-    /// claro— mientras los glifos de esos botones son SIEMPRE blancos
-    /// (`playIconColor` = `AppTheme.contrastingText`, que devuelve `.white`
-    /// ignorando el color): en modo claro con ese ajuste activo los cuatro iconos
-    /// desaparecían dentro del círculo.
-    /// El fondo de NowPlaying (aurora) es opaco y oscuro en cualquier apariencia,
-    /// así que un velo negro sin blur mantiene el mismo aspecto que el vidrio y
-    /// garantiza el contraste con el glifo blanco. Sigue sin haber `.blur` ni
-    /// material, que es justo lo que el ajuste pide quitar.
     private var controlBackground: AnyShapeStyle {
         reduceTransparency
-            ? AnyShapeStyle(Color.black.opacity(0.35))
+            ? AnyShapeStyle(Color(UIColor.secondarySystemBackground))
             : AnyShapeStyle(.ultraThinMaterial)
     }
 

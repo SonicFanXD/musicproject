@@ -229,60 +229,6 @@ final class LyricsViewModel: ObservableObject {
         return (clampedMs - startMs) / (endMs - startMs)
     }
 
-    /// Progreso (0...1) de una fila guiado por TIMINGS DE PALABRA (karaoke).
-    /// ✅ Apple Music no adelanta las palabras que aún no han sonado: cada palabra
-    /// se revela dentro de SU propia ventana y las siguientes quedan apagadas
-    /// hasta que les toca. Dentro de la palabra el barrido es continuo, así que el
-    /// borde avanza a 60 fps pero gobernado por la voz real (un reparto lineal por
-    /// caracteres se desincroniza en cuanto una palabra es más larga que otra).
-    /// ✅ O(nº de palabras de la fila) y sin allocations: se llama una vez por
-    /// frame y solo para la fila que está cambiando de progreso.
-    /// - Parameters:
-    ///   - fractions: fracción de ancho acumulada al final de cada palabra (la
-    ///     última vale 1), calculada y cacheada en la vista con la fuente real.
-    /// - Returns: nil si la fila no tiene timings utilizables → el llamador debe
-    ///   usar el relleno lineal por fila (`fillProgress`).
-    func wordFillProgress(
-        forLineID id: Int,
-        row: LyricVisualRow,
-        fractions: [Double],
-        isLastRow: Bool
-    ) -> Double? {
-        guard id == activeID, activeEndMs > activeStartMs else { return nil }
-
-        let words = row.words
-        guard !words.isEmpty,
-              fractions.count == words.count,
-              let lastFraction = fractions.last,
-              lastFraction > 0 else { return nil }
-
-        let endMs = Double(isLastRow ? max(activeEndMs, row.endMs) : row.endMs)
-        let timeMs = min(max(interpolatedTime() * 1000, Double(row.startMs)), endMs)
-
-        var revealed = 0.0
-        for index in words.indices {
-            let upper = fractions[index]
-            let startMs = Double(words[index].startMs)
-            var finishMs = Double(max(words[index].endMs, words[index].startMs))
-            // ✅ La última palabra de la última fila se cierra con el fin EFECTIVO
-            // de la línea (el buffer adaptativo del motor), igual que el relleno
-            // lineal: la línea no se queda a medias mientras sigue sonando.
-            if isLastRow, index == words.count - 1 {
-                finishMs = max(finishMs, endMs)
-            }
-
-            // Todavía no ha empezado: lo que queda por delante permanece apagado.
-            if timeMs < startMs { return revealed }
-
-            let duration = finishMs - startMs
-            let local = duration > 0 ? min((timeMs - startMs) / duration, 1) : 1
-            if local < 1 { return revealed + (upper - revealed) * local }
-            revealed = upper
-        }
-
-        return revealed
-    }
-
     // MARK: - Reloj interno
     /// ✅ Nuevo tick del reloj: fija el ancla de interpolación y recalcula línea.
     private func receiveClockTime(_ time: TimeInterval) {

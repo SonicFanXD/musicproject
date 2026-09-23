@@ -148,9 +148,8 @@ struct PlaylistsView: View {
             // Playlist artwork
             ZStack {
                 if let artwork = playlist.artwork {
-                    // ✅ ANTI-JETSAM: card de 150pt → miniatura a 150pt (450px
-                    // en @3x), justo los píxeles que se dibujan.
-                    Image(uiImage: AppTheme.thumbnail(from: artwork, size: CGSize(width: 150, height: 150)))
+                    // ✅ ANTI-JETSAM: card de 150pt → basta thumbnail de 300px.
+                    Image(uiImage: AppTheme.thumbnail(from: artwork, size: CGSize(width: 300, height: 300)))
                         .resizable()
                         .scaledToFill()
                         .frame(width: 150, height: 150)
@@ -434,9 +433,8 @@ struct PlaylistDetailView: View {
             // Artwork con marco sutil
             ZStack {
                 if let artwork = playlist.artwork {
-                    // ✅ ANTI-JETSAM: hero de 220pt → miniatura a 220pt (660px
-                    // en @3x) cacheada.
-                    Image(uiImage: AppTheme.thumbnail(from: artwork, size: CGSize(width: 220, height: 220)))
+                    // ✅ ANTI-JETSAM: hero de 220pt → miniatura de 440px cacheada.
+                    Image(uiImage: AppTheme.thumbnail(from: artwork, size: CGSize(width: 440, height: 440)))
                         .resizable()
                         .interpolation(.high)
                         .scaledToFill()
@@ -502,7 +500,7 @@ struct PlaylistDetailView: View {
             if !songs.isEmpty {
                 HStack(spacing: 12) {
                     Button {
-                        Haptics.medium()
+                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                         if let firstSong = songs.first {
                             audioEngine.play(song: firstSong, from: songs)
                         }
@@ -529,7 +527,7 @@ struct PlaylistDetailView: View {
                     }
 
                     Button {
-                        Haptics.medium()
+                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                         if !audioEngine.isShuffleEnabled {
                             audioEngine.toggleShuffle()
                         }
@@ -560,10 +558,9 @@ struct PlaylistDetailView: View {
                 Group {
                     if let artwork = playlist.artwork {
                         // ✅ ANTI-JETSAM: el fondo va desenfocado a 44pt, así que
-                        // el detalle fino se pierde de todos modos: basta una
-                        // miniatura de 160pt (480px en @3x) en vez de la carátula
-                        // completa (≈2.4MB) en cada re-render del header.
-                        Image(uiImage: AppTheme.thumbnail(from: artwork, size: CGSize(width: 160, height: 160)))
+                        // se decodifica una miniatura de 400px en vez de la
+                        // carátula completa (≈2.4MB) en cada re-render del header.
+                        Image(uiImage: AppTheme.thumbnail(from: artwork, size: CGSize(width: 400, height: 400)))
                             .resizable()
                             .scaledToFill()
                             .blur(radius: 44)
@@ -613,7 +610,7 @@ struct PlaylistDetailView: View {
         return HStack(spacing: 14) {
             // Botón principal: reproducir
             Button {
-                Haptics.light()
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 audioEngine.play(song: song, from: songs)
             } label: {
                 HStack(spacing: 14) {
@@ -667,7 +664,7 @@ struct PlaylistDetailView: View {
 
             // Botón de quitar (fuera del botón principal, área táctil amplia)
             Button {
-                Haptics.light()
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 fileAccessService.removeSongFromPlaylist(song, playlist: playlist)
             } label: {
                 Image(systemName: "minus.circle.fill")
