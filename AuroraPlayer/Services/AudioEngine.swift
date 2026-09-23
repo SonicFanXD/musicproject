@@ -346,7 +346,6 @@ class AudioEngine: NSObject, ObservableObject {
         currentTime = 0
         clock.time = 0
         anchorPlaybackPosition(0)
-        hasScheduledFile = true
         updateNowPlayingInfo()
         updateAudioQuality()
         addToHistory(song)
@@ -376,8 +375,6 @@ class AudioEngine: NSObject, ObservableObject {
     }
     
    
-    private var hasScheduledFile = false
-
     /// Posición EXACTA sin clamp — usada por el watchdog para detectar cuándo
     // el audio realmente terminó. El clamp a duration impedía que el watchdog
     // se disparara (wallClockTime NUNCA podía >= duration + margen).
@@ -1289,7 +1286,6 @@ class AudioEngine: NSObject, ObservableObject {
             // playerNode.stop() también descarta cualquier canción
             // pre-encadenada por adelantado.
             clearChainedAhead()
-            hasScheduledFile = false
             anchorPlaybackPosition(position)
             // Reprogramar en el siguiente runloop (el engine ya está corriendo
             // si había audio; el formato mono/estéreo ya tomó efecto).
@@ -1590,8 +1586,6 @@ class AudioEngine: NSObject, ObservableObject {
                 self?.segmentDidFinish(token: token, expectedGeneration: generation)
             }
         }
-
-        hasScheduledFile = true
 
         // ✅ FIX sincronización: `autostart=false` permite reprogramar el nodo
         // SIN iniciar la reproducción (ej. seek en pausa). Antes scheduleFile
