@@ -511,6 +511,30 @@ enum AppTheme {
     /// la portada es prácticamente monocromática (blanco y negro, grises) y se
     /// delega en el histograma RGB clásico.
     private static let minimumColoredPixels = 100
+
+    /// ✅ Umbrales de `coloredPixels`, de estricto a laxo. Se prueban en orden
+    /// sobre el MISMO buffer y se devuelve el primero que reúna su mínimo: una
+    /// portada casi negra (NUEVA YORK) o en blanco y negro pura (dopamina) no
+    /// llega a 100 píxeles con el tier 1, y antes eso devolvía nil → el acento se
+    /// quedaba congelado en el de la canción anterior. Ahora entra por el tier 2
+    /// o el 3, y si ninguno llega a su mínimo se devuelven igualmente los píxeles
+    /// del tier 3 (mejor unos pocos reales que ninguno).
+    private struct PixelFilterTier {
+        let name: String
+        let minimumSaturation: CGFloat
+        let minimumBrightness: CGFloat
+        let maximumBrightness: CGFloat
+        let minimumCount: Int
+    }
+
+    private static let pixelFilterTiers: [PixelFilterTier] = [
+        // Tier 1 = el filtro de siempre: color real, sin grises ni extremos.
+        PixelFilterTier(name: "tier 1", minimumSaturation: 0.10, minimumBrightness: 0.10, maximumBrightness: 0.95, minimumCount: minimumColoredPixels),
+        // Tier 2/3: portadas apagadas, casi negras o en blanco y negro puro.
+        PixelFilterTier(name: "tier 2", minimumSaturation: 0.05, minimumBrightness: 0.05, maximumBrightness: 0.97, minimumCount: 50),
+        PixelFilterTier(name: "tier 3", minimumSaturation: 0.02, minimumBrightness: 0.02, maximumBrightness: 0.98, minimumCount: 20)
+    ]
+
     /// ✅ Separación mínima de tono entre primario y secundario.
     private static let minimumSecondaryHueDelta: CGFloat = 30
 
@@ -616,16 +640,22 @@ enum AppTheme {
     }
 
     /// ✅ Píxeles significativos de la portada (64×64) en HSB.
-    /// FILTRO: se descartan los transparentes (alpha < 0.5), los casi negros
-    /// (brillo < 0.10), los casi blancos (brillo > 0.95) y los grises
-    /// (saturación < 0.10) — siempre presentes en cualquier portada y que
-    /// ensucian el resultado.
+    /// FILTRO ADAPTATIVO: se descartan SIEMPRE los transparentes (alpha < 0.5) y
+    /// luego se prueban tres umbrales de estricto a laxo (tier 1: saturación
+    /// ≥ 0.10 y brillo 0.10–0.95; tier 2: ≥ 0.05 y 0.05–0.97; tier 3: ≥ 0.02 y
+    /// 0.02–0.98), devolviendo el primero que reúna su mínimo de píxeles. Si
+    /// ninguno lo reúne, devuelve los del tier 3 igualmente (mejor unos pocos
+    /// píxeles reales que nil). Solo devuelve nil si la imagen no tiene NINGÚN
+    /// píxel visible (vacía o totalmente transparente).
+    /// El muestreo y el propio `HSBPixel` no cambian: solo cambia qué píxeles
+    /// pasan el filtro.
     private static func coloredPixels(from artwork: UIImage) -> [HSBPixel]? {
         let size = CGSize(width: dominantSampleEdge, height: dominantSampleEdge)
         UIGraphicsBeginImageContextWithOptions(size, false, 1.0)
         artwork.draw(in: CGRect(origin: .zero, size: size))
         guard let cgImage = UIGraphicsGetImageFromCurrentImageContext()?.cgImage else {
             UIGraphicsEndImageContext()
+            AppLog.debug(.artwork, "coloredPixels: sin píxeles visibles")
             return nil
         }
         UIGraphicsEndImageContext()
@@ -651,44 +681,73 @@ enum AppTheme {
             ctx.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
             return true
         }
-        guard drawn else { return nil }
-
-        var pixels: [HSBPixel] = []
-        pixels.reserveCapacity(width * height)
-
-        for y in 0..<height {
-            for x in 0..<width {
-                let offset = y * bytesPerRow + x * 4
-                guard CGFloat(data[offset + 3]) / 255 >= 0.5 else { continue }
-
-                let pixelColor = UIColor(
-                    red: CGFloat(data[offset]) / 255,
-                    green: CGFloat(data[offset + 1]) / 255,
-                    blue: CGFloat(data[offset + 2]) / 255,
-                    alpha: 1
-                )
-                var hue: CGFloat = 0
-                var saturation: CGFloat = 0
-                var brightness: CGFloat = 0
-                guard pixelColor.getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: nil) else { continue }
-
-                guard brightness >= 0.10, brightness <= 0.95, saturation >= 0.10 else { continue }
-
-                // ✅ v2: peso de centralidad = 1 + (1 - d normalizada) × boost.
-                let dx = (CGFloat(x) + 0.5) - CGFloat(width) / 2
-                let dy = (CGFloat(y) + 0.5) - CGFloat(height) / 2
-                let normalizedDistance = min(1, sqrt(dx * dx + dy * dy) / halfDiagonal)
-                pixels.append(HSBPixel(
-                    hue: hue * 360,
-                    saturation: saturation,
-                    brightness: brightness,
-                    centralityWeight: 1 + (1 - normalizedDistance) * accentCentralityBoost
-                ))
-            }
+        guard drawn else {
+            AppLog.debug(.artwork, "coloredPixels: sin píxeles visibles")
+            return nil
         }
 
-        guard pixels.count >= minimumColoredPixels else { return nil }
-        return pixels
+        // ✅ ADAPTATIVO: la imagen se dibuja a 64×64 UNA sola vez (arriba) y este
+        // buffer se recorre una vez por tier (4096 píxeles: el coste extra es
+        // despreciable frente a la ganancia de no rendirse en portadas oscuras).
+        var loosest: [HSBPixel] = []
+        var loosestTierName = "tier 3"
+
+        for tier in pixelFilterTiers {
+            var pixels: [HSBPixel] = []
+            pixels.reserveCapacity(width * height)
+
+            for y in 0..<height {
+                for x in 0..<width {
+                    let offset = y * bytesPerRow + x * 4
+                    guard CGFloat(data[offset + 3]) / 255 >= 0.5 else { continue }
+
+                    let pixelColor = UIColor(
+                        red: CGFloat(data[offset]) / 255,
+                        green: CGFloat(data[offset + 1]) / 255,
+                        blue: CGFloat(data[offset + 2]) / 255,
+                        alpha: 1
+                    )
+                    var hue: CGFloat = 0
+                    var saturation: CGFloat = 0
+                    var brightness: CGFloat = 0
+                    guard pixelColor.getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: nil) else { continue }
+
+                    guard brightness >= tier.minimumBrightness,
+                          brightness <= tier.maximumBrightness,
+                          saturation >= tier.minimumSaturation else { continue }
+
+                    // ✅ v2: peso de centralidad = 1 + (1 - d normalizada) × boost.
+                    let dx = (CGFloat(x) + 0.5) - CGFloat(width) / 2
+                    let dy = (CGFloat(y) + 0.5) - CGFloat(height) / 2
+                    let normalizedDistance = min(1, sqrt(dx * dx + dy * dy) / halfDiagonal)
+                    pixels.append(HSBPixel(
+                        hue: hue * 360,
+                        saturation: saturation,
+                        brightness: brightness,
+                        centralityWeight: 1 + (1 - normalizedDistance) * accentCentralityBoost
+                    ))
+                }
+            }
+
+            if pixels.count >= tier.minimumCount {
+                AppLog.debug(.artwork, "coloredPixels: \(tier.name) (\(pixels.count)px)")
+                return pixels
+            }
+            // El último tier evaluado es el más laxo: se queda como último
+            // recurso por si ninguno llega a su mínimo.
+            loosest = pixels
+            loosestTierName = tier.name
+        }
+
+        // ✅ Ningún tier llegó a su mínimo. Se devuelven los píxeles del tier 3
+        // aunque sean < 20: con nil el llamador NO actualiza el acento y la
+        // canción se queda con el de la anterior (bug de NUEVA YORK / dopamina).
+        guard !loosest.isEmpty else {
+            AppLog.debug(.artwork, "coloredPixels: sin píxeles visibles")
+            return nil
+        }
+        AppLog.debug(.artwork, "coloredPixels: \(loosestTierName) (\(loosest.count)px)")
+        return loosest
     }
 
     /// ✅ Distancia angular mínima entre dos tonos (0...180°).
@@ -753,6 +812,54 @@ enum AppTheme {
         )
     }
 
+    /// ✅ ÚLTIMO RECURSO: media de TODOS los píxeles con alpha ≥ 0.5,
+    /// sin filtrar saturación ni brillo. Para portadas donde ni el
+    /// clustering ni neutralDominantColor encuentran nada (casi-negras
+    /// como NUEVA YORK, B&N puras como dopamina). Nunca falla si la
+    /// imagen tiene píxeles visibles.
+    private static func averageColor(from artwork: UIImage) -> UIColor? {
+        let size = CGSize(width: 64, height: 64)
+        UIGraphicsBeginImageContextWithOptions(size, false, 1.0)
+        artwork.draw(in: CGRect(origin: .zero, size: size))
+        guard let cgImage = UIGraphicsGetImageFromCurrentImageContext()?.cgImage else {
+            UIGraphicsEndImageContext()
+            return nil
+        }
+        UIGraphicsEndImageContext()
+
+        let width = cgImage.width
+        let height = cgImage.height
+        let bytesPerRow = cgImage.bytesPerRow
+        var data = [UInt8](repeating: 0, count: height * bytesPerRow)
+        guard let ctx = CGContext(
+            data: &data, width: width, height: height,
+            bitsPerComponent: 8, bytesPerRow: bytesPerRow,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return nil }
+        ctx.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+
+        var rSum: CGFloat = 0, gSum: CGFloat = 0, bSum: CGFloat = 0
+        var count = 0
+        for y in 0..<height {
+            for x in 0..<width {
+                let off = y * bytesPerRow + x * 4
+                guard CGFloat(data[off + 3]) / 255 >= 0.5 else { continue }
+                rSum += CGFloat(data[off]) / 255
+                gSum += CGFloat(data[off + 1]) / 255
+                bSum += CGFloat(data[off + 2]) / 255
+                count += 1
+            }
+        }
+        guard count >= 50 else { return nil }
+        return UIColor(
+            red: rSum / CGFloat(count),
+            green: gSum / CGFloat(count),
+            blue: bSum / CGFloat(count),
+            alpha: 1
+        )
+    }
+
     // MARK: - Miniaturas de carátula (caché)
 
     // ✅ `preparingThumbnail(of:)` decodifica la portada COMPLETA (768px ≈ 2.4MB)
@@ -799,17 +906,68 @@ enum AppTheme {
     /// carátula en UNA sola pasada de clustering, con la normalización de
     /// legibilidad (readableColor) ya aplicada a ambos. ThemeManager lo usa
     /// como única fuente; las vistas consumen sus propiedades publicadas.
-    /// - `nil`: la carátula no aporta color suficiente (el llamador usa su fallback).
-    /// - `secondary == nil`: carátula monocromática → fallback a mono intacto.
+    /// - `nil`: SOLO si la imagen no tiene ningún píxel visible (vacía o
+    ///   corrupta). El llamador mantiene el acento anterior y ahora queda
+    ///   registrado en el log en lugar de salir en silencio.
+    /// - `secondary == nil`: solo si el fallback no pudo derivar la variante
+    ///   clara/oscura (getHue falló); en la práctica siempre hay dos colores.
     static func resolvedAccentPair(from artwork: UIImage) -> (primary: UIColor, secondary: UIColor?)? {
-        guard let clustered = clusteredAccentColors(from: artwork) else { return nil }
-        var secondary = clustered.secondary
-        if secondary == nil {
-            secondary = neutralDominantColor(from: artwork)
+        // 🎨 CAMINO 1: clustering normal (con coloredPixels adaptativo).
+        // Portadas con algo de color real entran aquí, incluso si es
+        // sutil (gracias al TIER 2/3 del filtro).
+        if let clustered = clusteredAccentColors(from: artwork) {
+            AppLog.debug(.artwork, "🎨 acento: clustering con color")
+            return (
+                UIColor(AppTheme.readableColor(from: clustered.primary)),
+                clustered.secondary.map { UIColor(AppTheme.readableColor(from: $0)) }
+            )
         }
+
+        // 🎨 CAMINO 2: sin color suficiente → gris dominante.
+        // Captura portadas grises con algún detalle que sobrevive al
+        // filtro pero no forma un sector claro (p. ej. SORNERO antes
+        // de añadir el fallback neutro).
+        if let neutral = neutralDominantColor(from: artwork) {
+            let (primary, secondary) = derivedPair(from: neutral)
+            AppLog.info(.artwork, "🎨 acento: FALLBACK neutro (gris dominante)")
+            return (primary, secondary)
+        }
+
+        // 🎨 CAMINO 3: media de TODOS los píxeles (casi-negras, B&N).
+        // Reproduce el caso NUEVA YORK / dopamina.
+        if let avg = averageColor(from: artwork) {
+            let (primary, secondary) = derivedPair(from: avg)
+            AppLog.info(.artwork, "🎨 acento: FALLBACK media total (portada casi-negra o B&N)")
+            return (primary, secondary)
+        }
+
+        // 🎨 CAMINO 4: no hay píxeles visibles (imagen corrupta o vacía).
+        // ÚNICO caso en que nil sigue siendo correcto: el llamador
+        // mantendrá el acento anterior y ahora SÍ queda registrado.
+        AppLog.warning(.artwork, "🎨 acento: SIN PÍXELES VISIBLES (imagen vacía o corrupta)")
+        return nil
+    }
+
+    /// Deriva (primary, secondary) a partir de un color neutro/base.
+    /// El secundario es una variante clara u oscura del primario,
+    /// elegida según el brillo, para mantener SIEMPRE dos colores.
+    private static func derivedPair(from base: UIColor) -> (primary: UIColor, secondary: UIColor?) {
+        var h: CGFloat = 0, s: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 1
+        guard base.getHue(&h, saturation: &s, brightness: &b, alpha: &a) else {
+            return (UIColor(AppTheme.readableColor(from: base)), nil)
+        }
+        // Si es oscuro, subimos; si es claro, bajamos. Mantener el hue y
+        // la saturación conserva la identidad de la portada.
+        let shift: CGFloat = b < 0.5 ? 0.20 : -0.20
+        let variant = UIColor(
+            hue: h,
+            saturation: s,
+            brightness: max(0.05, min(0.95, b + shift)),
+            alpha: 1
+        )
         return (
-            UIColor(AppTheme.readableColor(from: clustered.primary)),
-            secondary.map { UIColor(AppTheme.readableColor(from: $0)) }
+            UIColor(AppTheme.readableColor(from: base)),
+            UIColor(AppTheme.readableColor(from: variant))
         )
     }
 
