@@ -1240,9 +1240,12 @@ class AudioEngine: NSObject, ObservableObject {
         // ✅ NIVEL BASE: 1.0 cuando la protección anti-clipping está
         // desactivada (por defecto → bit-perfect posible), 0.99 cuando está
         // activa (mínima protección anti-clipping).
-        // En Bluetooth el codificador AAC/SBC puede saturar con picos entre
-        // muestras: ~1 dB de margen (0.89) evita clipping del codec.
-        let base: Float = isBluetoothRoute ? 0.89 : (isLimiterEnabled ? 0.99 : 1.0)
+        // ✅ Sin atenuación fija en Bluetooth: el encoder AAC/SBC de iOS
+        // tiene su propio control de picos, y la base 0.89 (-1 dB)
+        // introducida en 32a1e37 rebajaba el nivel universalmente en BT
+        // frente a versiones anteriores. Se conserva el margen sólo si el
+        // usuario activa manualmente la protección anti-clipping (limiter).
+        let base: Float = isLimiterEnabled ? 0.99 : 1.0
         // ✅ 3.0.1 HEADROOM DEL EQ: antes se topaba en 3 dB (`min(maxGain, 3)`)
         // mientras el máximo real calculado arriba es bastante mayor (Bass/Treble:
         // single 8 dB, par contiguo 9 dB; Rock: 6.6 dB). Con material a 0 dBFS en
