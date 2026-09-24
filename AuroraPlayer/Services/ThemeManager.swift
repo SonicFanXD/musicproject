@@ -599,6 +599,62 @@ enum AppTheme {
         return min(delta, 360 - delta)
     }
 
+    /// ✅ Secundario NEUTRO: cuando la portada no tiene un segundo
+    /// sector de tono con suficiente peso (SORNERO: gris dominante +
+    /// un detalle azul), el gradiente cae a mono. Esta función
+    /// devuelve el GRIS dominante de la portada para usarlo como
+    /// segunda parada real del gradiente.
+    /// Filtra píxeles con saturación < 0.10 y brillo 0.10–0.90
+    /// (evita negros y blancos puros). Devuelve nil si no hay
+    /// suficientes píxeles neutros (portadas monocromas con color).
+    private static func neutralDominantColor(from artwork: UIImage) -> UIColor? {
+        let size = CGSize(width: 64, height: 64)
+        UIGraphicsBeginImageContextWithOptions(size, false, 1.0)
+        artwork.draw(in: CGRect(origin: .zero, size: size))
+        guard let cgImage = UIGraphicsGetImageFromCurrentImageContext()?.cgImage else {
+            UIGraphicsEndImageContext()
+            return nil
+        }
+        UIGraphicsEndImageContext()
+
+        let width = cgImage.width
+        let height = cgImage.height
+        let bytesPerRow = cgImage.bytesPerRow
+        var data = [UInt8](repeating: 0, count: height * bytesPerRow)
+        guard let ctx = CGContext(
+            data: &data, width: width, height: height,
+            bitsPerComponent: 8, bytesPerRow: bytesPerRow,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return nil }
+        ctx.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+
+        var rSum: CGFloat = 0, gSum: CGFloat = 0, bSum: CGFloat = 0
+        var count = 0
+        for y in 0..<height {
+            for x in 0..<width {
+                let off = y * bytesPerRow + x * 4
+                guard CGFloat(data[off + 3]) / 255 >= 0.5 else { continue }
+                let r = CGFloat(data[off]) / 255
+                let g = CGFloat(data[off + 1]) / 255
+                let b = CGFloat(data[off + 2]) / 255
+                let maxC = max(r, max(g, b))
+                let minC = min(r, min(g, b))
+                let sat = maxC > 0 ? (maxC - minC) / maxC : 0
+                guard sat < 0.10, maxC >= 0.10, maxC <= 0.90 else { continue }
+                rSum += r; gSum += g; bSum += b
+                count += 1
+            }
+        }
+        guard count >= 200 else { return nil }
+        return UIColor(
+            red: rSum / CGFloat(count),
+            green: gSum / CGFloat(count),
+            blue: bSum / CGFloat(count),
+            alpha: 1
+        )
+    }
+
     // MARK: - Miniaturas de carátula (caché)
 
     // ✅ `preparingThumbnail(of:)` decodifica la portada COMPLETA (768px ≈ 2.4MB)
@@ -643,9 +699,13 @@ enum AppTheme {
     /// - `secondary == nil`: carátula monocromática → fallback a mono intacto.
     static func resolvedAccentPair(from artwork: UIImage) -> (primary: UIColor, secondary: UIColor?)? {
         guard let clustered = clusteredAccentColors(from: artwork) else { return nil }
+        var secondary = clustered.secondary
+        if secondary == nil {
+            secondary = neutralDominantColor(from: artwork)
+        }
         return (
             UIColor(AppTheme.readableColor(from: clustered.primary)),
-            clustered.secondary.map { UIColor(AppTheme.readableColor(from: $0)) }
+            secondary.map { UIColor(AppTheme.readableColor(from: $0)) }
         )
     }
 
