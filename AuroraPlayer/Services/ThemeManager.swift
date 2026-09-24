@@ -393,7 +393,7 @@ enum AppTheme {
 
     /// ✅ Píxel de la portada ya convertido a HSB (hue en grados 0..<360).
     /// `centralityWeight` = 1 + (1 - distancia normalizada al centro) × boost:
-    /// solo lo consume la heurística v2; con conteo puro se ignora.
+    /// pondera el ranking de la ruta HSB (y también el de la ruta Oklab).
     private struct HSBPixel {
         let hue: CGFloat
         let saturation: CGFloat
@@ -406,9 +406,9 @@ enum AppTheme {
     /// tonos que cruzan el 0° (rojos) no salgan desplazados.
     private struct HueSector {
         var count = 0
-        /// ✅ v2: suma de peso de centralidad × saturación de sus píxeles.
-        /// Solo decide el ranking con `accentHeuristicV2Enabled`; el conteo
-        /// puro (flag desactivado) sigue usando `count`.
+        /// ✅ Suma de peso de centralidad × saturación de sus píxeles: criterio
+        /// de ranking FIJO de la ruta HSB (el flag com.aurora.accentHeuristicV2
+        /// ya no alterna el conteo: ahora selecciona HSB (OFF) vs Oklab (ON)).
         var weightedScore: CGFloat = 0
         var hueVectorX: CGFloat = 0
         var hueVectorY: CGFloat = 0
@@ -457,14 +457,13 @@ enum AppTheme {
     /// ✅ Separación mínima de tono entre primario y secundario.
     private static let minimumSecondaryHueDelta: CGFloat = 30
 
-    /// ✅ FLAG REVERSIBLE de la heurística v2 (ponderación por centro y croma).
-    /// ACTIVO POR DEFECTO: `bool(forKey:)` devuelve false cuando la clave nunca
-    /// se escribió, así que "clave ausente" = v2 activada. Escribir `false`
-    /// (p. ej. `defaults write com.aurora.player com.aurora.accentHeuristicV2
-    /// -bool false`) la desactiva sin recompilar y restaura el conteo puro exacto.
+    /// ✅ SELECTOR de heurística de acento (misma clave, nuevo significado):
+    /// `false` o clave ausente → ruta HSB actual (comportamiento exacto de hoy,
+    /// píxel a píxel); `true` → clustering perceptual en Oklab/OKLCH (opt-in).
+    /// Nada cambia hasta escribir la clave a true
+    /// (`defaults write com.aurora.player com.aurora.accentHeuristicV2 -bool true`).
     static var accentHeuristicV2Enabled: Bool {
-        guard UserDefaults.standard.object(forKey: accentHeuristicV2FlagKey) != nil else { return true }
-        return UserDefaults.standard.bool(forKey: accentHeuristicV2FlagKey)
+        UserDefaults.standard.bool(forKey: accentHeuristicV2FlagKey)
     }
     static let accentHeuristicV2FlagKey = "com.aurora.accentHeuristicV2"
     /// ✅ v2: peso extra de los píxeles cercanos al centro. 0.5 = un píxel del
@@ -476,6 +475,15 @@ enum AppTheme {
     /// el secundario (siguiente sector poblado con un tono a ≥30° del primario).
     /// nil si la portada no aporta suficiente color → el llamador usa el fallback.
     private static func clusteredAccentColors(from artwork: UIImage) -> (primary: UIColor, secondary: UIColor?)? {
+        // ✅ com.aurora.accentHeuristicV2 = true → clustering en Oklab (perceptual).
+        // false o clave ausente → ruta HSB original SIN CAMBIOS (los píxeles,
+        // filtros, sectores y ranking son exactamente los de hoy). Un nil en la
+        // ruta Oklab NO hace fallback a HSB: cae al histograma clásico como
+        // cualquier portada sin color suficiente (mismo contrato que siempre).
+        if accentHeuristicV2Enabled,
+           let perceptual = clusteredAccentColorsOklab(from: artwork) {
+            return perceptual
+        }
         guard let pixels = coloredPixels(from: artwork) else { return nil }
 
         var sectors = [HueSector](repeating: HueSector(), count: hueSectorCount)
@@ -487,16 +495,15 @@ enum AppTheme {
         // ✅ El sector con MÁS píxeles es el color dominante visual (un logo rojo
         // pequeño ya no gana a un fondo azul mayoritario: cada sector suma todos
         // sus píxeles, no un cubo RGB concreto).
-        // ✅ v2 (com.aurora.accentHeuristicV2): en vez de conteo puro, cada sector
-        // puntúa por la suma de peso de centralidad × saturación de sus píxeles:
+        // ✅ Ranking por centralidad × saturación (el que hoy corre por defecto:
         // un color pequeño pero saturado puede ganarle a un fondo grande y
-        // apagado. Con el flag desactivado el ranking vuelve al conteo puro
-        // exacto de antes. El secundario mantiene la separación de tono ≥30° y
-        // su umbral de píxeles; solo cambia el orden del ranking.
+        // apagado). El flag ya no alterna este ranking — su única función ahora
+        // es elegir HSB (OFF) vs Oklab (ON) — así la ruta HSB produce los colores
+        // exactos de siempre tanto con la clave ausente como escrita a false.
+        // El secundario mantiene la separación de tono ≥30° y su umbral de
+        // píxeles; solo cambia el orden del ranking.
         let ranked = sectors.enumerated().sorted {
-            accentHeuristicV2Enabled
-                ? $0.element.weightedScore > $1.element.weightedScore
-                : $0.element.count > $1.element.count
+            $0.element.weightedScore > $1.element.weightedScore
         }
         guard let winner = ranked.first, winner.element.count > 0,
               let primary = winner.element.averageColor else { return nil }
@@ -596,6 +603,282 @@ enum AppTheme {
         return min(delta, 360 - delta)
     }
 
+    // MARK: - Clustering perceptual en Oklab (flag com.aurora.accentHeuristicV2)
+
+    /// ✅ OKLAB (Björn Ottosson, dominio público): espacio perceptualmente
+    /// uniforme. A diferencia de HSB, distancias iguales se PERCIBEN iguales en
+    /// toda la rueda (30° de verde ≈ 30° de azul) y las mezclas siguen el eje
+    /// perceptual: púrpura + amarillo no colapsa en marrón sucio. Pipeline puro
+    /// sRGB → linear → LMS (raíz cúbica) → L,a,b. Sin dependencias externas.
+    private struct OklabPixel {
+        let l: CGFloat          // luminancia perceptual (0...1)
+        let a: CGFloat          // eje verde↔rojo (rango pequeño, ±0.4 típico)
+        let b: CGFloat          // eje azul↔amarillo
+        let chroma: CGFloat     // sqrt(a² + b²)
+        let hue: CGFloat        // grados 0..<360 (atan2(b, a))
+        let centralityWeight: CGFloat
+    }
+
+    /// Sector de tono OKLCH (30°). La media del tono usa los vectores (a, b)
+    /// ponderados por croma (media circular): los huees que cruzan el 0° (rojos)
+    /// no salen desplazados — mismo principio que `HueSector` en HSB.
+    private struct OklabSector {
+        var count = 0
+        /// ✅ Σ peso de centralidad × croma PERCEPTUAL: un color vibrante pero
+        /// pequeño puede ganarle a un fondo apagado grande (equivalente v2).
+        var weightedScore: CGFloat = 0
+        var lSum: CGFloat = 0
+        var chromaSum: CGFloat = 0
+        var aChromaSum: CGFloat = 0   // Σ a × croma (media circular del tono)
+        var bChromaSum: CGFloat = 0   // Σ b × croma
+
+        mutating func add(_ pixel: OklabPixel) {
+            count += 1
+            weightedScore += pixel.centralityWeight * pixel.chroma
+            lSum += pixel.l
+            chromaSum += pixel.chroma
+            aChromaSum += pixel.a * pixel.chroma
+            bChromaSum += pixel.b * pixel.chroma
+        }
+
+        /// Croma medio del sector (umbrales de neutralidad y de secundario).
+        var meanChroma: CGFloat {
+            guard count > 0 else { return 0 }
+            return chromaSum / CGFloat(count)
+        }
+
+        /// Tono medio OKLCH en grados (0..<360) sobre la suma ponderada por croma.
+        var meanHue: CGFloat {
+            var degrees = atan2(bChromaSum, aChromaSum) * 180 / .pi
+            if degrees < 0 { degrees += 360 }
+            return degrees
+        }
+
+        /// Color medio del sector en sRGB (con mapeo de gamut si se sale).
+        var averageColor: UIColor? {
+            guard count > 0 else { return nil }
+            return oklabToSRGBColor(
+                lSum / CGFloat(count),
+                aChromaSum / CGFloat(count),
+                bChromaSum / CGFloat(count)
+            )
+        }
+    }
+
+    /// Límites de la ruta Oklab (espejo perceptual de los umbrales HSB):
+    /// alpha < 0.5, L < 0.10 (casi negro), L > 0.95 (casi blanco) y
+    /// croma < 0.03 (grises puros).
+    private static let oklabMinLightness: CGFloat = 0.10
+    private static let oklabMaxLightness: CGFloat = 0.95
+    private static let oklabMinChroma: CGFloat = 0.03
+    /// ✅ Secundario en OKLCH: croma mínimo 0.05 y separación de tono ≥60°
+    /// (no 30°: 60° en hue perceptual es lo que el ojo distingue como "otro
+    /// color" de forma consistente en toda la rueda).
+    private static let oklchNeutralChroma: CGFloat = 0.05
+    private static let oklchSecondaryMinChroma: CGFloat = 0.05
+    private static let oklchSecondaryHueDelta: CGFloat = 60
+
+    /// sRGB gamma (0...1) → lineal. Misma curva que `luminance(of:)`.
+    private static func oklabLinearFromSRGB(_ v: CGFloat) -> CGFloat {
+        v <= 0.04045 ? v / 12.92 : pow((v + 0.055) / 1.055, 2.4)
+    }
+
+    /// Lineal (0...1) → sRGB gamma.
+    private static func oklabSRGBFromLinear(_ v: CGFloat) -> CGFloat {
+        v <= 0.0031308 ? v * 12.92 : 1.055 * pow(v, 1 / 2.4) - 0.055
+    }
+
+    /// sRGB (0...1, sin alpha) → Oklab (L, a, b). Matriz sRGB D65 y fórmulas de
+    /// Ottosson (https://bottosson.github.io/posts/oklab/), dominio público.
+    private static func oklabFromSRGB(_ r: CGFloat, _ g: CGFloat, _ b: CGFloat) -> (l: CGFloat, a: CGFloat, b: CGFloat) {
+        let lr = oklabLinearFromSRGB(r)
+        let lg = oklabLinearFromSRGB(g)
+        let lb = oklabLinearFromSRGB(b)
+        // Linear RGB → LMS
+        let l = 0.4122214708 * lr + 0.5363325363 * lg + 0.0514459929 * lb
+        let m = 0.2119034982 * lr + 0.6806995451 * lg + 0.1073969566 * lb
+        let s = 0.0883024619 * lr + 0.2817188376 * lg + 0.6299787005 * lb
+        let l_ = CGFloat(cbrt(Double(l)))
+        let m_ = CGFloat(cbrt(Double(m)))
+        let s_ = CGFloat(cbrt(Double(s)))
+        // LMS' → Oklab
+        return (
+            0.2104542553 * l_ + 0.7936177850 * m_ - 0.0040720468 * s_,
+            1.9779984951 * l_ - 2.4285922050 * m_ + 0.4505937099 * s_,
+            0.0259040371 * l_ + 0.7827717662 * m_ - 0.8086757660 * s_
+        )
+    }
+
+    /// Oklab → RGB lineal (inverso de Ottosson).
+    private static func oklabToLinearRGB(_ l: CGFloat, _ a: CGFloat, _ b: CGFloat) -> (CGFloat, CGFloat, CGFloat) {
+        let l_ = l + 0.3963377774 * a + 0.2158037573 * b
+        let m_ = l - 0.1055613458 * a - 0.0638541728 * b
+        let s_ = l - 0.0894841775 * a - 1.2914855480 * b
+        let lc = l_ * l_ * l_
+        let mc = m_ * m_ * m_
+        let sc = s_ * s_ * s_
+        return (
+            4.0767416621 * lc - 3.3077115913 * mc + 0.2309699292 * sc,
+            -1.2684380046 * lc + 2.6097574011 * mc - 0.3413193965 * sc,
+            -0.0041960863 * lc - 0.7034186147 * mc + 1.7076147010 * sc
+        )
+    }
+
+    /// Oklab (L, a, b) → UIColor sRGB. Si el color medio cae fuera del gamut
+    /// sRGB (posible al promediar un sector), se reduce el croma por bisección
+    /// manteniendo L y el tono: recortar canales desplazaría el tono.
+    private static func oklabToSRGBColor(_ l: CGFloat, _ a: CGFloat, _ b: CGFloat) -> UIColor? {
+        var chroma = sqrt(a * a + b * b)
+        let invChroma = chroma > 1e-9 ? 1 / chroma : 0
+        let hueA = a * invChroma
+        let hueB = b * invChroma
+
+        func linearRGB(_ c: CGFloat) -> (CGFloat, CGFloat, CGFloat) {
+            oklabToLinearRGB(l, hueA * c, hueB * c)
+        }
+        func isInsideGamut(_ c: CGFloat) -> Bool {
+            let (r, g, bl) = linearRGB(c)
+            return r >= -0.001 && r <= 1.001 && g >= -0.001 && g <= 1.001 && bl >= -0.001 && bl <= 1.001
+        }
+        if !isInsideGamut(chroma) {
+            var low: CGFloat = 0
+            var high = chroma
+            for _ in 0..<8 {
+                let mid = (low + high) / 2
+                if isInsideGamut(mid) { low = mid } else { high = mid }
+            }
+            chroma = low
+        }
+
+        let (lr, lg, lb) = linearRGB(chroma)
+        func clamp01(_ v: CGFloat) -> CGFloat { min(1, max(0, v)) }
+        return UIColor(
+            red: clamp01(oklabSRGBFromLinear(lr)),
+            green: clamp01(oklabSRGBFromLinear(lg)),
+            blue: clamp01(oklabSRGBFromLinear(lb)),
+            alpha: 1
+        )
+    }
+
+    /// ✅ Píxeles significativos de la portada (64×64) en Oklab. Misma
+    /// construcción de contexto que la ruta HSB (`coloredPixels`); solo cambia
+    /// la conversión y los filtros por píxel, ahora en espacio perceptual.
+    private static func oklabPixels(from artwork: UIImage) -> [OklabPixel]? {
+        let size = CGSize(width: dominantSampleEdge, height: dominantSampleEdge)
+        UIGraphicsBeginImageContextWithOptions(size, false, 1.0)
+        artwork.draw(in: CGRect(origin: .zero, size: size))
+        guard let cgImage = UIGraphicsGetImageFromCurrentImageContext()?.cgImage else {
+            UIGraphicsEndImageContext()
+            return nil
+        }
+        UIGraphicsEndImageContext()
+
+        let width = cgImage.width
+        let height = cgImage.height
+        let bytesPerRow = cgImage.bytesPerRow
+        // ✅ Semidiagonal en píxeles para normalizar la distancia al centro
+        // a [0, 1] (0 = centro exacto, 1 = esquina). Igual que la ruta HSB.
+        let halfDiagonal = sqrt(CGFloat(width * width + height * height)) / 2
+        var data = [UInt8](repeating: 0, count: height * bytesPerRow)
+
+        let drawn = data.withUnsafeMutableBytes { raw -> Bool in
+            guard let base = raw.baseAddress,
+                  let ctx = CGContext(
+                    data: base, width: width, height: height,
+                    bitsPerComponent: 8, bytesPerRow: bytesPerRow,
+                    space: CGColorSpaceCreateDeviceRGB(),
+                    bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+                  ) else { return false }
+            ctx.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+            return true
+        }
+        guard drawn else { return nil }
+
+        var pixels: [OklabPixel] = []
+        pixels.reserveCapacity(width * height)
+
+        for y in 0..<height {
+            for x in 0..<width {
+                let offset = y * bytesPerRow + x * 4
+                guard CGFloat(data[offset + 3]) / 255 >= 0.5 else { continue }
+
+                let oklab = oklabFromSRGB(
+                    CGFloat(data[offset]) / 255,
+                    CGFloat(data[offset + 1]) / 255,
+                    CGFloat(data[offset + 2]) / 255
+                )
+                let chroma = sqrt(oklab.a * oklab.a + oklab.b * oklab.b)
+                guard oklab.l >= oklabMinLightness, oklab.l <= oklabMaxLightness,
+                      chroma >= oklabMinChroma else { continue }
+
+                var hue = atan2(oklab.b, oklab.a) * 180 / .pi
+                if hue < 0 { hue += 360 }
+
+                // ✅ Peso de centralidad idéntico a la ruta HSB.
+                let dx = (CGFloat(x) + 0.5) - CGFloat(width) / 2
+                let dy = (CGFloat(y) + 0.5) - CGFloat(height) / 2
+                let normalizedDistance = min(1, sqrt(dx * dx + dy * dy) / halfDiagonal)
+                pixels.append(OklabPixel(
+                    l: oklab.l,
+                    a: oklab.a,
+                    b: oklab.b,
+                    chroma: chroma,
+                    hue: hue,
+                    centralityWeight: 1 + (1 - normalizedDistance) * accentCentralityBoost
+                ))
+            }
+        }
+
+        guard pixels.count >= minimumColoredPixels else { return nil }
+        return pixels
+    }
+
+    /// ⚡ Clustering de hue en OKLCH — alternativa perceptual a la ruta HSB.
+    /// Misma estructura de 12 sectores de 30°; SOLO cambia el espacio de color:
+    /// 1. Muestreo 64×64 y filtros en Oklab (alpha, L, croma — ver umbrales).
+    /// 2. Primario = sector con mayor Σ (peso de centralidad × croma).
+    /// 3. Secundario: primer sector con croma ≥ 0.05 y tono a ≥60° OKLCH del
+    ///    primario; si el primario es neutro (croma < 0.05), gana el de mayor
+    ///    croma sin importar el tono. Sin secundario → nil (fallback a mono,
+    ///    mismo contrato que la ruta HSB).
+    private static func clusteredAccentColorsOklab(from artwork: UIImage) -> (primary: UIColor, secondary: UIColor?)? {
+        guard let pixels = oklabPixels(from: artwork) else { return nil }
+
+        var sectors = [OklabSector](repeating: OklabSector(), count: hueSectorCount)
+        for pixel in pixels {
+            let index = min(hueSectorCount - 1, max(0, Int(pixel.hue / hueSectorWidth)))
+            sectors[index].add(pixel)
+        }
+
+        let ranked = sectors.enumerated().sorted {
+            $0.element.weightedScore > $1.element.weightedScore
+        }
+        guard let winner = ranked.first, winner.element.count > 0,
+              let primary = winner.element.averageColor else { return nil }
+
+        var secondary: UIColor?
+        if winner.element.meanChroma < oklchNeutralChroma {
+            // ✅ Primario neutro: el hue de un sector casi gris no es fiable →
+            // secundario por croma descendente, sin importar el tono.
+            let candidates = ranked.dropFirst().filter {
+                $0.element.count > 10 && $0.element.meanChroma >= oklchSecondaryMinChroma
+            }
+            if let best = candidates.max(by: { $0.element.meanChroma < $1.element.meanChroma }) {
+                secondary = best.element.averageColor
+            }
+        } else {
+            let primaryHue = winner.element.meanHue
+            for candidate in ranked.dropFirst() where candidate.element.count > 10 {
+                guard candidate.element.meanChroma >= oklchSecondaryMinChroma,
+                      angularDistance(candidate.element.meanHue, primaryHue) >= oklchSecondaryHueDelta else { continue }
+                secondary = candidate.element.averageColor
+                break
+            }
+        }
+
+        return (primary, secondary)
+    }
+
     // MARK: - Miniaturas de carátula (caché)
 
     // ✅ `preparingThumbnail(of:)` decodifica la portada COMPLETA (768px ≈ 2.4MB)
@@ -651,9 +934,10 @@ enum AppTheme {
     /// 2. Cada píxel se convierte a HSB y se filtran transparentes, casi negros,
     ///    casi blancos y grises.
     /// 3. Los píxeles restantes se agrupan por TONO en 12 sectores de 30° y el
-    ///    sector con más píxeles da el color dominante visual (con la heurística
-    ///    v2 activa, puntuación ponderada por centralidad y saturación; ver
-    ///    `accentHeuristicV2Enabled`).
+    ///    sector con mayor puntuación ponderada por centralidad y saturación da
+    ///    el color dominante visual. Con com.aurora.accentHeuristicV2 = true
+    ///    esta ruta se sustituye por el clustering perceptual en Oklab (ver
+    ///    `clusteredAccentColorsOklab`); el fallback y los cachés son los mismos.
     /// 4. Si no quedan 100 píxeles con color (portadas en blanco y negro o casi
     ///    planas) se usa el histograma RGB clásico como fallback.
     static func dominantColor(from artwork: UIImage) -> UIColor? {
