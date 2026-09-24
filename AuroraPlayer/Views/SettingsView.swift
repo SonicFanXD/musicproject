@@ -721,10 +721,13 @@ private struct ArtworkAccentSettingsSection: View, SettingsRowBuilding {
                 subtitle: Localization.localized("settings.artworkAccentSubtitle"),
                 icon: "paintpalette.fill",
                 color: .purple,
-                isOn: Binding(
-                    get: { theme.accentFromArtwork },
-                    set: { theme.accentFromArtwork = $0 }
-                )
+                // ✅ FIX ciclo de UserDefaults: el Binding(get:set:) inline se
+                // recreaba en cada render y su set re-escribía la clave vía el
+                // didSet de ThemeManager (UserDefaults → invalidación → render →
+                // set → …). Con $theme.accentFromArtwork hay UNA sola fuente de
+                // verdad (@Published en ThemeManager, que persiste en su didSet)
+                // y el binding de la vista solo lee/escribe ese estado.
+                isOn: $theme.accentFromArtwork
             )
             settingsDivider
             // ✅ Algoritmo de extracción: HSB (OFF, comportamiento histórico) vs
