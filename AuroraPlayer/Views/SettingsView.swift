@@ -705,6 +705,15 @@ private struct ArtworkAccentSettingsSection: View, SettingsRowBuilding {
     @ObservedObject var theme = ThemeManager.shared
     @ObservedObject var localization = Localization.shared
 
+    // ✅ FIX loop del toggle: la versión anterior creaba un Binding(get:set:)
+    // inline en `body` que ESCRIBÍA en UserDefaults dentro de `set`. Cada
+    // escritura dispara didChangeNotification, invalida todos los @AppStorage
+    // del sheet, recrea el binding inline (identidad nueva en cada render) y el
+    // Toggle reconciliaba contra él re-disparando `set` → cascada de escrituras
+    // ("Clustering Oklab: activado" docenas de veces por segundo). Con
+    // @AppStorage el estado vive fuera del body: una escritura por toque.
+    @AppStorage("com.aurora.accentHeuristicV2") private var accentHeuristicV2 = true
+
     var body: some View {
         settingsSection(icon: "swatchpalette.fill", title: Localization.localized("settings.artworkAccent"), color: .purple) {
             settingsToggleRow(
@@ -728,13 +737,7 @@ private struct ArtworkAccentSettingsSection: View, SettingsRowBuilding {
                 subtitle: Localization.localized("settings.oklabClusteringSubtitle"),
                 icon: "circle.hexagongrid.fill",
                 color: .blue,
-                isOn: Binding(
-                    get: { UserDefaults.standard.bool(forKey: "com.aurora.accentHeuristicV2") },
-                    set: {
-                        UserDefaults.standard.set($0, forKey: "com.aurora.accentHeuristicV2")
-                        AppLog.info(.settings, "Clustering Oklab: \($0 ? "activado" : "desactivado")")
-                    }
-                )
+                isOn: $accentHeuristicV2
             )
             settingsDivider
             // ✅ Indicador del color activo (extraído de la portada)
@@ -753,6 +756,10 @@ private struct ArtworkAccentSettingsSection: View, SettingsRowBuilding {
                 Spacer()
             }
             .padding(.vertical, 4)
+        }
+        // ✅ El log SOLO cuando el valor cambia de verdad (no en cada render).
+        .onChange(of: accentHeuristicV2) { v in
+            AppLog.info(.settings, "Clustering Oklab: \(v ? "activado" : "desactivado")")
         }
     }
 }
