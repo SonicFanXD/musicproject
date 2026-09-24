@@ -258,18 +258,21 @@ enum AppTheme {
         let newSaturation: CGFloat
         let newBrightness: CGFloat
         
-        // Saturación: solo corregir si es muy baja (<0.25) o muy alta (>0.98)
-        if saturation < 0.25 {
-            newSaturation = 0.30
+        // ✅ Solo se corrige en EXTREMOS reales: casi-gris (sat<0.05)
+        // y casi-negro (brillo<0.10). Los grises sutiles de portadas
+        // como SORNERO (sat ~0.05, brillo ~0.4) pasan intactos en vez
+        // de ser forzados a azul saturado. Los máximos no se tocan:
+        // los colores ya vivos conservan su identidad.
+        if saturation < 0.05 {
+            newSaturation = 0.10
         } else if saturation > 0.98 {
             newSaturation = 0.95
         } else {
             newSaturation = saturation
         }
-        
-        // Brillo: solo corregir si es muy bajo (<0.28) o muy alto (>0.92)
-        if brightness < 0.28 {
-            newBrightness = 0.33
+
+        if brightness < 0.10 {
+            newBrightness = 0.15
         } else if brightness > 0.92 {
             newBrightness = 0.90
         } else {
