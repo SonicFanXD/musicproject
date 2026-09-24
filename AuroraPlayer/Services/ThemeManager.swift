@@ -1,5 +1,6 @@
 import SwiftUI
 import Combine
+import CryptoKit
 
 /// Gestor central del tema: color de acento aplicable en toda la app.
 /// Las vistas usan `AppTheme.accent` en lugar de `Color.accentColor`
@@ -348,12 +349,27 @@ enum AppTheme {
     }
 
     /// ✅ HUELLA DE IMAGEN: clave estable de caché para una carátula.
-    /// ObjectIdentifier + tamaño en píxeles (mismo criterio que
-    /// `thumbnail(from:size:)`): la MISMA instancia de carátula, compartida
-    /// entre canción/álbum/artista, comparte su par de colores sea cual sea
-    /// la vista que lo pida primero. Nada de ids de canción.
+    /// ✅ FIX portadas idénticas: antes era ObjectIdentifier (identidad del
+    /// objeto) + tamaño. Dos canciones con los MISMOS bytes de portada pero
+    /// instancias UIImage distintas tenían claves distintas → cálculo duplicado
+    /// y resultados que podían divergir. Ahora: SHA256 de los bytes PNG
+    /// renderizables (CryptoKit, framework del sistema, sin dependencias) +
+    /// tamaño — huella del CONTENIDO, estable entre ejecuciones (el Hasher de
+    /// Data.hashValue NO lo es: queda descartado como clave) y compartida por
+    /// cualquier instancia nacida de los mismos bytes. Nada de ids de canción.
+    /// pngData() da bytes canónicos de la imagen ya decodificada (misma
+    /// instancia → mismos bytes garantizados). Sin datos renderizables:
+    /// fallback por tamaño (caso degenerado). La caché de MINIATURAS (L995)
+    /// no se toca: ahí el ObjectIdentifier es correcto porque comparte la
+    /// instancia renderizada.
     static func accentCacheKey(for artwork: UIImage) -> String {
-        "\(ObjectIdentifier(artwork).hashValue)-\(Int(artwork.size.width.rounded()))x\(Int(artwork.size.height.rounded()))"
+        let sizeSuffix = "\(Int(artwork.size.width.rounded()))x\(Int(artwork.size.height.rounded()))"
+        guard let data = artwork.pngData(), !data.isEmpty else {
+            return "size-\(sizeSuffix)"
+        }
+        let digest = SHA256.hash(data: data)
+        let hex = digest.map { String(format: "%02x", $0) }.joined()
+        return "sha-\(hex.prefix(32))-\(sizeSuffix)"
     }
 
     /// ✅ Lee el PAR (primario, secundario) cacheado bajo la huella de la
