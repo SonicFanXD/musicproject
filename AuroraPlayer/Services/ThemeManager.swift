@@ -1,5 +1,7 @@
 import SwiftUI
 import Combine
+import CryptoKit
+import ObjectiveC
 
 /// Gestor central del tema: color de acento aplicable en toda la app.
 /// Las vistas usan `AppTheme.accent` en lugar de `Color.accentColor`
@@ -341,13 +343,65 @@ enum AppTheme {
         return color
     }
 
-    /// ✅ HUELLA DE IMAGEN: clave estable de caché para una carátula.
-    /// ObjectIdentifier + tamaño en píxeles (mismo criterio que
-    /// `thumbnail(from:size:)`): la MISMA instancia de carátula, compartida
-    /// entre canción/álbum/artista, comparte su par de colores sea cual sea
-    /// la vista que lo pida primero. Nada de ids de canción.
+    /// ✅ HUELLA DE CONTENIDO: clave estable de caché para una carátula,
+    /// derivada de sus bytes (SHA256 del PNG o, si no se puede obtener, del
+    /// bitmap RGBA). La MISMA carátula, compartida entre canción/álbum/artista,
+    /// comparte su par de colores sea cual sea la vista que lo pida primero, y
+    /// dos carátulas DISTINTAS nunca comparten clave. Nada de ids de canción ni
+    /// de direcciones de memoria.
     static func accentCacheKey(for artwork: UIImage) -> String {
-        "\(ObjectIdentifier(artwork).hashValue)-\(Int(artwork.size.width.rounded()))x\(Int(artwork.size.height.rounded()))"
+        // ✅ MEMO: la huella se calcula UNA vez por imagen y se guarda EN la
+        // imagen (muere con ella). `thumbnail(from:size:)` se llama dentro del
+        // body de cada fila: sin este memo cada re-render de cada fila pagaría
+        // un pngData() completo (decenas de ms por portada de 768px) y el
+        // scroll de la biblioteca iría a tirones. Guardarla en la propia
+        // instancia es seguro: no sobrevive a la imagen, así que una dirección
+        // de memoria reciclada jamás puede devolver la huella de otra.
+        if let memo = objc_getAssociatedObject(artwork, &accentKeyAssociationKey) as? String {
+            return memo
+        }
+        let key = artworkFingerprint(artwork)
+        objc_setAssociatedObject(artwork, &accentKeyAssociationKey, key, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+        return key
+    }
+
+    /// ✅ Huella de CONTENIDO de una carátula (la parte cara de `accentCacheKey`).
+    private static func artworkFingerprint(_ artwork: UIImage) -> String {
+        // ✅ FIX cachés mezcladas: el fallback "size-NxN" colisionaba
+        // entre portadas distintas cuando pngData() fallaba → la
+        // segunda heredaba el color de la primera (repro: NUEVA YORK
+        // mostraba el azul de SORNERO). Ahora caemos a hash del
+        // bitmap RGBA o, en último caso, a ObjectIdentifier único:
+        // preferimos recalcular antes que mostrar el ajeno.
+
+        if let data = artwork.pngData(), !data.isEmpty {
+            let digest = SHA256.hash(data: data)
+            let hex = digest.map { String(format: "%02x", $0) }.joined()
+            return "sha-\(hex.prefix(32))"
+        }
+
+        if let cgImage = artwork.cgImage {
+            var hasher = Hasher()
+            hasher.combine(cgImage.width)
+            hasher.combine(cgImage.height)
+            if let provider = cgImage.dataProvider,
+               let cfData = provider.data,
+               let ptr = CFDataGetBytePtr(cfData) {
+                let length = CFDataGetLength(cfData)
+                let step = max(1, length / 512)
+                var i = 0
+                while i < length {
+                    hasher.combine(ptr[i])
+                    i += step
+                }
+            }
+            return "cg-\(hasher.finalize())"
+        }
+
+        // Fallback raro: identificador único por instancia. La caché
+        // no compartirá entre imágenes no hasheables, pero nunca
+        // mezclará dos distintas.
+        return "obj-\(ObjectIdentifier(artwork).hashValue)"
     }
 
     /// ✅ Lee el PAR (primario, secundario) cacheado bajo la huella de la
@@ -475,9 +529,12 @@ enum AppTheme {
     private static let accentCentralityBoost: CGFloat = 0.5
 
     /// ⚡ Algoritmo por clustering de hue (estilo Apple Music)
-    /// Devuelve el color primario (sector de tono con más píxeles) y, si existe,
-    /// el secundario (siguiente sector poblado con un tono a ≥30° del primario).
-    /// nil si la portada no aporta suficiente color → el llamador usa el fallback.
+    /// Devuelve el color primario (sector de tono con más píxeles) y SIEMPRE un
+    /// secundario mientras haya primario: el siguiente sector poblado; si la
+    /// portada es monocroma, la mitad de sus píxeles MÁS DISTINTA del primario
+    /// (partida por brillo); y si nada de eso da color, el primario desaturado.
+    /// nil solo si la portada no aporta suficiente color → el llamador usa su
+    /// fallback.
     private static func clusteredAccentColors(from artwork: UIImage) -> (primary: UIColor, secondary: UIColor?)? {
         guard let pixels = coloredPixels(from: artwork) else { return nil }
 
@@ -494,8 +551,9 @@ enum AppTheme {
         // puntúa por la suma de peso de centralidad × saturación de sus píxeles:
         // un color pequeño pero saturado puede ganarle a un fondo grande y
         // apagado. Con el flag desactivado el ranking vuelve al conteo puro
-        // exacto de antes. El secundario mantiene la separación de tono ≥30° y
-        // su umbral de píxeles; solo cambia el orden del ranking.
+        // exacto de antes. El secundario sale del siguiente sector del ranking
+        // sea cual sea su separación de tono (ya no exige ≥30° ni un mínimo de
+        // píxeles; ver el bloque de abajo).
         let ranked = sectors.enumerated().sorted {
             accentHeuristicV2Enabled
                 ? $0.element.weightedScore > $1.element.weightedScore
@@ -504,13 +562,53 @@ enum AppTheme {
         guard let winner = ranked.first, winner.element.count > 0,
               let primary = winner.element.averageColor else { return nil }
 
-        let primaryHue = winner.element.averageHue
         var secondary: UIColor?
-        for candidate in ranked.dropFirst() where candidate.element.count > 10 {
-            guard let color = candidate.element.averageColor else { continue }
-            if angularDistance(candidate.element.averageHue, primaryHue) >= minimumSecondaryHueDelta {
+        for candidate in ranked.dropFirst() where candidate.element.count > 0 {
+            if let color = candidate.element.averageColor {
                 secondary = color
                 break
+            }
+        }
+
+        // Portada monocroma (un solo sector con píxeles): partir sus
+        // píxeles por brillo (mediana) en dos mitades y usar la MÁS
+        // DISTINTA del primario como secundario. Son dos colores reales
+        // de la carátula, no sintéticos.
+        if secondary == nil, pixels.count >= 2 {
+            let sorted = pixels.sorted { $0.brightness < $1.brightness }
+            let mid = sorted.count / 2
+
+            func avgColor(of slice: ArraySlice<HSBPixel>) -> UIColor? {
+                guard !slice.isEmpty else { return nil }
+                var hx: CGFloat = 0, hy: CGFloat = 0
+                var sSum: CGFloat = 0, bSum: CGFloat = 0
+                for p in slice {
+                    let rad = p.hue * .pi / 180
+                    hx += cos(rad); hy += sin(rad)
+                    sSum += p.saturation; bSum += p.brightness
+                }
+                let n = CGFloat(slice.count)
+                var h = atan2(hy / n, hx / n) * 180 / .pi
+                if h < 0 { h += 360 }
+                return UIColor(hue: h / 360, saturation: sSum / n, brightness: bSum / n, alpha: 1)
+            }
+
+            if let d = avgColor(of: sorted[..<mid]),
+               let l = avgColor(of: sorted[mid...]) {
+                var ph: CGFloat = 0, ps: CGFloat = 0, pb: CGFloat = 0, pa: CGFloat = 1
+                primary.getHue(&ph, saturation: &ps, brightness: &pb, alpha: &pa)
+                let darkDelta = abs(d.hueComponent - ph) + abs(d.brightnessComponent - pb)
+                let lightDelta = abs(l.hueComponent - ph) + abs(l.brightnessComponent - pb)
+                secondary = (darkDelta >= lightDelta) ? d : l
+            }
+        }
+
+        // Red de seguridad: primario desaturado al 60% si todo lo demás
+        // falló. Nunca devolvemos nil con primario válido.
+        if secondary == nil {
+            var h: CGFloat = 0, s: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 1
+            if primary.getHue(&h, saturation: &s, brightness: &b, alpha: &a) {
+                secondary = UIColor(hue: h, saturation: s * 0.6, brightness: b * 0.85, alpha: 1)
             }
         }
 
@@ -660,8 +758,9 @@ enum AppTheme {
     // ✅ `preparingThumbnail(of:)` decodifica la portada COMPLETA (768px ≈ 2.4MB)
     // y devuelve un UIImage NUEVO en cada llamada. En filas que se re-renderizan
     // (scroll, cambios de estado del motor) eso es CPU y churn de memoria en A11.
-    // Clave = instancia de la carátula (`Song.artwork` ya devuelve la MISMA
-    // instancia cacheada por id de canción) + tamaño en píxeles.
+    // Clave = huella de CONTENIDO de la carátula (`accentCacheKey`) + tamaño en
+    // píxeles: la MISMA carátula reutiliza su miniatura, y dos UIImage distintas
+    // ya no pueden compartirla (ObjectIdentifier era una dirección de memoria).
     static let thumbnailCache: NSCache<NSString, UIImage> = {
         let cache = NSCache<NSString, UIImage>()
         // ✅ ANTI-JETSAM (iPhone 8 Plus / 3GB): tope por MEMORIA, no por conteo.
@@ -678,7 +777,12 @@ enum AppTheme {
     static func thumbnail(from artwork: UIImage, size: CGSize) -> UIImage {
         let width = max(1, Int(size.width.rounded()))
         let height = max(1, Int(size.height.rounded()))
-        let key = "\(ObjectIdentifier(artwork).hashValue)-\(width)x\(height)" as NSString
+        // ✅ FIX portadas mezcladas en lista y PlayerBar: ObjectIdentifier
+        // es una dirección de memoria y podía repetirse entre UIImage
+        // distintas → la caché devolvía la miniatura de OTRA canción.
+        // Ahora la clave es la misma huella de contenido que el color,
+        // así dos imágenes distintas nunca colisionan.
+        let key = "\(accentCacheKey(for: artwork))-\(width)x\(height)" as NSString
 
         if let cached = thumbnailCache.object(forKey: key) { return cached }
         guard let thumbnail = artwork.preparingThumbnail(of: CGSize(width: width, height: height)) else {
@@ -883,3 +987,22 @@ enum AppTheme {
         uiColor
     }
 }
+
+// ✅ Componentes de HSB como propiedades: UIKit solo expone getHue(...) con
+// punteros. Las usa el desempate del secundario en portadas monocromas
+// (`clusteredAccentColors`).
+private extension UIColor {
+    var hueComponent: CGFloat {
+        var h: CGFloat = 0, s: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 1
+        getHue(&h, saturation: &s, brightness: &b, alpha: &a); return h
+    }
+    var brightnessComponent: CGFloat {
+        var h: CGFloat = 0, s: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 1
+        getHue(&h, saturation: &s, brightness: &b, alpha: &a); return b
+    }
+}
+
+// ✅ Clave del memo de `accentCacheKey` (ver ahí): guarda la huella de contenido
+// DENTRO de la UIImage, así que se libera con ella y no puede quedar apuntando a
+// una imagen ya liberada.
+private var accentKeyAssociationKey: UInt8 = 0
