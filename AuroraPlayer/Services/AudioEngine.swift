@@ -849,6 +849,12 @@ class AudioEngine: NSObject, ObservableObject {
     }
 
     private func setupSession() {
+        // ✅ DIAGNÓSTICO -50: estado de la sesión ANTES de la primera
+        // configuración. Si la app arranca más rápido que el audio server
+        // (cold start en A11), aquí queda registrado qué ruta detecta iOS en
+        // ese instante y con qué tasa — el contexto del primer intento.
+        let session = AVAudioSession.sharedInstance()
+        AppLog.info(.playback, "Sesión al arrancar: categoría=\(session.category.rawValue) modo=\(session.mode.rawValue) ruta=\(session.currentRoute.outputs.first.map { "\($0.portType.rawValue) (\($0.portName))" } ?? "ninguna") tasa=\(Int(session.sampleRate)) Hz")
         configureSession(allowAirPlay: true, didRetryDegraded: false)
     }
     
@@ -858,6 +864,23 @@ class AudioEngine: NSObject, ObservableObject {
         UserDefaults.standard.synchronize()
         // Reconfigurar la sesión con el nuevo modo
         configureSession(allowAirPlay: true, didRetryDegraded: false)
+    }
+
+    /// ✅ DIAGNÓSTICO -50: nombres legibles de las opciones de categoría
+    /// (el rawValue numérico en el log no dice nada).
+    private static func diagnoseOptions(_ options: AVAudioSession.CategoryOptions) -> String {
+        var names: [String] = []
+        if options.contains(.mixWithOthers) { names.append("mixWithOthers") }
+        if options.contains(.duckOthers) { names.append("duckOthers") }
+        if options.contains(.allowBluetooth) { names.append("allowBluetooth(HFP)") }
+        if options.contains(.allowBluetoothA2DP) { names.append("allowBluetoothA2DP") }
+        if options.contains(.allowAirPlay) { names.append("allowAirPlay") }
+        return names.isEmpty ? "ninguna" : names.joined(separator: ", ")
+    }
+
+    /// ✅ DIAGNÓSTICO -50: etiqueta del intento en cada log (completo vs degradado).
+    private static func attemptLabel(isDegraded: Bool) -> String {
+        isDegraded ? "degradado" : "completo"
     }
 
     /// Configura la sesión de audio. Si el arranque ocurre antes de que el
@@ -889,6 +912,8 @@ class AudioEngine: NSObject, ObservableObject {
                 // funcionando por AVRCP sobre A2DP sin necesidad de HFP.
                 options: options
             )
+            // ✅ DIAGNÓSTICO -50: paso 1 confirmado (con modo y opciones exactas).
+            AppLog.info(.playback, "Sesión [\(Self.attemptLabel(isDegraded: didRetryDegraded))]: setCategory OK (.playback, modo=\(sessionMode.rawValue), opciones=\(Self.diagnoseOptions(options)))")
 
             // ✅ AUDIÓFILO (BT): en A2DP la latencia la impone el ENLACE
             // (100-300 ms), así que un buffer de render de 8 ms NO reduce la
@@ -948,6 +973,7 @@ class AudioEngine: NSObject, ObservableObject {
             if !isBluetoothRoute, baselineRate > 0, abs(session.sampleRate - baselineRate) > 1 {
                 do {
                     try session.setPreferredSampleRate(baselineRate)
+                    AppLog.info(.playback, "Sesión [\(Self.attemptLabel(isDegraded: didRetryDegraded))]: setPreferredSampleRate OK (\(Int(baselineRate)) Hz)")
                 } catch {
                     AppLog.debug(.playback, "SetPreferredSampleRate base no aplicado: \(error.localizedDescription)")
                 }
@@ -959,6 +985,8 @@ class AudioEngine: NSObject, ObservableObject {
             // ✅ La opción .notifyOthersOnDeactivation solo tiene efecto al
             // DESACTIVAR la sesión (abajo, en stop()); al activarla es inerte.
             try session.setActive(true)
+            // ✅ DIAGNÓSTICO -50: paso final confirmado.
+            AppLog.info(.playback, "Sesión [\(Self.attemptLabel(isDegraded: didRetryDegraded))]: setActive OK")
             // ✅ 3.0.1: buffer REAL concedido, leído cuando el audio server ya
             // aplicó (o redondeó) la petición. Comparado con "pedido" dice si el
             // hardware aceptó los 8 ms o si sirvió su valor por defecto.
@@ -969,12 +997,22 @@ class AudioEngine: NSObject, ObservableObject {
             updateRouteName()
             updateAudioQuality()
         } catch {
-            AppLog.error(.playback, error, context: "setupSession")
+            // ✅ DIAGNÓSTICO -50: los logs "OK" precedentes dejan constancia de
+            // qué pasos completaron; el lanzador es el PRIMER paso sin "OK".
+            // Únicos lanzadores posibles en esta función: setCategory y
+            // setActive(true) (buffer y sampleRate atrapan sus propios errores).
+            AppLog.error(.playback, error, context: "configureSession [\(Self.attemptLabel(isDegraded: didRetryDegraded))]")
             // ✅ FIX -50 al arranque: reintento degradado UNA vez (sin AirPlay),
             // también cubre combinaciones de opciones rechazadas por el HW.
             if !didRetryDegraded {
                 AppLog.warning(.playback, "setupSession falló; reintentando degradado (sin AirPlay)")
                 configureSession(allowAirPlay: false, didRetryDegraded: true)
+            } else {
+                // ✅ AMBOS intentos fallaron: registrar la ruta completa para
+                // correlacionar con el -50 de cold start. La sesión queda sin
+                // configurar hasta que un cambio de ruta o la primera canción
+                // reconfigure (comportamiento existente, sin cambios).
+                AppLog.warning(.playback, "Sesión [degradado]: también falló — ruta detectada: \(session.currentRoute.outputs.first.map { "\($0.portType.rawValue) (\($0.portName))" } ?? "ninguna"), tasa=\(Int(session.sampleRate)) Hz")
             }
         }
     }
