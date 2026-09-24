@@ -260,6 +260,7 @@ struct SettingsView: View, SettingsRowBuilding {
         // Acento
         "com.aurora.accentColor",
         "com.aurora.accentFromArtwork",
+        "com.aurora.accentHeuristicV2",
         // Controles de reproducción persistentes
         "com.aurora.shuffleEnabled",
         "com.aurora.repeatMode",
@@ -714,6 +715,25 @@ private struct ArtworkAccentSettingsSection: View, SettingsRowBuilding {
                 isOn: Binding(
                     get: { theme.accentFromArtwork },
                     set: { theme.accentFromArtwork = $0 }
+                )
+            )
+            settingsDivider
+            // ✅ Algoritmo de extracción: HSB (OFF, comportamiento histórico) vs
+            // Oklab (ON, clustering perceptualmente coherente). Red de seguridad
+            // del usuario: si alguna portada resuelve mal, se vuelve a HSB sin
+            // reinstalar. Se aplica a la PRÓXIMA extracción (las cachés de
+            // acento no se invalidan aquí).
+            settingsToggleRow(
+                title: Localization.localized("settings.oklabClustering"),
+                subtitle: Localization.localized("settings.oklabClusteringSubtitle"),
+                icon: "circle.hexagongrid.fill",
+                color: .blue,
+                isOn: Binding(
+                    get: { UserDefaults.standard.bool(forKey: "com.aurora.accentHeuristicV2") },
+                    set: {
+                        UserDefaults.standard.set($0, forKey: "com.aurora.accentHeuristicV2")
+                        AppLog.info(.settings, "Clustering Oklab: \($0 ? "activado" : "desactivado")")
+                    }
                 )
             )
             settingsDivider

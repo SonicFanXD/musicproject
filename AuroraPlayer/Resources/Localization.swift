@@ -398,6 +398,8 @@ final class Localization: ObservableObject {
         "settings.accent.darkRed": [.spanish: "Rojo Oscuro", .english: "Dark Red"],
         "settings.accentFromArtwork": [.spanish: "Acento desde carátula", .english: "Accent from artwork"],
         "settings.accentFromArtworkSubtitle": [.spanish: "El acento cambia según la portada de la canción", .english: "Accent follows the current song's artwork"],
+        "settings.oklabClustering": [.spanish: "Clustering Oklab", .english: "Oklab clustering"],
+        "settings.oklabClusteringSubtitle": [.spanish: "Extracción de acento perceptualmente coherente. Desactiva si alguna portada se ve mal.", .english: "Perceptually coherent accent extraction. Disable if any artwork looks wrong."],
         "nowPlaying.more": [.spanish: "Más opciones", .english: "More options"],
         "nowPlaying.viewArtist": [.spanish: "Ver artista", .english: "View artist"],
         "nowPlaying.viewAlbum": [.spanish: "Ver álbum", .english: "View album"],
