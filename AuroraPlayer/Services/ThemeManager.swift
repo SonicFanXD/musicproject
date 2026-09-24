@@ -586,6 +586,30 @@ enum AppTheme {
         guard let winner = ranked.first, winner.element.count > 0,
               let primary = winner.element.averageColor else { return nil }
 
+        // ✅ VERIFICACIÓN DE COLOR REAL: los tiers 2/3 de coloredPixels
+        // aceptan saturación 0.02–0.05 para capturar color SUTIL (SORNERO:
+        // gris con azul). Pero con esa misma laxitud capturan RUIDO de
+        // compresión JPEG y tinte de escaneo como si fueran color, y el
+        // sectorizador por hue lo convierte en un acento inventado
+        // (repro: dopamina y NUEVA YORK salían rosas siendo B&N pura).
+        // Dos umbrales comprueban que el ganador es una masa de COLOR real:
+        //   · count < 50      → no hay masa de píxeles suficiente, es ruido.
+        //   · saturación < 0.10 → no es color, es gris/neutro con tinte.
+        // En cualquiera de los dos casos, devolvemos nil para que el
+        // llamador (resolvedAccentPair) caiga al fallback neutro.
+
+        guard winner.element.count >= 50 else {
+            AppLog.debug(.artwork, "clustering: ganador con solo \(winner.element.count)px — ruido, se descarta")
+            return nil
+        }
+
+        var _h: CGFloat = 0, _s: CGFloat = 0, _b: CGFloat = 0, _a: CGFloat = 1
+        guard primary.getHue(&_h, saturation: &_s, brightness: &_b, alpha: &_a),
+              _s >= 0.10 else {
+            AppLog.debug(.artwork, String(format: "clustering: ganador con saturación %.3f — no es color real, se descarta", _s))
+            return nil
+        }
+
         var secondary: UIColor?
         for candidate in ranked.dropFirst() where candidate.element.count > 0 {
             if let color = candidate.element.averageColor {
