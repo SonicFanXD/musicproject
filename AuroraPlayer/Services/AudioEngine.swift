@@ -855,6 +855,17 @@ class AudioEngine: NSObject, ObservableObject {
         // ese instante y con qué tasa — el contexto del primer intento.
         let session = AVAudioSession.sharedInstance()
         AppLog.info(.playback, "Sesión al arrancar: categoría=\(session.category.rawValue) modo=\(session.mode.rawValue) ruta=\(session.currentRoute.outputs.first.map { "\($0.portType.rawValue) (\($0.portName))" } ?? "ninguna") tasa=\(Int(session.sampleRate)) Hz")
+        // ✅ FIX error -50 en cold start: si la sesión arranca ya ACTIVA
+        // (SoloAmbient con AirPods conectados u otra categoría), setCategory(.playback)
+        // devuelve -50 (paramErr) porque la sesión no admite cambios de categoría
+        // mientras está activa. Se desactiva primero con notifyOthersOnDeactivation
+        // y se reintenta la configuración normal (configureSession la reactiva).
+        do {
+            try session.setActive(false, options: .notifyOthersOnDeactivation)
+            AppLog.info(.playback, "Sesión desactivada antes del primer setCategory (categoría previa: \(session.category.rawValue))")
+        } catch {
+            AppLog.warning(.playback, "No se pudo desactivar la sesión previa: \(error.localizedDescription)")
+        }
         configureSession(allowAirPlay: true, didRetryDegraded: false)
     }
     

@@ -268,19 +268,19 @@ enum AppTheme {
         let newSaturation: CGFloat
         let newBrightness: CGFloat
         
-        // Saturación: solo corregir si es muy baja (<0.25) o muy alta (>0.98)
-        if saturation < 0.25 {
-            newSaturation = 0.30
+        // Saturación: solo corregir si es muy baja (<0.05) o muy alta (>0.98)
+        if saturation < 0.05 {
+            newSaturation = 0.10
         } else if saturation > 0.98 {
             newSaturation = 0.95
         } else {
             newSaturation = saturation
         }
         
-        // Brillo: solo corregir si es muy bajo (<0.28) o muy alto (>0.92)
-        if brightness < 0.28 {
-            newBrightness = 0.33
-        } else if brightness > 0.92 {
+        // Brillo: solo corregir si es muy bajo (<0.10) o muy alto (>0.95)
+        if brightness < 0.10 {
+            newBrightness = 0.15
+        } else if brightness > 0.95 {
             newBrightness = 0.90
         } else {
             newBrightness = brightness
