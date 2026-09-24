@@ -123,6 +123,14 @@ struct Song: Identifiable, Equatable, Codable {
     let albumArtist: String
     let album: String
     let artworkData: Data?
+
+    /// ✅ PERF (v16): SHA256 de la portada. El JSON de caché ya NO lleva los
+    /// bytes de la imagen (249 MB con 1147 canciones que se cargaban enteros en
+    /// RAM al arrancar): viven como JPEG en
+    /// Application Support/artwork-cache/<sha256>.jpg y aquí queda solo la
+    /// referencia. Optional para que el caché viejo (sin este campo) siga
+    /// decodificando bien: Codable lo trata como ausente → nil.
+    let artworkHash: String?
     let duration: TimeInterval
     let lyrics: String
     let formatDescription: String
@@ -159,6 +167,7 @@ struct Song: Identifiable, Equatable, Codable {
         albumArtist: String = "",
         album: String = "",
         artworkData: Data? = nil,
+        artworkHash: String? = nil,
         duration: TimeInterval = 0,
         lyrics: String = "",
         formatDescription: String = "",
@@ -179,6 +188,7 @@ struct Song: Identifiable, Equatable, Codable {
         self.albumArtist = albumArtist
         self.album = album
         self.artworkData = artworkData
+        self.artworkHash = artworkHash
         self.duration = duration
         self.lyrics = lyrics
         self.formatDescription = formatDescription
@@ -242,6 +252,7 @@ struct Song: Identifiable, Equatable, Codable {
             albumArtist: albumArtist,
             album: album,
             artworkData: artworkData,
+            artworkHash: artworkHash,
             duration: duration,
             lyrics: lyrics,
             formatDescription: formatDescription,
@@ -321,8 +332,13 @@ extension Song {
         return cache
     }()
 
+    /// ✅ PERF (v16): la portada ya no viaja dentro del JSON de la biblioteca.
+    /// Si el Song viene del caché trae solo `artworkHash` y los bytes se leen
+    /// del JPEG en disco; el resto del camino (decodificar + NSCache por
+    /// canción) es idéntico, así que sigue habiendo UNA decodificación por
+    /// canción por más veces que se lea.
     var artwork: UIImage? {
-        guard let data = artworkData else { return nil }
+        guard let data = artworkData ?? Song.artworkDataFromDisk(for: artworkHash) else { return nil }
         if let cached = Song.artworkCache.object(forKey: id as NSUUID) {
             return cached
         }
@@ -332,6 +348,52 @@ extension Song {
         let cost = Int(image.size.width * image.scale * image.size.height * image.scale * 4)
         Song.artworkCache.setObject(image, forKey: id as NSUUID, cost: cost)
         return image
+    }
+
+    /// ✅ PERF (v16): ruta del JPEG de una portada, una por hash de CONTENIDO
+    /// (mil canciones del mismo álbum comparten un único archivo). Vive en
+    /// Application Support y no en Caches: el sistema no purga esa carpeta, y
+    /// una portada purgada por iOS dejaría la carátula en blanco hasta el
+    /// siguiente re-indexado.
+    static func artworkFileURL(for hash: String) -> URL? {
+        guard let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else { return nil }
+        // Dos llamadas a propósito: un solo componente con "artwork-cache/…"
+        // se percent-encodea (%2F) en la implementación nueva de URL.
+        return directory.appendingPathComponent("artwork-cache").appendingPathComponent("\(hash).jpg")
+    }
+
+    /// ✅ PERF (v16): bytes de la portada que el JSON ya no guarda.
+    private static func artworkDataFromDisk(for hash: String?) -> Data? {
+        guard let hash, let url = artworkFileURL(for: hash) else { return nil }
+        return try? Data(contentsOf: url)
+    }
+
+    /// ✅ PERF (v16): copia del Song con la portada FUERA del JSON — `artworkData`
+    /// vaciado y su contenido referenciado por hash. Solo para guardar el
+    /// caché: en memoria la app sigue usando el Song completo.
+    func referencingArtworkFile(hash: String) -> Song {
+        Song(
+            id: id,
+            url: url,
+            title: title,
+            artist: artist,
+            albumArtist: albumArtist,
+            album: album,
+            artworkData: nil,
+            artworkHash: hash,
+            duration: duration,
+            lyrics: lyrics,
+            formatDescription: formatDescription,
+            discNumber: discNumber,
+            trackNumber: trackNumber,
+            releaseDate: releaseDate,
+            sampleRate: sampleRate,
+            bitDepth: bitDepth,
+            channelCount: channelCount,
+            bitrate: bitrate,
+            fileModificationDate: fileModificationDate,
+            codecName: codecName
+        )
     }
 
     var displayName: String {
@@ -431,7 +493,7 @@ struct Album: Identifiable, Equatable {
     let songs: [Song]
 
     var artwork: UIImage? {
-        songs.first(where: { $0.artworkData != nil })?.artwork
+        songs.first(where: { $0.artworkData != nil || $0.artworkHash != nil })?.artwork
     }
 
     // ✅ Año del álbum DETERMINISTA: el año con más canciones; en empate,
@@ -485,7 +547,7 @@ struct Artist: Identifiable, Equatable {
     }
 
     var artwork: UIImage? {
-        songs.first(where: { $0.artworkData != nil })?.artwork
+        songs.first(where: { $0.artworkData != nil || $0.artworkHash != nil })?.artwork
     }
 }
 

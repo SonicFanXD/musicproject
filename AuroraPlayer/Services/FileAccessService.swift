@@ -2,6 +2,7 @@ import Foundation
 import AVFoundation
 import ImageIO
 import UIKit
+import CryptoKit
 
 // ✅ Cache de liked songs para evitar recalcular en cada render de fila
 final class LikedSongsCache {
@@ -64,7 +65,13 @@ class FileAccessService: ObservableObject {
     // canciones ya cacheadas quedarían con fileModificationDate = nil para
     // siempre y el detector de metadata editada (ver scanFolder) nunca
     // tendría con qué comparar la fecha en disco.
-    private let libraryCacheFileName = "library-metadata-v15.json"
+    // ✅ v16: re-indexado forzado para sacar las portadas del JSON. El caché
+    // viejo (v15: 249 MB con 1147 canciones) llevaba los bytes de cada carátula
+    // dentro y se cargaba ENTERO en RAM al arrancar → avisos de memoria del
+    // sistema constantemente. En v16 el JSON solo guarda metadata +
+    // `artworkHash` y los JPEG viven en Application Support/artwork-cache/.
+    // Este re-indexado los escribe en disco una única vez.
+    private let libraryCacheFileName = "library-metadata-v16.json"
     private let likedSongsKey = "com.aurora.likedSongs"
     private let likedPlaylistName = "Me Gusta"
     private var activeURLs: [UUID: URL] = [:]
@@ -2375,15 +2382,46 @@ class FileAccessService: ObservableObject {
         // encode/escritura corren fuera.
         let snapshot = songs
         DispatchQueue.global(qos: .utility).async {
-            guard let data = try? JSONEncoder().encode(snapshot) else { return }
+            // ✅ PERF (v16): las portadas SALEN del JSON. Cada `artworkData` se
+            // escribe una única vez como JPEG en artwork-cache/<sha256>.jpg y el
+            // JSON se queda solo con el hash: 249 MB → ~5 MB, y al arrancar la
+            // biblioteca ya no sube 250 MB de RAM. El archivo son los MISMOS
+            // bytes (mismo JPEG ya comprimido a 768px/0.72): cero pérdida
+            // visual. Los hashes vacíos/duplicados no se reescriben.
+            let lightSongs = snapshot.map(Self.songWithoutInlineArtwork)
+            guard let data = try? JSONEncoder().encode(lightSongs) else { return }
             do {
                 try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
                 try data.write(to: url, options: .atomic)
-                AppLog.info(.cache, "Caché de biblioteca guardado: \(snapshot.count) canciones, \(data.count / 1024) KB")
+                AppLog.info(.cache, "Caché de biblioteca guardado: \(lightSongs.count) canciones, \(data.count / 1024) KB")
             } catch {
                 AppLog.error(.library, "No se pudo guardar caché: \(error.localizedDescription)")
             }
         }
+    }
+
+    /// ✅ PERF (v16): copia del Song lista para el JSON — sin `artworkData` y
+    /// con `artworkHash` apuntando al JPEG en disco.
+    /// Si la portada no se puede escribir (disco lleno, contenedor sin permiso
+    /// de escritura) devuelve el Song ORIGINAL con sus bytes dentro: preferimos
+    /// un JSON pesado a una carátula perdida, porque el detector de cambios solo
+    /// re-lee archivos cuya fecha en disco cambió y nadie volvería a extraerla.
+    private static func songWithoutInlineArtwork(_ song: Song) -> Song {
+        guard let artworkData = song.artworkData, !artworkData.isEmpty else { return song }
+        let hash = SHA256.hash(data: artworkData).map { String(format: "%02x", $0) }.joined()
+        guard let fileURL = Song.artworkFileURL(for: hash) else { return song }
+        if !FileManager.default.fileExists(atPath: fileURL.path) {
+            do {
+                // withIntermediateDirectories: artwork-cache/ puede no existir
+                // todavía (primer guardado tras el re-indexado).
+                try FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try artworkData.write(to: fileURL, options: .atomic)
+            } catch {
+                AppLog.warning(.artwork, "No se pudo escribir la portada \(hash.prefix(8))… en disco: \(error.localizedDescription)")
+                return song
+            }
+        }
+        return song.referencingArtworkFile(hash: hash)
     }
 
     private func removeCachedSongs() {
