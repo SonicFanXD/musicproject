@@ -1,5 +1,6 @@
 import SwiftUI
 import Combine
+import CryptoKit
 
 /// Gestor central del tema: color de acento aplicable en toda la app.
 /// Las vistas usan `AppTheme.accent` en lugar de `Color.accentColor`
@@ -348,12 +349,27 @@ enum AppTheme {
     }
 
     /// ✅ HUELLA DE IMAGEN: clave estable de caché para una carátula.
-    /// ObjectIdentifier + tamaño en píxeles (mismo criterio que
-    /// `thumbnail(from:size:)`): la MISMA instancia de carátula, compartida
-    /// entre canción/álbum/artista, comparte su par de colores sea cual sea
-    /// la vista que lo pida primero. Nada de ids de canción.
+    /// ✅ FIX portadas idénticas: antes era ObjectIdentifier (identidad del
+    /// objeto) + tamaño. Dos canciones con los MISMOS bytes de portada pero
+    /// instancias UIImage distintas tenían claves distintas → cálculo duplicado
+    /// y resultados que podían divergir. Ahora: SHA256 de los bytes PNG
+    /// renderizables (CryptoKit, framework del sistema, sin dependencias) +
+    /// tamaño — huella del CONTENIDO, estable entre ejecuciones (el Hasher de
+    /// Data.hashValue NO lo es: queda descartado como clave) y compartida por
+    /// cualquier instancia nacida de los mismos bytes. Nada de ids de canción.
+    /// pngData() da bytes canónicos de la imagen ya decodificada (misma
+    /// instancia → mismos bytes garantizados). Sin datos renderizables:
+    /// fallback por tamaño (caso degenerado). La caché de MINIATURAS (L995)
+    /// no se toca: ahí el ObjectIdentifier es correcto porque comparte la
+    /// instancia renderizada.
     static func accentCacheKey(for artwork: UIImage) -> String {
-        "\(ObjectIdentifier(artwork).hashValue)-\(Int(artwork.size.width.rounded()))x\(Int(artwork.size.height.rounded()))"
+        let sizeSuffix = "\(Int(artwork.size.width.rounded()))x\(Int(artwork.size.height.rounded()))"
+        guard let data = artwork.pngData(), !data.isEmpty else {
+            return "size-\(sizeSuffix)"
+        }
+        let digest = SHA256.hash(data: data)
+        let hex = digest.map { String(format: "%02x", $0) }.joined()
+        return "sha-\(hex.prefix(32))-\(sizeSuffix)"
     }
 
     /// ✅ Lee el PAR (primario, secundario) cacheado bajo la huella de la
@@ -466,13 +482,16 @@ enum AppTheme {
     /// ✅ Separación mínima de tono entre primario y secundario.
     private static let minimumSecondaryHueDelta: CGFloat = 30
 
-    /// ✅ SELECTOR de heurística de acento (misma clave, nuevo significado):
-    /// `false` o clave ausente → ruta HSB actual (comportamiento exacto de hoy,
-    /// píxel a píxel); `true` → clustering perceptual en Oklab/OKLCH (opt-in).
-    /// Nada cambia hasta escribir la clave a true
-    /// (`defaults write com.aurora.player com.aurora.accentHeuristicV2 -bool true`).
+    /// ✅ SELECTOR de heurística de acento: `false` → ruta HSB (comportamiento
+    /// histórico, píxel a píxel); `true` → clustering perceptual en Oklab/OKLCH.
+    /// ✅ FIX desincronía con el toggle: la clave AUSENTE cuenta como ON (V2 por
+    /// defecto). Antes leía bool(forKey:) = false y el toggle de Ajustes
+    /// (@AppStorage con default true) mostraba ON mientras el motor usaba HSB —
+    /// la misma clase de mentira visual que el morado. Reset de ajustes borra
+    /// la clave → vuelve a ON, igual que el default del @AppStorage.
     static var accentHeuristicV2Enabled: Bool {
-        UserDefaults.standard.bool(forKey: accentHeuristicV2FlagKey)
+        if UserDefaults.standard.object(forKey: accentHeuristicV2FlagKey) == nil { return true }
+        return UserDefaults.standard.bool(forKey: accentHeuristicV2FlagKey)
     }
     static let accentHeuristicV2FlagKey = "com.aurora.accentHeuristicV2"
     /// ✅ v2: peso extra de los píxeles cercanos al centro. 0.5 = un píxel del
@@ -694,6 +713,14 @@ enum AppTheme {
     private static let oklchNeutralChroma: CGFloat = 0.05
     private static let oklchSecondaryMinChroma: CGFloat = 0.05
     private static let oklchSecondaryHueDelta: CGFloat = 60
+    /// ✅ TERCERA PASADA (secundario neutro, V2): se recogen además los píxeles
+    /// "grises con tinte" que el filtro principal rechaza. Suelo 0.002 y no
+    /// 0.005: el gris de SORNERO mide ≈0.0027 de croma y con 0.005 volvería a
+    /// perderse; los grises digitales puros (0.000 exacto) siguen fuera.
+    private static let oklabNeutralMinChroma: CGFloat = 0.002
+    /// ✅ La tercera pasada solo corre si el primario es VIVO (croma ≥ 0.10).
+    /// Con primario neutro sin secundario con color se mantiene el mono actual.
+    private static let oklchNeutralLiveChroma: CGFloat = 0.10
 
     /// sRGB gamma (0...1) → lineal. Misma curva que `luminance(of:)`.
     private static func oklabLinearFromSRGB(_ v: CGFloat) -> CGFloat {
@@ -780,7 +807,10 @@ enum AppTheme {
     /// ✅ Píxeles significativos de la portada (64×64) en Oklab. Misma
     /// construcción de contexto que la ruta HSB (`coloredPixels`); solo cambia
     /// la conversión y los filtros por píxel, ahora en espacio perceptual.
-    private static func oklabPixels(from artwork: UIImage) -> [OklabPixel]? {
+    /// Devuelve DOS depósitos: los píxeles con color (clustering principal) y
+    /// los neutros con tinte (oklabNeutralMinChroma ≤ croma < oklabMinChroma,
+    /// mismos límites de L) para la tercera pasada del secundario neutro.
+    private static func oklabPixels(from artwork: UIImage) -> (chromatic: [OklabPixel], neutral: [OklabPixel])? {
         let size = CGSize(width: dominantSampleEdge, height: dominantSampleEdge)
         UIGraphicsBeginImageContextWithOptions(size, false, 1.0)
         artwork.draw(in: CGRect(origin: .zero, size: size))
@@ -813,6 +843,8 @@ enum AppTheme {
 
         var pixels: [OklabPixel] = []
         pixels.reserveCapacity(width * height)
+        var neutralPixels: [OklabPixel] = []
+        neutralPixels.reserveCapacity(width * height)
 
         // ✅ Diagnóstico del embudo (visible en Registros bajo .artwork): cuántos
         // píxeles filtra CADA etapa, para verificar en dispositivo que la ruta
@@ -840,7 +872,10 @@ enum AppTheme {
                     failedLightness += 1
                     continue
                 }
-                guard chroma >= oklabMinChroma else {
+                // El suelo real de la pasada es oklabNeutralMinChroma; quien no
+                // lo alcanza va al contador y muere. Los que quedan se reparten
+                // después entre el depósito con color y el de neutros.
+                guard chroma >= oklabNeutralMinChroma else {
                     failedChroma += 1
                     continue
                 }
@@ -852,14 +887,20 @@ enum AppTheme {
                 let dx = (CGFloat(x) + 0.5) - CGFloat(width) / 2
                 let dy = (CGFloat(y) + 0.5) - CGFloat(height) / 2
                 let normalizedDistance = min(1, sqrt(dx * dx + dy * dy) / halfDiagonal)
-                pixels.append(OklabPixel(
+                let pixel = OklabPixel(
                     l: oklab.l,
                     a: oklab.a,
                     b: oklab.b,
                     chroma: chroma,
                     hue: hue,
                     centralityWeight: 1 + (1 - normalizedDistance) * accentCentralityBoost
-                ))
+                )
+                // ✅ Un píxel nunca va a los dos depósitos.
+                if chroma >= oklabMinChroma {
+                    pixels.append(pixel)
+                } else {
+                    neutralPixels.append(pixel)
+                }
             }
         }
 
@@ -868,8 +909,8 @@ enum AppTheme {
             AppLog.info(.artwork, String(format: "Oklab: portada descartada — %ld/%ld píxeles con color (mínimo %ld; α %ld, L %ld, croma %ld filtrados)", pixels.count, totalPixels, oklabMinimumColoredPixels, failedAlpha, failedLightness, failedChroma))
             return nil
         }
-        AppLog.info(.artwork, String(format: "Oklab: %ld/%ld píxeles con color (α %ld, L %ld, croma %ld filtrados)", pixels.count, totalPixels, failedAlpha, failedLightness, failedChroma))
-        return pixels
+        AppLog.info(.artwork, String(format: "Oklab: %ld/%ld píxeles con color, %ld neutros con tinte (α %ld, L %ld, croma %ld filtrados)", pixels.count, totalPixels, neutralPixels.count, failedAlpha, failedLightness, failedChroma))
+        return (pixels, neutralPixels)
     }
 
     /// ⚡ Clustering de hue en OKLCH — alternativa perceptual a la ruta HSB.
@@ -881,10 +922,10 @@ enum AppTheme {
     ///    croma sin importar el tono. Sin secundario → nil (fallback a mono,
     ///    mismo contrato que la ruta HSB).
     private static func clusteredAccentColorsOklab(from artwork: UIImage) -> (primary: UIColor, secondary: UIColor?)? {
-        guard let pixels = oklabPixels(from: artwork) else { return nil }
+        guard let samples = oklabPixels(from: artwork) else { return nil }
 
         var sectors = [OklabSector](repeating: OklabSector(), count: hueSectorCount)
-        for pixel in pixels {
+        for pixel in samples.chromatic {
             let index = min(hueSectorCount - 1, max(0, Int(pixel.hue / hueSectorWidth)))
             sectors[index].add(pixel)
         }
@@ -913,9 +954,34 @@ enum AppTheme {
                 secondary = candidate.element.averageColor
                 break
             }
+            // ✅ TERCERA PASADA — secundario neutro (solo primario vivo): si la
+            // portada tiene una masa gris con tinte dominante (SORNERO), el
+            // sector neutro con MÁS PÍXELES la aporta como secundario. Con
+            // primario neutro sin secundario con color se queda el mono actual.
+            if secondary == nil, winner.element.meanChroma >= oklchNeutralLiveChroma {
+                secondary = bestNeutralSecondary(from: samples.neutral)
+            }
         }
 
         return (primary, secondary)
+    }
+
+    /// ✅ Secundario neutro: sector con MÁS PÍXELES del depósito gris (conteo
+    /// puro, sin ponderar por croma: aquí el croma es casi cero por definición).
+    /// Mismo umbral de supervivencia (≥10 px) que el secundario con color.
+    private static func bestNeutralSecondary(from neutralPixels: [OklabPixel]) -> UIColor? {
+        guard !neutralPixels.isEmpty else { return nil }
+
+        var sectors = [OklabSector](repeating: OklabSector(), count: hueSectorCount)
+        for pixel in neutralPixels {
+            let index = min(hueSectorCount - 1, max(0, Int(pixel.hue / hueSectorWidth)))
+            sectors[index].add(pixel)
+        }
+        guard let winner = sectors.enumerated().max(by: { $0.element.count < $1.element.count }),
+              winner.element.count >= 10,
+              let color = winner.element.averageColor else { return nil }
+        AppLog.info(.artwork, "Oklab: secundario neutro del sector \(winner.offset) (\(winner.element.count) px)")
+        return color
     }
 
     // MARK: - Miniaturas de carátula (caché)
@@ -964,8 +1030,33 @@ enum AppTheme {
         guard let clustered = clusteredAccentColors(from: artwork) else { return nil }
         return (
             UIColor(AppTheme.readableColor(from: clustered.primary)),
-            clustered.secondary.map { UIColor(AppTheme.readableColor(from: $0)) }
+            clustered.secondary.map { UIColor(normalizedAccentSecondary(from: $0)) }
         )
+    }
+
+    /// ✅ Normalización del SECUNDARIO: ruta estándar readableColor, con UNA
+    /// excepción — con V2 activa, un secundario NEUTRO (croma Oklab < 0.05;
+    /// solo puede salir de la tercera pasada de `clusteredAccentColorsOklab`,
+    /// y con el flag OFF es imposible: la ruta HSB nunca lo produce) se
+    /// normaliza SOLO en brillo, con los mismos topes de readableColor.
+    /// Forzarle saturación 0.30 convertiría el gris de la portada en un
+    /// gris-azulado que no es lo que el ojo ve. El primario y los secundarios
+    /// con color siguen la ruta de siempre, sin cambios.
+    private static func normalizedAccentSecondary(from uiColor: UIColor) -> Color {
+        if accentHeuristicV2Enabled {
+            var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, alpha: CGFloat = 1
+            if uiColor.getRed(&r, green: &g, blue: &b, alpha: &alpha) {
+                let oklab = oklabFromSRGB(r, g, b)
+                if sqrt(oklab.a * oklab.a + oklab.b * oklab.b) < oklchNeutralChroma {
+                    var hue: CGFloat = 0, saturation: CGFloat = 0, brightness: CGFloat = 0
+                    if uiColor.getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: nil) {
+                        let newBrightness = brightness < 0.28 ? 0.33 : (brightness > 0.92 ? 0.90 : brightness)
+                        return Color(uiColor: UIColor(hue: hue, saturation: saturation, brightness: newBrightness, alpha: 1))
+                    }
+                }
+            }
+        }
+        return AppTheme.readableColor(from: uiColor)
     }
 
     /// ⚡ Algoritmo por clustering de hue (estilo Apple Music):

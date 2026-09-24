@@ -705,6 +705,15 @@ private struct ArtworkAccentSettingsSection: View, SettingsRowBuilding {
     @ObservedObject var theme = ThemeManager.shared
     @ObservedObject var localization = Localization.shared
 
+    // ✅ FIX loop del toggle: la versión anterior creaba un Binding(get:set:)
+    // inline en `body` que ESCRIBÍA en UserDefaults dentro de `set`. Cada
+    // escritura dispara didChangeNotification, invalida todos los @AppStorage
+    // del sheet, recrea el binding inline (identidad nueva en cada render) y el
+    // Toggle reconciliaba contra él re-disparando `set` → cascada de escrituras
+    // ("Clustering Oklab: activado" docenas de veces por segundo). Con
+    // @AppStorage el estado vive fuera del body: una escritura por toque.
+    @AppStorage("com.aurora.accentHeuristicV2") private var accentHeuristicV2 = true
+
     var body: some View {
         settingsSection(icon: "swatchpalette.fill", title: Localization.localized("settings.artworkAccent"), color: .purple) {
             settingsToggleRow(
@@ -712,10 +721,13 @@ private struct ArtworkAccentSettingsSection: View, SettingsRowBuilding {
                 subtitle: Localization.localized("settings.artworkAccentSubtitle"),
                 icon: "paintpalette.fill",
                 color: .purple,
-                isOn: Binding(
-                    get: { theme.accentFromArtwork },
-                    set: { theme.accentFromArtwork = $0 }
-                )
+                // ✅ FIX ciclo de UserDefaults: el Binding(get:set:) inline se
+                // recreaba en cada render y su set re-escribía la clave vía el
+                // didSet de ThemeManager (UserDefaults → invalidación → render →
+                // set → …). Con $theme.accentFromArtwork hay UNA sola fuente de
+                // verdad (@Published en ThemeManager, que persiste en su didSet)
+                // y el binding de la vista solo lee/escribe ese estado.
+                isOn: $theme.accentFromArtwork
             )
             settingsDivider
             // ✅ Algoritmo de extracción: HSB (OFF, comportamiento histórico) vs
@@ -728,13 +740,7 @@ private struct ArtworkAccentSettingsSection: View, SettingsRowBuilding {
                 subtitle: Localization.localized("settings.oklabClusteringSubtitle"),
                 icon: "circle.hexagongrid.fill",
                 color: .blue,
-                isOn: Binding(
-                    get: { UserDefaults.standard.bool(forKey: "com.aurora.accentHeuristicV2") },
-                    set: {
-                        UserDefaults.standard.set($0, forKey: "com.aurora.accentHeuristicV2")
-                        AppLog.info(.settings, "Clustering Oklab: \($0 ? "activado" : "desactivado")")
-                    }
-                )
+                isOn: $accentHeuristicV2
             )
             settingsDivider
             // ✅ Indicador del color activo (extraído de la portada)
@@ -753,6 +759,10 @@ private struct ArtworkAccentSettingsSection: View, SettingsRowBuilding {
                 Spacer()
             }
             .padding(.vertical, 4)
+        }
+        // ✅ El log SOLO cuando el valor cambia de verdad (no en cada render).
+        .onChange(of: accentHeuristicV2) { v in
+            AppLog.info(.settings, "Clustering Oklab: \(v ? "activado" : "desactivado")")
         }
     }
 }
