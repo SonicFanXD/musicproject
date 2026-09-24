@@ -182,7 +182,16 @@ final class ThemeManager: ObservableObject {
         // para todos los entornos: NowPlaying, álbumes, artistas, tint global)
         if UserDefaults.standard.object(forKey: Self.artworkAccentKey) == nil {
             let legacy = UserDefaults.standard.object(forKey: "com.aurora.dynamicColor")
-            accentFromArtwork = (legacy as? Bool) ?? false
+            // ✅ CAUSA RAÍZ del morado por defecto: en una instalación limpia
+            // (sin legacy "dynamicColor") el modo quedaba APAGADO y
+            // resolveArtworkAccent() ni siquiera se ejecutaba → toda la app
+            // mostraba el acento manual (morado, índice 0) con CUALQUIER
+            // portada y con cualquier heurística. El flag accentHeuristicV2
+            // solo elige el ALGORITMO, no la compuerta. El acento desde
+            // carátula es el comportamiento insignia: una instalación nueva
+            // ahora lo activa por defecto (apagable en Ajustes; el reset de
+            // ajustes sigue dejándolo en manual).
+            accentFromArtwork = (legacy as? Bool) ?? true
             UserDefaults.standard.set(accentFromArtwork, forKey: Self.artworkAccentKey)
         } else {
             accentFromArtwork = UserDefaults.standard.bool(forKey: Self.artworkAccentKey)
@@ -666,11 +675,19 @@ enum AppTheme {
     }
 
     /// Límites de la ruta Oklab (espejo perceptual de los umbrales HSB):
-    /// alpha < 0.5, L < 0.10 (casi negro), L > 0.95 (casi blanco) y
-    /// croma < 0.03 (grises puros).
+    /// alpha < 0.5, L < 0.10 (casi negro) y L > 0.95 (casi blanco).
+    /// ✅ FIX morado: el croma mínimo era 0.03 — POR ENCIMA del equivalente del
+    /// filtro HSB (sat ≥ 0.10 ≈ croma 0.016–0.032 según L, medido). Portadas con
+    /// colores suaves (SORNERO: gris + azul) perdían TODOS sus píxeles → nil →
+    /// acento por defecto. 0.015 es la cota inferior del rango HSB con margen
+    /// para el ruido de cuantización de 8 bits.
     private static let oklabMinLightness: CGFloat = 0.10
     private static let oklabMaxLightness: CGFloat = 0.95
-    private static let oklabMinChroma: CGFloat = 0.03
+    private static let oklabMinChroma: CGFloat = 0.015
+    /// ✅ FIX morado: mínimo de píxeles SOLO de esta ruta (el 100 de HSB se
+    /// calibró con sat ≥ 0.10 ≈ croma 0.016–0.032; filtrar más apretado exigía
+    /// el doble de píxeles que HSB para lo mismo). 50 = mismo criterio real.
+    private static let oklabMinimumColoredPixels = 50
     /// ✅ Secundario en OKLCH: croma mínimo 0.05 y separación de tono ≥60°
     /// (no 30°: 60° en hue perceptual es lo que el ojo distingue como "otro
     /// color" de forma consistente en toda la rueda).
@@ -797,10 +814,21 @@ enum AppTheme {
         var pixels: [OklabPixel] = []
         pixels.reserveCapacity(width * height)
 
+        // ✅ Diagnóstico del embudo (visible en Registros bajo .artwork): cuántos
+        // píxeles filtra CADA etapa, para verificar en dispositivo que la ruta
+        // Oklab no descarta la portada entera (bug del morado por defecto).
+        var failedAlpha = 0
+        var failedLightness = 0
+        var failedChroma = 0
+        let totalPixels = width * height
+
         for y in 0..<height {
             for x in 0..<width {
                 let offset = y * bytesPerRow + x * 4
-                guard CGFloat(data[offset + 3]) / 255 >= 0.5 else { continue }
+                guard CGFloat(data[offset + 3]) / 255 >= 0.5 else {
+                    failedAlpha += 1
+                    continue
+                }
 
                 let oklab = oklabFromSRGB(
                     CGFloat(data[offset]) / 255,
@@ -808,8 +836,14 @@ enum AppTheme {
                     CGFloat(data[offset + 2]) / 255
                 )
                 let chroma = sqrt(oklab.a * oklab.a + oklab.b * oklab.b)
-                guard oklab.l >= oklabMinLightness, oklab.l <= oklabMaxLightness,
-                      chroma >= oklabMinChroma else { continue }
+                guard oklab.l >= oklabMinLightness, oklab.l <= oklabMaxLightness else {
+                    failedLightness += 1
+                    continue
+                }
+                guard chroma >= oklabMinChroma else {
+                    failedChroma += 1
+                    continue
+                }
 
                 var hue = atan2(oklab.b, oklab.a) * 180 / .pi
                 if hue < 0 { hue += 360 }
@@ -829,7 +863,12 @@ enum AppTheme {
             }
         }
 
-        guard pixels.count >= minimumColoredPixels else { return nil }
+        // ✅ Umbral SOLO de esta ruta (50 vs 100 de HSB): ver oklabMinimumColoredPixels.
+        guard pixels.count >= oklabMinimumColoredPixels else {
+            AppLog.info(.artwork, String(format: "Oklab: portada descartada — %ld/%ld píxeles con color (mínimo %ld; α %ld, L %ld, croma %ld filtrados)", pixels.count, totalPixels, oklabMinimumColoredPixels, failedAlpha, failedLightness, failedChroma))
+            return nil
+        }
+        AppLog.info(.artwork, String(format: "Oklab: %ld/%ld píxeles con color (α %ld, L %ld, croma %ld filtrados)", pixels.count, totalPixels, failedAlpha, failedLightness, failedChroma))
         return pixels
     }
 
