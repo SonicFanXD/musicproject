@@ -639,6 +639,19 @@ class AudioEngine: NSObject, ObservableObject {
     // una imagen 1200×1200 en cada tick → gasto enorme de CPU/batería.
     private var cachedArtworkSongID: UUID?
     private var cachedNowPlayingArtwork: MPMediaItemArtwork?
+    // ✅ FASE B2: conteo de pistas/discos del álbum para MPNowPlayingInfo. El
+    // motor NO conoce la biblioteca (`FileAccessService`): la app le inyecta
+    // este closure al arrancar (ContentView) y así
+    // MPMediaItemPropertyAlbumTrackCount/DiscCount salen del MISMO agrupado de
+    // álbumes que ve el usuario. Sin proveedor no se publican (son campos
+    // opcionales para iOS).
+    var albumCountsProvider: ((Song) -> (tracks: Int, discs: Int)?)?
+    // ✅ FASE B3: marca del último envío REAL a MPNowPlayingInfoCenter. El
+    // display timer (0.4 s fg / 3 s bg) ya NO refresca now-playing en cada tick:
+    // iOS extrapola el elapsed con `playbackRate`. Solo se reenvía cada 30 s como
+    // red de seguridad ante desincronizaciones del sistema.
+    private var lastNowPlayingPublishTime: TimeInterval = 0
+    private let nowPlayingRefreshInterval: TimeInterval = 30
 
     // MARK: - Persistencia del motor en segundo plano
     // ✅ Mejora de batería + estabilidad: cuando la app pasa a segundo plano,
@@ -2304,6 +2317,10 @@ class AudioEngine: NSObject, ObservableObject {
         // puede desprogramar sin parar el nodo), así que se anula su
         // transición: al terminar la actual se reprograma según el orden nuevo.
         invalidateChainedAhead()
+        // ✅ FASE B4: el aleatorio es un estado de reproducción: el Centro de
+        // Control, la pantalla de bloqueo y CarPlay lo reflejan en cuanto se
+        // publica el diccionario completo (antes este toggle no avisaba a iOS).
+        updateNowPlayingInfo(force: true)
 
         AppLog.info(.playback, "Aleatorio: \(isShuffleEnabled ? "activado" : "desactivado") (\(playbackOrder.count) canciones)")
     }
@@ -2342,6 +2359,10 @@ class AudioEngine: NSObject, ObservableObject {
         // Se anula esa transición: al terminar la actual se reprograma según
         // el modo nuevo.
         invalidateChainedAhead()
+        // ✅ FASE B4: la repetición también es estado de reproducción: se publica
+        // el diccionario completo para que las superficies del sistema (CC,
+        // bloqueo, CarPlay) queden sincronizadas con la app.
+        updateNowPlayingInfo(force: true)
         AppLog.info(.playback, "Repetición: \(name)")
     }
 
@@ -2349,6 +2370,9 @@ class AudioEngine: NSObject, ObservableObject {
     func addToQueue(_ song: Song) {
         manualQueue.append(song)
         updateNextUpQueue()
+        // ✅ FASE B4: la cola forma parte del estado que se publica a iOS (la
+        // siguiente pista que anuncian CC/bloqueo/CarPlay sale de ella).
+        updateNowPlayingInfo(force: true)
         AppLog.info(.playback, "Añadido a cola: \(song.title)")
     }
 
@@ -2356,6 +2380,7 @@ class AudioEngine: NSObject, ObservableObject {
     func addToQueue(_ songs: [Song]) {
         manualQueue.append(contentsOf: songs)
         updateNextUpQueue()
+        updateNowPlayingInfo(force: true)
         AppLog.info(.playback, "Añadidas \(songs.count) canciones a cola")
     }
 
@@ -2364,6 +2389,7 @@ class AudioEngine: NSObject, ObservableObject {
         guard index >= 0 && index < manualQueue.count else { return }
         let removed = manualQueue.remove(at: index)
         updateNextUpQueue()
+        updateNowPlayingInfo(force: true)
         AppLog.info(.playback, "Quitado de cola: \(removed.title)")
     }
 
@@ -2375,6 +2401,9 @@ class AudioEngine: NSObject, ObservableObject {
         let song = manualQueue.remove(at: sourceIndex)
         manualQueue.insert(song, at: destinationIndex)
         updateNextUpQueue()
+        // ✅ FASE B4: mismo criterio que add/remove — un cambio de cola publica
+        // el diccionario completo para que el sistema vea el mismo estado.
+        updateNowPlayingInfo(force: true)
         AppLog.info(.playback, "Reordenado en cola: \(song.title)")
     }
 
@@ -2382,6 +2411,8 @@ class AudioEngine: NSObject, ObservableObject {
     func clearQueue() {
         manualQueue.removeAll()
         updateNextUpQueue()
+        // ✅ FASE B4: vaciar la cola cambia lo que viene después: se publica.
+        updateNowPlayingInfo(force: true)
         AppLog.info(.playback, "Cola manual limpiada")
     }
 
@@ -2585,14 +2616,17 @@ class AudioEngine: NSObject, ObservableObject {
             // ✅ WATCHDOG: si llegamos al final sin transición, forzarla.
             // Corrige el bug de "barra congelada al final, no pasa la canción".
             self.checkPlaybackEndWatchdog()
-            // ✅ FIX Centro de Control / pantalla de bloqueo: refrescar
-            // nowPlayingInfo cada ~0.8s en fg / ~3.0s en bg con el elapsed
-            // EXACTO del reloj de render. En segundo plano iOS ya interpola
-            // el progreso con el rate, así que no necesitamos tantos updates.
+            // ✅ FASE B3/B5: el elapsed ya NO se envía en cada tick. Apple
+            // recomienda enviarlo solo en CAMBIOS de estado y dejar que iOS
+            // extrapole con `playbackRate`; aquí se llama con `force: false`, que
+            // reenvía el diccionario únicamente si pasaron más de 30 s desde el
+            // último envío real. Antes: un update cada ~0.8 s en primer plano y
+            // cada 3 s en segundo plano — CPU y batería para un dato que el
+            // sistema ya sabe calcular.
             tickCount += 1
             if tickCount >= nowPlayingRefreshTicks {
                 tickCount = 0
-                self.updateNowPlayingInfo()
+                self.updateNowPlayingInfo(force: false)
             }
             // ✅ PERSISTENCIA DE POSICIÓN EN VIVO: guardar cada ~15s mientras
             // suena (37 ticks × 0.4s fg / 5 × 3.0s bg). Así un cierre forzado
@@ -3147,11 +3181,29 @@ class AudioEngine: NSObject, ObservableObject {
         }
     }
 
-    private func updateNowPlayingInfo() {
+    /// Publica el estado de reproducción en MPNowPlayingInfoCenter (Centro de
+    /// Control, pantalla de bloqueo y CarPlay; el llavero AVRCP consume los
+    /// mismos metadatos vía MPRemoteCommandCenter).
+    ///
+    /// - Parameter force: `true` (por defecto) en CADA cambio de estado:
+    ///   play/pausa, seek, cambio de pista (incluido el gapless), toggle de
+    ///   aleatorio/repetición y edición de la cola. Envía el diccionario
+    ///   COMPLETO (elapsed + rate + playbackState). `false` en los ticks del
+    ///   display timer: solo reenvía si pasaron más de 30 s desde el último
+    ///   envío real, porque mientras suena iOS extrapola el elapsed solo con
+    ///   `playbackRate` (regla de Apple) y cada tick era puro gasto de CPU.
+    private func updateNowPlayingInfo(force: Bool = true) {
         // ✅ FIX: MPNowPlayingInfoCenter debe actualizarse SIEMPRE en el
         // hilo principal; desde un hilo secundario iOS puede ignorar el
         // update (síntoma: el widget solo se refrescaba al reiniciar).
         DispatchQueue.main.async {
+            // ✅ B3: el chequeo del intervalo va en el hilo principal junto a la
+            // marca de tiempo, así no hay carrera entre el timer y los cambios de
+            // estado (todos pasan por aquí).
+            if !force,
+               CACurrentMediaTime() - self.lastNowPlayingPublishTime < self.nowPlayingRefreshInterval {
+                return
+            }
             self.publishNowPlayingInfo()
         }
     }
@@ -3184,6 +3236,26 @@ class AudioEngine: NSObject, ObservableObject {
                 cachedArtworkSongID = nil
                 cachedNowPlayingArtwork = nil
             }
+            // ✅ FASE B2: identidad y posición dentro del álbum. iOS los usa
+            // para "pista N de M", para CarPlay y para vincular el contenido
+            // externo (identifier estable por canción).
+            info[MPNowPlayingInfoPropertyMediaType] = MPNowPlayingInfoMediaType.audio.rawValue
+            info[MPNowPlayingInfoPropertyIsLiveStream] = false
+            info[MPNowPlayingInfoPropertyExternalContentIdentifier] = song.id.uuidString
+            if let discNumber = song.discNumber {
+                info[MPMediaItemPropertyDiscNumber] = discNumber
+            }
+            if song.trackNumber > 0 {
+                info[MPMediaItemPropertyAlbumTrackNumber] = song.trackNumber
+            }
+            // ✅ FASE B2: conteo de pistas/discos del álbum, con
+            // `FileAccessService.albums` como fuente (inyectado por la app en
+            // `albumCountsProvider`). Sin proveedor o sin álbum indexado no se
+            // publican: son campos opcionales y no se inventan valores.
+            if let counts = albumCountsProvider?(song) {
+                info[MPMediaItemPropertyAlbumTrackCount] = counts.tracks
+                info[MPMediaItemPropertyDiscCount] = counts.discs
+            }
         } else {
             cachedArtworkSongID = nil
             cachedNowPlayingArtwork = nil
@@ -3212,6 +3284,9 @@ class AudioEngine: NSObject, ObservableObject {
         // lock screen en el estado contrario al real.
         // `publishNowPlayingInfo()` ya se ejecuta en el hilo principal.
         MPNowPlayingInfoCenter.default().playbackState = isPlaying ? .playing : .paused
+        // ✅ FASE B3: marcar el envío real. Los ticks del display timer
+        // (`force: false`) lo consultan para no reenviar antes de 30 s.
+        lastNowPlayingPublishTime = CACurrentMediaTime()
     }
 
     private func setupRemoteCommandCenter() {

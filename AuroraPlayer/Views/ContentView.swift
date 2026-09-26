@@ -210,6 +210,16 @@ struct ContentView: View {
                     restoreLibraryIfNeeded()
                     audioEngine.isKeepScreenOnEnabled = keepScreenOnUserDefaults
                     fileAccessService.ensureLikedPlaylistExists()
+                    // ✅ FASE B2: el motor no conoce la biblioteca, así que la app
+                    // le inyecta aquí el conteo de pistas/discos del álbum (para
+                    // MPMediaItemPropertyAlbumTrackCount/DiscCount). El closure
+                    // captura la biblioteca en WEAK y NO captura self, para no
+                    // crear un ciclo ContentView → audioEngine → closure → ContentView.
+                    let library = fileAccessService
+                    audioEngine.albumCountsProvider = { [weak library] song in
+                        guard let library else { return nil }
+                        return ContentView.albumCounts(for: song, in: library)
+                    }
                     // ✅ INDEXACIÓN: decidir tarjeta grande vs indicador compacto.
                     syncFirstTimeIndexing()
                     maybeAutoResume()
@@ -1178,6 +1188,25 @@ struct ContentView: View {
         // completa. Así al terminar la canción continúa con los
         // resultados y el repeat-all repite ese mismo contexto.
         audioEngine.play(song: song, from: filteredSongs)
+    }
+
+    /// ✅ FASE B2: pistas y discos del álbum de una canción usando el MISMO
+    /// agrupado que la biblioteca (`FileAccessService.albums`, que ya une discos
+    /// homónimos y normaliza artista/álbum). Devuelve nil si la canción no está
+    /// en ningún álbum indexado: el motor no publica conteos inventados.
+    static func albumCounts(for song: Song, in service: FileAccessService) -> (tracks: Int, discs: Int)? {
+        let albumName = song.album.isEmpty ? "Álbum desconocido" : song.album
+        let artistName = song.albumArtist.isEmpty
+            ? (song.artist.isEmpty ? "Artista desconocido" : song.artist)
+            : song.albumArtist
+        let key = Song.albumGroupKey(album: albumName, artist: artistName)
+        let album = service.albums.first {
+            Song.albumGroupKey(album: $0.name, artist: $0.artist) == key
+        }
+        guard let album, !album.songs.isEmpty else { return nil }
+        // Los discos se cuentan por su número real (nil ⇒ disco 1).
+        let discs = Set(album.songs.map { $0.discNumber ?? 1 }).count
+        return (album.songs.count, max(discs, 1))
     }
 
     private func restoreLibraryIfNeeded() {
