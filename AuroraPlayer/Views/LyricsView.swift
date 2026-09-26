@@ -245,11 +245,28 @@ struct LyricsView: View {
                     .onTapGesture {
                         seekToLine(line)
                     }
+
+                // ✅ INTERLUDIO: "• • •" SOLO mientras dura el hueco
+                // instrumental, justo bajo la línea congelada (durante el gap
+                // `activeID` ES esa línea). Al empezar la línea siguiente el
+                // ViewModel publica el cambio y la fila desaparece.
+                if viewModel.isInstrumentalGap, viewModel.activeID == line.id {
+                    LyricInstrumentalIndicator(
+                        glowColor: glowColor,
+                        isPlaying: viewModel.isPlaying,
+                        isActive: viewModel.isInstrumentalGap
+                    )
+                    .transition(.opacity)
+                }
             }
 
             Color.clear.frame(height: inset)
         }
         .padding(.horizontal, Self.horizontalPadding)
+        // ✅ Animación SCOPED al flag del interludio: solo la inserción/eliminación
+        // del indicador (y su desplazamiento de layout) se anima; el resto de
+        // cambios del LazyVStack (cambio de línea activa) no se ven afectados.
+        .animation(.easeInOut(duration: 0.3), value: viewModel.isInstrumentalGap)
     }
 
     /// ✅ Scroll centrado y natural (spring 0.35s, damping 0.85, el tacto de
@@ -408,6 +425,52 @@ private struct LyricsArtworkBackground: View, Equatable {
                 }
             }
         }
+    }
+}
+
+// MARK: - Indicador de interludio ("• • •" durante el hueco instrumental)
+// ✅ Estilo Apple Music: puntos pulsantes bajo la última línea cantada mientras
+//    dura el interludio (hueco ≥ 3s detectado por LyricsViewModel).
+// ✅ Cero trabajo por frame AÑADIDO: la oscilación es un `repeatForever`
+//    gateado por `value:` (misma convención que las barras de ContentView/Queue),
+//    SIN TimelineView propio: durante el gap el TimelineView de la línea activa
+//    ya está pidiendo frames y este indicador no añade ninguna suscripción más.
+// ✅ Dos `.animation` a propósito: el de `isPlaying` arranca/para el pulso con
+//    la reproducción (en pausa, puntos estáticos); el de `isActive` intenta
+//    arrancarlo en el MISMO render en que la fila se inserta (el flip del
+//    estado publicado coincide con la inserción). En el peor caso degradado
+//    los puntos se ven estáticos, nunca rotos.
+private struct LyricInstrumentalIndicator: View {
+    let glowColor: Color
+    let isPlaying: Bool
+    let isActive: Bool
+
+    var body: some View {
+        HStack(spacing: 6) {
+            ForEach(0..<3, id: \.self) { dot in
+                Circle()
+                    .fill(glowColor.opacity(0.8))
+                    .frame(width: 7, height: 7)
+                    .scaleEffect(scale(for: dot))
+                    .animation(pulse(for: dot), value: isPlaying)
+                    .animation(pulse(for: dot), value: isActive)
+            }
+        }
+        .padding(.vertical, 10)
+        .padding(.horizontal, 2)
+    }
+
+    /// Punto de partida del pulso: alternado mientras suena (el `repeatForever`
+    /// lo oscila), estático y pequeño en pausa.
+    private func scale(for dot: Int) -> CGFloat {
+        guard isPlaying else { return 0.65 }
+        return dot % 2 == 0 ? 1.0 : 0.55
+    }
+
+    /// Pulso desfasado por punto (duraciones distintas → onda orgánica).
+    private func pulse(for dot: Int) -> Animation? {
+        guard isPlaying else { return nil }
+        return .easeInOut(duration: 0.55 + Double(dot) * 0.15).repeatForever(autoreverses: true)
     }
 }
 

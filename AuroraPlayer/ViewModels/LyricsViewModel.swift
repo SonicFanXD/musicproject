@@ -22,6 +22,18 @@ final class LyricsViewModel: ObservableObject {
     /// ✅ Sube cuando un parseo EN BACKGROUND termina: la vista lo usa para
     /// repetir el centrado inicial (cuando termina, el `onAppear` ya pasó).
     @Published private(set) var lyricsRevision: Int = 0
+    /// ✅ INTERLUDIO (gap instrumental ENTRE líneas): la línea anterior ya cerró
+    /// su barrido (timeMs ≥ fin efectivo) y la siguiente tarda ≥
+    /// `instrumentalGapThresholdMs` en empezar. Apple Music muestra un
+    /// indicador del silencio en vez de dejar la línea congelada sin más; la
+    /// vista dibuja "• • •" mientras esta propiedad esté activa.
+    /// ✅ Se recalcula SOLO en `refreshActiveLine` (tick 0.4s / boundary / seek),
+    /// NUNCA por frame, y solo publica cuando cambia (2 flips por interludio).
+    @Published private(set) var isInstrumentalGap = false
+    /// Hueco mínimo (ms) entre el fin efectivo de una línea y el inicio de la
+    /// siguiente para considerarlo interludio. Por debajo, el hueco es un
+    /// silencio normal entre versos y no muestra indicador.
+    private static let instrumentalGapThresholdMs: Int = 3000
 
     // MARK: - Dependencies
     weak var audioEngine: AudioEngine?
@@ -144,6 +156,7 @@ final class LyricsViewModel: ObservableObject {
         // ✅ Reset estado y primera línea calculada al instante (sin esperar tick)
         activeStartMs = 0
         activeEndMs = 0
+        isInstrumentalGap = false
         anchorClock(at: audioEngine?.currentTime ?? clockTime)
         refreshActiveLine()
 
@@ -167,6 +180,7 @@ final class LyricsViewModel: ObservableObject {
         activeID = nil
         activeStartMs = 0
         activeEndMs = 0
+        isInstrumentalGap = false
         lineBoundaryTask?.cancel()
         lineBoundaryTask = nil
     }
@@ -321,14 +335,39 @@ final class LyricsViewModel: ObservableObject {
         guard let engine = engine else { return }
 
         let timeMs = interpolatedMs()
-        let index = engine.activeIndex(at: timeMs) ?? engine.lastStartedIndex(at: timeMs)
+        let activeIdx = engine.activeIndex(at: timeMs)
+        let index = activeIdx ?? engine.lastStartedIndex(at: timeMs)
 
         updateActiveWindow(index: index, engine: engine)
         if index != activeID {
             activeID = index
         }
 
+        updateInstrumentalGapState(activeIdx: activeIdx, index: index, timeMs: timeMs, engine: engine)
         scheduleLineBoundaryWake()
+    }
+
+    /// ✅ Interludio = sin línea activa (hueco del motor), la última línea
+    /// empezada YA cerró su barrido (timeMs ≥ su fin efectivo, incluido el
+    /// buffer adaptativo ≤ 60ms) y la siguiente tarda ≥ umbral en empezar.
+    /// ✅ Gap-based: el TTML de Apple marca los interludios con
+    /// `itunes:song-part="Instrumental"` en `<p>` SIN texto, que el parser
+    /// descarta; el hueco entre `lines[i].endMs` y `lines[i+1].startMs`
+    /// los detecta igual para cualquier formato (TTML, LRC, híbrido).
+    /// Antes de la primera línea (intro) y tras la última (outro) no hay
+    /// indicador: no hay "hueco ENTRE líneas" que anunciar.
+    private func updateInstrumentalGapState(activeIdx: Int?, index: Int?, timeMs: Int, engine: LyricsEngine) {
+        var inGap = false
+        if activeIdx == nil, let index,
+           let window = engine.window(for: index),
+           timeMs >= window.endMs,
+           let next = engine.line(at: index + 1) {
+            inGap = next.startMs - window.endMs >= Self.instrumentalGapThresholdMs
+        }
+
+        if inGap != isInstrumentalGap {
+            isInstrumentalGap = inGap
+        }
     }
 
     /// ✅ Cachea inicio + fin efectivo de la línea activa: el wipe los lee en
