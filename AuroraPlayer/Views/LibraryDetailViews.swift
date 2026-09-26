@@ -536,13 +536,26 @@ struct AlbumDetailView: View {
 
     // ✅ Formatear año de salida del álbum (locale/calendario/zona FIJOS:
     // "yyyy" estable y consistente con el parser de fechas)
-    private func formatYear(_ date: Date) -> String {
+    //
+    // ✅ FASE D (auditoría 60 fps): el formateador se construye UNA vez y se
+    // reutiliza. `formatYear(_:)` se llama desde el body (hero del álbum, dentro
+    // de `statPill`), así que cada render creaba un `DateFormatter` nuevo con su
+    // locale + calendar + timeZone + dateFormat: ~0.3-1.5 ms en el A11 para
+    // escribir cuatro dígitos, en una vista que re-renderiza al cambiar de
+    // canción, al marcar "Me gusta" o al animar su entrada. La salida es IDÉNTICA
+    // (mismos ajustes). `DateFormatter` es seguro para formatear desde varios
+    // hilos desde iOS 7.
+    private static let yearFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.calendar = Calendar(identifier: .gregorian)
         formatter.timeZone = TimeZone.current
         formatter.dateFormat = "yyyy"
-        return formatter.string(from: date)
+        return formatter
+    }()
+
+    private func formatYear(_ date: Date) -> String {
+        AlbumDetailView.yearFormatter.string(from: date)
     }
 
     private func formatLongDuration(_ seconds: TimeInterval) -> String {

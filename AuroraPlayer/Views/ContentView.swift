@@ -20,6 +20,19 @@ struct ContentView: View {
         LibraryCategory(rawValue: selectedCategoryRaw) ?? .songs
     }
     @State private var searchText = ""
+    // ✅ FASE D (auditoría 60 fps): orden de la biblioteca CACHEADO.
+    // `filteredSongs` es O(n log n) con `localizedStandardCompare` (ICU): con
+    // ~1.000 canciones son ~10-20 ms en el A11, y se ejecutaba en CADA
+    // evaluación del body — cualquier @Published del motor (play/pausa, cambio
+    // de pista, cambio de ruta de audio, cola) provocaba ese trabajo y 1-2
+    // frames perdidos. Ahora solo se recalcula cuando cambia una ENTRADA real:
+    // la biblioteca (Combine `$songs` emite en cada asignación), el texto de
+    // búsqueda, el criterio de orden o su dirección.
+    @State private var orderedSongsCache: [Song] = []
+    /// Sucio = la caché no refleja las entradas actuales (se recalculó fuera de
+    /// la pestaña de Canciones). En cuanto Canciones vuelve a la vista, el
+    /// onChange de categoría la recalcula.
+    @State private var orderedSongsCacheDirty = true
     @FocusState private var searchFieldFocused: Bool
     // ✅ Manejo de ciclo de vida para detectar cambios en segundo plano
     @Environment(\.scenePhase) private var scenePhase
@@ -109,11 +122,22 @@ struct ContentView: View {
                         albums: fileAccessService.albums,
                         artists: fileAccessService.artists
                     )
+                    // ✅ FASE D: la biblioteca cambió → invalidar el orden cacheado.
+                    // `$songs` emite en CADA asignación (aunque los valores sean
+                    // iguales), así que también cubre re-lecturas de metadata.
+                    invalidateOrderedSongs()
                 }
                 // ✅ Sincronización bidireccional: mantener @AppStorage actualizado
                 // cuando cambian las variables @State de ordenamiento
                 .onChange(of: sortOptionRaw) { songSortRawStorage = $0 }
                 .onChange(of: songSortAscending) { songSortAscendingStorage = $0 }
+                // ✅ FASE D: invalidadores reales del orden cacheado (las entradas
+                // de las que depende `computeFilteredSongs()`). Ojo con el teclado:
+                // si la lista de Canciones no está a la vista, `invalidateOrderedSongs()`
+                // solo marca sucio — no ordena 1.000 canciones por tecla.
+                .onChange(of: searchText) { _ in invalidateOrderedSongs() }
+                .onChange(of: sortOptionRaw) { _ in invalidateOrderedSongs() }
+                .onChange(of: songSortAscending) { _ in invalidateOrderedSongs() }
                 .onChange(of: albumSortRaw) { albumSortRawStorage = $0 }
                 .onChange(of: albumSortAscending) { albumSortAscendingStorage = $0 }
                 .onChange(of: artistSortRaw) { artistSortRawStorage = $0 }
@@ -137,6 +161,9 @@ struct ContentView: View {
                         albums: fileAccessService.albums,
                         artists: fileAccessService.artists
                     )
+                    // ✅ FASE D: al volver a Canciones se recalcula el orden si
+                    // quedó sucio mientras se veía otra categoría.
+                    recomputeOrderedSongs()
                 }
                 // ✅ DETECCIÓN EN SEGUNDO PLANO: cuando la app vuelve a activa,
                 // verificar si hay canciones nuevas SILENCIOSAMENTE (sin tarjeta
@@ -210,6 +237,10 @@ struct ContentView: View {
                     restoreLibraryIfNeeded()
                     audioEngine.isKeepScreenOnEnabled = keepScreenOnUserDefaults
                     fileAccessService.ensureLikedPlaylistExists()
+                    // ✅ FASE D: primera carga del orden cacheado (el fallback de
+                    // `filteredSongs` ya garantiza que nunca se vea vacío, pero
+                    // así el primer render tras el splash ya viene ordenado).
+                    recomputeOrderedSongs()
                     // ✅ FASE B2: el motor no conoce la biblioteca, así que la app
                     // le inyecta aquí el conteo de pistas/discos del álbum (para
                     // MPMediaItemPropertyAlbumTrackCount/DiscCount). El closure
@@ -1048,7 +1079,37 @@ struct ContentView: View {
     // Con consulta presente se CONSERVA el ranking de relevancia (no se
     // re-ordena): aplicar sortSongs() aquí destruía el ranking y hacía que la
     // búsqueda "pareciera no funcionar" (ver comentario de abajo).
+    /// ✅ FASE D (60 fps): devuelve la lista YA ordenada/filtrada desde la CACHÉ.
+    /// El fallback a `computeFilteredSongs()` cuando está vacía garantiza que la
+    /// primera pintura (antes del onAppear) nunca muestre la biblioteca vacía;
+    /// después la caché la mantienen los invalidadores (`recomputeOrderedSongs`).
     private var filteredSongs: [Song] {
+        if orderedSongsCacheDirty || orderedSongsCache.isEmpty {
+            return computeFilteredSongs()
+        }
+        return orderedSongsCache
+    }
+
+    /// ✅ FASE D: marca la caché como sucia y, si la lista de Canciones está a la
+    /// vista, la recalcula al instante (el usuario nunca ve un orden obsoleto).
+    /// Con otra categoría abierta solo la marca: no se paga el orden por tecla.
+    private func invalidateOrderedSongs() {
+        orderedSongsCacheDirty = true
+        if selectedCategory == .songs {
+            recomputeOrderedSongs()
+        }
+    }
+
+    /// ✅ FASE D: único punto que recalcula el orden cacheado (nunca desde el
+    /// body salvo el caso "sucio", que es el comportamiento anterior).
+    private func recomputeOrderedSongs() {
+        orderedSongsCache = computeFilteredSongs()
+        orderedSongsCacheDirty = false
+    }
+
+    /// Cálculo PURO del orden/filtro de canciones (el que antes vivía en el
+    /// body). Costoso: solo desde `recomputeOrderedSongs()`.
+    private func computeFilteredSongs() -> [Song] {
         let songs = fileAccessService.songs
         let query = normalizedQuery
         // ✅ FIX "no busca bien": antes se le aplicaba sortSongs() a los
