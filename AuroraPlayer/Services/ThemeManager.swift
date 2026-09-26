@@ -471,15 +471,27 @@ enum AppTheme {
         var hueVectorY: CGFloat = 0
         var saturationSum: CGFloat = 0
         var brightnessSum: CGFloat = 0
+        /// ✅ Suma de los pesos de croma: denominador de las medias ponderadas.
+        var chromaWeightSum: CGFloat = 0
+
+        /// ✅ Exponente CALIBRABLE del peso por croma (1.0 = el peso es la propia
+        /// saturación). Subirlo, p. ej. a 1.5, solo da más voz a los píxeles muy
+        /// saturados: úsalo si en dispositivo el acento sale sobre-saturado.
+        private static let chromaWeightExponent: CGFloat = 1
 
         mutating func add(_ pixel: HSBPixel) {
             count += 1
             weightedScore += pixel.centralityWeight * pixel.saturation
+            // ✅ Peso por croma: un píxel casi neutro (su hue es ruido de
+            // cuantización) apenas mueve la media del sector, así que el tono
+            // medio no se contamina ni la saturación queda diluida.
+            let chromaWeight = pow(pixel.saturation, HueSector.chromaWeightExponent)
+            chromaWeightSum += chromaWeight
             let radians = pixel.hue * .pi / 180
-            hueVectorX += cos(radians)
-            hueVectorY += sin(radians)
-            saturationSum += pixel.saturation
-            brightnessSum += pixel.brightness
+            hueVectorX += cos(radians) * chromaWeight
+            hueVectorY += sin(radians) * chromaWeight
+            saturationSum += pixel.saturation * chromaWeight
+            brightnessSum += pixel.brightness * chromaWeight
         }
 
         /// Tono medio del sector en grados (0..<360).
@@ -490,13 +502,16 @@ enum AppTheme {
             return degrees
         }
 
-        /// Color medio (H medio, S medio, V medio) del sector.
+        /// Color medio (H medio, S medio, V medio) del sector, con las tres medias
+        /// ponderadas por croma. Si el sector no aporta croma (peso 0), se cae al
+        /// conteo puro para no devolver un negro artificial.
         var averageColor: UIColor? {
             guard count > 0 else { return nil }
+            let divisor = chromaWeightSum > 0 ? chromaWeightSum : CGFloat(count)
             return UIColor(
                 hue: averageHue / 360,
-                saturation: saturationSum / CGFloat(count),
-                brightness: brightnessSum / CGFloat(count),
+                saturation: saturationSum / divisor,
+                brightness: brightnessSum / divisor,
                 alpha: 1
             )
         }
