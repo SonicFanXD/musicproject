@@ -389,23 +389,46 @@ struct NowPlayingView: View {
         }
     }
 
+    /// ✅ Fuente del título: única fuente de verdad para `songInfoView` y para la
+    /// copia invisible que le reserva sus 2 líneas. Si cambia el tamaño aquí, la
+    /// reserva lo sigue sola.
+    private var songTitleFont: Font {
+        .system(size: isCompactScreen ? 20 : 24, weight: .bold, design: .rounded)
+    }
+
     // MARK: - Song Info (mejorado con mejor tipografía y espaciado)
     private var songInfoView: some View {
         VStack(spacing: 6) {
-            // ✅ Título con gradiente sutil del color extraído (mejor tipografía)
-            // ✅ 60fps: shadow removido del texto con gradiente (forzaba blur
-            // offscreen por frame; el gradiente ya da suficiente profundidad).
-            Text(audioEngine.currentSong?.displayName ?? Localization.localized("quality.noSong"))
-                .font(.system(size: isCompactScreen ? 20 : 24, weight: .bold, design: .rounded))
-                .multilineTextAlignment(.center)
-                .foregroundStyle(
-                    LinearGradient(
-                        colors: [playIconColor, playIconColor.opacity(0.85)],
-                        startPoint: .leading,
-                        endPoint: .trailing
+            // ✅ FIX layout: el título reserva SIEMPRE la altura de sus 2 líneas
+            // (`lineLimit`) con una copia invisible del MISMO tipo. Sin ella, un
+            // título de 2 líneas engorda songInfoView ~1 línea y, como el bloque
+            // va centrado, el header sube con él al cambiar de canción.
+            // El ZStack centra además el título de 1 línea en su caja de 2.
+            ZStack {
+                // "M\nM" son dos líneas garantizadas por el salto explícito: la
+                // reserva no depende del ancho disponible ni de métricas
+                // escritas a mano. La fuente sale de `songTitleFont`.
+                Text("M\nM")
+                    .font(songTitleFont)
+                    .lineLimit(2)
+                    .hidden()
+                    .accessibilityHidden(true)
+
+                // ✅ Título con gradiente sutil del color extraído (mejor tipografía)
+                // ✅ 60fps: shadow removido del texto con gradiente (forzaba blur
+                // offscreen por frame; el gradiente ya da suficiente profundidad).
+                Text(audioEngine.currentSong?.displayName ?? Localization.localized("quality.noSong"))
+                    .font(songTitleFont)
+                    .multilineTextAlignment(.center)
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [playIconColor, playIconColor.opacity(0.85)],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
                     )
-                )
-                .lineLimit(2)
+                    .lineLimit(2)
+            }
 
             Text(audioEngine.currentSong?.displaySubtitle ?? "—")
                 .font(.system(size: isCompactScreen ? 14 : 16, weight: .medium))
