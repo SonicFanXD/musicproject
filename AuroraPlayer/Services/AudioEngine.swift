@@ -226,12 +226,14 @@ class AudioEngine: NSObject, ObservableObject {
     }
 
     /// ✅ TAREA DRIFT (solo medición): referencia relativa nodo↔host. `pos` es la
-    /// posición AUDIBLE (extrapolada host − latencia de salida) pareja del sample
-    /// de nodo `nodeSample` en el instante de siembra. Con deltas RELATIVOS a
-    /// partir de esa pareja no hace falta conocer el mapeo exacto del
-    /// scheduleSegment: nodeSample avanza al ritmo del reloj del hardware de
-    /// audio y pos al ritmo de CACurrentMediaTime, así que su divergencia ES el
-    /// drift buscado.
+    /// posición del reloj HOST (extrapolada) pareja del sample de nodo
+    /// `nodeSample` en el instante de siembra — sin descuento de latencia de
+    /// salida: el drift se calcula con deltas RELATIVOS a partir de esa pareja,
+    /// así que un ajuste constante en el seed (la latencia) no se cancelaría y
+    /// quedaría sesgando TODAS las medidas. Con deltas no hace falta conocer el
+    /// mapeo exacto del scheduleSegment: nodeSample avanza al ritmo del reloj del
+    /// hardware de audio y pos al ritmo de CACurrentMediaTime, así que su
+    /// divergencia ES el drift buscado.
     private var clockDriftReference: (pos: TimeInterval, nodeSample: AVAudioFramePosition, sampleRate: Double)?
     /// Contador para el log periódico de evidencia (cada 75 ticks ≈ 30s en
     /// primer plano, ≈ 225s en segundo plano).
@@ -2852,8 +2854,8 @@ class AudioEngine: NSObject, ObservableObject {
     // MARK: - Medición de drift host ↔ hardware de audio (SOLO MEDICIÓN)
     /// ✅ TAREA DRIFT: corre en cada tick del displayTimer (solo modo engine).
     /// Compara la posición extrapolada por el reloj de pared (posAnchor +
-    /// CACurrentMediaTime, monótono pero del HOST) con la posición audible
-    /// según el nodo (playerTime.sampleTime avanza al ritmo del reloj del
+    /// CACurrentMediaTime, monótono pero del HOST) con la posición derivada del
+    /// reloj del nodo (playerTime.sampleTime avanza al ritmo del reloj del
     /// hardware de audio) usando una REFERENCIA RELATIVA sembrada tras cada
     /// anclaje (anchorPlaybackPosition la invalida).
     ///
@@ -2862,9 +2864,10 @@ class AudioEngine: NSObject, ObservableObject {
     ///   se mide y se loguea; la decisión se tomará con los datos recogidos.
     /// · Evidencia: muestra cada 75 ticks (~30s en primer plano) y las
     ///   TRANSICIONES del umbral de 100ms (no cada tick: sin spam).
-    /// · La latencia de salida se descuenta UNA vez en la SIEMBRA: lo
-    ///   renderizado en el nodo aún no se oye, así el drift medido es
-    ///   divergencia pura de relojes y no la latencia fija de arranque.
+    /// · La siembra NO descuenta la latencia de salida: el drift sale de los
+    ///   DELTAS de ambos relojes desde el mismo instante, así que restarla solo
+    ///   en el seed la dejaba como sesgo constante +latencia en cada medida (en
+    ///   BT ≈ 150 ms, indistinguible de un drift real).
     private func measureClockDrift() {
         guard isPlaying, !isAVPlayerActive, playerNode.isPlaying,
               let lastRender = playerNode.lastRenderTime,
@@ -2889,10 +2892,11 @@ class AudioEngine: NSObject, ObservableObject {
         let extrapolated = max(0, posAnchor + (CACurrentMediaTime() - wallAnchor))
 
         guard let reference = clockDriftReference else {
-            // ✅ SIEMBRA: la posición audible de ESTE instante (host − latencia)
-            // queda pareja al sample del nodo.
-            let outputLatency = min(max(AVAudioSession.sharedInstance().outputLatency, 0), 0.5)
-            clockDriftReference = (pos: extrapolated - outputLatency,
+            // ✅ SIEMBRA: pareja (posición host, sample del nodo) del MISMO
+            // instante, sin ajuste de latencia: el drift son deltas relativos a
+            // partir de aquí, y cualquier constante en el seed sesga todas las
+            // medidas (ver cabecera).
+            clockDriftReference = (pos: extrapolated,
                                    nodeSample: nodeSample,
                                    sampleRate: nodeRate)
             clockDriftLogCounter = 0
