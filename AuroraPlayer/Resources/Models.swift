@@ -380,6 +380,60 @@ extension Song {
         return try? Data(contentsOf: url)
     }
 
+    /// ✅ PERF SCROLL: miniatura por decodificación DESCENDENTE (downsample).
+    /// La ruta de filas NO necesita el bitmap de 768px: `artwork` lo decodifica
+    /// entero en el main en cada miss (countLimit 120 → ~83 portadas antes de
+    /// expulsar) y con biblioteca grande el scroll disparaba una decodificación
+    /// completa por fila (10-40 ms en el A11). Con ImageIO
+    /// (`kCGImageSourceThumbnailMaxPixelSize`) el JPEG se decodifica UNA vez
+    /// ya al tamaño pedido (~3-8 ms) y el resultado se cachea por hash+px:
+    /// la misma carátula reutiliza su miniatura en TODAS las filas que la
+    /// muestren, sea cual sea su canción.
+    private static let rowThumbnailCache: NSCache<NSString, UIImage> = {
+        let cache = NSCache<NSString, UIImage>()
+        // 24 MB ≈ 640 miniaturas de 96px; countLimit alto porque el costo real
+        // lo limita totalCostLimit (bytes de bitmap RGBA, como en artworkCache).
+        cache.countLimit = 700
+        cache.totalCostLimit = 24 * 1024 * 1024
+        return cache
+    }()
+
+    /// Miniatura lista para filas de lista, decodificada ya al tamaño pedido.
+    /// - Parameter maxPixel: lado mayor en PÍXELES (48pt @2x → 96).
+    /// Sin hash (bytes inline de una instalación vieja) cae al camino completo
+    /// `artwork`, que conserva su propio NSCache: nunca cambia el resultado,
+    /// solo el coste.
+    func rowThumbnail(maxPixel: Int) -> UIImage? {
+        guard let hash = artworkHash else { return artwork }
+        let key = "\(hash)#\(maxPixel)" as NSString
+        if let cached = Song.rowThumbnailCache.object(forKey: key) {
+            return cached
+        }
+        guard let url = Song.artworkFileURL(for: hash),
+              let thumbnail = Song.downsampledImage(at: url, maxPixel: maxPixel) else {
+            // JPEG ausente o ilegible: el camino completo decide (nil o imagen).
+            return artwork
+        }
+        Song.rowThumbnailCache.setObject(thumbnail, forKey: key, cost: maxPixel * maxPixel * 4)
+        return thumbnail
+    }
+
+    /// Decodificación descendente con ImageIO: crea el thumbnail YA al tamaño
+    /// pedido (ShouldCacheImmediately fuerza la decodificación en esta llamada,
+    /// no en el primer draw), sin tocar nunca el bitmap de 768px.
+    private static func downsampledImage(at url: URL, maxPixel: Int) -> UIImage? {
+        let sourceOptions: [CFString: Any] = [kCGImageSourceShouldCache: false]
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, sourceOptions as CFDictionary) else { return nil }
+        let thumbnailOptions: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCacheImmediately: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixel
+        ]
+        guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, thumbnailOptions as CFDictionary) else { return nil }
+        return UIImage(cgImage: cgImage)
+    }
+
     /// ✅ PERF (v16): copia del Song con la portada FUERA del JSON — `artworkData`
     /// vaciado y su contenido referenciado por hash. Solo para guardar el
     /// caché: en memoria la app sigue usando el Song completo.

@@ -1076,12 +1076,13 @@ struct ContentView: View {
 
     @ViewBuilder
     private func artworkView(for song: Song) -> some View {
-        if let artwork = song.artwork {
-            // ✅ ANTI-JETSAM (iPhone 8 / 2GB): la celda muestra la carátula a
-            // 48pt pero decodificaba los 768px completos (2.4MB) por fila en el
-            // scroll → picos de RAM + tirones. Reescalar a 96px (48pt @2x):
-            // ~15KB retenidos por fila en vez de 2.4MB (160× menos).
-            Image(uiImage: AppTheme.thumbnail(from: artwork, size: CGSize(width: 96, height: 96)))
+        // ✅ PERF SCROLL: miniatura por decodificación descendente (ImageIO, una
+        // pasada a 96px cacheada por hash+px) — la ruta completa `song.artwork`
+        // decodificaba el JPEG de 768px entero en el main en cada miss del caché
+        // (countLimit 120 ≈ 83 portadas antes de expulsar) y con biblioteca
+        // grande el scroll disparaba una decodificación completa por fila.
+        if let thumbnail = song.rowThumbnail(maxPixel: 96) {
+            Image(uiImage: thumbnail)
                 .resizable()
                 .interpolation(.high)
                 .scaledToFill()
