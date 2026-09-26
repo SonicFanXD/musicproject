@@ -215,10 +215,30 @@ class AudioEngine: NSObject, ObservableObject {
     private var wallAnchor: TimeInterval = 0
 
     /// Fija el ancla: la posición actual es `pos` desde este instante.
+    /// ✅ TAREA DRIFT (solo medición): cada anclaje (play, seek, pausa, resume,
+    /// gapless…) invalida la referencia nodo↔host del medidor de desfase: los
+    /// puntos de anclaje pasan por AQUÍ, así el medidor nunca compara con una
+    /// referencia de un tramo de reproducción distinto.
     private func anchorPlaybackPosition(_ pos: TimeInterval) {
         posAnchor = duration > 0 ? min(max(pos, 0), duration) : max(pos, 0)
         wallAnchor = CACurrentMediaTime()
+        clockDriftReference = nil
     }
+
+    /// ✅ TAREA DRIFT (solo medición): referencia relativa nodo↔host. `pos` es la
+    /// posición AUDIBLE (extrapolada host − latencia de salida) pareja del sample
+    /// de nodo `nodeSample` en el instante de siembra. Con deltas RELATIVOS a
+    /// partir de esa pareja no hace falta conocer el mapeo exacto del
+    /// scheduleSegment: nodeSample avanza al ritmo del reloj del hardware de
+    /// audio y pos al ritmo de CACurrentMediaTime, así que su divergencia ES el
+    /// drift buscado.
+    private var clockDriftReference: (pos: TimeInterval, nodeSample: AVAudioFramePosition, sampleRate: Double)?
+    /// Contador para el log periódico de evidencia (cada 75 ticks ≈ 30s en
+    /// primer plano, ≈ 225s en segundo plano).
+    private var clockDriftLogCounter = 0
+    /// Estado "desfase alto" para loguear SOLO las transiciones del umbral
+    /// (sin un log por tick cuando el desfase se mantiene alto).
+    private var clockDriftHighActive = false
 
     /// Posición de reproducción extrapolada (solo mientras isPlaying).
     // ✅ TRACKING de archivo programado: permite a `resume()` detectar si el
@@ -2778,6 +2798,10 @@ class AudioEngine: NSObject, ObservableObject {
                 let current = self.wallClockTime
                 self.currentTime = current
                 self.clock.time = current
+                // ✅ TAREA DRIFT: MEDIR y loguear el desfase entre el reloj de
+                // pared (host) y el reloj del nodo de audio. SIN corrección
+                // automática: primero datos, después decisión.
+                self.measureClockDrift()
             }
             // ✅ WATCHDOG: si llegamos al final sin transición, forzarla.
             // Corrige el bug de "barra congelada al final, no pasa la canción".
@@ -2811,6 +2835,78 @@ class AudioEngine: NSObject, ObservableObject {
     private func stopDisplayTimer() {
         displayTimer?.invalidate()
         displayTimer = nil
+    }
+
+    // MARK: - Medición de drift host ↔ hardware de audio (SOLO MEDICIÓN)
+    /// ✅ TAREA DRIFT: corre en cada tick del displayTimer (solo modo engine).
+    /// Compara la posición extrapolada por el reloj de pared (posAnchor +
+    /// CACurrentMediaTime, monótono pero del HOST) con la posición audible
+    /// según el nodo (playerTime.sampleTime avanza al ritmo del reloj del
+    /// hardware de audio) usando una REFERENCIA RELATIVA sembrada tras cada
+    /// anclaje (anchorPlaybackPosition la invalida).
+    ///
+    /// · SIN corrección automática: el intento anterior re-anclaba el reloj y
+    ///   producía saltos visibles en la animación de la línea activa. Aquí solo
+    ///   se mide y se loguea; la decisión se tomará con los datos recogidos.
+    /// · Evidencia: muestra cada 75 ticks (~30s en primer plano) y las
+    ///   TRANSICIONES del umbral de 100ms (no cada tick: sin spam).
+    /// · La latencia de salida se descuenta UNA vez en la SIEMBRA: lo
+    ///   renderizado en el nodo aún no se oye, así el drift medido es
+    ///   divergencia pura de relojes y no la latencia fija de arranque.
+    private func measureClockDrift() {
+        guard isPlaying, !isAVPlayerActive, playerNode.isPlaying,
+              let lastRender = playerNode.lastRenderTime,
+              let playerTime = playerNode.playerTime(forNodeTime: lastRender),
+              playerTime.sampleRate > 0 else {
+            clockDriftReference = nil
+            clockDriftHighActive = false
+            return
+        }
+
+        let nodeSample = playerTime.sampleTime
+        let nodeRate = playerTime.sampleRate
+
+        // ✅ El timeline del nodo se reinicia si el engine se paró sin pasar por
+        // un anclaje (defensivo): una referencia de un timeline viejo daría un
+        // Δnode negativo y una medición falsa. Se descarta y se re-siembra.
+        if let reference = clockDriftReference,
+           (reference.sampleRate != nodeRate || nodeSample < reference.nodeSample) {
+            clockDriftReference = nil
+        }
+
+        let extrapolated = max(0, posAnchor + (CACurrentMediaTime() - wallAnchor))
+
+        guard let reference = clockDriftReference else {
+            // ✅ SIEMBRA: la posición audible de ESTE instante (host − latencia)
+            // queda pareja al sample del nodo.
+            let outputLatency = min(max(AVAudioSession.sharedInstance().outputLatency, 0), 0.5)
+            clockDriftReference = (pos: extrapolated - outputLatency,
+                                   nodeSample: nodeSample,
+                                   sampleRate: nodeRate)
+            clockDriftLogCounter = 0
+            clockDriftHighActive = false
+            return
+        }
+
+        let audible = max(0, reference.pos + Double(nodeSample - reference.nodeSample) / nodeRate)
+        let drift = extrapolated - audible
+
+        clockDriftLogCounter += 1
+        if clockDriftLogCounter >= 75 {
+            clockDriftLogCounter = 0
+            AppLog.info(.playback, String(format: "Drift de reloj (host − audio): %.1f ms", drift * 1000))
+        }
+
+        // ✅ Umbral de decisión (100ms): loguear SOLO las transiciones para tener
+        // los episodios documentados sin inundar el log. La corrección queda
+        // a decisión con estos datos.
+        let isHigh = abs(drift) > 0.1
+        if isHigh != clockDriftHighActive {
+            clockDriftHighActive = isHigh
+            if isHigh {
+                AppLog.info(.playback, String(format: "Drift de reloj supera 100 ms: %.0f ms — solo medición, sin corrección", drift * 1000))
+            }
+        }
     }
 
     // ✅ WATCHDOG: red de seguridad contra completions perdidos. Usa el reloj SIN
