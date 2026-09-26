@@ -289,6 +289,41 @@ class AudioEngine: NSObject, ObservableObject {
         chainedAheadToken = 0
     }
 
+    /// ✅ FIX GAPLESS (hallazgo A-1 de la auditoría): un cambio de orden
+    /// (aleatorio/repetición) a mitad de canción invalidaba la transición YA
+    /// encolada y esa invalidación se pagaba con un HUECO audible en la
+    /// SIGUIENTE transición: `commitChainedSong()` ve el token inválido, cae al
+    /// respaldo atómico `chainGaplessPlayNext()` → `playCurrentSong()`, que hace
+    /// `engine.stop()` + reconexión del grafo + 0.1 s de arranque diferido.
+    ///
+    /// En vez de dejar el huérfano, se re-siembra el MISMO nodo con la canción
+    /// actual en la posición viva —sin tocar la sesión ni reconectar el grafo—
+    /// y se vuelve a encadenar contra el orden YA actualizado, así la siguiente
+    /// transición sigue siendo gapless (que era el objetivo de 6569d34).
+    private func rechainAheadAfterOrderChange() {
+        guard isPlaying, !isStopping, !isAVPlayerActive,
+              engine.isRunning, let file = audioFile, duration > 0 else {
+            // Sin reproducción activa no hay nada encolado que salvar: la
+            // próxima canción se programará (ya encadenada) al arrancar.
+            invalidateChainedAhead()
+            return
+        }
+        let position = wallClockTime
+        AppLog.info(.playback, String(format: "Orden cambiado en %.1fs: re-encadenando sin hueco", position))
+        scheduleGeneration += 1
+        let generation = scheduleGeneration
+        // playerNode.stop() descarta el segmento huérfano ya encolado…
+        playerNode.stop()
+        clearChainedAhead()
+        anchorPlaybackPosition(position)
+        currentTime = position
+        clock.time = position
+        // …y se reprograma la canción ACTUAL desde la posición viva. No se
+        // detiene el engine ni se reconecta el grafo: ese era el hueco.
+        scheduleFile(file, from: position, generation: generation)
+        scheduleAheadIfPossible()
+    }
+
     /// Programa por adelantado, en el mismo nodo (at: nil), la canción que
     /// sigue a la que está sonando AHORA MISMO — sin esperar a que termine.
     /// Así el nodo siempre tiene el siguiente buffer listo y la transición
@@ -316,7 +351,14 @@ class AudioEngine: NSObject, ObservableObject {
         }
 
         let fmt = file.processingFormat
-        guard connectedFormatKey == nil || formatKey(fmt) == connectedFormatKey else { return }
+        guard connectedFormatKey == nil || formatKey(fmt) == connectedFormatKey else {
+            // ✅ DIAGNÓSTICO GAPLESS (evidencia en dispositivo): si esta línea
+            // aparece en los logs justo antes de un punto de unión, el hueco
+            // audible es un cambio de formato REAL entre pistas, no un fallo
+            // del encadenado. Sin log, ese caso era indistinguible de un bug.
+            AppLog.warning(.playback, "Gapless: '\(song.displayName)' NO se encadena (formato \(Int(fmt.sampleRate)) Hz/\(fmt.channelCount)ch ≠ graph \(connectedFormatKey ?? "—"))")
+            return
+        }
 
         let framesToPlay = AVAudioFrameCount(file.length)
         guard framesToPlay > 0 else { return }
@@ -373,6 +415,14 @@ class AudioEngine: NSObject, ObservableObject {
             chainGaplessPlayNext()
             return
         }
+        // ✅ DIAGNÓSTICO GAPLESS (evidencia en dispositivo, no impresiones):
+        // cuánto después del fin REAL de la canción anterior (según su reloj de
+        // pared y su duración) llegó este callback de fin de segmento. Es el
+        // error del punto de unión: ~0-30 ms = encadenado exacto; cientos de ms
+        // = el callback llega tarde (típico en Bluetooth/AirPlay) y el ancla de
+        // la canción nueva arranca por detrás del audio. Se mide ANTES de
+        // promover, porque `duration` aquí es todavía la de la canción anterior.
+        let joinLatenessMs = (wallClockTimeUnclamped - duration) * 1000
         let promotedToken = chainedAheadToken
         clearChainedAhead()
         activeSegmentToken = promotedToken
@@ -393,7 +443,7 @@ class AudioEngine: NSObject, ObservableObject {
         saveState()
         preloadNextSong()
 
-        AppLog.info(.playback, "Gapless: encadenado '\(song.displayName)'")
+        AppLog.info(.playback, String(format: "Gapless: encadenado '%@' (unión %+.0f ms respecto al fin de la anterior)", song.displayName, joinLatenessMs))
 
         // Dejar programada la que sigue, ahora que esta es la actual.
         scheduleAheadIfPossible()
@@ -409,6 +459,11 @@ class AudioEngine: NSObject, ObservableObject {
             stop()
             return true
         }
+        // ✅ DIAGNÓSTICO GAPLESS: la transición de respaldo NO es gapless
+        // (reinicio atómico con reconexión y 0.1 s de arranque diferido). Si el
+        // usuario oye un hueco, este log dice exactamente por qué: aquí no había
+        // nada pre-encadenado.
+        AppLog.warning(.playback, "Gapless: transición de respaldo (puede haber hueco) hacia '\(playbackOrder[index].displayName)'")
         currentIndex = index
         playCurrentSong()
         return true
@@ -738,8 +793,14 @@ class AudioEngine: NSObject, ObservableObject {
                 try startEngineSafely()
                 let position = min(max(currentTime, 0), duration)
                 scheduleGeneration += 1
+                // ✅ FIX GAPLESS: el engine se detuvo (iOS lo mató en segundo
+                // plano) → cualquier segmento pre-encadenado murió con él. Sin
+                // limpiar el rastreo y volver a encadenar, la PRIMERA transición
+                // tras volver sonaba por el respaldo atómico (hueco).
+                clearChainedAhead()
                 anchorPlaybackPosition(position)
                 scheduleFile(file, from: position)
+                scheduleAheadIfPossible()
             } catch {
                 AppLog.error(.playback, error, context: "background: reiniciar engine")
             }
@@ -770,8 +831,14 @@ class AudioEngine: NSObject, ObservableObject {
                 try startEngineSafely()
                 let position = min(max(currentTime, 0), duration)
                 scheduleGeneration += 1
+                // ✅ FIX GAPLESS: mismo caso que en segundo plano — al rearrancar
+                // el engine muere cualquier segmento pre-encadenado; hay que
+                // limpiar el rastreo y volver a encadenar la siguiente pista o
+                // la próxima transición paga el respaldo atómico (hueco).
+                clearChainedAhead()
                 anchorPlaybackPosition(position)
                 scheduleFile(file, from: position)
+                scheduleAheadIfPossible()
             } catch {
                 AppLog.error(.playback, error, context: "foreground: reiniciar engine")
             }
@@ -2378,18 +2445,12 @@ class AudioEngine: NSObject, ObservableObject {
         }
         updatePlaybackQueue()
         updateNextUpQueue()
-        // ✅ Si ya había una canción pre-programada por adelantado
-        // (scheduleAheadIfPossible), su índice numérico queda desactualizado
-        // (el audio ya encolado no cambia, pero el índice debe re-sincronizarse
-        // con la nueva posición de esa misma canción para que
-        // commitChainedSong() actualice currentIndex correctamente).
-        if let song = chainedAheadSong, let newIndex = playbackOrder.firstIndex(where: { $0.id == song.id }) {
-            chainedAheadIndex = newIndex
-        }
-        // ✅ B5: el audio ya encolado no cambia con el orden nuevo (y no se
-        // puede desprogramar sin parar el nodo), así que se anula su
-        // transición: al terminar la actual se reprograma según el orden nuevo.
-        invalidateChainedAhead()
+        // ✅ FIX GAPLESS: el audio ya encolado era el de la canción "siguiente"
+        // del orden VIEJO. En vez de invalidarlo (y pagar el respaldo atómico
+        // con hueco en la siguiente transición), se re-siembra el nodo con la
+        // canción actual en su posición viva y se vuelve a encadenar contra el
+        // orden nuevo: la siguiente transición sigue siendo gapless.
+        rechainAheadAfterOrderChange()
         // ✅ FASE B4: el aleatorio es un estado de reproducción: el Centro de
         // Control, la pantalla de bloqueo y CarPlay lo reflejan en cuanto se
         // publica el diccionario completo (antes este toggle no avisaba a iOS).
@@ -2427,11 +2488,11 @@ class AudioEngine: NSObject, ObservableObject {
         case .all: name = "repetir todo"
         case .one: name = "repetir uno"
         }
-        // ✅ B5: cambiar el modo a mitad de canción deja desfasada la canción
-        // YA ENCOLADA en el nodo (terminaría sonando la del modo anterior).
-        // Se anula esa transición: al terminar la actual se reprograma según
-        // el modo nuevo.
-        invalidateChainedAhead()
+        // ✅ FIX GAPLESS: cambiar el modo a mitad de canción dejaba desfasada la
+        // canción YA ENCOLADA (terminaría sonando la del modo anterior) y la
+        // invalidación costaba un hueco en la siguiente transición. Se re-siembra
+        // el nodo y se vuelve a encadenar contra el modo nuevo, sin hueco.
+        rechainAheadAfterOrderChange()
         // ✅ FASE B4: la repetición también es estado de reproducción: se publica
         // el diccionario completo para que las superficies del sistema (CC,
         // bloqueo, CarPlay) queden sincronizadas con la app.
