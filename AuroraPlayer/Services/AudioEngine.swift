@@ -1436,7 +1436,12 @@ class AudioEngine: NSObject, ObservableObject {
         // introducida en 32a1e37 rebajaba el nivel universalmente en BT
         // frente a versiones anteriores. Se conserva el margen sólo si el
         // usuario activa manualmente la protección anti-clipping (limiter).
-        let base: Float = isLimiterEnabled ? 0.99 : 1.0
+        let base: Float
+        if isBluetoothRoute {
+            base = 0.89
+        } else {
+            base = isLimiterEnabled ? 0.99 : 1.0
+        }
         // ✅ 3.0.1 HEADROOM DEL EQ: antes se topaba en 3 dB (`min(maxGain, 3)`)
         // mientras el máximo real calculado arriba es bastante mayor (Bass/Treble:
         // single 8 dB, par contiguo 9 dB; Rock: 6.6 dB). Con material a 0 dBFS en
