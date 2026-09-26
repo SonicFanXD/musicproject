@@ -102,10 +102,12 @@ class AudioEngine: NSObject, ObservableObject {
             }
         }
     }
-    // ✅ MEJORA SHUFFLE: lista de canciones mezcladas que se consume secuencialmente
-    // Evita repeticiones hasta que todas las canciones hayan sonado
-    private var shuffledPlaylist: [Song] = []
-    private var shuffleIndex: Int = 0
+    // ✅ FASE A: eliminadas `shuffledPlaylist`/`shuffleIndex`. Eran una SEGUNDA
+    // estructura de orden (una cola paralela con su propio puntero) que se
+    // actualizaba por caminos distintos de la lista real y podía quedar
+    // desincronizada (síntomas: la "siguiente" impredecible al mezclar, o el
+    // motor mudo al saltar entre playlists). El orden mezclado vive AHORA en
+    // `playbackOrder`: una sola fuente de verdad (ver la sección de cola).
     // ✅ MEJORA QUEUE: cola manual de canciones para reproducir después
     @Published var manualQueue: [Song] = []
     // ✅ FIX cola larga: lista COMPLETA de lo que viene después (cola manual +
@@ -130,9 +132,19 @@ class AudioEngine: NSObject, ObservableObject {
     @Published var nextUpQueue: [Song] = []
     @Published var playHistory: [Song] = []
 
-    // MARK: - Cola de reproducción interna
-    private var playlist: [Song] = []
-    private var originalPlaylist: [Song] = []
+    // MARK: - Cola de reproducción interna (máquina de estados canónica)
+    // ✅ FASE A: dos listas, una sola verdad de ORDEN:
+    //   · `originalOrder` = la playlist SIN mezclar, tal como la eligió el
+    //     usuario. Es la fuente desde la que se reconstruye el orden al apagar
+    //     el aleatorio (nunca al revés).
+    //   · `playbackOrder` = el orden REAL de reproducción. Con shuffle OFF es
+    //     `originalOrder`; con shuffle ON es `originalOrder` mezclado con la
+    //     canción actual fija en el índice 0.
+    // `currentIndex` apunta SIEMPRE a la canción actual dentro de `playbackOrder`
+    // (sin excepciones): "siguiente"/"anterior" dejan de depender de dos
+    // punteros paralelos que podían desincronizarse.
+    private var playbackOrder: [Song] = []
+    private var originalOrder: [Song] = []
     private(set) var currentIndex: Int = 0
 
     // ✅ Reloj de reproducción publicado para las vistas de UI
@@ -217,7 +229,7 @@ class AudioEngine: NSObject, ObservableObject {
     /// repeat-one (repetir la MISMA canción) como caso particular.
     /// ✅ MEJORA REPEAT: mejor manejo de repeat-one con gapless más suave
     private func indexToChainAhead() -> Int? {
-        guard !playlist.isEmpty else { return nil }
+        guard !playbackOrder.isEmpty else { return nil }
         if repeatMode == .one {
             // ✅ MEJORA: en repeat-one, verificar que la canción tenga duración válida
             guard let current = currentSong, current.duration > 0 else { return nil }
@@ -260,8 +272,8 @@ class AudioEngine: NSObject, ObservableObject {
     private func scheduleAheadIfPossible() {
         guard chainedAheadIndex == nil, isPlaying, !isStopping,
               engine.isRunning, playerNode.isPlaying else { return }
-        guard let index = indexToChainAhead(), playlist.indices.contains(index) else { return }
-        let song = playlist[index]
+        guard let index = indexToChainAhead(), playbackOrder.indices.contains(index) else { return }
+        let song = playbackOrder[index]
         let url = song.url
 
         let file: AVAudioFile
@@ -1349,56 +1361,31 @@ class AudioEngine: NSObject, ObservableObject {
         scheduleGeneration += 1
         clearChainedAhead()
         clearPreloadedNext()
-        if let songPlaylist = songPlaylist {
-            self.playlist = songPlaylist
-            if let index = songPlaylist.firstIndex(where: { $0.id == song.id }) {
+        // ✅ FASE A: `play(song:from:)` es el ÚNICO punto que reemplaza la
+        // lista de reproducción, así que aquí se fijan los tres estados
+        // canónicos: `originalOrder` (la lista sin mezclar), `playbackOrder`
+        // (el orden real que va a sonar) y `currentIndex` (posición de la
+        // canción elegida DENTRO de `playbackOrder`).
+        let source = songPlaylist ?? [song]
+        originalOrder = source
+        if isShuffleEnabled {
+            // La canción elegida suena YA y queda fija en el índice 0; el resto
+            // se mezcla EXCLUYÉNDOLA (así el motor nunca se re-encadena a sí
+            // mismo cuando el orden agota la vuelta).
+            playbackOrder = [song] + source.filter { $0.id != song.id }.shuffled()
+            currentIndex = 0
+        } else {
+            playbackOrder = source
+            if let index = playbackOrder.firstIndex(where: { $0.id == song.id }) {
                 currentIndex = index
             } else {
-                self.playlist.insert(song, at: 0)
+                // Canción fuera de la lista recibida (p. ej. "Reproducir ahora"
+                // desde otra sección): se inserta al principio para que
+                // `currentIndex` apunte SIEMPRE a ella dentro de `playbackOrder`.
+                playbackOrder.insert(song, at: 0)
+                originalOrder = playbackOrder
                 currentIndex = 0
             }
-            // ✅ FIX shuffle: el shuffle es un estado GLOBAL del motor, pero
-            // play() reemplazaba la playlist sin aplicarlo. Si el shuffle
-            // estaba activo, la "siguiente" canción salía en orden secuencial
-            // (y la UI no reflejaba aleatorio). Ahora se re-aplica el orden
-            // aleatorio con la canción actual fija en la posición 0, igual
-            // que hace toggleShuffle().
-            if isShuffleEnabled, playlist.count > 1 {
-                originalPlaylist = songPlaylist.contains(where: { $0.id == song.id })
-                    ? songPlaylist
-                    : playlist
-                let current = playlist[currentIndex]
-                playlist.shuffle()
-                if let newIndex = playlist.firstIndex(where: { $0.id == current.id }) {
-                    playlist.remove(at: newIndex)
-                    playlist.insert(current, at: 0)
-                    currentIndex = 0
-                }
-                // ✅ FIX BUG (shuffle de álbum se queda mudo): la lista mezclada
-                // (shuffledPlaylist/shuffleIndex) es estado del MOTOR y
-                // sobrevivía al cambio de playlist. computeNextIndex() la veía
-                // "vigente", tomaba una canción de la playlist ANTERIOR y su
-                // firstIndex(where:) devolvía nil → indexToChainAhead() nil →
-                // chainGaplessPlayNext() → stop() (silencio). Se reconstruye
-                // SIEMPRE para la playlist nueva y con la canción actual
-                // excluida (así nunca se re-encadena a sí misma).
-                shuffledPlaylist = playlist.filter { $0.id != current.id }.shuffled()
-                shuffleIndex = 0
-            } else {
-                originalPlaylist = []
-                // ✅ Mismo motivo: el puntero viejo podía quedar apuntando a una
-                // playlist que ya no existe (y con shuffle activo, a una sola
-                // canción, se consulta en cuanto haya más de una).
-                shuffledPlaylist = []
-                shuffleIndex = 0
-            }
-        } else {
-            self.playlist = [song]
-            currentIndex = 0
-            originalPlaylist = []
-            // ✅ Cola de una sola canción: no hay "siguiente" que mezclar.
-            shuffledPlaylist = []
-            shuffleIndex = 0
         }
 
         updatePlaybackQueue()
@@ -1419,12 +1406,12 @@ class AudioEngine: NSObject, ObservableObject {
     }
 
     private func playCurrentSong(resumingAt position: TimeInterval? = nil) {
-        guard currentIndex >= 0 && currentIndex < playlist.count else {
+        guard currentIndex >= 0 && currentIndex < playbackOrder.count else {
             stop()
             return
         }
 
-        let song = playlist[currentIndex]
+        let song = playbackOrder[currentIndex]
         // ✅ FIX anti-pop: el fade de PAUSA deja el mixer en volumen 0; si el
         // usuario elige otra canción estando en pausa, el mixer seguiría mudo.
         monoMixerNode.volume = 1
@@ -1948,97 +1935,44 @@ class AudioEngine: NSObject, ObservableObject {
     }
 
     /// Calcula el índice de la siguiente canción según shuffle/repeat.
-    /// Retorna nil si se alcanzó el final de la playlist sin repeat.
+    /// Retorna nil si se alcanzó el final de `playbackOrder` sin repeat.
     /// NOTA: el avance AUTOMÁTICO con repeat-one se maneja aparte, en
     /// indexToChainAhead() (repite la MISMA canción). Aquí se resuelve el
     /// avance MANUAL (botón siguiente de la app, del lock screen y del Centro
     /// de Control), que con repeat-one sí debe cambiar de pista y, al llegar al
     /// final de la lista, volver al principio: antes devolvía nil y pulsar
     /// "siguiente" en la última canción no hacía absolutamente nada.
-    /// ✅ MEJORA SHUFFLE: usa lista mezclada que se consume secuencialmente
-    /// para evitar repeticiones hasta que todas las canciones hayan sonado.
-    /// ✅ MEJORA QUEUE: prioriza cola manual sobre la playlist normal.
+    /// ✅ FASE A: el aleatorio ya NO tiene cola paralela. `playbackOrder` ES el
+    /// orden mezclado cuando `isShuffleEnabled` (lo fijan play() y
+    /// toggleShuffle()), así que "siguiente" es la posición contigua: nunca
+    /// repite hasta agotar la vuelta y nunca puede apuntar a una lista obsoleta.
+    /// ✅ MEJORA QUEUE: prioriza la cola manual sobre el resto del orden.
     private func computeNextIndex() -> Int? {
         // ✅ MEJORA QUEUE: primero revisar cola manual
         if !manualQueue.isEmpty {
-            // Añadir primera canción de cola manual a la playlist y reproducirla
+            // Añadir la primera canción de la cola manual al orden y reproducirla
             let nextSong = manualQueue.removeFirst()
             // ✅ FIX crash (Array index out of range): `insert(_:at:)` exige
-            // 0...playlist.count. Si la playlist está VACÍA (nada reproduciéndose)
-            // o currentIndex quedó fuera de rango, insertar en currentIndex + 1
-            // abortaba el proceso. El clamp no cambia nada cuando el índice es
-            // válido (caso normal) y sanea el caso borde.
-            let insertionIndex = min(max(currentIndex + 1, 0), playlist.count)
-            playlist.insert(nextSong, at: insertionIndex)
+            // 0...playbackOrder.count. Si el orden está VACÍO (nada
+            // reproduciéndose) o currentIndex quedó fuera de rango, insertar en
+            // currentIndex + 1 abortaba el proceso. El clamp no cambia nada
+            // cuando el índice es válido (caso normal) y sanea el caso borde.
+            let insertionIndex = min(max(currentIndex + 1, 0), playbackOrder.count)
+            playbackOrder.insert(nextSong, at: insertionIndex)
             currentIndex = insertionIndex
             updateNextUpQueue()
             return currentIndex
         }
-        
-        guard !playlist.isEmpty else { return nil }
-        if playlist.count == 1 {
+
+        guard !playbackOrder.isEmpty else { return nil }
+        if playbackOrder.count == 1 {
             return repeatMode == .all || repeatMode == .one ? 0 : nil
         }
         if isShuffleEnabled {
-            // ✅ MEJORA: usar lista mezclada en lugar de RNG cada vez
-            if shuffledPlaylist.isEmpty || shuffleIndex >= shuffledPlaylist.count {
-                // Regenerar lista mezclada cuando se agota
-                shuffledPlaylist = playlist.shuffled()
-                shuffleIndex = 0
-                // ✅ CRÍTICO - ESTABILIDAD: verificar que la lista mezclada no quede vacía
-                // después de remover la canción actual. Si la playlist tiene solo 1 canción
-                // o todas las canciones son la misma, la mezcla podría dejar la lista vacía.
-                guard !shuffledPlaylist.isEmpty else {
-                    // Fallback: reproducir la misma canción (repeat-one behavior)
-                    return currentIndex
-                }
-                // Asegurar que la primera no sea la actual
-                if let currentIdx = shuffledPlaylist.firstIndex(where: { $0.id == playlist[currentIndex].id }) {
-                    shuffledPlaylist.remove(at: currentIdx)
-                    if shuffleIndex >= shuffledPlaylist.count {
-                        shuffleIndex = 0
-                    }
-                }
-                // ✅ Verificar nuevamente después de remover la canción actual
-                guard !shuffledPlaylist.isEmpty else {
-                    return currentIndex
-                }
-            }
-            // Obtener siguiente de la lista mezclada
-            guard shuffleIndex < shuffledPlaylist.count else {
-                // Lista agotada, reiniciar con repeat o nil si no hay repeat
-                // (repeat-one entra aquí también: el avance manual debe seguir
-                // dando canciones, no quedarse mudo en la última).
-                if repeatMode == .all || repeatMode == .one {
-                    shuffledPlaylist = playlist.shuffled()
-                    shuffleIndex = 0
-                    return playlist.firstIndex(where: { $0.id == shuffledPlaylist[0].id })
-                }
-                return nil
-            }
-            let nextSong = shuffledPlaylist[shuffleIndex]
-            shuffleIndex += 1
-            if let nextIndex = playlist.firstIndex(where: { $0.id == nextSong.id }) {
-                return nextIndex
-            }
-            // ✅ FIX BUG (shuffle de álbum se queda mudo): si la lista mezclada
-            // quedó obsoleta (apuntaba a otra playlist), firstIndex() devolvía
-            // nil y el fin de canción acababa en stop() (silencio). Se regenera
-            // con la playlist ACTUAL —excluyendo la canción en curso— y se
-            // reintenta UNA vez. Solo si la playlist no aporta ninguna canción
-            // se devuelve nil (fin real → stop() limpio).
-            let currentID = playlist.indices.contains(currentIndex) ? playlist[currentIndex].id : nil
-            shuffledPlaylist = playlist.filter { $0.id != currentID }.shuffled()
-            guard let retrySong = shuffledPlaylist.first,
-                  let retryIndex = playlist.firstIndex(where: { $0.id == retrySong.id }) else {
-                shuffleIndex = 0
-                return nil
-            }
-            shuffleIndex = 1 // el primero ya se consume como "siguiente"
-            return retryIndex
+            return shuffledAdvanceIndex()
         }
         let next = currentIndex + 1
-        if next >= playlist.count {
+        if next >= playbackOrder.count {
             // ✅ FIX repeat-one: el avance manual con "repetir una" debe saltar
             // a la siguiente pista y, en el final de la lista, volver al
             // principio. Antes solo repeat-all envolvía, así que en la última
@@ -2048,32 +1982,91 @@ class AudioEngine: NSObject, ObservableObject {
         return next
     }
 
+    /// ✅ FASE A3 — Siguiente posición en ALEATORIO, con anti-repetición de
+    /// artista (soft) y SIN mutar el orden.
+    ///
+    /// Devuelve la primera canción de `playbackOrder` a partir de
+    /// `currentIndex + 1` cuyo artista sea DISTINTO al de la canción actual
+    /// (queja real: dos temas seguidos de Post Malone). Si TODAS las restantes
+    /// son del mismo artista, cae a la siguiente normal: el salto es una
+    /// preferencia, nunca un bloqueo de la reproducción. El orden de
+    /// `playbackOrder` NO cambia — solo se salta esa posición cuando hace falta.
+    ///
+    /// Se aplica únicamente si la lista tiene al menos 3 artistas distintos: en
+    /// un álbum (uno o dos artistas) no aporta nada y solo alteraría la
+    /// secuencia mezclada.
+    private func shuffledAdvanceIndex() -> Int? {
+        let next = currentIndex + 1
+        if next >= playbackOrder.count {
+            // Fin de vuelta: con repeat se envuelve al principio (el salto por
+            // artista no aplica al reinicio de vuelta); sin repeat, stop() limpio
+            // — igual que el modo secuencial.
+            return (repeatMode == .all || repeatMode == .one) ? 0 : nil
+        }
+        if distinctArtistCount(in: playbackOrder) >= 3,
+           let currentKey = artistKey(at: currentIndex) {
+            var candidate = next
+            while candidate < playbackOrder.count {
+                if artistKey(at: candidate) != currentKey { return candidate }
+                candidate += 1
+            }
+            // Todas las restantes son del mismo artista → siguiente normal.
+        }
+        return next
+    }
+
+    /// Clave normalizada de artista para la anti-repetición: `albumArtist`
+    /// (estable en recopilatorios y compilaciones) y, si falta, `artist`.
+    /// Devuelve nil si la canción no trae artista, para que un dato vacío nunca
+    /// provoque un salto.
+    private func artistKey(at index: Int) -> String? {
+        guard playbackOrder.indices.contains(index) else { return nil }
+        let song = playbackOrder[index]
+        let raw = song.albumArtist.isEmpty ? song.artist : song.albumArtist
+        let key = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return key.isEmpty ? nil : key
+    }
+
+    /// Número de artistas DISTINTOS de una lista (ignora canciones sin artista).
+    /// Sirve para decidir si el anti-repetición aporta algo.
+    private func distinctArtistCount(in songs: [Song]) -> Int {
+        var keys = Set<String>()
+        for song in songs {
+            let raw = song.albumArtist.isEmpty ? song.artist : song.albumArtist
+            let key = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            if !key.isEmpty { keys.insert(key) }
+        }
+        return keys.count
+    }
+
     /// ¿Hay una canción siguiente que el motor pueda reproducir ahora mismo?
     /// Réplica de `computeNextIndex()` **sin efectos secundarios**: NO consume
-    /// la cola manual, NO inserta en la playlist y NO modifica `shuffleIndex`.
+    /// la cola manual, NO inserta en el orden y NO avanza ningún puntero del
+    /// aleatorio (el orden mezclado es `playbackOrder` y no se muta).
     /// Lo usan los comandos remotos (lock screen / Centro de Control) para
     /// responder `.noSuchContent` en lugar de `.success` cuando un "siguiente"
     /// no haría absolutamente nada.
     ///
-    /// Nota sobre el aleatorio: con 2+ canciones, `computeNextIndex()` regenera
-    /// `shuffledPlaylist` cuando se agota (rama en la que solo devuelve nil si la
-    /// lista mezclada queda vacía), así que siempre hay siguiente — igual que
-    /// hace Apple Music al saltar en modo aleatorio.
+    /// Nota sobre el aleatorio: `playbackOrder` YA viene mezclado cuando
+    /// `isShuffleEnabled`, y `shuffledAdvanceIndex()` es PURA (no consume la
+    /// vuelta), así que este espejo es exacto sin regenerar nada: con 2+
+    /// canciones hay siguiente mientras repeat esté activo o quede vuelta por
+    /// delante — igual que hace Apple Music al saltar en modo aleatorio.
     var hasNextTrack: Bool {
         // Una canción ya programada por adelantado (gapless) sonará sí o sí al
-        // terminar la actual, incluso si el estado de la playlist cambia después.
+        // terminar la actual, incluso si el orden de reproducción cambia después.
         if chainedAheadSong != nil { return true }
         // La cola manual siempre tiene contenido pendiente.
         if !manualQueue.isEmpty { return true }
-        guard !playlist.isEmpty else { return false }
+        guard !playbackOrder.isEmpty else { return false }
         // Con una sola canción, solo repeat (.all/.one) permite avanzar.
-        if playlist.count == 1 { return repeatMode == .all || repeatMode == .one }
-        if isShuffleEnabled { return true }
+        if playbackOrder.count == 1 { return repeatMode == .all || repeatMode == .one }
+        if isShuffleEnabled { return shuffledAdvanceIndex() != nil }
         // Secuencial: queda algo por delante, o repeat vuelve al principio
         // (espejo exacto de computeNextIndex(): si aquí dijera que no hay
         // siguiente, el lock screen respondería .noSuchContent a un botón que
         // sí funciona).
-        if currentIndex + 1 < playlist.count { return true }
+        if currentIndex + 1 < playbackOrder.count { return true }
         return repeatMode == .all || repeatMode == .one
     }
 
@@ -2088,50 +2081,44 @@ class AudioEngine: NSObject, ObservableObject {
     /// y la URL que realmente va a sonar.
     ///
     /// Es un espejo de `computeNextIndex()` **sin mutar nada**: ni
-    /// `manualQueue.removeFirst()`, ni `playlist.insert(_:at:)`, ni
-    /// `shuffledPlaylist`/`shuffleIndex`. Los índices devueltos coinciden con
-    /// los que devolverá `computeNextIndex()` cuando llegue el momento real
-    /// (mientras la playlist y el índice actual no cambien entre medias), para
-    /// que la caché de precarga siga acertando.
+    /// `manualQueue.removeFirst()` ni `playbackOrder.insert(_:at:)`. Los índices
+    /// devueltos coinciden con los que devolverá `computeNextIndex()` cuando
+    /// llegue el momento real (mientras el orden y el índice actual no cambien
+    /// entre medias), para que la caché de precarga siga acertando.
+    /// ✅ FASE A: con el aleatorio ya no hay "lista mezclada que regenerar":
+    /// `shuffledAdvanceIndex()` es determinista y pura, así que la precarga
+    /// acierta SIEMPRE (antes devolvía nil al agotarse la cola paralela y la
+    /// transición pagaba la apertura de disco del archivo).
     private func peekNextTrack() -> (index: Int, url: URL)? {
         // Rama 1 — cola manual: se insertará justo después de la actual. Ese es
         // el índice que devolverá computeNextIndex() (`min(max(currentIndex+1,0),
-        // playlist.count)`), y la URL hay que leerla de la cola, porque la
-        // canción TODAVÍA no está en la playlist en este momento.
+        // playbackOrder.count)`), y la URL hay que leerla de la cola, porque la
+        // canción TODAVÍA no está en el orden actual en este momento.
         if let queued = manualQueue.first {
-            let insertionIndex = min(max(currentIndex + 1, 0), playlist.count)
+            let insertionIndex = min(max(currentIndex + 1, 0), playbackOrder.count)
             return (insertionIndex, queued.url)
         }
 
-        guard !playlist.isEmpty else { return nil }
+        guard !playbackOrder.isEmpty else { return nil }
         // Con una sola canción, solo repeat (.all/.one) permite avanzar.
-        if playlist.count == 1 {
-            return (repeatMode == .all || repeatMode == .one) ? (0, playlist[0].url) : nil
+        if playbackOrder.count == 1 {
+            return (repeatMode == .all || repeatMode == .one) ? (0, playbackOrder[0].url) : nil
         }
         if isShuffleEnabled {
-            // Espejo del camino real: si la lista mezclada está vigente, la
-            // siguiente es `shuffledPlaylist[shuffleIndex]` — se devuelve su
-            // índice en la playlist SIN avanzar el puntero.
-            if !shuffledPlaylist.isEmpty, shuffleIndex < shuffledPlaylist.count {
-                let nextSong = shuffledPlaylist[shuffleIndex]
-                if let idx = playlist.firstIndex(where: { $0.id == nextSong.id }) {
-                    return (idx, nextSong.url)
-                }
-            }
-            // Lista agotada o aún sin generar: computeNextIndex() regeneraría
-            // (mutación) y elegiría una canción al azar, así que no es predecible
-            // sin mutar. Devolver nil aquí solo significa "no precargar": la
-            // transición real abrirá el archivo en su momento.
-            return nil
+            // ✅ FASE A: espejo EXACTO y puro del camino real (misma función que
+            // usa computeNextIndex), incluido el salto por anti-repetición de
+            // artista de A3: la canción precargada es la que va a sonar.
+            guard let idx = shuffledAdvanceIndex(), playbackOrder.indices.contains(idx) else { return nil }
+            return (idx, playbackOrder[idx].url)
         }
         // Secuencial
         let next = currentIndex + 1
-        if next >= playlist.count {
+        if next >= playbackOrder.count {
             // ✅ Espejo de computeNextIndex(): repeat-one también vuelve al
             // principio en el avance manual.
-            return (repeatMode == .all || repeatMode == .one) ? (0, playlist[0].url) : nil
+            return (repeatMode == .all || repeatMode == .one) ? (0, playbackOrder[0].url) : nil
         }
-        return (next, playlist[next].url)
+        return (next, playbackOrder[next].url)
     }
 
     /// ✅ PRECARGA de la siguiente canción en background: mientras suena la
@@ -2141,10 +2128,9 @@ class AudioEngine: NSObject, ObservableObject {
 
     private func preloadNextSong() {
         // ✅ FIX: consultar con la versión PURA del cálculo. Antes se usaba
-        // computeNextIndex(), que CONSUME la cola manual (removeFirst), inserta
-        // en la playlist y avanza el puntero del aleatorio — es decir, la simple
-        // PRECARGA alteraba la cola (una canción de la cola manual desaparecía
-        // de nextUpQueue sin sonar) y el orden del aleatorio.
+        // computeNextIndex(), que CONSUME la cola manual (removeFirst) e inserta
+        // en el orden — es decir, la simple PRECARGA alteraba la cola (una
+        // canción de la cola manual desaparecía de nextUpQueue sin sonar).
         guard let next = peekNextTrack() else {
             clearPreloadedNext()
             return
@@ -2154,7 +2140,7 @@ class AudioEngine: NSObject, ObservableObject {
         // ✅ DOLBY: el motor propio no decodifica E-AC-3/AC-3, así que precargar
         // su AVAudioFile solo gastaría una apertura de disco para fallar. La
         // siguiente canción Dolby se resolverá por AVPlayer en playCurrentSong().
-        if playlist.indices.contains(index), playlist[index].requiresAVPlayerPlayback {
+        if playbackOrder.indices.contains(index), playbackOrder[index].requiresAVPlayerPlayback {
             clearPreloadedNext()
             return
         }
@@ -2214,14 +2200,14 @@ class AudioEngine: NSObject, ObservableObject {
     // (con un pequeño gap) cuando no fue posible encadenar por adelantado:
     // cambio de formato entre canciones, o fin de la playlist.
     func playPrevious() {
-        guard !playlist.isEmpty else { return }
+        guard !playbackOrder.isEmpty else { return }
         if currentTime > 3.0 {
             seek(to: 0)
             return
         }
         currentIndex -= 1
         if currentIndex < 0 {
-            currentIndex = repeatMode == .all ? playlist.count - 1 : 0
+            currentIndex = repeatMode == .all ? playbackOrder.count - 1 : 0
         }
         playCurrentSong()
     }
@@ -2275,47 +2261,43 @@ class AudioEngine: NSObject, ObservableObject {
 
     func toggleShuffle() {
         isShuffleEnabled.toggle()
-        // ✅ Guarda anti-crash: playlist vacía (cola terminada) no debe
-        // indexar sobre []; el estado visual ON/OFF igual se actualiza.
-        guard !playlist.isEmpty else { return }
+        // ✅ Guarda anti-crash: orden vacío (cola terminada) no debe indexar
+        // sobre []; el estado visual ON/OFF igual se actualiza.
+        guard playbackOrder.indices.contains(currentIndex) else { return }
+        // ✅ FASE A: la canción actual se lee UNA vez y sobrevive al cambio de
+        // orden. Solo hay dos listas: `originalOrder` (sin mezclar) es la fuente
+        // y `playbackOrder` el orden real; se reconstruye SIEMPRE desde la
+        // primera, nunca al revés.
+        let current = playbackOrder[currentIndex]
         if isShuffleEnabled {
-            originalPlaylist = playlist
-            let current = playlist[currentIndex]
-            // ✅ MEJORA: inicializar lista mezclada nueva.
-            // ✅ FIX BUG (shuffle se queda mudo): la canción ACTUAL se excluye de
-            // la lista mezclada. Si entraba, al llegar el puntero a su posición
-            // computeNextIndex() devolvía su propio índice y el motor se
-            // re-encadenaba a sí misma en vez de pasar a otra canción.
-            shuffledPlaylist = playlist.filter { $0.id != current.id }.shuffled()
-            shuffleIndex = 0
-            playlist.shuffle()
-            if let newIndex = playlist.firstIndex(where: { $0.id == current.id }) {
-                playlist.remove(at: newIndex)
-                playlist.insert(current, at: 0)
-                currentIndex = 0
-            }
+            // OFF → ON: lo que estaba sonando es, por definición, el orden
+            // secuencial elegido por el usuario → pasa a ser `originalOrder`. El
+            // orden real se reconstruye mezclado con la canción actual fija en
+            // el índice 0, así que la "siguiente" es siempre la primera de la
+            // cola nueva y NUNCA una posición heredada de la lista anterior.
+            originalOrder = playbackOrder
+            playbackOrder = [current] + originalOrder.filter { $0.id != current.id }.shuffled()
+            currentIndex = 0
         } else {
-            // ✅ MEJORA: limpiar lista mezclada al desactivar
-            shuffledPlaylist = []
-            shuffleIndex = 0
-            if !originalPlaylist.isEmpty {
-                let current = playlist[currentIndex]
-                playlist = originalPlaylist
-                if let newIndex = playlist.firstIndex(where: { $0.id == current.id }) {
-                    currentIndex = newIndex
-                }
-                originalPlaylist = []
+            // ON → OFF: se vuelve al orden original SIN mezclar y se recoloca el
+            // índice sobre la MISMA canción (nunca se pierde el punto de escucha).
+            playbackOrder = originalOrder.isEmpty ? playbackOrder : originalOrder
+            if let newIndex = playbackOrder.firstIndex(where: { $0.id == current.id }) {
+                currentIndex = newIndex
+            } else {
+                playbackOrder.insert(current, at: 0)
+                originalOrder = playbackOrder
+                currentIndex = 0
             }
         }
         updatePlaybackQueue()
         updateNextUpQueue()
-        // ✅ El shuffle reordena `playlist`; si ya había una canción
-        // pre-programada por adelantado (scheduleAheadIfPossible), su índice
-        // numérico queda desactualizado (el audio ya encolado no cambia, pero
-        // el índice sí debe re-sincronizarse con la nueva posición de esa
-        // misma canción para que commitChainedSong() actualice currentIndex
-        // correctamente).
-        if let song = chainedAheadSong, let newIndex = playlist.firstIndex(where: { $0.id == song.id }) {
+        // ✅ Si ya había una canción pre-programada por adelantado
+        // (scheduleAheadIfPossible), su índice numérico queda desactualizado
+        // (el audio ya encolado no cambia, pero el índice debe re-sincronizarse
+        // con la nueva posición de esa misma canción para que
+        // commitChainedSong() actualice currentIndex correctamente).
+        if let song = chainedAheadSong, let newIndex = playbackOrder.firstIndex(where: { $0.id == song.id }) {
             chainedAheadIndex = newIndex
         }
         // ✅ B5: el audio ya encolado no cambia con el orden nuevo (y no se
@@ -2323,9 +2305,26 @@ class AudioEngine: NSObject, ObservableObject {
         // transición: al terminar la actual se reprograma según el orden nuevo.
         invalidateChainedAhead()
 
-        AppLog.info(.playback, "Aleatorio: \(isShuffleEnabled ? "activado" : "desactivado") (\(playlist.count) canciones)")
+        AppLog.info(.playback, "Aleatorio: \(isShuffleEnabled ? "activado" : "desactivado") (\(playbackOrder.count) canciones)")
     }
 
+    /// Cicla el modo de repetición: .off → .all → .one → .off.
+    ///
+    /// ✅ FASE A4 — LOS TRES MODOS, documentados tal y como los implementa el
+    /// motor (avance AUTOMÁTICO = cuando el audio termina; avance MANUAL = botón
+    /// "siguiente" de la app, del lock screen y del Centro de Control):
+    ///
+    ///   · `.off` — Al llegar al final de `playbackOrder` no hay siguiente: el
+    ///     avance automático acaba en stop() (motor parado, UI sin canción) y el
+    ///     manual tampoco hace nada en la última pista (computeNextIndex() nil).
+    ///   · `.all` — Al llegar al final (automático) o al pulsar "siguiente" en
+    ///     la última pista (manual), vuelve al índice 0 y sigue sonando.
+    ///   · `.one` — El avance AUTOMÁTICO repite la MISMA canción (lo resuelve
+    ///     indexToChainAhead(), que no pasa por computeNextIndex()). El avance
+    ///     MANUAL, en cambio, SÍ cambia de pista: es el comportamiento ya
+    ///     verificado y el que espera el usuario (pulsar "siguiente" debe
+    ///     saltar, no reiniciar la que suena); en la última pista envuelve al
+    ///     índice 0, igual que `.all` (rama manual de computeNextIndex()).
     func cycleRepeatMode() {
         switch repeatMode {
         case .off: repeatMode = .all
@@ -2435,8 +2434,18 @@ class AudioEngine: NSObject, ObservableObject {
         }
 
         let song = songs[index]
-        self.playlist = songs
-        self.currentIndex = index
+        // ✅ FASE A: la biblioteca completa es el orden SIN mezclar de la sesión
+        // restaurada. Si el aleatorio estaba activo, el orden real se reconstruye
+        // mezclado con la canción restaurada fija en el índice 0 — la misma
+        // invariante que play()/toggleShuffle(): `currentIndex` apunta SIEMPRE a
+        // la canción actual dentro de `playbackOrder`.
+        originalOrder = songs
+        if isShuffleEnabled, songs.count > 1 {
+            playbackOrder = [song] + songs.filter { $0.id != song.id }.shuffled()
+        } else {
+            playbackOrder = songs
+        }
+        self.currentIndex = playbackOrder.firstIndex(where: { $0.id == song.id }) ?? 0
         self.currentSong = song
         self.duration = song.duration
         let savedTime = (state["currentTime"] as? TimeInterval) ?? 0
@@ -2508,11 +2517,19 @@ class AudioEngine: NSObject, ObservableObject {
         // ✅ FIX truncamiento: antes se usaba `nextUpQueue` (la ventana de 10
         // de la UI), así que cualquier edición de la cola recortaba la
         // reproducción a esas 10 canciones + la actual.
-        guard currentIndex >= 0, currentIndex < playlist.count else { return }
-        let current = playlist[currentIndex]
-        playlist = [current] + upcomingQueue
+        guard currentIndex >= 0, currentIndex < playbackOrder.count else { return }
+        let current = playbackOrder[currentIndex]
+        playbackOrder = [current] + upcomingQueue
         currentIndex = 0
-        originalPlaylist = []
+        // ✅ FASE A: la cola editada pasa a ser el nuevo orden SIN mezclar
+        // (`originalOrder`), que es la fuente desde la que se reconstruye al
+        // apagar el aleatorio. Con el aleatorio activo el orden real se re-mezcla
+        // conservando la canción actual fija en el índice 0 — misma invariante
+        // que play()/toggleShuffle().
+        originalOrder = playbackOrder
+        if isShuffleEnabled, playbackOrder.count > 1 {
+            playbackOrder = [current] + originalOrder.filter { $0.id != current.id }.shuffled()
+        }
         updatePlaybackQueue()
         // Mantener la ventana de la UI coherente con la playlist recién rehecha
         // (y con la cola manual ya volcada dentro de ella).
@@ -2730,33 +2747,35 @@ class AudioEngine: NSObject, ObservableObject {
     }
 
     private func updatePlaybackQueue() {
-        playbackQueue = playlist
+        // ✅ FASE A: el orden real (`playbackOrder`) es lo que ve la UI.
+        playbackQueue = playbackOrder
     }
 
     private func updateNextUpQueue() {
-        // ✅ MEJORA QUEUE: cola manual primero, luego la playlist normal
+        // ✅ MEJORA QUEUE: cola manual primero, luego el resto del orden real
         var upcoming: [Song] = []
         
         // Añadir cola manual primero
         upcoming.append(contentsOf: manualQueue)
         
-        // Luego añadir canciones de la playlist
-        guard currentIndex < playlist.count else {
+        // Luego añadir las canciones que siguen en `playbackOrder` (con el
+        // aleatorio activo ya viene mezclado: la cola que se ve es la que sonará).
+        guard currentIndex < playbackOrder.count else {
             upcomingQueue = upcoming
             nextUpQueue = Array(upcoming.prefix(10))
             return
         }
         let nextIndex = currentIndex + 1
-        guard nextIndex < playlist.count else {
+        guard nextIndex < playbackOrder.count else {
             upcomingQueue = upcoming
             nextUpQueue = Array(upcoming.prefix(10))
             return
         }
-        let playlistUpcoming = Array(playlist.suffix(from: nextIndex))
-        upcoming.append(contentsOf: playlistUpcoming)
+        let orderUpcoming = Array(playbackOrder.suffix(from: nextIndex))
+        upcoming.append(contentsOf: orderUpcoming)
         
         // ✅ FIX cola larga: la lista completa (sin topar) es la que usa el
-        // motor para rehacer la playlist; la ventana de 10 es solo para la UI.
+        // motor para rehacer el orden; la ventana de 10 es solo para la UI.
         upcomingQueue = upcoming
         // ✅ MEJORA: mostrar 10 canciones en lugar de 3 para mejor visualización
         nextUpQueue = Array(upcoming.prefix(10))
