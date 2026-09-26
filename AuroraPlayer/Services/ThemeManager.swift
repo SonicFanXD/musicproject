@@ -578,8 +578,14 @@ enum AppTheme {
     /// (partida por brillo); y si nada de eso da color, el primario desaturado.
     /// nil solo si la portada no aporta suficiente color → el llamador usa su
     /// fallback.
+    /// ✅ NEUTRALIDAD: si la portada es mayormente neutra (≥ 60% de píxeles
+    /// grises), el primario sale con la saturación atenuada proporcionalmente
+    /// (ver `neutralFraction`); hue y brightness intactos.
     private static func clusteredAccentColors(from artwork: UIImage) -> (primary: UIColor, secondary: UIColor?)? {
-        guard let pixels = coloredPixels(from: artwork) else { return nil }
+        // ✅ NEUTRALIDAD: `coloredPixels` devuelve además `neutralFraction`:
+        // fracción de píxeles grises sobre TODOS los opacos del buffer 64×64,
+        // calculada ANTES de cualquier filtro de tier.
+        guard let (pixels, neutralFraction) = coloredPixels(from: artwork) else { return nil }
 
         var sectors = [HueSector](repeating: HueSector(), count: hueSectorCount)
         for pixel in pixels {
@@ -683,8 +689,45 @@ enum AppTheme {
             }
         }
 
-        return (primary, secondary)
+        // ✅ PORTADA MAYORMENTE NEUTRA: si ≥ 60% de los píxeles opacos son
+        // grises (saturación < 0.15), el color ganador del clustering NO
+        // representa la portada: los píxeles grises nunca entran en ningún
+        // sector (los filtra el tier de `coloredPixels`), así el detalle de
+        // color gana por default y sale un acento sobresaturado (repro:
+        // SORNERO, ~90% gris con detalles azules, daba AZUL SATURADO).
+        // Regla universal proporcional:
+        //   dampFactor = clamp((1 - neutralFraction) / 0.40, 0, 1)
+        //     · neutralFraction = 0.60 → dampFactor = 1.00 → sin cambio (frontera suave)
+        //     · neutralFraction = 0.90 → dampFactor = 0.25 → un azul de sat 0.6
+        //       queda en ~0.15 (gris-azulado)
+        //     · neutralFraction = 1.00 → dampFactor = 0.00 → gris puro
+        // El hue y el brightness del ganador se conservan intactos: SOLO se
+        // recorta la saturación. El resultado entra a `readableColor` por el
+        // camino de siempre (clamps de legibilidad intactos). Portadas con
+        // color real (rojo puro, multicolor) tienen `neutralFraction` bajo y
+        // no se activan: mismo acento que antes.
+        var accentPrimary = primary
+        if neutralFraction >= neutralFractionActivationThreshold {
+            let dampFactor = min(1, max(0, (1 - neutralFraction) / 0.40))
+            var h: CGFloat = 0, s: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 1
+            if accentPrimary.getHue(&h, saturation: &s, brightness: &b, alpha: &a) {
+                AppLog.debug(.artwork, String(format: "🎨 portada mayormente neutra (%.0f%% gris): saturación del acento × %.2f", neutralFraction * 100, dampFactor))
+                accentPrimary = UIColor(hue: h, saturation: s * dampFactor, brightness: b, alpha: 1)
+            }
+        }
+
+        return (accentPrimary, secondary)
     }
+
+    /// ✅ Umbral de neutralidad de un píxel: debajo de esta saturación el
+    /// píxel es GRIS (blanco/negro/gris medio) para el cálculo de
+    /// `neutralFraction`. Contarlo en la misma pasada del buffer 64×64
+    /// sale gratis (un `if` por píxel) y evita una segunda recorrida.
+    private static let neutralPixelSaturationThreshold: CGFloat = 0.15
+
+    /// ✅ Portada mayormente neutra cuando al menos el 60% de sus píxeles
+    /// opacos son grises (SORNERO: ~90% gris con detalles azules).
+    private static let neutralFractionActivationThreshold: CGFloat = 0.60
 
     /// ✅ Píxeles significativos de la portada (64×64) en HSB.
     /// FILTRO ADAPTATIVO: se descartan SIEMPRE los transparentes (alpha < 0.5) y
@@ -696,7 +739,12 @@ enum AppTheme {
     /// píxel visible (vacía o totalmente transparente).
     /// El muestreo y el propio `HSBPixel` no cambian: solo cambia qué píxeles
     /// pasan el filtro.
-    private static func coloredPixels(from artwork: UIImage) -> [HSBPixel]? {
+    /// NUEVO: además devuelve `neutralFraction` = fracción de píxeles NEUTROS
+    /// (saturación < 0.15) entre TODOS los píxeles opacos (alpha ≥ 0.5),
+    /// calculada sobre el buffer 64×64 ANTES de aplicar cualquier filtro de
+    /// tier, para que el gris participe en la decisión del acento (ver
+    /// `clusteredAccentColors`).
+    private static func coloredPixels(from artwork: UIImage) -> (pixels: [HSBPixel], neutralFraction: CGFloat)? {
         let size = CGSize(width: dominantSampleEdge, height: dominantSampleEdge)
         UIGraphicsBeginImageContextWithOptions(size, false, 1.0)
         artwork.draw(in: CGRect(origin: .zero, size: size))
@@ -736,6 +784,15 @@ enum AppTheme {
         // ✅ ADAPTATIVO: la imagen se dibuja a 64×64 UNA sola vez (arriba) y este
         // buffer se recorre una vez por tier (4096 píxeles: el coste extra es
         // despreciable frente a la ganancia de no rendirse en portadas oscuras).
+        // ✅ NEUTRALIDAD: contamos píxeles opacos y neutros (grises) en la MISMA
+        // pasada del buffer. ⚠️ CRÍTICO: el conteo se hace sobre TODOS los píxeles
+        // opacos (alpha ≥ 0.5) del buffer 64×64, ANTES de aplicar cualquier filtro
+        // de tier. NO sobre el subconjunto que pasó el filtro de tier: ese
+        // subconjunto EXCLUYE por definición los píxeles grises (es el bug del
+        // acento azul saturado en SORNERO), así que medir la neutralidad ahí
+        // INVERTIRÍA el resultado (fracción de saturados ~100%, jamás se activa).
+        var opaquePixelCount = 0
+        var neutralPixelCount = 0
         var loosest: [HSBPixel] = []
         var loosestTierName = "tier 3"
 
@@ -759,6 +816,14 @@ enum AppTheme {
                     var brightness: CGFloat = 0
                     guard pixelColor.getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: nil) else { continue }
 
+                    // ✅ NEUTRALIDAD: los píxeles grises también se cuentan en
+                    // `neutralFraction`. Se filtran igual que siempre (los grises
+                    // NO pasan ningún tier), pero su fracción sí llega al
+                    // clustering y atenúa la saturación del acento cuando la
+                    // portada es mayormente neutra.
+                    if saturation < neutralPixelSaturationThreshold { neutralPixelCount += 1 }
+                    opaquePixelCount += 1
+
                     guard brightness >= tier.minimumBrightness,
                           brightness <= tier.maximumBrightness,
                           saturation >= tier.minimumSaturation else { continue }
@@ -778,7 +843,7 @@ enum AppTheme {
 
             if pixels.count >= tier.minimumCount {
                 AppLog.debug(.artwork, "coloredPixels: \(tier.name) (\(pixels.count)px)")
-                return pixels
+                return (pixels, neutralFraction(opaquePixelCount: opaquePixelCount, neutralPixelCount: neutralPixelCount))
             }
             // El último tier evaluado es el más laxo: se queda como último
             // recurso por si ninguno llega a su mínimo.
@@ -794,7 +859,17 @@ enum AppTheme {
             return nil
         }
         AppLog.debug(.artwork, "coloredPixels: \(loosestTierName) (\(loosest.count)px)")
-        return loosest
+        return (loosest, neutralFraction(opaquePixelCount: opaquePixelCount, neutralPixelCount: neutralPixelCount))
+    }
+
+    /// ✅ NEUTRALIDAD: fracción de píxeles grises (saturación < 0.15) entre
+    /// TODOS los píxeles opacos (alpha ≥ 0.5) del buffer 64×64. Se calcula
+    /// ANTES de cualquier filtro de tier, así el gris PARTICIPA en la decisión
+    /// del acento en vez de desaparecer (causa raíz del azul saturado en
+    /// portadas mayormente grises como SORNERO).
+    private static func neutralFraction(opaquePixelCount: Int, neutralPixelCount: Int) -> CGFloat {
+        guard opaquePixelCount > 0 else { return 0 }
+        return CGFloat(neutralPixelCount) / CGFloat(opaquePixelCount)
     }
 
     /// ✅ Distancia angular mínima entre dos tonos (0...180°).
