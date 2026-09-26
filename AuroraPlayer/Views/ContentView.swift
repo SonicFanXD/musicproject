@@ -125,7 +125,14 @@ struct ContentView: View {
                     // ✅ FASE D: la biblioteca cambió → invalidar el orden cacheado.
                     // `$songs` emite en CADA asignación (aunque los valores sean
                     // iguales), así que también cubre re-lecturas de metadata.
-                    invalidateOrderedSongs()
+                    // ⚠️ D-1: la emisión ocurre DENTRO del willSet de @Published
+                    // (documentado por Apple), así que en este punto
+                    // `fileAccessService.songs` TODAVÍA devuelve el array anterior:
+                    // invalidar aquí cacheaba la biblioteca vieja y la marcaba como
+                    // válida (dirty = false) → la lista no se refrescaba hasta el
+                    // siguiente invalidante. Un turno de main deja que la asignación
+                    // termine y `recomputeOrderedSongs()` ya lee el array nuevo.
+                    DispatchQueue.main.async { invalidateOrderedSongs() }
                 }
                 // ✅ Sincronización bidireccional: mantener @AppStorage actualizado
                 // cuando cambian las variables @State de ordenamiento
