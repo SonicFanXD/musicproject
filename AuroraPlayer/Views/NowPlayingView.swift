@@ -242,6 +242,11 @@ struct NowPlayingView: View {
                         Spacer()
                         Color.clear.frame(width: 44, height: 44)
                     }
+                    // ✅ Margen superior CONSTANTE: el header no debe tocar el
+                    // status bar. Al estar dentro del safeAreaInset es fijo por
+                    // construcción: no depende del contenido (título 1/2 líneas,
+                    // chip sí/no).
+                    .padding(.top, 8)
                     .padding(.horizontal, 8)
                 }
             }
