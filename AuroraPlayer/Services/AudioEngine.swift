@@ -215,10 +215,26 @@ class AudioEngine: NSObject, ObservableObject {
     private var wallAnchor: TimeInterval = 0
 
     /// Fija el ancla: la posición actual es `pos` desde este instante.
+    /// ✅ TAREA DRIFT: cada anclaje (play, seek, pausa, resume, gapless, cambio de
+    /// orden…) invalida la referencia nodo↔host del medidor de desfase: los 14
+    /// puntos de anclaje pasan por AQUÍ, así el medidor nunca compara con una
+    /// referencia de un tramo de reproducción distinto.
     private func anchorPlaybackPosition(_ pos: TimeInterval) {
         posAnchor = duration > 0 ? min(max(pos, 0), duration) : max(pos, 0)
         wallAnchor = CACurrentMediaTime()
+        clockDriftReference = nil
     }
+
+    /// ✅ TAREA DRIFT: referencia relativa nodo↔host. `pos` es la posición
+    /// AUDIBLE (extrapolada host − latencia de salida) pareja del sample de nodo
+    /// `nodeSample` en el instante de siembra. Con deltas RELATIVOS a partir de
+    /// esa pareja no hace falta conocer el mapeo exacto del scheduleSegment:
+    /// nodeSample avanza al ritmo del reloj del hardware de audio y pos al
+    /// ritmo de CACurrentMediaTime, así que su divergencia ES el drift buscado.
+    private var clockDriftReference: (pos: TimeInterval, nodeSample: AVAudioFramePosition, sampleRate: Double)?
+    /// Contador para el log periódico de evidencia (cada 75 ticks ≈ 30s en
+    /// primer plano, ≈ 225s en segundo plano).
+    private var clockDriftLogCounter = 0
 
     /// Posición de reproducción extrapolada (solo mientras isPlaying).
     // ✅ TRACKING de archivo programado: permite a `resume()` detectar si el
@@ -2773,6 +2789,11 @@ class AudioEngine: NSObject, ObservableObject {
                 let current = self.wallClockTime
                 self.currentTime = current
                 self.clock.time = current
+                // ✅ TAREA DRIFT: comparar el reloj de pared con el reloj REAL
+                // del nodo (playerNode.playerTime). Si el desfase supera 100ms,
+                // el reloj de UI se re-ancla a la posición audible: la barra y
+                // las letras siguen la VOZ, no la extrapolación del host.
+                self.measureAndCorrectClockDrift()
             }
             // ✅ WATCHDOG: si llegamos al final sin transición, forzarla.
             // Corrige el bug de "barra congelada al final, no pasa la canción".
@@ -2806,6 +2827,81 @@ class AudioEngine: NSObject, ObservableObject {
     private func stopDisplayTimer() {
         displayTimer?.invalidate()
         displayTimer = nil
+    }
+
+    // MARK: - Medición y corrección de drift host ↔ hardware de audio
+    /// ✅ TAREA DRIFT: corre en cada tick del displayTimer (solo modo engine).
+    /// Compara la posición extrapolada por el reloj de pared (posAnchor +
+    /// CACurrentMediaTime, monótono pero del HOST) con la posición audible
+    /// según el nodo (playerTime.sampleTime avanza al ritmo del reloj del
+    /// hardware de audio). Apple y las apps profesionales corrigen este drift
+    /// comparando ambas fuentes periódicamente; hasta ahora el tick SOLO
+    /// re-extrapolaba y el desfase (constante por la latencia de arranque, o
+    /// creciente host↔audio) llegaba íntegro a barra y letras.
+    ///
+    /// · |drift| > 100ms → re-ancla el reloj de UI a la posición AUDIBLE y lo
+    ///   loguea (una corrección por época de anclaje: la corrección invalida
+    ///   la referencia vía anchorPlaybackPosition y el siguiente tick solo
+    ///   siembra de nuevo — no puede entrar en bucle).
+    /// · Cada ~30s de reproducción se loguea una medición de evidencia.
+    /// · La latencia de salida (outputLatency) se descuenta UNA vez en la
+    ///   SIEMBRA de la referencia: lo renderizado en el nodo aún no se oye.
+    ///   Así el drift medido es divergencia pura de relojes, y la corrección
+    ///   no persigue la latencia (que provocaría re-anclajes en cadena).
+    private func measureAndCorrectClockDrift() {
+        guard isPlaying, !isAVPlayerActive, playerNode.isPlaying,
+              let lastRender = playerNode.lastRenderTime,
+              let playerTime = playerNode.playerTime(forNodeTime: lastRender),
+              playerTime.sampleRate > 0 else {
+            clockDriftReference = nil
+            return
+        }
+
+        let nodeSample = playerTime.sampleTime
+        let nodeRate = playerTime.sampleRate
+
+        // ✅ El timeline del nodo se reinicia si el engine se paró sin pasar por
+        // un anclaje (defensivo): una referencia de un timeline viejo daría un
+        // Δnode negativo y una corrección falsa. Se descarta y se re-siembra.
+        if let reference = clockDriftReference,
+           (reference.sampleRate != nodeRate || nodeSample < reference.nodeSample) {
+            clockDriftReference = nil
+        }
+
+        let extrapolated = max(0, posAnchor + (CACurrentMediaTime() - wallAnchor))
+
+        guard let reference = clockDriftReference else {
+            // ✅ SIEMBRA: la posición audible de ESTE instante (host − latencia)
+            // queda pareja al sample del nodo. La latencia de salida vive en la
+            // referencia, no en cada medición (ver doc de arriba).
+            let outputLatency = min(max(AVAudioSession.sharedInstance().outputLatency, 0), 0.5)
+            clockDriftReference = (pos: extrapolated - outputLatency,
+                                   nodeSample: nodeSample,
+                                   sampleRate: nodeRate)
+            clockDriftLogCounter = 0
+            return
+        }
+
+        let audible = max(0, reference.pos + Double(nodeSample - reference.nodeSample) / nodeRate)
+        let drift = extrapolated - audible
+
+        clockDriftLogCounter += 1
+        if clockDriftLogCounter >= 75 {
+            clockDriftLogCounter = 0
+            AppLog.info(.playback, String(format: "Drift de reloj (host − audio): %.1f ms", drift * 1000))
+        }
+
+        guard abs(drift) > 0.1 else { return }
+
+        // ✅ CORRECCIÓN: el reloj de UI pasa a la posición audible del nodo
+        // (por el camino canónico: clamp a duración + invalidación de la
+        // referencia; los valores publicados ya asignados arriba en el tick se
+        // sobrescriben aquí con la posición corregida).
+        let corrected = duration > 0 ? min(max(audible, 0), duration) : max(audible, 0)
+        anchorPlaybackPosition(corrected)
+        currentTime = corrected
+        clock.time = corrected
+        AppLog.info(.playback, String(format: "Drift corregido: %.0f ms — reloj re-anclado a la posición audible del nodo", drift * 1000))
     }
 
     // ✅ WATCHDOG: red de seguridad contra completions perdidos. Usa el reloj SIN
