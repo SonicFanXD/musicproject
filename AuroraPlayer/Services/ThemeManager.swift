@@ -503,6 +503,10 @@ enum AppTheme {
     }
 
     /// 12 sectores de 30°: agrupar por TONO, no por cubo RGB exacto.
+    /// ✅ El reparto aplica un offset de medio sector (`hueSectorWidth / 2`): el
+    /// sector k cubre desde k·30° − 15° hasta k·30° + 15°, de modo que el sector
+    /// 0 queda CENTRADO en 0° (el rojo). Un rojo puro ya no se parte entre los
+    /// sectores 11 y 0.
     private static let hueSectorCount = 12
     private static let hueSectorWidth: CGFloat = 360 / CGFloat(hueSectorCount)
     /// ✅ Muestreo a 64×64: menos ruido y más rápido que a 80×80.
@@ -564,7 +568,11 @@ enum AppTheme {
 
         var sectors = [HueSector](repeating: HueSector(), count: hueSectorCount)
         for pixel in pixels {
-            let index = min(hueSectorCount - 1, max(0, Int(pixel.hue / hueSectorWidth)))
+            // ✅ Sector 0 centrado en 0° (offset de medio sector): sin él, un
+            // rojo puro (0°/360°) cae mitad en el sector 11 y mitad en el 0, no
+            // gana claro como dominante y su tono medio sale sesgado.
+            let centeredHue = (pixel.hue + hueSectorWidth / 2).truncatingRemainder(dividingBy: 360)
+            let index = min(hueSectorCount - 1, max(0, Int(centeredHue / hueSectorWidth)))
             sectors[index].add(pixel)
         }
 
