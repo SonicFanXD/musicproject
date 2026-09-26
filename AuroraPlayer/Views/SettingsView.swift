@@ -550,6 +550,10 @@ private struct AudioSettingsSection: View, SettingsRowBuilding {
     @Binding var showEqualizerSheet: Bool
     // ✅ AUDIÓFILO: configuración del modo de audio
     @AppStorage("com.aurora.audioSessionMode") private var audioSessionMode = 0 // 0 = default, 1 = measurement
+    // ✅ HEADROOM BT: por defecto APLICADO (≈ -1 dB en la ruta Bluetooth). El
+    // flag persistido guarda el INVERSO (true = el usuario lo desactivó), así
+    // que el interruptor de Ajustes (ON = margen activo) se enlaza con `!flag`.
+    @AppStorage("com.aurora.btHeadroomDisabled") private var isBTHeadroomDisabled = false
 
     var body: some View {
         settingsSection(icon: "waveform", title: Localization.localized("settings.audio"), color: theme.resolvedAccent) {
@@ -611,6 +615,27 @@ private struct AudioSettingsSection: View, SettingsRowBuilding {
                             Haptics.light()
                             audioEngine.toggleLimiter()
                         }
+                    }
+                )
+            )
+            settingsDivider
+            // ✅ HEADROOM BT (opcional): -1 dB de margen para el codificador
+            // AAC/SBC de iOS. Por defecto se mantiene; desactivarlo recupera
+            // ~1 dB de nivel. El interruptor representa el margen APLICADO.
+            settingsToggleRow(
+                title: Localization.localized("settings.btHeadroom"),
+                subtitle: Localization.localized("settings.btHeadroomSubtitle"),
+                icon: "antenna.radiowaves.left.and.right",
+                color: .blue,
+                isOn: Binding(
+                    get: { !isBTHeadroomDisabled },
+                    set: { newValue in
+                        let wasEnabled = !isBTHeadroomDisabled
+                        guard newValue != wasEnabled else { return }
+                        Haptics.light()
+                        isBTHeadroomDisabled = !newValue
+                        audioEngine.refreshOutputGain()
+                        AppLog.info(.settings, "Headroom de Bluetooth: \(newValue ? "aplicado (-1 dB)" : "desactivado")")
                     }
                 )
             )

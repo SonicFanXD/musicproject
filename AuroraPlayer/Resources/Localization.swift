@@ -200,6 +200,8 @@ final class Localization: ObservableObject {
         "settings.audioModeSubtitle": [.spanish: "Measurement desactiva procesamiento del sistema", .english: "Measurement disables system processing"],
         "settings.limiter": [.spanish: "Protección anti-clipping", .english: "Anti-clipping protection"],
         "settings.limiterSubtitle": [.spanish: "Atenúa 0,09 dB para evitar saturación. Desactivada, la salida por cable puede ser bit-perfect", .english: "Attenuates 0.09 dB to prevent clipping. When off, wired output can be bit-perfect"],
+        "settings.btHeadroom": [.spanish: "Headroom de Bluetooth", .english: "Bluetooth headroom"],
+        "settings.btHeadroomSubtitle": [.spanish: "Aplica -1 dB de margen para evitar distorsión en el codificador Bluetooth. Desactívalo para un volumen ligeramente superior.", .english: "Applies a -1 dB margin to prevent distortion in the Bluetooth encoder. Turn it off for slightly higher volume."],
         "settings.bluetoothOptimization": [.spanish: "Optimización Bluetooth", .english: "Bluetooth Optimization"],
         "settings.bluetoothOptimizationSubtitle": [.spanish: "Optimiza el enlace Bluetooth: el reloj y el búfer los decide iOS", .english: "Optimizes the Bluetooth link: clock and buffer are decided by iOS"],
 

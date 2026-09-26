@@ -1297,7 +1297,7 @@ class AudioEngine: NSObject, ObservableObject {
         // 1.0" también en BT, así que el usuario leía un valor que no era el
         // que sonaba. Ahora se declara la base REAL de la ruta activa.
         let gainNote: String
-        if isBluetoothRoute {
+        if isBluetoothRoute && !UserDefaults.standard.bool(forKey: "com.aurora.btHeadroomDisabled") {
             gainNote = "margen de ruta Bluetooth (base 0.89 ≈ -1 dB) · este ajuste no cambia la ganancia en BT"
         } else {
             gainNote = isLimiterEnabled ? "base 0.99" : "base 1.0 (bit-perfect posible)"
@@ -1440,8 +1440,13 @@ class AudioEngine: NSObject, ObservableObject {
         // inter-sample peaks en material a 0 dBFS. Independiente del
         // limiter: en BT el margen no debe variar con ese ajuste, porque
         // el encoder de iOS ya hace su propio control de picos.
+        // ✅ AJUSTE AVANZADO (Ajustes › Audio): el margen de BT se puede
+        // desactivar (clave com.aurora.btHeadroomDisabled) para recuperar ese
+        // decibelio; entonces la ruta Bluetooth usa la misma base que la
+        // cableada (limiter ? 0.99 : 1.0) en lugar del 0.89 fijo.
+        let isBTHeadroomDisabled = UserDefaults.standard.bool(forKey: "com.aurora.btHeadroomDisabled")
         let base: Float
-        if isBluetoothRoute {
+        if isBluetoothRoute && !isBTHeadroomDisabled {
             base = 0.89
         } else {
             base = isLimiterEnabled ? 0.99 : 1.0
@@ -1463,6 +1468,13 @@ class AudioEngine: NSObject, ObservableObject {
         appliedEQHeadroomDB = Double(-maxGain)
         engine.mainMixerNode.outputVolume = outputGain * fadeFactor
         refreshBitPerfect(outputRate: outputSampleRate)
+    }
+
+    /// ✅ Reaplica la ganancia base cuando cambia un ajuste que la modifica
+    /// pero que no pasa por EQ ni limiter (p. ej. el headroom de Bluetooth).
+    /// Mismo camino que los toggles existentes; sin efectos si nada cambió.
+    func refreshOutputGain() {
+        applyOutputGain()
     }
 
     func setEQGain(for band: Int, gain: Float) {
