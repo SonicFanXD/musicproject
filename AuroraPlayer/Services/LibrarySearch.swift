@@ -244,7 +244,11 @@ final class LibrarySearchIndex {
 
     /// Canciones que coinciden, ordenadas por relevancia (mejor puntaje
     /// primero, estable para puntajes iguales).
-    func searchSongs(_ songs: [Song], query: String) -> [Song] {
+    /// ✅ FASE E: función PURA (no lee el estado del singleton) para poder
+    /// ejecutarla en background con un snapshot inmutable del índice —
+    /// `entries`, capturado en el main — sin competir con el `update(...)` que
+    /// reconstruye los diccionarios en el main.
+    static func searchSongs(_ songs: [Song], query: String, entries: [UUID: SongEntry]) -> [Song] {
         let words = Self.queryWords(query)
         guard !words.isEmpty else { return songs }
         var scored: [(song: Song, score: Int)] = []
@@ -252,7 +256,7 @@ final class LibrarySearchIndex {
         var fields: [String] = []
         for song in songs {
             // ✅ Fallback al vuelo si la entrada no existe en el índice.
-            let e = songEntries[song.id] ?? SongEntry(
+            let e = entries[song.id] ?? SongEntry(
                 title: Self.fold(song.title),
                 artist: Self.fold(song.artist),
                 albumArtist: Self.fold(song.albumArtist),

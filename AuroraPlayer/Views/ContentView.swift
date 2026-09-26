@@ -20,6 +20,21 @@ struct ContentView: View {
         LibraryCategory(rawValue: selectedCategoryRaw) ?? .songs
     }
     @State private var searchText = ""
+    // ✅ FASE E (lag del buscador): "texto del campo" ≠ "consulta aplicada".
+    // El campo solo escribe `searchText` (coste 0); el filtrado reacciona a
+    // `appliedSearchQuery`, que avanza tras un debounce de 250 ms: una ráfaga
+    // de teclas ya no ejecuta el matching N veces en el main.
+    @State private var appliedSearchQuery = ""
+    /// Último resultado PUBLICADO por el search de background. `nil` = todavía
+    /// no hay resultado para la consulta vigente (se muestra la lista completa,
+    /// no un "sin resultados" prematuro). Al cambiar de consulta se CONSERVA el
+    /// anterior hasta que llega el nuevo → sin parpadeo.
+    @State private var searchResults: [Song]?
+    /// Token generacional: descarta respuestas de consultas ya reemplazadas.
+    @State private var searchGeneration = 0
+    /// Debounce cancelable del campo (mismo patrón que `sortWorkItem` de
+    /// FileAccessService: una tecla nueva cancela el trabajo pendiente).
+    @State private var searchDebounceWorkItem: DispatchWorkItem?
     // ✅ FASE D (auditoría 60 fps): orden de la biblioteca CACHEADO.
     // `filteredSongs` es O(n log n) con `localizedStandardCompare` (ICU): con
     // ~1.000 canciones son ~10-20 ms en el A11, y se ejecutaba en CADA
@@ -132,7 +147,10 @@ struct ContentView: View {
                     // válida (dirty = false) → la lista no se refrescaba hasta el
                     // siguiente invalidante. Un turno de main deja que la asignación
                     // termine y `recomputeOrderedSongs()` ya lee el array nuevo.
-                    DispatchQueue.main.async { invalidateOrderedSongs() }
+                    // ✅ FASE E: con búsqueda aplicada la lista visible es el
+                    // resultado del índice, así que además hay que repetir la
+                    // consulta contra la biblioteca nueva (libraryDidChange()).
+                    DispatchQueue.main.async { libraryDidChange() }
                 }
                 // ✅ Sincronización bidireccional: mantener @AppStorage actualizado
                 // cuando cambian las variables @State de ordenamiento
@@ -142,7 +160,9 @@ struct ContentView: View {
                 // de las que depende `computeFilteredSongs()`). Ojo con el teclado:
                 // si la lista de Canciones no está a la vista, `invalidateOrderedSongs()`
                 // solo marca sucio — no ordena 1.000 canciones por tecla.
-                .onChange(of: searchText) { _ in invalidateOrderedSongs() }
+                // ✅ FASE E: el campo solo agenda el debounce; el coste real
+                // (y la invalidación del orden) ocurre al aplicar la consulta.
+                .onChange(of: searchText) { newValue in scheduleSearch(for: newValue) }
                 .onChange(of: sortOptionRaw) { _ in invalidateOrderedSongs() }
                 .onChange(of: songSortAscending) { _ in invalidateOrderedSongs() }
                 .onChange(of: albumSortRaw) { albumSortRawStorage = $0 }
@@ -459,6 +479,9 @@ struct ContentView: View {
             if !searchText.isEmpty {
                 Button {
                     searchText = ""
+                    // ✅ FASE E: limpiar aplica al INSTANTE (sin esperar al
+                    // onChange ni al debounce): la lista vuelve a la caché ya.
+                    scheduleSearch(for: "")
                 } label: {
                     Image(systemName: "xmark.circle.fill")
                         .font(.system(size: 15, weight: .medium))
@@ -574,7 +597,7 @@ struct ContentView: View {
                 indexingProgressCard
                     .listRowSeparator(.hidden)
                     .listRowBackground(Color.clear)
-            } else if searchText.isEmpty {
+            } else if appliedSearchQuery.isEmpty {
                 emptyLibraryView(
                     icon: "music.note.list",
                     title: Localization.localized("library.empty.title"),
@@ -787,7 +810,7 @@ struct ContentView: View {
                 ContentUnavailableLibraryView(
                     icon: "square.stack",
                     title: Localization.localized("library.noAlbums.title"),
-                    message: searchText.isEmpty
+                    message: appliedSearchQuery.isEmpty
                         ? Localization.localized("library.noAlbums.empty")
                         : Localization.localized("library.noAlbums.search")
                 )
@@ -831,7 +854,7 @@ struct ContentView: View {
                 ContentUnavailableLibraryView(
                     icon: "person.2",
                     title: Localization.localized("library.noArtists.title"),
-                    message: searchText.isEmpty
+                    message: appliedSearchQuery.isEmpty
                         ? Localization.localized("library.noArtists.empty")
                         : Localization.localized("library.noArtists.search")
                 )
@@ -1076,10 +1099,6 @@ struct ContentView: View {
         }
     }
 
-    private var normalizedQuery: String {
-        searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-    }
-
     // ✅ BÚSQUEDA optimizada: el índice ya tiene las cadenas normalizadas
     // (sin acentos/mayúsculas) y el matching es por palabras con ranking de
     // relevancia. Con consulta vacía se respeta el orden del usuario.
@@ -1091,10 +1110,91 @@ struct ContentView: View {
     /// primera pintura (antes del onAppear) nunca muestre la biblioteca vacía;
     /// después la caché la mantienen los invalidadores (`recomputeOrderedSongs`).
     private var filteredSongs: [Song] {
+        // ✅ FASE E: con búsqueda aplicada la fuente es el resultado del índice
+        // (publicado por el search de background). Si aún no hay resultado para
+        // la consulta vigente se cae a la lista cacheada: el usuario ve el
+        // resultado ANTERIOR hasta que llega el nuevo, nunca un "sin
+        // resultados" prematuro.
+        if !appliedSearchQuery.isEmpty, let searchResults {
+            return searchResults
+        }
         if orderedSongsCacheDirty || orderedSongsCache.isEmpty {
             return computeFilteredSongs()
         }
         return orderedSongsCache
+    }
+
+    /// ✅ FASE E: el campo de texto solo programa el debounce; una tecla nueva
+    /// cancela el trabajo pendiente, así que el matching corre UNA vez tras la
+    /// pausa (antes: matching en el main en CADA tecla). Vaciar el campo no
+    /// necesita matching: se aplica al instante.
+    private func scheduleSearch(for rawText: String) {
+        searchDebounceWorkItem?.cancel()
+        let query = Self.normalizedSearchQuery(rawText)
+        if query.isEmpty {
+            clearAppliedSearch()
+            return
+        }
+        let work = DispatchWorkItem { [self] in self.applySearch(query: query) }
+        searchDebounceWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: work)
+    }
+
+    /// ✅ FASE E: consulta vacía → volver al orden completo. No hay matching
+    /// pendiente (se canceló en `scheduleSearch`); se invalida la generación
+    /// para descartar respuestas en vuelo y la lista vuelve a la caché.
+    private func clearAppliedSearch() {
+        searchDebounceWorkItem?.cancel()
+        searchDebounceWorkItem = nil
+        // Ya en el estado "sin búsqueda": no hace falta repetir el trabajo
+        // (el botón de limpiar y el onChange con "" llaman ambos aquí).
+        guard !appliedSearchQuery.isEmpty || searchResults != nil else { return }
+        searchGeneration += 1
+        appliedSearchQuery = ""
+        searchResults = nil
+        if selectedCategory == .songs, orderedSongsCacheDirty {
+            recomputeOrderedSongs()
+        }
+    }
+
+    /// ✅ FASE E: aplica una consulta (ya normalizada) y lanza el matching en
+    /// background. El snapshot del índice se toma AQUÍ (main) y es inmutable
+    /// (diccionarios = value types): `update(...)` puede reconstruir el índice
+    /// en el main sin carrera con el search. El token generacional descarta las
+    /// respuestas de consultas ya reemplazadas.
+    private func applySearch(query: String) {
+        searchGeneration += 1
+        let generation = searchGeneration
+        appliedSearchQuery = query
+        let songs = fileAccessService.songs
+        let entries = LibrarySearchIndex.shared.songEntries
+        DispatchQueue.global(qos: .userInitiated).async { [self] in
+            let results = LibrarySearchIndex.searchSongs(songs, query: query, entries: entries)
+            DispatchQueue.main.async {
+                guard generation == self.searchGeneration,
+                      query == self.appliedSearchQuery else { return }
+                self.searchResults = results
+            }
+        }
+    }
+
+    /// ✅ FASE E: la biblioteca cambió. Sin búsqueda aplicada se invalida el
+    /// orden cacheado (fix D-1, un turno después del willSet); con búsqueda
+    /// aplicada hay que repetir la consulta: la lista visible es el resultado
+    /// del índice, no la caché de orden.
+    private func libraryDidChange() {
+        if appliedSearchQuery.isEmpty {
+            invalidateOrderedSongs()
+        } else {
+            applySearch(query: appliedSearchQuery)
+        }
+    }
+
+    /// ✅ FASE E: normalización compartida entre el debounce y la ejecución
+    /// (la misma que hacía `normalizedQuery`, ahora atada a la consulta
+    /// aplicada).
+    private static func normalizedSearchQuery(_ raw: String) -> String {
+        raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
 
     /// ✅ FASE D: marca la caché como sucia y, si la lista de Canciones está a la
@@ -1114,19 +1214,12 @@ struct ContentView: View {
         orderedSongsCacheDirty = false
     }
 
-    /// Cálculo PURO del orden/filtro de canciones (el que antes vivía en el
-    /// body). Costoso: solo desde `recomputeOrderedSongs()`.
+    /// Cálculo PURO del orden COMPLETO de canciones (el que antes vivía en el
+    /// body). ✅ FASE E: aquí ya NO corre el matching de búsqueda (lo hacía en
+    /// el main en cada tecla); con consulta aplicada la lista sale de
+    /// `searchResults` y esta ruta solo ordena la biblioteca entera.
     private func computeFilteredSongs() -> [Song] {
-        let songs = fileAccessService.songs
-        let query = normalizedQuery
-        // ✅ FIX "no busca bien": antes se le aplicaba sortSongs() a los
-        // resultados de búsqueda, lo que destruía el ranking por relevancia
-        // (coincidencia exacta > empieza con > contiene) calculado por
-        // LibrarySearchIndex y los dejaba en el orden de la lista (p.ej.
-        // alfabético), como si la búsqueda no funcionara bien. Sin query,
-        // sí se respeta el orden elegido por el usuario.
-        guard !query.isEmpty else { return sortSongs(songs) }
-        return LibrarySearchIndex.shared.searchSongs(songs, query: query)
+        sortSongs(fileAccessService.songs)
     }
 
     private func sortSongs(_ songs: [Song]) -> [Song] {
@@ -1170,7 +1263,8 @@ struct ContentView: View {
 
     private var filteredAlbums: [Album] {
         let albums = fileAccessService.albums
-        let query = normalizedQuery
+        // ✅ FASE E: la consulta APLICADA (no el texto en vuelo del campo).
+        let query = appliedSearchQuery
         // ✅ FIX "no busca bien": ver comentario equivalente en filteredSongs.
         guard !query.isEmpty else { return sortAlbums(albums) }
         return LibrarySearchIndex.shared.searchAlbums(albums, query: query)
@@ -1217,7 +1311,8 @@ struct ContentView: View {
 
     private var filteredArtists: [Artist] {
         let artists = fileAccessService.artists
-        let query = normalizedQuery
+        // ✅ FASE E: la consulta APLICADA (no el texto en vuelo del campo).
+        let query = appliedSearchQuery
         // ✅ FIX "no busca bien": ver comentario equivalente en filteredSongs.
         guard !query.isEmpty else { return sortArtists(artists) }
         return LibrarySearchIndex.shared.searchArtists(artists, query: query)
