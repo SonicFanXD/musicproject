@@ -107,7 +107,26 @@ struct LyricsView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
+
+            // ✅ INTERLUDIO como OVERLAY EXTERNO: vive FUERA del ScrollView y del
+            // LazyVStack, así el ForEach NUNCA cambia de estructura (el intento
+            // anterior lo insertaba como pseudo-fila y el diff del LazyVStack
+            // hacía desaparecer letras). Centrado por el ZStack; sin hit-testing
+            // para no robar toques al texto ni al seek por línea.
+            if viewModel.isInstrumentalGap {
+                LyricInstrumentalIndicator(
+                    glowColor: glowColor,
+                    isPlaying: viewModel.isPlaying,
+                    isActive: viewModel.isInstrumentalGap
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .transition(.opacity)
+                .allowsHitTesting(false)
+            }
         }
+        // ✅ Animación SCOPED al flag: solo el fundido del overlay; el resto de
+        // cambios de la vista (línea activa, scroll) no se ven afectados.
+        .animation(.easeInOut(duration: 0.3), value: viewModel.isInstrumentalGap)
         .onAppear {
             parseLyricsIfNeeded()
             // ✅ Centrado inmediato, sin animación: la línea activa ya está en el
@@ -408,6 +427,52 @@ private struct LyricsArtworkBackground: View, Equatable {
                 }
             }
         }
+    }
+}
+
+// MARK: - Indicador de interludio ("• • •" durante el hueco instrumental)
+// ✅ Estilo Apple Music: puntos pulsantes mientras dura el interludio
+//    (hueco ≥ 3s detectado por LyricsViewModel). Es un OVERLAY del ZStack
+//    raíz: no añade/quita filas del LazyVStack jamás.
+// ✅ Cero trabajo por frame AÑADIDO: la oscilación es un `repeatForever`
+//    gateado por `value:` (misma convención que las barras de ContentView/Queue),
+//    SIN TimelineView propio: no añade ninguna suscripción de frames.
+// ✅ Dos `.animation` a propósito: el de `isPlaying` arranca/para el pulso con
+//    la reproducción (en pausa, puntos estáticos); el de `isActive` intenta
+//    arrancarlo en el MISMO render en que el overlay aparece (el flip del
+//    estado publicado coincide con la inserción). En el peor caso degradado
+//    los puntos se ven estáticos, nunca rotos.
+private struct LyricInstrumentalIndicator: View {
+    let glowColor: Color
+    let isPlaying: Bool
+    let isActive: Bool
+
+    var body: some View {
+        HStack(spacing: 6) {
+            ForEach(0..<3, id: \.self) { dot in
+                Circle()
+                    .fill(glowColor.opacity(0.8))
+                    .frame(width: 7, height: 7)
+                    .scaleEffect(scale(for: dot))
+                    .animation(pulse(for: dot), value: isPlaying)
+                    .animation(pulse(for: dot), value: isActive)
+            }
+        }
+        .padding(.vertical, 10)
+        .padding(.horizontal, 2)
+    }
+
+    /// Punto de partida del pulso: alternado mientras suena (el `repeatForever`
+    /// lo oscila), estático y pequeño en pausa.
+    private func scale(for dot: Int) -> CGFloat {
+        guard isPlaying else { return 0.65 }
+        return dot % 2 == 0 ? 1.0 : 0.55
+    }
+
+    /// Pulso desfasado por punto (duraciones distintas → onda orgánica).
+    private func pulse(for dot: Int) -> Animation? {
+        guard isPlaying else { return nil }
+        return .easeInOut(duration: 0.55 + Double(dot) * 0.15).repeatForever(autoreverses: true)
     }
 }
 

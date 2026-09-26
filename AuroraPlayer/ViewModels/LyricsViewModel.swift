@@ -22,6 +22,17 @@ final class LyricsViewModel: ObservableObject {
     /// ✅ Sube cuando un parseo EN BACKGROUND termina: la vista lo usa para
     /// repetir el centrado inicial (cuando termina, el `onAppear` ya pasó).
     @Published private(set) var lyricsRevision: Int = 0
+    /// ✅ INTERLUDIO (gap instrumental ENTRE líneas): la línea anterior ya cerró
+    /// su barrido (timeMs ≥ fin efectivo) y la siguiente tarda ≥
+    /// `instrumentalGapThresholdMs` en empezar. La vista lo muestra como OVERLAY
+    /// EXTERNO (fuera del LazyVStack): el intento anterior lo insertaba como
+    /// pseudo-fila y el cambio de estructura del LazyVStack hacía desaparecer
+    /// letras. Se recalcula SOLO en tick/boundary/seek, nunca por frame.
+    @Published private(set) var isInstrumentalGap = false
+    /// Hueco mínimo (ms) entre el fin efectivo de una línea y el inicio de la
+    /// siguiente para considerarlo interludio. Por debajo, el hueco es un
+    /// silencio normal entre versos y no muestra indicador.
+    private static let instrumentalGapThresholdMs: Int = 3000
 
     // MARK: - Dependencies
     weak var audioEngine: AudioEngine?
@@ -144,6 +155,7 @@ final class LyricsViewModel: ObservableObject {
         // ✅ Reset estado y primera línea calculada al instante (sin esperar tick)
         activeStartMs = 0
         activeEndMs = 0
+        isInstrumentalGap = false
         anchorClock(at: audioEngine?.currentTime ?? clockTime)
         refreshActiveLine()
 
@@ -167,6 +179,7 @@ final class LyricsViewModel: ObservableObject {
         activeID = nil
         activeStartMs = 0
         activeEndMs = 0
+        isInstrumentalGap = false
         lineBoundaryTask?.cancel()
         lineBoundaryTask = nil
     }
@@ -197,6 +210,7 @@ final class LyricsViewModel: ObservableObject {
         guard let audioEngine else { return }
         anchorClock(at: audioEngine.currentTime)
         refreshActiveLine()
+        updateInstrumentalGapState()
     }
 
     // MARK: - Interpolación entre ticks (la lee la vista en cada frame)
@@ -296,6 +310,7 @@ final class LyricsViewModel: ObservableObject {
         clockTime = time
         clockUpdateDate = CACurrentMediaTime()
         refreshActiveLine()
+        updateInstrumentalGapState()
     }
 
     /// Re-ancla la interpolación en un instante conocido (parseo/seek).
@@ -376,6 +391,39 @@ final class LyricsViewModel: ObservableObject {
     private func handleLineBoundary() {
         guard isPlaying else { return }
         refreshActiveLine()
+        // ✅ El boundary ES el fin del interludio: con el refresh recién hecho,
+        // la línea nueva está activa y el flag debe caer a false aquí mismo.
+        updateInstrumentalGapState()
+    }
+
+    /// ✅ Interludio = sin línea activa (hueco del motor), la última línea
+    /// empezada YA cerró su barrido (timeMs ≥ su fin efectivo, incluido el
+    /// buffer adaptativo ≤ 60ms) y la siguiente tarda ≥ umbral en empezar.
+    /// ✅ Gap-based: el TTML de Apple marca los interludios con
+    /// `itunes:song-part="Instrumental"` en `<p>` SIN texto, que el parser
+    /// descarta; el hueco entre `lines[i].endMs` y `lines[i+1].startMs`
+    /// los detecta igual para cualquier formato (TTML, LRC, híbrido).
+    /// Antes de la primera línea (intro) y tras la última (outro) no hay
+    /// indicador: no hay "hueco ENTRE líneas" que anunciar.
+    /// ✅ CONSERVADOR: se invoca DESPUÉS de `refreshActiveLine` desde
+    /// tick/boundary/seek — `refreshActiveLine` NO se modifica.
+    private func updateInstrumentalGapState() {
+        guard let engine = engine else { return }
+
+        let timeMs = interpolatedMs()
+        let activeIdx = engine.activeIndex(at: timeMs)
+
+        var inGap = false
+        if activeIdx == nil, let last = engine.lastStartedIndex(at: timeMs),
+           let window = engine.window(for: last),
+           timeMs >= window.endMs,
+           let next = engine.line(at: last + 1) {
+            inGap = next.startMs - window.endMs >= Self.instrumentalGapThresholdMs
+        }
+
+        if inGap != isInstrumentalGap {
+            isInstrumentalGap = inGap
+        }
     }
 
     // MARK: - Public helpers
