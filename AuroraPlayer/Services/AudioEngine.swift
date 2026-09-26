@@ -83,9 +83,37 @@ class AudioEngine: NSObject, ObservableObject {
     @Published var maximumOutputChannels: Int = 0
     @Published var outputLatencyMs: Double = 0
     @Published var ioBufferDurationMs: Double = 0
+    // ✅ FASE C5: búfer I/O que la app PIDIÓ (setPreferredIOBufferDuration). iOS
+    // puede conceder otro (redondea en silencio), así que "pedido" y "concedido"
+    // se muestran por separado. 0 en Bluetooth: allí no se pide (lo decide iOS).
+    @Published var requestedIOBufferDurationMs: Double = 0
+    // ✅ FASE C5: tasa REAL del hardware (formato de salida del grafo) frente a la
+    // tasa negociada de la sesión. Suelen coincidir; cuando no, es que iOS tuvo
+    // que remuestrear en el nodo de salida.
+    @Published var hardwareSampleRate: Double = 0
     @Published var audioQualityInfo: String = ""
     // ✅ AUDIÓFILO: indicador de salida bit-perfect (sin remuestreo)
     @Published var isBitPerfect: Bool = false
+    /// ✅ FASE C4: motivo EXACTO por el que la salida no es bit-perfect, en forma
+    /// estructurada para que la UI lo muestre localizado (el log conserva su
+    /// texto en español). `nil` = bit-perfect o sin datos suficientes.
+    enum BitPerfectBlockReason: Equatable {
+        case dolbyAVPlayer
+        case fallbackPlayer
+        case unknownSourceRate
+        case resampling(source: Double, output: Double)
+        case eqOrMono
+        case limiter
+        case nonWiredRoute
+    }
+    /// Última causa calculada por `refreshBitPerfect()` (se refresca SIEMPRE, no
+    /// solo en la transición, porque la vista de calidad la muestra literal).
+    private(set) var bitPerfectBlockReason: BitPerfectBlockReason?
+    /// ✅ FASE C4: headroom que el EQ está aplicando de verdad (dB negativos o 0).
+    /// Lo escribe `applyOutputGain()`: es el valor REAL, no una estimación.
+    private(set) var appliedEQHeadroomDB: Double = 0
+    /// ✅ FASE C4: ganancia efectiva de salida (base × headroom del EQ).
+    var effectiveOutputGain: Float { outputGain }
     // ✅ AUDIÓFILO: información del codec Bluetooth (si aplica)
     @Published var bluetoothCodec: String = ""
     // ✅ AUDIÓFILO: información del DAC USB conectado
@@ -953,6 +981,14 @@ class AudioEngine: NSObject, ObservableObject {
             } else {
                 AppLog.info(.playback, String(format: "Buffer I/O pedido: %.1f ms (el concedido se comprueba tras activar)", requestedBufferDuration * 1000))
             }
+            // ✅ FASE C5: publicar lo PEDIDO (0 en Bluetooth: allí no se pide) para
+            // que la vista de calidad lo muestre junto al concedido real. Va al
+            // hilo principal porque configureSession también se alcanza desde
+            // rutas de reactivación del engine.
+            let requestedMs = isBluetoothRoute ? 0 : requestedBufferDuration * 1000
+            DispatchQueue.main.async { [weak self] in
+                self?.requestedIOBufferDurationMs = requestedMs
+            }
 
             // ✅ Línea base de sample rate SIN forzar 44.1 kHz: pedir siempre
             // 44100 al reconfigurar la sesión reclocaba el hardware si el archivo
@@ -1193,6 +1229,27 @@ class AudioEngine: NSObject, ObservableObject {
                                       session.ioBufferDuration * 1000, session.sampleRate))
     }
 
+    /// ✅ FASE C4: describe la causa para el LOG (texto en español, como el
+    /// resto del registro). La UI usa el enum y localiza por su cuenta.
+    private func logDescription(for reason: BitPerfectBlockReason) -> String {
+        switch reason {
+        case .dolbyAVPlayer:
+            return "codec Dolby decodificado por AVPlayer (fuera del grafo propio)"
+        case .fallbackPlayer:
+            return "motor de respaldo AVPlayer activo (fuera del grafo propio)"
+        case .unknownSourceRate:
+            return "tasa de la fuente desconocida"
+        case .resampling(let source, let output):
+            return String(format: "remuestreo %.0f → %.0f Hz", source, output)
+        case .eqOrMono:
+            return "EQ o mono procesando"
+        case .limiter:
+            return "protección anti-clipping (limiter) activa"
+        case .nonWiredRoute:
+            return "ganancia != 1.0 (limiter activo o ruta no cableada)"
+        }
+    }
+
     /// "Sin remuestreo / bit-clean": solo es cierto si (1) la tasa de salida
     /// coincide con la del archivo, (2) la salida es cableada (jack/USB DAC; ni
     /// BT con codec con perdida ni el altavoz con su DSP de proteccion),
@@ -1214,29 +1271,42 @@ class AudioEngine: NSObject, ObservableObject {
         // del chip que avisa de que no hay bit-perfect.
         let unityGain = !isLimiterEnabled && isWiredRoute && !isAVPlayerActive
         let value = sourceRate > 0 && abs(outputRate - sourceRate) < 1 && !processing && unityGain
+        // ✅ FASE C4: la causa EXACTA se calcula SIEMPRE (no solo en la
+        // transición), porque la vista de calidad la muestra literalmente; el log
+        // se sigue escribiendo solo cuando el valor CAMBIA (no en cada refresco).
+        let reason: BitPerfectBlockReason?
+        if value {
+            reason = nil
+        } else if isDolbyPlayback {
+            // ✅ Dolby (E-AC-3/AC-3) va por AVPlayer: el grafo propio no participa,
+            // así que el bit-perfect no aplica. Se dice el motivo real en vez de
+            // culpar a la ganancia.
+            reason = .dolbyAVPlayer
+        } else if isAVPlayerActive {
+            reason = .fallbackPlayer
+        } else if sourceRate <= 0 {
+            reason = .unknownSourceRate
+        } else if abs(outputRate - sourceRate) >= 1 {
+            reason = .resampling(source: sourceRate, output: outputRate)
+        } else if processing {
+            reason = .eqOrMono
+        } else if isLimiterEnabled {
+            reason = .limiter
+        } else {
+            reason = .nonWiredRoute
+        }
         DispatchQueue.main.async { [weak self] in
-            guard let self = self, self.isBitPerfect != value else { return }
+            guard let self = self else { return }
+            self.bitPerfectBlockReason = reason
+            guard self.isBitPerfect != value else { return }
             self.isBitPerfect = value
             // ✅ 3.0.1 DIAGNÓSTICO: se registra la TRANSICIÓN (no cada refresco)
             // con la causa exacta: cuándo se gana y cuándo se pierde la salida
             // bit-perfect.
             if value {
                 AppLog.info(.playback, String(format: "Bit-perfect ACTIVADO (salida cableada a %.0f Hz, sin EQ/mono, ganancia unidad)", outputRate))
-            } else {
-                var cause = "ganancia != 1.0 (limiter activo o ruta no cableada)"
-                if isDolbyPlayback {
-                    // ✅ Dolby (E-AC-3/AC-3) va por AVPlayer: el grafo propio no
-                    // participa, así que el bit-perfect no aplica. Se dice el
-                    // motivo real en vez de culpar a la ganancia.
-                    cause = "codec Dolby decodificado por AVPlayer (fuera del grafo propio)"
-                } else if sourceRate <= 0 {
-                    cause = "tasa de la fuente desconocida"
-                } else if abs(outputRate - sourceRate) >= 1 {
-                    cause = String(format: "remuestreo %.0f → %.0f Hz", sourceRate, outputRate)
-                } else if processing {
-                    cause = "EQ o mono procesando"
-                }
-                AppLog.info(.playback, "Bit-perfect DESACTIVADO (\(cause))")
+            } else if let reason = reason {
+                AppLog.info(.playback, "Bit-perfect DESACTIVADO (\(self.logDescription(for: reason)))")
             }
         }
     }
@@ -1283,6 +1353,9 @@ class AudioEngine: NSObject, ObservableObject {
         // Solo se aplica cuando el EQ está procesando (no flat).
         let eqAttenuation: Float = maxGain > 0 ? pow(10, -maxGain / 20) : 1
         outputGain = base * eqAttenuation
+        // ✅ FASE C4: headroom REAL aplicado (dB). La vista de calidad lo muestra
+        // tal cual, así que se guarda el mismo número que acaba de sonar.
+        appliedEQHeadroomDB = Double(-maxGain)
         engine.mainMixerNode.outputVolume = outputGain * fadeFactor
         refreshBitPerfect(outputRate: outputSampleRate)
     }
@@ -2889,6 +2962,10 @@ class AudioEngine: NSObject, ObservableObject {
         let newMaxChannels = session.maximumOutputNumberOfChannels
         let newLatencyMs = session.outputLatency * 1000
         let newBufferMs = session.ioBufferDuration * 1000
+        // ✅ FASE C5: tasa REAL del hardware = formato del nodo de salida del
+        // grafo (frente a la tasa NEGOCIADA de la sesión, `session.sampleRate`).
+        // Cuando difieren es que iOS remuestrea en el nodo de salida.
+        let newHardwareRate = engine.outputNode.outputFormat(forBus: 0).sampleRate
         // ✅ OPTIMIZACIÓN BATERÍA: no recrear el string de calidad ni publicar
         // si no hubo cambios reales en la salida (evita re-render UI + dispatch).
         // Recalcular SIEMPRE (cambia con la cancion aunque la tasa de salida no).
@@ -2899,13 +2976,15 @@ class AudioEngine: NSObject, ObservableObject {
         guard outputSampleRate != newRate || outputChannelCount != newChannels
             || maximumOutputChannels != newMaxChannels
             || abs(outputLatencyMs - newLatencyMs) > 0.01
-            || abs(ioBufferDurationMs - newBufferMs) > 0.01 else { return }
+            || abs(ioBufferDurationMs - newBufferMs) > 0.01
+            || abs(hardwareSampleRate - newHardwareRate) > 1 else { return }
         DispatchQueue.main.async {
             self.outputSampleRate = newRate
             self.outputChannelCount = newChannels
             self.maximumOutputChannels = newMaxChannels
             self.outputLatencyMs = newLatencyMs
             self.ioBufferDurationMs = newBufferMs
+            self.hardwareSampleRate = newHardwareRate
             
             // ✅ AUDIÓFILO: determinar si la salida es bit-perfect
             // Bit-perfect = sample rate de salida coincide con el del archivo
