@@ -731,10 +731,16 @@ class AudioEngine: NSObject, ObservableObject {
     var albumCountsProvider: ((Song) -> (tracks: Int, discs: Int)?)?
     // ✅ FASE B3: marca del último envío REAL a MPNowPlayingInfoCenter. El
     // display timer (0.4 s fg / 3 s bg) ya NO refresca now-playing en cada tick:
-    // iOS extrapola el elapsed con `playbackRate`. Solo se reenvía cada 30 s como
-    // red de seguridad ante desincronizaciones del sistema.
+    // iOS extrapola el elapsed con `playbackRate`. La red de seguridad se
+    // conserva, pero ahora es de 2 s y además CEDE SIEMPRE ante un cambio
+    // publicable (canción/estado/duración, ver publishIfNeeded): era el hueco
+    // por el que CC/bloqueo podían quedarse con la canción anterior al retroceder.
     private var lastNowPlayingPublishTime: TimeInterval = 0
-    private let nowPlayingRefreshInterval: TimeInterval = 30
+    // ✅ FIX (sincronización de la barra): 30 s era demasiado para una ventana
+    // que ahora solo se salta si NADA cambió. 2 s acota cualquier deriva
+    // residual de la extrapolación de iOS y sigue siendo 2,5× más barato que el
+    // refresco de 0.8 s que existía antes de la FASE B.
+    private let nowPlayingRefreshInterval: TimeInterval = 2
     // ✅ FIX (restauración al retroceder): qué se publicó la última vez. La red
     // de seguridad temporal solo puede saltarse un tick si NADA de esto cambió;
     // un cambio de identidad/estado se publica SIEMPRE (no puede quedar tapado
@@ -2774,10 +2780,10 @@ class AudioEngine: NSObject, ObservableObject {
             // ✅ FASE B3/B5: el elapsed ya NO se envía en cada tick. Apple
             // recomienda enviarlo solo en CAMBIOS de estado y dejar que iOS
             // extrapole con `playbackRate`; aquí se llama con `force: false`, que
-            // reenvía el diccionario únicamente si pasaron más de 30 s desde el
-            // último envío real. Antes: un update cada ~0.8 s en primer plano y
-            // cada 3 s en segundo plano — CPU y batería para un dato que el
-            // sistema ya sabe calcular.
+            // salta el tick solo si pasó menos de la ventana Y nada cambió
+            // (canción/estado/duración: ver publishIfNeeded). Antes: un update
+            // cada ~0.8 s en primer plano y cada 3 s en segundo plano — CPU y
+            // batería para un dato que el sistema ya sabe calcular.
             tickCount += 1
             if tickCount >= nowPlayingRefreshTicks {
                 tickCount = 0
@@ -3459,11 +3465,10 @@ class AudioEngine: NSObject, ObservableObject {
         }
         // ✅ Sincronización correcta con Centro de Control / Bloquear pantalla:
         // - PlaybackRate  1.0 → reproduciendo; 0.0 → pausa
-        // - ElapsedPlaybackTime SOLO se incluye cuando está pausado o en seek,
-        //   para que el sistema calcute el progreso automáticamente durante
-        //   la reproducción y la barra se mueva sola sin actualizaciones
-        //   constantes (el bug de "se queda al final" y "no se sincroniza
-        //   la pausa" ocurría porque enviábamos currentTime obsoleto).
+        // - ElapsedPlaybackTime se envía SIEMPRE (ver nota de abajo): en pausa
+        //   fija la posición; en reproducción iOS la avanza con el rate. El bug
+        //   de "se queda al final" / "no sincroniza la pausa" venía de enviar un
+        //   elapsed OBSOLETO, no de enviarlo en cada publicación.
         info[MPNowPlayingInfoPropertyPlaybackRate] = isPlaying ? 1.0 : 0.0
         info[MPNowPlayingInfoPropertyDefaultPlaybackRate] = 1.0
         info[MPMediaItemPropertyPlaybackDuration] = duration
@@ -3472,7 +3477,21 @@ class AudioEngine: NSObject, ObservableObject {
         // sigue avanzando el elapsed desde el valor anterior (fin de canción)
         // y la barra de progreso queda desincronizada. Enviarlo en cada
         // actualización es lo estándar: el sistema lo avanza con el rate.
-        info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = currentTime
+        // ✅ FIX (barra desfasada respecto a CC/bloqueo): se calcula EN EL
+        // MOMENTO de publicar en lugar de copiar el último tick del display
+        // timer. `currentTime` solo se refresca cada 0.4 s (primer plano) / 3 s
+        // (segundo plano); al enviarlo tal cual, la barra del sistema quedaba
+        // anclada por detrás de la de la app y, con la FASE B, ese desfase se
+        // mantenía hasta 30 s. Con el reloj de pared vivo, cada publicación
+        // reancla iOS en la posición real (clamp a duration incluido).
+        let elapsedForPublish: TimeInterval = (isPlaying && !isAVPlayerActive) ? wallClockTime : currentTime
+        // ✅ Evidencia en dispositivo: solo se registra cuando la corrección es
+        // perceptible (> 250 ms), que es exactamente el desfase que el usuario
+        // veía entre la barra in-app y la del Centro de Control.
+        if abs(elapsedForPublish - currentTime) > 0.25 {
+            AppLog.info(.playback, String(format: "NowPlaying: elapsed %.2fs publicado (el tick tenía %.2fs)", elapsedForPublish, currentTime))
+        }
+        info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = elapsedForPublish
 
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
         // ✅ SINCRONIZACIÓN (iOS 13+): fijar también el estado explícito de
@@ -3482,7 +3501,8 @@ class AudioEngine: NSObject, ObservableObject {
         // `publishNowPlayingInfo()` ya se ejecuta en el hilo principal.
         MPNowPlayingInfoCenter.default().playbackState = isPlaying ? .playing : .paused
         // ✅ FASE B3: marcar el envío real. Los ticks del display timer
-        // (`force: false`) lo consultan para no reenviar antes de 30 s.
+        // (`force: false`) lo consultan junto con lastPublished* para decidir si
+        // pueden saltarse el tick (ventana de 2 s; ver publishIfNeeded).
         lastNowPlayingPublishTime = CACurrentMediaTime()
         // ✅ FIX (restauración al retroceder): recordar QUÉ se publicó para que
         // la red de seguridad sepa si un tick puede saltarse (ver publishIfNeeded).
