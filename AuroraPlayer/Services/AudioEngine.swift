@@ -735,6 +735,13 @@ class AudioEngine: NSObject, ObservableObject {
     // red de seguridad ante desincronizaciones del sistema.
     private var lastNowPlayingPublishTime: TimeInterval = 0
     private let nowPlayingRefreshInterval: TimeInterval = 30
+    // ✅ FIX (restauración al retroceder): qué se publicó la última vez. La red
+    // de seguridad temporal solo puede saltarse un tick si NADA de esto cambió;
+    // un cambio de identidad/estado se publica SIEMPRE (no puede quedar tapado
+    // por la ventana de refresco).
+    private var lastPublishedSongID: UUID?
+    private var lastPublishedIsPlaying: Bool = false
+    private var lastPublishedDuration: TimeInterval = 0
 
     // MARK: - Persistencia del motor en segundo plano
     // ✅ Mejora de batería + estabilidad: cuando la app pasa a segundo plano,
@@ -1718,6 +1725,13 @@ class AudioEngine: NSObject, ObservableObject {
                 // durante toda la cancion (o desincronizado al reanudar).
                 self.anchorPlaybackPosition(startTime)
                 self.playerNode.play()
+                // ✅ FIX (restauración al retroceder): publicar JUSTO cuando el
+                // audio arranca de verdad. El publish del cambio de canción (más
+                // arriba) sale ~0.1 s antes de que el nodo suene; esto re-ancla
+                // CC/bloqueo al mismo instante que el reloj de la app (rate 1 con
+                // elapsed = posición real), que es lo que espera el usuario al
+                // volver a una canción anterior.
+                self.publishNowPlayingInfoImmediately()
                 // Ya está sonando de verdad: dejar programada la siguiente por
                 // adelantado para que la transición sea sin hueco.
                 self.scheduleAheadIfPossible()
@@ -1725,7 +1739,9 @@ class AudioEngine: NSObject, ObservableObject {
             isStopping = false  // FIX: Ahora podemos permitir completion handlers
 
             startDisplayTimer()
-            updateNowPlayingInfo()
+            // ✅ FIX (restauración al retroceder): publicación inmediata, no
+            // diferida — el estado de la canción nueva ya está final aquí.
+            publishNowPlayingInfoImmediately()
             updateAudioQuality()
             addToHistory(song)
             updateNextUpQueue()
@@ -2355,6 +2371,10 @@ class AudioEngine: NSObject, ObservableObject {
     func playPrevious() {
         guard !playbackOrder.isEmpty else { return }
         if currentTime > 3.0 {
+            // Regla de 3 s (iPod/Apple Music): reiniciar la canción actual, no
+            // retroceder. Queda registrado para poder DISTINGUIR en el
+            // dispositivo este caso de un retroceso que no llegó a ejecutarse.
+            AppLog.info(.playback, String(format: "Anterior: reinicio de la actual (%.1fs > 3s) — '%@'", currentTime, currentSong?.displayName ?? "—"))
             seek(to: 0)
             return
         }
@@ -2362,6 +2382,7 @@ class AudioEngine: NSObject, ObservableObject {
         if currentIndex < 0 {
             currentIndex = repeatMode == .all ? playbackOrder.count - 1 : 0
         }
+        AppLog.info(.playback, "Anterior: retroceso a '\(playbackOrder[currentIndex].displayName)' (índice \(currentIndex)/\(playbackOrder.count - 1))")
         playCurrentSong()
     }
 
@@ -3329,23 +3350,59 @@ class AudioEngine: NSObject, ObservableObject {
     ///   play/pausa, seek, cambio de pista (incluido el gapless), toggle de
     ///   aleatorio/repetición y edición de la cola. Envía el diccionario
     ///   COMPLETO (elapsed + rate + playbackState). `false` en los ticks del
-    ///   display timer: solo reenvía si pasaron más de 30 s desde el último
-    ///   envío real, porque mientras suena iOS extrapola el elapsed solo con
-    ///   `playbackRate` (regla de Apple) y cada tick era puro gasto de CPU.
+    ///   display timer: salta el tick SOLO si pasaron menos de
+    ///   `nowPlayingRefreshInterval` Y no cambió nada publicable (identidad de
+    ///   canción, estado de reproducción o duración) — mientras suena, iOS
+    ///   extrapola el elapsed con `playbackRate` (regla de Apple) y reenviarlo
+    ///   en cada tick era puro gasto de CPU.
     private func updateNowPlayingInfo(force: Bool = true) {
         // ✅ FIX: MPNowPlayingInfoCenter debe actualizarse SIEMPRE en el
         // hilo principal; desde un hilo secundario iOS puede ignorar el
         // update (síntoma: el widget solo se refrescaba al reiniciar).
-        DispatchQueue.main.async {
-            // ✅ B3: el chequeo del intervalo va en el hilo principal junto a la
-            // marca de tiempo, así no hay carrera entre el timer y los cambios de
-            // estado (todos pasan por aquí).
-            if !force,
-               CACurrentMediaTime() - self.lastNowPlayingPublishTime < self.nowPlayingRefreshInterval {
-                return
-            }
-            self.publishNowPlayingInfo()
+        // El diferido al siguiente turno del run loop es deliberado: coalesce
+        // los cambios intermedios de una misma operación (p. ej. el
+        // `isPlaying = false` transitorio de un cambio de pista) para no
+        // parpadear en CC/bloqueo. Los cambios de pista manuales usan
+        // `publishNowPlayingInfoImmediately()` (ver playCurrentSong).
+        DispatchQueue.main.async { [weak self] in
+            self?.publishIfNeeded(force: force)
         }
+    }
+
+    /// ✅ FIX (restauración al retroceder): publicación INMEDIATA para cambios de
+    /// pista manuales (play/anterior/siguiente/tap en la biblioteca). El estado
+    /// ya está final (canción, duración y rate nuevos), pero el publish normal
+    /// queda en la cola del run loop por detrás del resto del trabajo síncrono
+    /// de `playCurrentSong()`: esa era la ventana en la que CC/bloqueo seguían
+    /// mostrando la canción anterior al retroceder. Sin diferir, la superficie
+    /// externa cambia en el mismo turno en que el motor arranca la pista nueva.
+    private func publishNowPlayingInfoImmediately() {
+        if Thread.isMainThread {
+            publishNowPlayingInfo()
+        } else {
+            DispatchQueue.main.async { [weak self] in
+                self?.publishNowPlayingInfo()
+            }
+        }
+    }
+
+    /// ✅ FIX (restauración al retroceder): la red de seguridad ya no es solo
+    /// temporal. El tick del display timer llama con `force:false` y antes solo
+    /// reenviaba cada `nowPlayingRefreshInterval`; ahora se salta el tick
+    /// ÚNICAMENTE si nada cambió. Un cambio de canción, de estado de
+    /// reproducción o de duración se publica en el acto, así que un cambio de
+    /// pista no puede quedar tapado por la ventana de refresco (era el hueco por
+    /// el que CC/bloqueo podían quedarse con la canción anterior al retroceder).
+    private func publishIfNeeded(force: Bool) {
+        let identityChanged = lastPublishedSongID != currentSong?.id
+            || lastPublishedIsPlaying != isPlaying
+            || abs(lastPublishedDuration - duration) > 0.01
+        if !force,
+           !identityChanged,
+           CACurrentMediaTime() - lastNowPlayingPublishTime < nowPlayingRefreshInterval {
+            return
+        }
+        publishNowPlayingInfo()
     }
 
     private func publishNowPlayingInfo() {
@@ -3427,6 +3484,11 @@ class AudioEngine: NSObject, ObservableObject {
         // ✅ FASE B3: marcar el envío real. Los ticks del display timer
         // (`force: false`) lo consultan para no reenviar antes de 30 s.
         lastNowPlayingPublishTime = CACurrentMediaTime()
+        // ✅ FIX (restauración al retroceder): recordar QUÉ se publicó para que
+        // la red de seguridad sepa si un tick puede saltarse (ver publishIfNeeded).
+        lastPublishedSongID = currentSong?.id
+        lastPublishedIsPlaying = isPlaying
+        lastPublishedDuration = duration
     }
 
     private func setupRemoteCommandCenter() {
@@ -3468,6 +3530,10 @@ class AudioEngine: NSObject, ObservableObject {
             return .success
         }
         center.previousTrackCommand.addTarget { [weak self] _ in
+            // ✅ Evidencia para verificación en dispositivo: si este log no
+            // aparece al pulsar "anterior" en CC/bloqueo, el comando no llegó a
+            // la app — no es un fallo del retroceso ni de la publicación.
+            AppLog.info(.playback, "Comando remoto: anterior")
             self?.playPrevious()
             return .success
         }
