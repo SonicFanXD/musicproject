@@ -396,6 +396,17 @@ struct NowPlayingView: View {
         .system(size: isCompactScreen ? 20 : 24, weight: .bold, design: .rounded)
     }
 
+    /// ✅ Fuentes del chip de calidad (línea de calidad y línea de ruta): única
+    /// fuente de verdad para el chip y para la copia invisible que le reserva su
+    /// hueco, igual que `songTitleFont`.
+    private var qualityChipFont: Font {
+        .system(size: 10, weight: .medium).monospacedDigit()
+    }
+
+    private var routeChipFont: Font {
+        .system(size: 8, weight: .regular)
+    }
+
     // MARK: - Song Info (mejorado con mejor tipografía y espaciado)
     private var songInfoView: some View {
         VStack(spacing: 6) {
@@ -436,43 +447,68 @@ struct NowPlayingView: View {
                 .lineLimit(1)
                 .padding(.horizontal, 20)
 
-            if let song = audioEngine.currentSong, !song.audioQualityDescription.isEmpty {
-                Button {
-                    Haptics.light()
-                    showQualityDetail = true
-                } label: {
-                    HStack(spacing: 5) {
-                        Image(systemName: "waveform.circle.fill")
-                            .font(.system(size: 10, weight: .semibold))
+            // ✅ FIX layout: el chip reserva SIEMPRE su caja (peor caso = 2 líneas:
+            // calidad + ruta) con una copia invisible medida por el motor de
+            // texto, igual que el título. Sin ella, el bloque encogía al pasar a
+            // una canción sin chip (o con chip de 1 línea) y el header volvía a
+            // moverse. La copia espeja lo que define la caja del chip; si cambian
+            // sus fuentes, iconos, espaciados o paddings, cámbialos también aquí.
+            ZStack {
+                HStack(spacing: 5) {
+                    Image(systemName: "waveform.circle.fill")
+                        .font(.system(size: 10, weight: .semibold))
 
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(song.audioQualityDescription)
-                                .font(.system(size: 10, weight: .medium).monospacedDigit())
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("M").font(qualityChipFont)
+                        Text("M").font(routeChipFont)
+                    }
 
-                            if !audioEngine.routeDisplay.isEmpty {
-                                Text(audioEngine.routeDisplay)
-                                    .font(.system(size: 8, weight: .regular))
-                                    .foregroundStyle(playIconColor.opacity(0.7))
-                            }
-                        }
-
-                        Image(systemName: "chevron.down")
-                            .font(.system(size: 7, weight: .bold))
-                            .foregroundStyle(extractedColor.opacity(0.6))
-                    }
-                    .foregroundStyle(playIconColor)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background {
-                        Capsule().fill(accentGradient(primaryOpacity: 0.2, secondaryOpacity: 0.2))
-                    }
-                    .overlay {
-                        Capsule().strokeBorder(playIconColor.opacity(0.15), lineWidth: 0.5)
-                    }
-                    .contentShape(Rectangle())
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 7, weight: .bold))
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel(Localization.localized("quality.viewDetails"))
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .hidden()
+                .accessibilityHidden(true)
+
+                if let song = audioEngine.currentSong, !song.audioQualityDescription.isEmpty {
+                    Button {
+                        Haptics.light()
+                        showQualityDetail = true
+                    } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: "waveform.circle.fill")
+                                .font(.system(size: 10, weight: .semibold))
+
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(song.audioQualityDescription)
+                                    .font(qualityChipFont)
+
+                                if !audioEngine.routeDisplay.isEmpty {
+                                    Text(audioEngine.routeDisplay)
+                                        .font(routeChipFont)
+                                        .foregroundStyle(playIconColor.opacity(0.7))
+                                }
+                            }
+
+                            Image(systemName: "chevron.down")
+                                .font(.system(size: 7, weight: .bold))
+                                .foregroundStyle(extractedColor.opacity(0.6))
+                        }
+                        .foregroundStyle(playIconColor)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background {
+                            Capsule().fill(accentGradient(primaryOpacity: 0.2, secondaryOpacity: 0.2))
+                        }
+                        .overlay {
+                            Capsule().strokeBorder(playIconColor.opacity(0.15), lineWidth: 0.5)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(Localization.localized("quality.viewDetails"))
+                }
             }
 
             // ✅ Me gusta movido aquí: debajo de las ondas, junto a la info de
