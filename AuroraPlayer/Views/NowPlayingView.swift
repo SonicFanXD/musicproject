@@ -393,16 +393,12 @@ struct NowPlayingView: View {
         }
     }
 
-    /// ✅ Fuente del título: única fuente de verdad para `songInfoView` y para la
-    /// copia invisible que le reserva sus 2 líneas. Si cambia el tamaño aquí, la
-    /// reserva lo sigue sola.
+    /// ✅ Fuente del título de `songInfoView`.
     private var songTitleFont: Font {
         .system(size: isCompactScreen ? 20 : 24, weight: .bold, design: .rounded)
     }
 
-    /// ✅ Fuentes del chip de calidad (línea de calidad y línea de ruta): única
-    /// fuente de verdad para el chip y para la copia invisible que le reserva su
-    /// hueco, igual que `songTitleFont`.
+    /// ✅ Fuentes del chip de calidad (línea de calidad y línea de ruta).
     private var qualityChipFont: Font {
         .system(size: 10, weight: .medium).monospacedDigit()
     }
@@ -414,36 +410,23 @@ struct NowPlayingView: View {
     // MARK: - Song Info (mejorado con mejor tipografía y espaciado)
     private var songInfoView: some View {
         VStack(spacing: 6) {
-            // ✅ FIX layout: el título reserva SIEMPRE la altura de sus 2 líneas
-            // (`lineLimit`) con una copia invisible del MISMO tipo. Sin ella, un
-            // título de 2 líneas engorda songInfoView ~1 línea y, como el bloque
-            // va centrado, el header sube con él al cambiar de canción.
-            // El ZStack centra además el título de 1 línea en su caja de 2.
-            ZStack {
-                // "M\nM" son dos líneas garantizadas por el salto explícito: la
-                // reserva no depende del ancho disponible ni de métricas
-                // escritas a mano. La fuente sale de `songTitleFont`.
-                Text("M\nM")
-                    .font(songTitleFont)
-                    .lineLimit(2)
-                    .hidden()
-                    .accessibilityHidden(true)
-
-                // ✅ Título con gradiente sutil del color extraído (mejor tipografía)
-                // ✅ 60fps: shadow removido del texto con gradiente (forzaba blur
-                // offscreen por frame; el gradiente ya da suficiente profundidad).
-                Text(audioEngine.currentSong?.displayName ?? Localization.localized("quality.noSong"))
-                    .font(songTitleFont)
-                    .multilineTextAlignment(.center)
-                    .foregroundStyle(
-                        LinearGradient(
-                            colors: [playIconColor, playIconColor.opacity(0.85)],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        )
+            // ✅ SIN RESERVA: el header está anclado con safeAreaInset (a4243bb)
+            // y no depende de la altura de songInfoView, así que el título ocupa
+            // 1 o 2 líneas de forma natural (patrón Apple Music).
+            // ✅ Título con gradiente sutil del color extraído (mejor tipografía)
+            // ✅ 60fps: shadow removido del texto con gradiente (forzaba blur
+            // offscreen por frame; el gradiente ya da suficiente profundidad).
+            Text(audioEngine.currentSong?.displayName ?? Localization.localized("quality.noSong"))
+                .font(songTitleFont)
+                .multilineTextAlignment(.center)
+                .foregroundStyle(
+                    LinearGradient(
+                        colors: [playIconColor, playIconColor.opacity(0.85)],
+                        startPoint: .leading,
+                        endPoint: .trailing
                     )
-                    .lineLimit(2)
-            }
+                )
+                .lineLimit(2)
 
             Text(audioEngine.currentSong?.displaySubtitle ?? "—")
                 .font(.system(size: isCompactScreen ? 14 : 16, weight: .medium))
@@ -451,68 +434,46 @@ struct NowPlayingView: View {
                 .lineLimit(1)
                 .padding(.horizontal, 20)
 
-            // ✅ FIX layout: el chip reserva SIEMPRE su caja (peor caso = 2 líneas:
-            // calidad + ruta) con una copia invisible medida por el motor de
-            // texto, igual que el título. Sin ella, el bloque encogía al pasar a
-            // una canción sin chip (o con chip de 1 línea) y el header volvía a
-            // moverse. La copia espeja lo que define la caja del chip; si cambian
-            // sus fuentes, iconos, espaciados o paddings, cámbialos también aquí.
-            ZStack {
-                HStack(spacing: 5) {
-                    Image(systemName: "waveform.circle.fill")
-                        .font(.system(size: 10, weight: .semibold))
+            // ✅ SIN RESERVA: el chip solo aparece cuando corresponde. El header
+            // anclado con safeAreaInset (a4243bb) ya no depende de la altura de
+            // songInfoView, así que no hace falta espejar una caja worst-case.
+            if let song = audioEngine.currentSong, !song.audioQualityDescription.isEmpty {
+                Button {
+                    Haptics.light()
+                    showQualityDetail = true
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "waveform.circle.fill")
+                            .font(.system(size: 10, weight: .semibold))
 
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text("M").font(qualityChipFont)
-                        Text("M").font(routeChipFont)
-                    }
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(song.audioQualityDescription)
+                                .font(qualityChipFont)
 
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 7, weight: .bold))
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .hidden()
-                .accessibilityHidden(true)
-
-                if let song = audioEngine.currentSong, !song.audioQualityDescription.isEmpty {
-                    Button {
-                        Haptics.light()
-                        showQualityDetail = true
-                    } label: {
-                        HStack(spacing: 5) {
-                            Image(systemName: "waveform.circle.fill")
-                                .font(.system(size: 10, weight: .semibold))
-
-                            VStack(alignment: .leading, spacing: 1) {
-                                Text(song.audioQualityDescription)
-                                    .font(qualityChipFont)
-
-                                if !audioEngine.routeDisplay.isEmpty {
-                                    Text(audioEngine.routeDisplay)
-                                        .font(routeChipFont)
-                                        .foregroundStyle(playIconColor.opacity(0.7))
-                                }
+                            if !audioEngine.routeDisplay.isEmpty {
+                                Text(audioEngine.routeDisplay)
+                                    .font(routeChipFont)
+                                    .foregroundStyle(playIconColor.opacity(0.7))
                             }
+                        }
 
-                            Image(systemName: "chevron.down")
-                                .font(.system(size: 7, weight: .bold))
-                                .foregroundStyle(extractedColor.opacity(0.6))
-                        }
-                        .foregroundStyle(playIconColor)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background {
-                            Capsule().fill(accentGradient(primaryOpacity: 0.2, secondaryOpacity: 0.2))
-                        }
-                        .overlay {
-                            Capsule().strokeBorder(playIconColor.opacity(0.15), lineWidth: 0.5)
-                        }
-                        .contentShape(Rectangle())
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 7, weight: .bold))
+                            .foregroundStyle(extractedColor.opacity(0.6))
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(Localization.localized("quality.viewDetails"))
+                    .foregroundStyle(playIconColor)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background {
+                        Capsule().fill(accentGradient(primaryOpacity: 0.2, secondaryOpacity: 0.2))
+                    }
+                    .overlay {
+                        Capsule().strokeBorder(playIconColor.opacity(0.15), lineWidth: 0.5)
+                    }
+                    .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
+                .accessibilityLabel(Localization.localized("quality.viewDetails"))
             }
 
             // ✅ Me gusta movido aquí: debajo de las ondas, junto a la info de
