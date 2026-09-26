@@ -198,8 +198,15 @@ struct QueueView: View {
                 // ✅ FIX iOS 16: reordenar/eliminar en List (antes ScrollView).
                 // Las filas DEBEN ser hijas directas del Section para que
                 // .swipeActions/.onMove funcionen (anidadas en un VStack son inertes).
-                ForEach(editableQueue) { song in
-                    queueSongRow(song, index: (editableQueue.firstIndex(where: { $0.id == song.id }) ?? 0) + 1)
+                // ✅ PERF: identidad por OFFSET (enumerated, id: \.offset) y NO por
+                // Song.id: la cola manual admite la misma canción dos veces
+                // (addToQueue no deduplica) y un ForEach con ids duplicados
+                // produce diff impredecible (filas que saltan/desaparecen) y
+                // el warning "AttributeGraph: cycle detected" en runtime.
+                // ✅ PERF: fuera el firstIndex(where:) O(n) por fila: calculaba
+                // el índice que queueSongRow(_:index:) no consume.
+                ForEach(Array(editableQueue.enumerated()), id: \.offset) { index, song in
+                    queueSongRow(song, index: index + 1)
                         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                             Button(role: .destructive) {
                                 Haptics.light()
@@ -248,7 +255,11 @@ struct QueueView: View {
                         .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(.secondary)
 
-                    ForEach(Array(audioEngine.playHistory.enumerated()), id: \.element.id) { index, song in
+                    // ✅ PERF: el historial PUEDE repetir pista (insert sin
+                    // desduplicar, playHistory.insert(at: 0)) → identidad por
+                    // posición (offset), única incluso con la misma canción dos
+                    // veces; \.element.id producía ids duplicados.
+                    ForEach(Array(audioEngine.playHistory.enumerated()), id: \.offset) { index, song in
                         historySongRow(song, index: index)
                     }
                 }

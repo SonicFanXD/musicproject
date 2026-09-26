@@ -321,8 +321,8 @@ struct Song: Identifiable, Equatable, Codable {
 }
 
 extension Song {
-    private static let artworkCache: NSCache<NSUUID, UIImage> = {
-        let cache = NSCache<NSUUID, UIImage>()
+    private static let artworkCache: NSCache<NSString, UIImage> = {
+        let cache = NSCache<NSString, UIImage>()
         // ✅ ANTI-CRASH: límite por MEMORIA (costo), no solo por conteo.
         // Cada UIImage decodificada ocupa ancho×alto×4 bytes en RAM (768²×4 =
         // 2.4MB a la resolución actual). countLimit 500 sin costLimit permitía
@@ -338,15 +338,27 @@ extension Song {
     /// canción) es idéntico, así que sigue habiendo UNA decodificación por
     /// canción por más veces que se lea.
     var artwork: UIImage? {
-        guard let data = artworkData ?? Song.artworkDataFromDisk(for: artworkHash) else { return nil }
-        if let cached = Song.artworkCache.object(forKey: id as NSUUID) {
+        // ✅ PERF: la comprobación de caché VA PRIMERO. Antes se leía el JPEG
+        // de disco (Data(contentsOf:), ~0.5-1.5 MB) en CADA acceso aunque el
+        // NSCache ya tuviera la imagen: cada render de cada fila de
+        // biblioteca/álbum/artista/playlist/cola pagaba I/O + memcpy en el
+        // main. Con biblioteca grande el scroll disparaba lecturas
+        // serializadas → tirones intermitentes al scrollear.
+        // ✅ Clave por HASH DE CONTENIDO (antes UUID de canción): mil
+        // canciones del mismo álbum comparten UNA entrada (antes: mil
+        // bitmaps de 2.4 MB idénticos → jetsam y más expulsiones). El hash
+        // existe en toda canción guardada (songWithoutInlineArtwork); sin
+        // hash cae al UUID, que nunca colisiona.
+        let cacheKey = artworkHash ?? id.uuidString
+        if let cached = Song.artworkCache.object(forKey: cacheKey as NSString) {
             return cached
         }
+        guard let data = artworkData ?? Song.artworkDataFromDisk(for: artworkHash) else { return nil }
         guard let image = UIImage(data: data) else { return nil }
         // Costo = bytes del bitmap decodificado (RGBA), para que totalCostLimit
         // refleje la RAM real consumida y NSCache expulse bajo presión.
         let cost = Int(image.size.width * image.scale * image.size.height * image.scale * 4)
-        Song.artworkCache.setObject(image, forKey: id as NSUUID, cost: cost)
+        Song.artworkCache.setObject(image, forKey: cacheKey as NSString, cost: cost)
         return image
     }
 
