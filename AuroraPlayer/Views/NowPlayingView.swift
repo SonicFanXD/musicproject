@@ -155,38 +155,6 @@ struct NowPlayingView: View {
                 // flexibles (la proporción se adapta a cualquier pantalla,
                 // iPhone 8 Plus incluido) en lugar de espaciados fijos.
                 VStack(spacing: 0) {
-                    // ✅ Header integrado al fondo difuminado — sin cuadro negro.
-                    // Antes usaba safeAreaInset con fondo del sistema que pintaba
-                    // un rectángulo negro/opaco sobre el blur. Ahora es la primera
-                    // fila del VStack, completamente transparente sobre el mismo
-                    // backgroundView difuminado.
-                    HStack(spacing: 0) {
-                        Button {
-                            dismiss()
-                        } label: {
-                            Image(systemName: "chevron.down")
-                                .foregroundStyle(playIconColor)
-                                .font(.system(size: 17, weight: .semibold))
-                                .frame(width: 44, height: 44)
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel(Localization.localized("nowPlaying.close"))
-
-                        Spacer()
-
-                        Text(Localization.localized("nowPlaying.title"))
-                            .font(.system(size: 16, weight: .semibold, design: .rounded))
-                            .foregroundStyle(playIconColor.opacity(0.9))
-                            .shadow(color: .black.opacity(0.15), radius: 4, y: 1)
-
-                        Spacer()
-                        Color.clear.frame(width: 44, height: 44)
-                    }
-                    .padding(.horizontal, 8)
-
-                    Spacer(minLength: isCompactScreen ? 4 : 10)
-
                     artworkView
                         // ✅ MEJORADO: la portada solo anima al CAMBIAR de canción,
                         // no al pausar/resumir. Antes había una animación rara de
@@ -240,6 +208,42 @@ struct NowPlayingView: View {
                 }
                 .padding(.horizontal, 24)
                 .fixedSize(horizontal: false, vertical: true)
+                // ✅ HEADER ANCLADO ARRIBA: el header sale del VStack flexible y
+                // se clava a la parte superior con safeAreaInset. Ya no depende
+                // de la altura del contenido: las reservas del título/chip de
+                // 3ff6cbe/435d9dd crecían songInfoView y empujaban el bloque
+                // centrado (header incluido) hacia arriba, dejándolo pegado al
+                // borde superior. El contenido queda centrado en el espacio restante,
+                // entre el header y el bottom safe area, con cualquier
+                // combinación de título (1/2 líneas) y chip (sí/no).
+                // Sin fondo en el inset: es transparente y backgroundView ya
+                // cubre toda la pantalla con ignoresSafeArea (sin banda negra).
+                .safeAreaInset(edge: .top, spacing: 0) {
+                    HStack(spacing: 0) {
+                        Button {
+                            dismiss()
+                        } label: {
+                            Image(systemName: "chevron.down")
+                                .foregroundStyle(playIconColor)
+                                .font(.system(size: 17, weight: .semibold))
+                                .frame(width: 44, height: 44)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(Localization.localized("nowPlaying.close"))
+
+                        Spacer()
+
+                        Text(Localization.localized("nowPlaying.title"))
+                            .font(.system(size: 16, weight: .semibold, design: .rounded))
+                            .foregroundStyle(playIconColor.opacity(0.9))
+                            .shadow(color: .black.opacity(0.15), radius: 4, y: 1)
+
+                        Spacer()
+                        Color.clear.frame(width: 44, height: 44)
+                    }
+                    .padding(.horizontal, 8)
+                }
             }
             .onAppear {
                 AppLog.info(.interface, "NowPlaying abierto: '\(audioEngine.currentSong?.displayName ?? "—")'")
