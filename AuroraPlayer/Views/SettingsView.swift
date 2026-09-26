@@ -257,6 +257,7 @@ struct SettingsView: View, SettingsRowBuilding {
         "com.aurora.eqPreset",
         "com.aurora.limiterEnabled",
         "com.aurora.monoAudio",
+        "com.aurora.btHeadroomDisabled",
         // Acento
         "com.aurora.accentColor",
         "com.aurora.accentFromArtwork",
@@ -291,7 +292,8 @@ struct SettingsView: View, SettingsRowBuilding {
         "com.aurora.language": 0,
         "com.aurora.showFPS": false,
         "com.aurora.scanOnlyNewSongs": true,
-        "com.aurora.audioSessionMode": 0
+        "com.aurora.audioSessionMode": 0,
+        "com.aurora.btHeadroomDisabled": false
     ]
 
     /// ✅ Restablece los ajustes a los valores de una instalación nueva:
@@ -321,6 +323,9 @@ struct SettingsView: View, SettingsRowBuilding {
         audioEngine.eqPreset = .flat // garantiza valor+persistencia si no hay nodo EQ
         if audioEngine.isLimiterEnabled { audioEngine.toggleLimiter() }
         if audioEngine.isMonoAudioEnabled { audioEngine.toggleMonoAudio() }
+        // ✅ La ganancia base depende del headroom BT (clave que acaba de
+        // volver a su default): re-aplicarla para que el reset también suene.
+        audioEngine.refreshOutputGain()
         if audioEngine.isKeepScreenOnEnabled { audioEngine.isKeepScreenOnEnabled = false }
         audioEngine.setAudioSessionMode(0)
 
