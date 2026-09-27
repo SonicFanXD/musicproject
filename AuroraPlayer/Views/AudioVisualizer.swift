@@ -56,86 +56,95 @@ struct AudioVisualizer: View {
     // Opcional: si llega nil (acento manual o carátula sin secundario) se
     // conserva el degradado de un solo color de siempre, sin romper nada.
     var secondaryTintColor: Color? = nil
-    // ✅ Observa el frame rate óptimo según batería/térmica para adaptarse
-    // en tiempo real (60↔30fps) sin reiniciar el CADisplayLink.
+    // ✅ Observa el frame rate óptimo según batería/térmica (60↔30fps). Ahora
+    // alimenta el `minimumInterval` del TimelineView: no hay CADisplayLink que
+    // ajustar, el propio schedule deja de pedir frames.
     @ObservedObject private var frameRate = VisualizerFrameRate.shared
-    @State private var amplitudes: [CGFloat] = Array(repeating: 0.08, count: 24)
-    @State private var displayLink: CADisplayLink?
-    @State private var phase: Double = 0
-    @State private var isVisible = false
-    @State private var smoothedAmplitudes: [CGFloat] = Array(repeating: 0.08, count: 24)
-    // ✅ CRÍTICO - BATERÍA: observar scenePhase para detener el visualizador
-    // cuando la app pasa a segundo plano, incluso si la vista sigue visible
-    // (ej. NowPlaying abierto antes de bloquear la pantalla).
+    // ✅ CRÍTICO - BATERÍA: en segundo plano el visualizador se pausa igual que
+    // antes lo hacía el CADisplayLink: no se pide ni un frame.
     @Environment(\.scenePhase) private var scenePhase
+    // ✅ 24 barras separadas 2.5pt: misma geometría que la versión de HStack.
+    private let barCount = 24
+    private let barSpacing: CGFloat = 2.5
 
     var body: some View {
-        GeometryReader { geometry in
-            // ✅ FIX DESBORDE: width fijo al contenedor — al usarse en la PlayerBar
-            // (contenedor de ~18pt) el HStack intrínseco (~110pt con 24 barras)
-            // desbordaba a la derecha y tapaba título/artista/corazón. Con
-            // .frame(width:) el HStack se comprime y las barras se recortan
-            // ordenadas de izquierda a derecha, sin salirse nunca del marco.
-            HStack(spacing: 2.5) {
-                ForEach(0..<amplitudes.count, id: \.self) { index in
-                    let normalizedIndex = Double(index) / Double(amplitudes.count - 1)
-                    let sineWave = sin(phase + Double(index) * 0.6) * 0.18
-                    let centerBoost = 0.15 * (1.0 - pow(normalizedIndex - 0.5, 2) * 4)
-                    let adjustedAmplitude = max(0.05, min(1.0, smoothedAmplitudes[index] + CGFloat(sineWave) + CGFloat(centerBoost)))
-
-                    Capsule()
-                        .fill(
-                            LinearGradient(
-                                colors: barGradientColors,
-                                startPoint: .bottom,
-                                endPoint: .top
-                            )
-                        )
-                        .frame(width: max(2.5, geometry.size.width / CGFloat(amplitudes.count) - 2))
-                        .frame(height: max(3, adjustedAmplitude * geometry.size.height))
-                }
+        // ✅ RENDIMIENTO: una sola pasada de dibujo por frame. El TimelineView
+        // entrega la fecha al Canvas —sin @State intermedio—, así que ya no hay
+        // 24 subvistas SwiftUI ni diff de árbol por frame: ese coste por frame
+        // en A11 (no la GPU) era lo que dejaba el visualizador en ~30fps.
+        // `paused` sustituye a start/stopVisualization: ni un frame en pausa ni
+        // en background, y al volver a primer plano se reanuda solo.
+        TimelineView(.animation(minimumInterval: 1.0 / Double(frameRate.fps),
+                                paused: !isAnimating)) { timeline in
+            Canvas { context, size in
+                drawBars(in: &context, size: size, time: timeline.date.timeIntervalSinceReferenceDate)
             }
-            .frame(height: geometry.size.height, alignment: .bottom)
-            .frame(width: geometry.size.width, alignment: .leading)
-            .shadow(color: tintColor.opacity(0.1), radius: 4, y: 1)
         }
-        .drawingGroup()
+        // ✅ El shadow se aplica UNA vez al Canvas entero (antes, uno por barra).
+        // Sin .drawingGroup(): el Canvas ya se rasteriza solo y envolverlo añadía
+        // una pasada offscreen extra sin quitar el coste de SwiftUI, que era el
+        // que importaba.
+        .shadow(color: tintColor.opacity(0.1), radius: 4, y: 1)
         .opacity(audioEngine.isPlaying ? 1.0 : 0.4)
         .animation(.easeInOut(duration: 0.3), value: audioEngine.isPlaying)
-        .onAppear {
-            isVisible = true
-            startVisualization()
-        }
-        .onDisappear {
-            isVisible = false
-            stopVisualization()
-        }
-        .onChange(of: audioEngine.isPlaying) { isPlaying in
-            if isPlaying {
-                isVisible = true
-                startVisualization()
-            } else {
-                // ✅ Pausa: congelar suavemente sin saltos (las barras quedan
-                // en su posición actual, atenuadas)
-                stopVisualization()
-                isVisible = false
-            }
-        }
-        // ✅ Batería: adapta los fps en tiempo real (60↔30) al cambiar el estado
-        // de bajo consumo/térmico, sin reiniciar el CADisplayLink.
-        .onReceive(frameRate.$fps) { fps in
-            displayLink?.preferredFramesPerSecond = fps
-        }
-        // ✅ CRÍTICO - BATERÍA: detener el visualizador cuando la app pasa a
-        // segundo plano para ahorrar CPU/GPU. Reanudar al volver a primer plano.
-        .onChange(of: scenePhase) { newPhase in
-            if newPhase == .background {
-                stopVisualization()
-                isVisible = false
-            } else if newPhase == .active && audioEngine.isPlaying {
-                isVisible = true
-                startVisualization()
-            }
+    }
+
+    /// ✅ Solo animamos reproduciendo y con la app en primer plano.
+    private var isAnimating: Bool {
+        audioEngine.isPlaying && scenePhase != .background
+    }
+
+    /// ✅ Dibuja las 24 barras en UNA pasada (antes: 24 Capsule en un HStack).
+    /// La altura de cada barra es una función pura de (tiempo, índice): senos +
+    /// un "jitter" determinista — sin `CGFloat.random` por barra y por frame
+    /// (eran 24 randoms por frame) y sin estado que fuerce re-render.
+    private func drawBars(in context: inout GraphicsContext, size: CGSize, time: Double) {
+        guard size.width > 0, size.height > 0 else { return }
+
+        // ✅ FIX DESBORDE (PlayerBar): la versión de HStack se salía del marco de
+        // ~18pt. Aquí el ancho se reparte para que las 24 barras quepan enteras;
+        // si el contenedor es más estrecho que 24×2.5pt, el Canvas recorta las
+        // barras ordenadas de izquierda a derecha, sin salirse nunca del marco.
+        let barWidth = max(2.5, (size.width - barSpacing * CGFloat(barCount - 1)) / CGFloat(barCount))
+        let gradient = Gradient(colors: barGradientColors)
+        // ✅ 0.25 rad/frame a 60fps = 15 rad/s: la misma velocidad que antes,
+        // ahora expresada en tiempo real (deja de depender de los fps reales).
+        let phase = time * 15.0
+
+        for index in 0..<barCount {
+            let position = Double(index)
+            let normalizedIndex = position / Double(barCount - 1)
+
+            // Viaje lento + jitter determinista (dos senos incoherentes ≈ ruido
+            // barato): mismo rango 0.08...0.28 que el random anterior.
+            let travel = sin(phase * 1.1 + position * 0.7) * 0.22
+            let jitter = 0.5 + 0.5 * sin(phase * 0.53 + position * 2.1) * cos(phase * 0.31 + position * 1.3)
+            let target = min(1.0, max(0.05, 0.35 + travel + (0.08 + 0.20 * jitter) * 0.4))
+
+            // ✅ Onda + realce del centro: idénticos a la versión anterior.
+            let wave = sin(phase + position * 0.6) * 0.18
+            let centerBoost = 0.15 * (1.0 - pow(normalizedIndex - 0.5, 2) * 4)
+            let amplitude = min(1.0, max(0.05, target + wave + centerBoost))
+
+            let barHeight = max(3, CGFloat(amplitude) * size.height)
+            let rect = CGRect(
+                x: CGFloat(index) * (barWidth + barSpacing),
+                y: size.height - barHeight,
+                width: barWidth,
+                height: barHeight
+            )
+            // ✅ Capsule = radio completo (mitad del lado menor).
+            let barPath = Path(roundedRect: rect, cornerRadius: min(barWidth, barHeight) / 2)
+            // ✅ Degradado abajo → arriba por barra, igual que el LinearGradient
+            // (.bottom → .top) de la versión anterior.
+            context.fill(
+                barPath,
+                with: .linearGradient(
+                    gradient,
+                    startPoint: CGPoint(x: rect.midX, y: rect.maxY),
+                    endPoint: CGPoint(x: rect.midX, y: rect.minY)
+                )
+            )
         }
     }
 
@@ -148,38 +157,6 @@ struct AudioVisualizer: View {
             return [tintColor, secondary]
         }
         return [tintColor.opacity(0.95), tintColor.opacity(0.5), tintColor.opacity(0.2)]
-    }
-
-    private func startVisualization() {
-        stopVisualization()
-        displayLink = CADisplayLink(target: VisualizerLinkTarget { [self] in
-            updateAmplitudes()
-        }, selector: #selector(VisualizerLinkTarget.fire(displayLink:)))
-        // ✅ Batería: usar el frame rate adaptativo (60fps normal, 30fps en
-        // bajo consumo o calor)
-        displayLink?.preferredFramesPerSecond = frameRate.fps
-        displayLink?.add(to: .main, forMode: .common)
-    }
-
-    private func stopVisualization() {
-        displayLink?.invalidate()
-        displayLink = nil
-    }
-
-    private func updateAmplitudes() {
-        guard isVisible, audioEngine.isPlaying else { return }
-
-        phase += 0.25
-
-        let baseAmplitude: CGFloat = 0.35
-        for i in 0..<smoothedAmplitudes.count {
-            let travel = sin(phase * 1.1 + Double(i) * 0.7) * 0.22
-            let variation = CGFloat.random(in: 0.08...0.28)
-            let target = min(1.0, max(0.05, baseAmplitude + CGFloat(travel) + variation * 0.4))
-
-            smoothedAmplitudes[i] += (target - smoothedAmplitudes[i]) * 0.65
-        }
-        amplitudes = smoothedAmplitudes
     }
 }
 
