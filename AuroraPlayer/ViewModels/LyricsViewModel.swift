@@ -30,9 +30,23 @@ final class LyricsViewModel: ObservableObject {
     /// LazyVStack hacía desaparecer letras. Se recalcula SOLO en tick/boundary/
     /// seek, nunca por frame.
     @Published private(set) var isInstrumentalGap = false
-    /// Hueco mínimo (ms) entre el fin efectivo de una línea y el inicio de la
-    /// siguiente para considerarlo interludio. Por debajo, el hueco es un
-    /// silencio normal entre versos y no muestra indicador.
+    /// ✅ INTRO instrumental (hueco ANTES de la primera línea): la canción ya
+    /// empezó, ninguna línea ha sonado todavía y la primera tarda ≥ el umbral en
+    /// llegar. La vista lo pinta con el MISMO componente, colgado del borde de
+    /// ARRIBA de la primera fila (la que el scroll centra mientras no hay línea
+    /// activa) porque la pseudo-línea va antes de la primera letra.
+    /// ✅ Es una propiedad APARTE de `isInstrumentalGap` y no una reutilizada: el
+    /// hueco no está ENTRE dos líneas (no hay línea previa que congelar) y la
+    /// vista lo coloca en otro sitio, así que mezclarlos obligaría a distinguir
+    /// dentro del render. El UMBRAL, en cambio, es el mismo: "un hueco que merece
+    /// indicador" es una sola decisión de producto.
+    /// ✅ Mutuamente excluyentes por construcción: el interludio exige una línea
+    /// ya empezada (`lastStartedIndex`) y la intro exige que no haya ninguna.
+    @Published private(set) var isIntroGap = false
+    /// Hueco mínimo (ms) que merece indicador: entre el fin efectivo de una línea
+    /// y el inicio de la siguiente (interludio) o entre el inicio de la canción y
+    /// la primera línea (intro). Por debajo, el hueco es un silencio normal y no
+    /// muestra nada.
     private static let instrumentalGapThresholdMs: Int = 3000
 
     // MARK: - Dependencies
@@ -157,8 +171,15 @@ final class LyricsViewModel: ObservableObject {
         activeStartMs = 0
         activeEndMs = 0
         isInstrumentalGap = false
+        isIntroGap = false
         anchorClock(at: audioEngine?.currentTime ?? clockTime)
         refreshActiveLine()
+        // ✅ El estado de gap se recalcula TAMBIÉN aquí, no solo en
+        // tick/boundary/seek: en el parseo en background (un TTML de Apple Music,
+        // justo el formato con intros instrumentales largas) `syncToCurrentTime`
+        // ya no se vuelve a llamar, y sin esto el indicador del intro no
+        // aparecería hasta el primer tick (hasta 0.4 s con la canción sonando).
+        updateInstrumentalGapState()
 
         if notifyView {
             lyricsRevision &+= 1
@@ -181,6 +202,7 @@ final class LyricsViewModel: ObservableObject {
         activeStartMs = 0
         activeEndMs = 0
         isInstrumentalGap = false
+        isIntroGap = false
         lineBoundaryTask?.cancel()
         lineBoundaryTask = nil
     }
@@ -404,10 +426,13 @@ final class LyricsViewModel: ObservableObject {
     /// `itunes:song-part="Instrumental"` en `<p>` SIN texto, que el parser
     /// descarta; el hueco entre `lines[i].endMs` y `lines[i+1].startMs`
     /// los detecta igual para cualquier formato (TTML, LRC, híbrido).
-    /// Antes de la primera línea (intro) y tras la última (outro) no hay
-    /// indicador: no hay "hueco ENTRE líneas" que anunciar.
+    /// ✅ INTRO = el mismo criterio ANTES de la primera línea: ninguna ha
+    /// empezado y la primera tarda ≥ umbral en llegar. Tras la última (outro)
+    /// sigue sin haber indicador: ahí ya no queda nada que anunciar.
+    /// ✅ Los DOS estados se calculan de una vez porque son mutuamente
+    /// excluyentes por construcción (ver las propiedades).
     /// ✅ CONSERVADOR: se invoca DESPUÉS de `refreshActiveLine` desde
-    /// tick/boundary/seek — `refreshActiveLine` NO se modifica.
+    /// tick/boundary/seek/parseo — `refreshActiveLine` NO se modifica.
     private func updateInstrumentalGapState() {
         guard let engine = engine else { return }
 
@@ -422,8 +447,24 @@ final class LyricsViewModel: ObservableObject {
             inGap = next.startMs - window.endMs >= Self.instrumentalGapThresholdMs
         }
 
+        // ✅ INTRO instrumental: ninguna línea ha empezado todavía y la primera
+        // tarda ≥ umbral DESDE EL INICIO de la canción. Se mide el hueco TOTAL y
+        // no lo que queda por delante a propósito: con el criterio parcial el
+        // indicador se apagaría en los últimos 3 s, justo cuando el conteo es más
+        // útil. Se apaga solo cuando la primera línea empieza (timeMs ≥ su
+        // inicio), el mismo instante en que `refreshActiveLine` la activa.
+        var inIntro = false
+        if let firstStartMs = engine.line(at: 0)?.startMs,
+           timeMs < firstStartMs,
+           firstStartMs >= Self.instrumentalGapThresholdMs {
+            inIntro = true
+        }
+
         if inGap != isInstrumentalGap {
             isInstrumentalGap = inGap
+        }
+        if inIntro != isIntroGap {
+            isIntroGap = inIntro
         }
     }
 

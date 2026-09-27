@@ -25,6 +25,9 @@ import SwiftUI
 // ✅ Sin línea activa (intro instrumental / outro) se centra la primera o la
 //    última línea como "activa provisional": la vista nunca nace mostrando la
 //    franja vacía del relleno de centrado con las letras abajo.
+// ✅ Los huecos instrumentales (intro y interludio, ≥ 3 s) se anuncian con el
+//    MISMO indicador de puntos, colgado de la fila focal como overlay: en el
+//    flujo, alineado con el texto y sin mover la letra ni el LazyVStack.
 // ✅ Colores ADAPTATIVOS (`.primary`): la app no fuerza modo oscuro, así que el
 //    texto blanco fijo era invisible sobre el fondo claro en modo claro.
 // ✅ Render 100% por código, sin assets
@@ -383,6 +386,11 @@ struct LyricsView: View {
         // ni el LazyVStack gana hijos (el diff que en 292218b hacía desaparecer
         // letras no se puede reproducir desde aquí).
         .overlay(alignment: .bottomLeading) { interludeIndicator(for: line) }
+        // ✅ INDICADOR DEL INTRO EN EL FLUJO: misma idea, colgado del borde de
+        // ARRIBA de la PRIMERA fila, porque la pseudo-línea va ANTES de la primera
+        // letra. El indicador NO es una fila: no entra en `lyricsLines` ni pide un
+        // ID nuevo, y el overlay no toca el layout (ver `introIndicator`).
+        .overlay(alignment: .topLeading) { introIndicator(for: line) }
     }
 
     /// ✅ Indicador del interludio: su propio sitio en el flujo, sin mover nada.
@@ -415,6 +423,42 @@ struct LyricsView: View {
         // TODO el layout del LazyVStack (frames de más en el cambio de verso).
         .animation(.easeInOut(duration: 0.3), value: isHost)
         // ✅ Sin hit-testing: los toques de la fila siguen siendo del seek.
+        .allowsHitTesting(false)
+    }
+
+    /// ✅ Indicador del INTRO instrumental: mismo componente y misma banda, con la
+    /// colocación espejada (el hueco está antes de la primera letra, no entre dos
+    /// versos).
+    /// · Se cuelga de la PRIMERA fila, que durante el intro es además la focal del
+    ///   scroll (`centeringFallbackLineID` devuelve la primera mientras no ha
+    ///   empezado ninguna): el indicador queda centrado sin tocar el auto-scroll,
+    ///   sin reservar un ID en el espacio de índices (que es `id == índice` para el
+    ///   foco y para el karaoke) y sin añadir filas al LazyVStack.
+    /// · `-gapIndicatorOutset` con `.topLeading`: sale hacia la banda vacía de
+    ///   arriba y queda a la misma distancia de la primera letra que el interludio
+    ///   de la suya (12.5 pt).
+    /// · Frames: idéntico al interludio — el TimelineView solo EXISTE con el flag
+    ///   activo. Además, durante el intro no hay línea activa, así que el karaoke
+    ///   no está pidiendo frames: el pulso es la única animación de la vista.
+    @ViewBuilder
+    private func introIndicator(for line: LyricsLine) -> some View {
+        let isHost = viewModel.isIntroGap && line.id == viewModel.lyricsLines.first?.id
+
+        Group {
+            if isHost {
+                LyricInstrumentalIndicator(
+                    glowColor: glowColor,
+                    isPlaying: viewModel.isPlaying,
+                    renderState: renderState
+                )
+                .offset(y: -Self.gapIndicatorOutset)
+                .transition(.opacity)
+            }
+        }
+        // ✅ Mismo fundido scoped que el interludio (0.3 s): al empezar la primera
+        // línea, el update que la activa también baja el flag, y ni el cambio de
+        // línea ni el scroll se ven envueltos por esta animación.
+        .animation(.easeInOut(duration: 0.3), value: isHost)
         .allowsHitTesting(false)
     }
 
@@ -578,18 +622,20 @@ private struct LyricsArtworkBackground: View, Equatable {
     }
 }
 
-// MARK: - Indicador de interludio ("• • •" durante el hueco instrumental)
+// MARK: - Indicador de gap instrumental ("• • •" en el intro y el interludio)
 // ✅ Estilo Aurora: tres puntos que RESPIRAN (opacidad 0.4 → 1.0 en un ciclo
-//    lento de ~2.6 s, con el acento de la carátula) mientras dura el interludio
-//    (hueco ≥ 3s detectado por LyricsViewModel).
-// ✅ EN EL FLUJO, no flotando: el contenedor lo cuelga de la fila focal con
-//    `.overlay` (ver `LyricsView.interludeIndicator`), así ocupa la banda vacía
-//    que YA existe entre las dos líneas —su propio espacio, en la misma columna
-//    que el texto— sin cambiar el alto de la fila ni añadir hijos al LazyVStack.
-// ✅ Cero frames cuando no hay interludio: la vista solo existe con su flag
-//    activo (el `if` del contenedor) y, dentro, el TimelineView se desarma si no
-//    hay reproducción o la escena no está activa. Mismo patrón que la línea
-//    activa del karaoke: la suscripción de frames vive dentro del estado que la
+//    lento de ~2.6 s, con el acento de la carátula) mientras dura el hueco
+//    instrumental (≥ 3s detectado por LyricsViewModel): el INTERLUDIO entre dos
+//    líneas (`isInstrumentalGap`) y el INTRO antes de la primera (`isIntroGap`).
+// ✅ EN EL FLUJO, no flotando: el contenedor lo cuelga de una FILA con
+//    `.overlay` (ver `LyricsView.interludeIndicator` / `LyricsView.introIndicator`),
+//    así ocupa la banda vacía que YA existe junto a la línea focal —su propio
+//    espacio, en la misma columna que el texto— sin cambiar el alto de la fila ni
+//    añadir hijos al LazyVStack.
+// ✅ Cero frames cuando no hay hueco: la vista solo existe con su flag activo (el
+//    `if` del contenedor) y, dentro, el TimelineView se desarma si no hay
+//    reproducción o la escena no está activa. Mismo patrón que la línea activa
+//    del karaoke: la suscripción de frames vive dentro del estado que la
 //    necesita, nunca en la vista completa.
 // ✅ `TimelineView(.animation)` y NO `repeatForever`: la respiración se calcula
 //    con una fase continua sobre la fecha de CADA frame, así el ritmo no depende
@@ -1551,14 +1597,30 @@ final class LyricCaptureMonitor: ObservableObject {
 #if DEBUG
 struct LyricsView_Previews: PreviewProvider {
     static var previews: some View {
-        let viewModel = LyricsViewModel()
-        viewModel.parseLyrics("""
-        [00:01.00]Primera línea de prueba
-        [00:05.50]Segunda línea de prueba
-        [00:10.00]Tercera línea de prueba
-        """)
-        
-        return LyricsView(song: nil, viewModel: viewModel)
+        Group {
+            // ✅ Sin hueco: primera línea a 1 s (ningún indicador de gap).
+            let sinIntro = LyricsViewModel()
+            sinIntro.parseLyrics("""
+            [00:01.00]Primera línea de prueba
+            [00:05.50]Segunda línea de prueba
+            [00:10.00]Tercera línea de prueba
+            """)
+            LyricsView(song: nil, viewModel: sinIntro)
+
+            // ✅ Intro instrumental largo (primera línea a los 9 s): el indicador
+            // debe colgar de la PRIMERA línea —la que el scroll centra mientras no
+            // hay línea activa— desde el segundo 0 y apagarse al empezar la letra.
+            // En preview estática (sin reproducción) los puntos salen en reposo
+            // (0.7): es justo lo que se puede validar sin dispositivo, la
+            // alineación con la columna del texto y el aire respecto de la línea.
+            let conIntro = LyricsViewModel()
+            conIntro.parseLyrics("""
+            [00:09.00]Primera línea tras el intro
+            [00:14.00]Segunda línea de prueba
+            [00:18.00]Tercera línea de prueba
+            """)
+            LyricsView(song: nil, viewModel: conIntro)
+        }
     }
 }
 #endif
