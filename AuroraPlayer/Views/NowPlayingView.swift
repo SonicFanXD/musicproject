@@ -151,6 +151,15 @@ struct NowPlayingView: View {
         ZStack {
             backgroundView
 
+            // ✅ ESTRUCTURA FIJA: el header es una fila propia de 44pt + 8pt de
+            // margen, hermana del contenido (ya no comparten inset). El
+            // contenido vive en un contenedor flexible que ocupa el resto de la
+            // hoja y se centra DENTRO de él, así que la altura del contenido
+            // (título de 1 o 2 líneas, chip presente o no) ya no puede mover el
+            // header: su fila mide siempre lo mismo.
+            VStack(spacing: 0) {
+                headerView
+
                 // ✅ DISEÑO MEJORADO: distribución equilibrada con Spacers
                 // flexibles (la proporción se adapta a cualquier pantalla,
                 // iPhone 8 Plus incluido) en lugar de espaciados fijos.
@@ -208,47 +217,11 @@ struct NowPlayingView: View {
                 }
                 .padding(.horizontal, 24)
                 .fixedSize(horizontal: false, vertical: true)
-                // ✅ HEADER ANCLADO ARRIBA: el header sale del VStack flexible y
-                // se clava a la parte superior con safeAreaInset. Ya no depende
-                // de la altura del contenido: las reservas del título/chip de
-                // 3ff6cbe/435d9dd crecían songInfoView y empujaban el bloque
-                // centrado (header incluido) hacia arriba, dejándolo pegado al
-                // borde superior. El contenido queda centrado en el espacio restante,
-                // entre el header y el bottom safe area, con cualquier
-                // combinación de título (1/2 líneas) y chip (sí/no).
-                // Sin fondo en el inset: es transparente y backgroundView ya
-                // cubre toda la pantalla con ignoresSafeArea (sin banda negra).
-                .safeAreaInset(edge: .top, spacing: 0) {
-                    HStack(spacing: 0) {
-                        Button {
-                            dismiss()
-                        } label: {
-                            Image(systemName: "chevron.down")
-                                .foregroundStyle(playIconColor)
-                                .font(.system(size: 17, weight: .semibold))
-                                .frame(width: 44, height: 44)
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel(Localization.localized("nowPlaying.close"))
-
-                        Spacer()
-
-                        Text(Localization.localized("nowPlaying.title"))
-                            .font(.system(size: 16, weight: .semibold, design: .rounded))
-                            .foregroundStyle(playIconColor.opacity(0.9))
-                            .shadow(color: .black.opacity(0.15), radius: 4, y: 1)
-
-                        Spacer()
-                        Color.clear.frame(width: 44, height: 44)
-                    }
-                    // ✅ Margen superior CONSTANTE: el header no debe tocar el
-                    // status bar. Al estar dentro del safeAreaInset es fijo por
-                    // construcción: no depende del contenido (título 1/2 líneas,
-                    // chip sí/no).
-                    .padding(.top, 8)
-                    .padding(.horizontal, 8)
-                }
+                // ✅ El contenido (portada, visualizador, info, progreso,
+                // controles y botones) se centra en el espacio RESTANTE bajo el
+                // header; su altura ya no influye en la fila del header.
+                .frame(maxHeight: .infinity)
+            }
             }
             .onAppear {
                 AppLog.info(.interface, "NowPlaying abierto: '\(audioEngine.currentSong?.displayName ?? "—")'")
@@ -315,6 +288,45 @@ struct NowPlayingView: View {
                 }
             }
             .animation(.easeOut(duration: 0.22), value: showQualityDetail)
+    }
+
+    // MARK: - Header (fila fija: no depende de la altura del contenido)
+    /// ✅ Antes vivía en `.safeAreaInset(edge: .top)` colgado del VStack del
+    /// contenido, y ese VStack (con `.fixedSize`) se centra dentro del ZStack:
+    /// al crecer el contenido —título de 2 líneas o chip— el bloque centrado
+    /// subía ~Δaltura/2 y el header terminaba pegado al borde superior del
+    /// sheet. Ahora es una fila propia del contenedor raíz: 44pt + 8pt de
+    /// margen, idéntica con cualquier combinación de contenido.
+    private var headerView: some View {
+        HStack(spacing: 0) {
+            Button {
+                dismiss()
+            } label: {
+                Image(systemName: "chevron.down")
+                    .foregroundStyle(playIconColor)
+                    .font(.system(size: 17, weight: .semibold))
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(Localization.localized("nowPlaying.close"))
+
+            Spacer()
+
+            Text(Localization.localized("nowPlaying.title"))
+                .font(.system(size: 16, weight: .semibold, design: .rounded))
+                .foregroundStyle(playIconColor.opacity(0.9))
+                .shadow(color: .black.opacity(0.15), radius: 4, y: 1)
+
+            Spacer()
+            Color.clear.frame(width: 44, height: 44)
+        }
+        // ✅ Margen superior CONSTANTE: el header no debe tocar el borde del
+        // sheet. Al ser una fila propia (no un inset compartido con el
+        // contenido) es fijo por construcción: no depende del contenido
+        // (título de 1/2 líneas, chip sí/no).
+        .padding(.top, 8)
+        .padding(.horizontal, 8)
     }
 
     // MARK: - Background (respeta "Reducir transparencia")
