@@ -1855,6 +1855,61 @@ class AudioEngine: NSObject, ObservableObject {
         }
     }
 
+    // MARK: - Remuestreo Hi-Res (AVAudioConverter)
+
+    /// ✅ REMUESTREO HI-RES (infraestructura): formato de CONEXIÓN del grafo =
+    /// el del hardware de salida (outputNode, tasa real del DAC/ruta), no el
+    /// del archivo. Los AVAudioFile se abren a su tasa NATIVA (makePlaybackFile)
+    /// y la conversión la ejecuta el AVAudioConverter de la conexión
+    /// playerNode→EQ, configurado con sampleRateConverterQuality = .max
+    /// (Apple TN3136). Con tasas iguales el converter queda en paso directo
+    /// (ruta bit-perfect intacta); con 96 kHz sobre hardware 44.1/48 sustituye
+    /// el resampler de calidad media del mainMixerNode por uno de máxima
+    /// calidad. La señal que procesan EQ/mono/headroom pasa a la tasa del
+    /// hardware (el EQ de 10 bandas está diseñado para 44.1/48 kHz).
+    private func hardwareOutputFormat() -> AVAudioFormat {
+        engine.outputNode.outputFormat(forBus: 0)
+    }
+
+    /// Formato de conexión/render del grafo: tasa REAL del hardware (fallback:
+    /// la negociada por la sesión) a 2 canales float32 no interleaved.
+    private func makeHardwareFormat() -> AVAudioFormat {
+        let rate = hardwareOutputFormat().sampleRate
+        if rate > 1 {
+            return AVAudioFormat(standardFormatWithSampleRate: rate, channels: 2)
+                ?? hardwareOutputFormat()
+        }
+        return AVAudioFormat(standardFormatWithSampleRate: AVAudioSession.sharedInstance().sampleRate, channels: 2)
+            ?? hardwareOutputFormat()
+    }
+
+    /// ✅ ACTIVACIÓN CONDICIONAL: solo hay conversión cuando la tasa del
+    /// archivo difiere de la del hardware. Con 44.1↔44.1 (o 48↔48) el grafo
+    /// es idéntico al anterior: cero coste de CPU y ruta bit-perfect intacta.
+    private var srcConversionActive = false
+
+    private func updateSrcConversionState() {
+        let hwRate = hardwareOutputFormat().sampleRate
+        let source = sampleRate > 0 ? sampleRate : (currentSong?.sampleRate ?? 0)
+        let active = source > 0 && hwRate > 1 && abs(hwRate - source) > 1
+        srcConversionActive = active
+    }
+
+    /// ✅ HI-RES: abre el archivo DECODIFICANDO a float32 estándar A LA MISMA
+    /// TASA NATIVA del material (AVAudioFile(forReading:commonFormat:) no
+    /// remuestrea: solo fija el formato de render; la tasa y los canales salen
+    /// del archivo). El cambio de tasa lo hace el AVAudioConverter de la
+    /// conexión con quality .max, nunca el decodificador. Normaliza codecs
+    /// cuyo processingFormat nativo no es float32 no interleaved.
+    private func makePlaybackFile(_ url: URL) throws -> AVAudioFile {
+        let container = try AVAudioFile(forReading: url)
+        let source = container.processingFormat
+        if source.commonFormat == .pcmFormatFloat32 && !source.isInterleaved {
+            return container
+        }
+        return try AVAudioFile(forReading: url, commonFormat: .pcmFormatFloat32, interleaved: false)
+    }
+
     /// Identidad del formato conectado al graph (sample rate + canales + EQ)
     private func formatKey(_ format: AVAudioFormat) -> String {
         "\(format.sampleRate)-\(format.channelCount)-\(equalizerNode != nil)"
