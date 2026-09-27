@@ -1,3 +1,4 @@
+import Foundation
 import SwiftUI
 
 // MARK: - Vista de lyrics línea por línea (optimizada para iPhone 8 Plus)
@@ -126,11 +127,14 @@ struct LyricsView: View {
             // anterior lo insertaba como pseudo-fila y el diff del LazyVStack
             // hacía desaparecer letras). Centrado por el ZStack; sin hit-testing
             // para no robar toques al texto ni al seek por línea.
+            // ✅ El indicador solo EXISTE durante el hueco, así que su TimelineView
+            // (la respiración) no puede pedir frames cuando no toca: sale del
+            // árbol en el mismo render en que `isInstrumentalGap` vuelve a false.
             if viewModel.isInstrumentalGap {
                 LyricInstrumentalIndicator(
                     glowColor: glowColor,
                     isPlaying: viewModel.isPlaying,
-                    isActive: viewModel.isInstrumentalGap
+                    renderState: renderState
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .transition(.opacity)
@@ -537,48 +541,120 @@ private struct LyricsArtworkBackground: View, Equatable {
 }
 
 // MARK: - Indicador de interludio ("• • •" durante el hueco instrumental)
-// ✅ Estilo Apple Music: puntos pulsantes mientras dura el interludio
-//    (hueco ≥ 3s detectado por LyricsViewModel). Es un OVERLAY del ZStack
-//    raíz: no añade/quita filas del LazyVStack jamás.
-// ✅ Cero trabajo por frame AÑADIDO: la oscilación es un `repeatForever`
-//    gateado por `value:` (misma convención que las barras de ContentView/Queue),
-//    SIN TimelineView propio: no añade ninguna suscripción de frames.
-// ✅ Dos `.animation` a propósito: el de `isPlaying` arranca/para el pulso con
-//    la reproducción (en pausa, puntos estáticos); el de `isActive` intenta
-//    arrancarlo en el MISMO render en que el overlay aparece (el flip del
-//    estado publicado coincide con la inserción). En el peor caso degradado
-//    los puntos se ven estáticos, nunca rotos.
+// ✅ Estilo Aurora: tres puntos que RESPIRAN (opacidad 0.4 → 1.0 en un ciclo
+//    lento de ~2.6 s, con el acento de la carátula) mientras dura el interludio
+//    (hueco ≥ 3s detectado por LyricsViewModel). Es un OVERLAY del ZStack raíz:
+//    no añade/quita filas del LazyVStack jamás.
+// ✅ Cero frames cuando no hay interludio: la vista solo existe si
+//    `isInstrumentalGap == true` (el `if` del ZStack) y, dentro, el TimelineView
+//    se desarma si no hay reproducción o la escena no está activa. Mismo patrón
+//    que la línea activa del karaoke: la suscripción de frames vive dentro del
+//    estado que la necesita, nunca en la vista completa.
+// ✅ `TimelineView(.animation)` y NO `repeatForever`: la respiración se calcula
+//    con una fase continua sobre la fecha de CADA frame, así el ritmo no depende
+//    del momento en que se insertó el overlay (con `repeatForever` el arranque
+//    coincidía con la transición de entrada y el pulso nacía desfasado) y el
+//    mismo código sirve para bajar el ritmo a 30 fps bajo grabación.
 private struct LyricInstrumentalIndicator: View {
     let glowColor: Color
     let isPlaying: Bool
-    let isActive: Bool
+    /// ✅ Overlay del sistema / grabación de pantalla: cambia el ritmo de frames y
+    /// si se paga el halo (la MISMA condición que usa el karaoke para su glow).
+    let renderState: LyricRenderState
+
+    /// ✅ Identidad y calibración del indicador en un solo sitio: el tamaño y el
+    /// espaciado no cambian; lo que respira es la opacidad.
+    private enum Design {
+        static let dotSize: CGFloat = 7
+        static let dotSpacing: CGFloat = 6
+        static let dotCount = 3
+        /// ✅ Ciclo de respiración (~2.6 s): lento, nunca parpadeo.
+        static let breathPeriod: Double = 2.6
+        static let minOpacity: Double = 0.4
+        static let maxOpacity: Double = 1.0
+        /// ✅ Desfase entre puntos: la onda recorre el grupo (orgánico), no son
+        /// tres latidos sincronizados.
+        static let phaseStep: Double = 0.22
+        /// ✅ Reposo (pausa y grabación): punto medio del ciclo, ni apagado ni
+        /// encendido, y sin gastar ni un frame.
+        static let restingOpacity: Double = 0.7
+        /// ✅ Halo: UNA copia desenfocada del grupo entero (una sola pasada fuera
+        /// de pantalla para los tres puntos, no tres) con el acento del karaoke.
+        static let haloRadius: CGFloat = 5
+        static let haloOpacity: Double = 0.75
+    }
 
     var body: some View {
-        HStack(spacing: 6) {
-            ForEach(0..<3, id: \.self) { dot in
-                Circle()
-                    .fill(glowColor.opacity(0.8))
-                    .frame(width: 7, height: 7)
-                    .scaleEffect(scale(for: dot))
-                    .animation(pulse(for: dot), value: isPlaying)
-                    .animation(pulse(for: dot), value: isActive)
+        Group {
+            if breathes {
+                TimelineView(.animation(minimumInterval: frameInterval)) { context in
+                    dots(opacities: opacities(at: context.date))
+                }
+            } else {
+                dots(opacities: Array(repeating: Design.restingOpacity, count: Design.dotCount))
             }
         }
         .padding(.vertical, 10)
         .padding(.horizontal, 2)
     }
 
-    /// Punto de partida del pulso: alternado mientras suena (el `repeatForever`
-    /// lo oscila), estático y pequeño en pausa.
-    private func scale(for dot: Int) -> CGFloat {
-        guard isPlaying else { return 0.65 }
-        return dot % 2 == 0 ? 1.0 : 0.55
+    /// ✅ ¿Se piden frames? Solo con reproducción Y escena en primer plano Y sin
+    /// la política de captura activada. Cualquier otra combinación es UN dibujo.
+    private var breathes: Bool {
+        guard isPlaying, renderState.isSceneActive else { return false }
+        if renderState.isCaptured, LyricCapturePolicy.dropsInstrumentalPulseWhileCaptured {
+            return false
+        }
+        return true
     }
 
-    /// Pulso desfasado por punto (duraciones distintas → onda orgánica).
-    private func pulse(for dot: Int) -> Animation? {
-        guard isPlaying else { return nil }
-        return .easeInOut(duration: 0.55 + Double(dot) * 0.15).repeatForever(autoreverses: true)
+    /// ✅ Bajo grabación, si la respiración se mantiene, va a 30 fps alineados con
+    /// el vsync (el mismo ritmo que el karaoke); sin captura, sin límite.
+    private var frameInterval: Double? {
+        renderState.isCaptured ? LyricCapturePolicy.capturedFrameInterval : nil
+    }
+
+    /// ✅ Fase continua por punto: una sinusoide lenta sobre la fecha del frame. Ni
+    /// temporizadores ni animaciones en bucle: no hay estado que se pueda
+    /// desincronizar al entrar o salir del interludio.
+    private func opacities(at date: Date) -> [Double] {
+        let cycle = date.timeIntervalSinceReferenceDate / Design.breathPeriod
+        let range = Design.maxOpacity - Design.minOpacity
+
+        return (0..<Design.dotCount).map { dot in
+            let wave = 0.5 + 0.5 * sin(2 * Double.pi * (cycle + Double(dot) * Design.phaseStep))
+            return Design.minOpacity + wave * range
+        }
+    }
+
+    /// ✅ Puntos + halo, con el MISMO acento que el karaoke. El halo se suelta con
+    /// la política que ya decide si el karaoke paga su copia desenfocada: un solo
+    /// criterio para las dos cosas que brillan.
+    @ViewBuilder
+    private func dots(opacities: [Double]) -> some View {
+        let dots = HStack(spacing: Design.dotSpacing) {
+            ForEach(0..<Design.dotCount, id: \.self) { dot in
+                Circle()
+                    .fill(glowColor)
+                    .frame(width: Design.dotSize, height: Design.dotSize)
+                    .opacity(opacity(at: dot, in: opacities))
+            }
+        }
+
+        ZStack {
+            if renderState.showsGlow {
+                dots
+                    .blur(radius: Design.haloRadius)
+                    .opacity(Design.haloOpacity)
+            }
+            dots
+        }
+    }
+
+    /// ✅ Acceso seguro: la lista siempre trae los tres valores, pero un índice
+    /// fuera de rango en el render de la hoja no se paga con un crash.
+    private func opacity(at dot: Int, in opacities: [Double]) -> Double {
+        opacities.indices.contains(dot) ? opacities[dot] : Design.restingOpacity
     }
 }
 
@@ -1365,6 +1441,15 @@ private enum LyricCapturePolicy {
 
     /// ✅ Sin desenfoque en las líneas inactivas mientras se graba.
     static let dropsInactiveBlurWhileCaptured = true
+
+    /// ✅ Respiración de los puntos del interludio bajo captura. En `true` los
+    /// puntos se quedan en el punto MEDIO del ciclo (0.7): un estado que se lee
+    /// bien —ni apagado ni encendido— y que no añade NI UNA suscripción de frames
+    /// mientras el codificador trabaja (el karaoke ya pide los suyos a 30 fps).
+    /// Con `false` la respiración se mantiene, pero a `capturedFrameInterval`
+    /// (30 fps alineados con el vsync): es la alternativa si en el vídeo se quiere
+    /// el latido completo.
+    static let dropsInstrumentalPulseWhileCaptured = true
 }
 
 /// ✅ Desenfoque de profundidad de las líneas que se alejan del foco, evitable:
