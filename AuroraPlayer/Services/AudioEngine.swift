@@ -368,12 +368,23 @@ class AudioEngine: NSObject, ObservableObject {
             clearPreloadedNext()
             file = cached
         } else {
-            guard let opened = try? AVAudioFile(forReading: url) else { return }
+            // ✅ REMUESTREO HI-RES: abrir a float32 estándar con render a la
+            // tasa NATIVA (ver makePlaybackFile) para que el encadenado use el
+            // mismo camino de reproducción que playCurrentSong.
+            guard let opened = try? makePlaybackFile(url) else { return }
             file = opened
         }
 
         let fmt = file.processingFormat
-        guard connectedFormatKey == nil || formatKey(fmt) == connectedFormatKey else {
+        // ✅ REMUESTREO HI-RES: el nodo rinde SIEMPRE al formato de conexión
+        // (tasa de hardware). Dos archivos con la MISMA tasa nativa comparten
+        // formato de nodo aunque el hardware esté en otra tasa, así que el
+        // guard compara el formato de RENDER (file.processingFormat) contra la
+        // identidad de conexión (connectedFormatKey es la del hardware) vía
+        // sampleRate de ambos: como el render ya es la tasa nativa del archivo
+        // y la conexión es fija, esta comparación es la identidad REAL de
+        // compatibilidad del encadenado.
+        guard connectedFormatKey == nil || (fmt.sampleRate > 0 && fmt.sampleRate == sampleRate) else {
             // ✅ DIAGNÓSTICO GAPLESS (evidencia en dispositivo): si esta línea
             // aparece en los logs justo antes de un punto de unión, el hueco
             // audible es un cambio de formato REAL entre pistas, no un fallo
@@ -453,6 +464,9 @@ class AudioEngine: NSObject, ObservableObject {
         currentSong = song
         currentFileURL = song.url
         audioFile = file
+        // ✅ REMUESTREO HI-RES: duración y relojes con la tasa de RENDER del
+        // archivo (la nativa del material, no la del hardware): frames/nativos
+        // ÷ nativos/s = segundos exactos con converter activo o sin él.
         duration = Double(file.length) / fmt.sampleRate
         sampleRate = fmt.sampleRate
         currentTime = 0
@@ -915,11 +929,12 @@ class AudioEngine: NSObject, ObservableObject {
         // cuando el sistema ya terminó de estabilizar la ruta) se oía. Ahora
         // se reconecta SIEMPRE con el formato actual antes de arrancar, sin
         // depender de que el primer intento falle para corregirlo.
-        if let file = audioFile {
-            reconnectPlayerNode(format: file.processingFormat)
-        } else {
-            reconnectPlayerNode(format: AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 2) ?? engine.outputNode.outputFormat(forBus: 0))
-        }
+        // ✅ REMUESTREO HI-RES: al reactivar el engine (segundo plano,
+        // interrupción, cambio de ruta) el grafo se reengancha SIEMPRE al
+        // formato del HARDWARE de salida (la tasa pudo haber cambiado). Los
+        // archivos se abren a su tasa nativa (makePlaybackFile) y la conexión
+        // lleva el AVAudioConverter, así que el SRC queda activo si procede.
+        reconnectPlayerNode(format: makeHardwareFormat())
 
         // 2. Arrancar el engine con un reintento tras reconectar el grafo
         do {
@@ -1183,7 +1198,9 @@ class AudioEngine: NSObject, ObservableObject {
         // updateEQBypassState(): "flat" = bypass total, cero biquads de más).
         eq.bypass = !(isEQEnabled && eqPreset != .flat)
         engine.attach(eq)
-        reconnectPlayerNode(format: AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 2) ?? engine.outputNode.outputFormat(forBus: 0))
+        // ✅ REMUESTREO HI-RES: reconexión con el formato de conexión real
+        // (hardware); ver reconnectPlayerNode / makeHardwareFormat.
+        reconnectPlayerNode(format: makeHardwareFormat())
     }
 
     private func reconnectPlayerNode(format: AVAudioFormat) {
@@ -1210,6 +1227,16 @@ class AudioEngine: NSObject, ObservableObject {
         // ✅ CALIDAD + BATERÍA: cada nodo del grafo es una etapa de conversión
         // y CPU por buffer. El mezclador mono SOLO se inserta si el mono está
         // activo (antes estaba SIEMPRE, incluso en estéreo, sin aportar nada).
+        // ✅ REMUESTREO HI-RES: la CONEXIÓN se hace al formato de hardware que
+        // llega (makeHardwareFormat), nunca al del archivo. Si difieren, el
+        // mixer de conexión inserta y ejecuta un AVAudioConverter con
+        // sampleRateConverterQuality = .max (Apple TN3136) en la entrada del
+        // primer nodo: sustituye al resampler de calidad media del
+        // mainMixerNode por uno de máxima calidad (latencia despreciable,
+        // <3 ms). Con tasas iguales queda en paso directo: sin coste y sin
+        // alterar la ruta bit-perfect. EQ/mono/mainMixer procesan a la tasa
+        // del hardware, que es para la que está diseñado el EQ de 10 bandas.
+        updateSrcConversionState()
         var last: AVAudioNode = playerNode
         if let eq = equalizerNode {
             engine.connect(last, to: eq, format: format)
@@ -1226,8 +1253,12 @@ class AudioEngine: NSObject, ObservableObject {
     /// ✅ Mono: salida de 1 canal del mezclador de downmix. Esta función ya
     /// solo se usa cuando el mono está activo (en estéreo el nodo ni siquiera
     /// entra en el grafo).
+    /// ✅ REMUESTREO HI-RES: la tasa de SALIDA del downmix debe ser la del
+    /// HARDWARE (la conexión al mainMixer es a makeHardwareFormat), no la del
+    /// archivo: con converter activo, emitir a tasa nativa reinsertaría un SRC
+    /// de calidad media en el mixer al cruzar a la tasa del hardware.
     private func monoMixerOutputFormat() -> AVAudioFormat {
-        let rate = sampleRate > 0 ? sampleRate : 44100
+        let rate = hardwareOutputFormat().sampleRate
         return AVAudioFormat(standardFormatWithSampleRate: rate, channels: 1)
             ?? engine.mainMixerNode.outputFormat(forBus: 0)
     }
@@ -1505,10 +1536,10 @@ class AudioEngine: NSObject, ObservableObject {
         // así que hay que reconstruir la cadena completa en vez de reconectar
         // solo su salida.
         let wasRunning = engine.isRunning
-        let graphFormat = audioFile?.processingFormat
-            ?? AVAudioFormat(standardFormatWithSampleRate: sampleRate > 0 ? sampleRate : 44100, channels: 2)
-            ?? engine.mainMixerNode.outputFormat(forBus: 0)
-        reconnectPlayerNode(format: graphFormat)   // ya detiene el engine si hace falta
+        // ✅ REMUESTREO HI-RES: el archivo sonará a su tasa nativa (render) y
+        // la CONEXIÓN se hace al formato del hardware: el converter activo o
+        // el paso directo deciden, nunca la tasa del archivo en el grafo.
+        reconnectPlayerNode(format: makeHardwareFormat())   // ya detiene el engine si hace falta
         if wasRunning {
             do { try startEngineSafely() } catch {
                 AppLog.error(.playback, error, context: "applyMonoAudio: relanzar engine")
@@ -1680,9 +1711,14 @@ class AudioEngine: NSObject, ObservableObject {
                 clearPreloadedNext()
                 file = cached
             } else {
-                file = try AVAudioFile(forReading: song.url)
+                // ✅ REMUESTREO HI-RES: apertura única (float32 estándar, render
+                // a la tasa NATIVA del material; ver makePlaybackFile).
+                file = try makePlaybackFile(song.url)
             }
             audioFile = file
+            // ✅ REMUESTREO HI-RES: sampleRate = tasa de RENDER del archivo
+            // (siempre la nativa del material). El reloj de pared y el seek
+            // escalan con ella; el grafo va aparte, al formato del hardware.
             sampleRate = file.processingFormat.sampleRate
             duration = Double(file.length) / sampleRate
 
@@ -1700,6 +1736,11 @@ class AudioEngine: NSObject, ObservableObject {
                 // cancion (click / microcorte).
                 // Cable / DAC USB / altavoz: tasa NATIVA del archivo; si el
                 // hardware no la soporta iOS elige la mas cercana.
+                // ✅ REMUESTREO HI-RES: sin cambios de semántica. Si el DAC
+                // acepta la tasa nativa, sesión y grafo van a esa tasa y el
+                // converter queda en paso directo (bit-perfect intacto). Si NO
+                // la acepta, el hardware se queda en su tasa y el SRC .max
+                // hace la conversión en el grafo (en vez del mixer de salida).
                 if !isBluetoothRoute, abs(session.sampleRate - sampleRate) > 1 {
                     try session.setPreferredSampleRate(sampleRate)
                 }
@@ -1708,7 +1749,10 @@ class AudioEngine: NSObject, ObservableObject {
             }
 
             // ✅ Reconectar el graph y relanzar el engine desde estado limpio.
-            reconnectPlayerNode(format: file.processingFormat)
+            // ✅ REMUESTREO HI-RES: la conexión usa el formato REAL del
+            // hardware; el converter de la conexión (quality .max) hace el SRC
+            // solo cuando la tasa del archivo difiere.
+            reconnectPlayerNode(format: makeHardwareFormat())
             try startEngineSafely()
 
             currentSong = song
@@ -1717,7 +1761,8 @@ class AudioEngine: NSObject, ObservableObject {
             currentFileURL = song.url
             let playBits = Int(file.fileFormat.streamDescription.pointee.mBitsPerChannel)
             let playChannels = Int(file.processingFormat.channelCount)
-            AppLog.info(.playback, String(format: "▶ Reproduciendo '%@' (%@ · %.0f Hz · %d bits · %d canales · %.1fs)", song.displayName, song.formatDescription, sampleRate, playBits > 0 ? playBits : 0, playChannels, duration))
+            let renderSampleRate = file.processingFormat.sampleRate
+            AppLog.info(.playback, String(format: "▶ Reproduciendo '%@' (%@ · %.0f Hz · %d bits · %d canales · %.1fs)", song.displayName, song.formatDescription, renderSampleRate, playBits > 0 ? playBits : 0, playChannels, duration))
 
             // ✅ 3.0.1 DIAGNÓSTICO: formato REAL de E/S del hardware (lo que
             // negoció el sistema) + latencia y buffer concedidos al arrancar la
@@ -1809,6 +1854,8 @@ class AudioEngine: NSObject, ObservableObject {
     private func scheduleFile(_ file: AVAudioFile, from startSeconds: TimeInterval, autostart: Bool = true, generation: Int? = nil) {
         // ✅ FIX: Usar la generación proporcionada o la actual
         let generation = generation ?? scheduleGeneration
+        // ✅ REMUESTREO HI-RES: el seek se escala con la tasa de RENDER del
+        // archivo (nativa), que es la unidad de file.length/scheduleSegment.
         let safeStartFrame = AVAudioFramePosition(startSeconds * sampleRate)
         guard safeStartFrame < file.length else {
             playNext()
@@ -2427,7 +2474,9 @@ class AudioEngine: NSObject, ObservableObject {
                 return
             }
             do {
-                let file = try AVAudioFile(forReading: url)
+                // ✅ REMUESTREO HI-RES: misma política de apertura (float32,
+                // render nativo) que la reproducción activa.
+                let file = try makePlaybackFile(url)
                 DispatchQueue.main.async {
                     // Solo guardar si SIGUE siendo la misma siguiente (el
                     // usuario pudo saltar/esperar mientras se precargaba).
