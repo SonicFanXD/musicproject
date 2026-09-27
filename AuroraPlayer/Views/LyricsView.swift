@@ -73,7 +73,21 @@ struct LyricsView: View {
 
     /// ✅ Padding horizontal del contenido de letras: el ancho ÚTIL para el texto
     /// (y para el troceo por medición) es el ancho de la vista menos el doble.
+    /// El indicador del interludio NO lo replica: cuelga de la fila, que ya vive
+    /// dentro de este padding, así que hereda la alineación sin duplicarla.
     private static let horizontalPadding: CGFloat = 24
+
+    /// ✅ Separación entre filas del stack de letras: la MISMA constante con la
+    /// que el indicador del interludio mide la banda vacía donde se coloca. Si el
+    /// stack cambia de separación, el indicador la sigue sin tocar nada más.
+    private static let interlineSpacing: CGFloat = 8
+
+    /// ✅ Cuánto se asoma el indicador fuera del borde de su fila: media
+    /// separación (para caer en la banda vacía contigua) más medio punto (para
+    /// quedar centrado en esa banda, a la misma distancia del verso cantado y de
+    /// la línea siguiente). Un solo número que ajustar tras la prueba en
+    /// dispositivo; el radio del punto lo aporta el propio indicador.
+    private static let gapIndicatorOutset: CGFloat = interlineSpacing / 2 + LyricInstrumentalIndicator.dotRadius
 
     /// ✅ Acento del karaoke: es el color con el que se tiñe la copia desenfocada
     /// del texto (el "glow" de Apple Music). Sale de la CARÁTULA cuando el ajuste
@@ -122,28 +136,11 @@ struct LyricsView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
 
-            // ✅ INTERLUDIO como OVERLAY EXTERNO: vive FUERA del ScrollView y del
-            // LazyVStack, así el ForEach NUNCA cambia de estructura (el intento
-            // anterior lo insertaba como pseudo-fila y el diff del LazyVStack
-            // hacía desaparecer letras). Centrado por el ZStack; sin hit-testing
-            // para no robar toques al texto ni al seek por línea.
-            // ✅ El indicador solo EXISTE durante el hueco, así que su TimelineView
-            // (la respiración) no puede pedir frames cuando no toca: sale del
-            // árbol en el mismo render en que `isInstrumentalGap` vuelve a false.
-            if viewModel.isInstrumentalGap {
-                LyricInstrumentalIndicator(
-                    glowColor: glowColor,
-                    isPlaying: viewModel.isPlaying,
-                    renderState: renderState
-                )
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .transition(.opacity)
-                .allowsHitTesting(false)
-            }
+            // ✅ El indicador del interludio NO vive aquí: cuelga de la fila
+            // focal como `.overlay` (ver `interludeIndicator(for:)`) para ocupar
+            // su propio espacio en el flujo de las letras, alineado con el texto
+            // y sin tocar ni el layout de la lista ni el auto-scroll.
         }
-        // ✅ Animación SCOPED al flag: solo el fundido del overlay; el resto de
-        // cambios de la vista (línea activa, scroll) no se ven afectados.
-        .animation(.easeInOut(duration: 0.3), value: viewModel.isInstrumentalGap)
         .onAppear {
             parseLyricsIfNeeded()
             // ✅ Centrado inmediato, sin animación: la línea activa ya está en el
@@ -271,7 +268,7 @@ struct LyricsView: View {
         // ✅ Media altura visible arriba y abajo → la primera y la última línea
         // pueden quedar centradas de verdad (no solo las de en medio).
         let inset = centeringInset(viewportHeight: viewportHeight)
-        return LazyVStack(alignment: .leading, spacing: 8) {
+        return LazyVStack(alignment: .leading, spacing: Self.interlineSpacing) {
             Color.clear.frame(height: inset)
 
             ForEach(viewModel.lyricsLines) { line in
@@ -378,6 +375,47 @@ struct LyricsView: View {
         // al cambiar de línea activa (o al hacer scroll) se evita re-evaluar todo
         // el LazyVStack visible.
         .equatable()
+        // ✅ INDICADOR DEL INTERLUDIO EN EL FLUJO: cuelga de ESTA fila solo si es
+        // la focal del hueco (durante el interludio `activeID` ES la última línea
+        // cantada, la que el auto-scroll mantiene centrada) y se dibuja en la
+        // banda vacía de debajo, alineado con el texto. `.overlay` no participa
+        // en el layout: ni la fila cambia de alto (el verso cantado no se mueve)
+        // ni el LazyVStack gana hijos (el diff que en 292218b hacía desaparecer
+        // letras no se puede reproducir desde aquí).
+        .overlay(alignment: .bottomLeading) { interludeIndicator(for: line) }
+    }
+
+    /// ✅ Indicador del interludio: su propio sitio en el flujo, sin mover nada.
+    /// · Alineación: `.bottomLeading` sobre la fila, que ya vive dentro del
+    ///   padding horizontal de 24 pt del stack → la misma columna que el texto,
+    ///   sin repetir aquí el 24.
+    /// · Separación: `gapIndicatorOutset` hacia la banda vacía entre las dos
+    ///   líneas, centrado en ella (ni pegado al verso cantado ni a la siguiente).
+    /// · Frames: el TimelineView del indicador solo EXISTE con `isHost` (mismo
+    ///   patrón que la línea activa del karaoke); fuera del interludio no hay
+    ///   ninguna suscripción nueva.
+    @ViewBuilder
+    private func interludeIndicator(for line: LyricsLine) -> some View {
+        let isHost = viewModel.isInstrumentalGap && line.id == viewModel.activeID
+
+        Group {
+            if isHost {
+                LyricInstrumentalIndicator(
+                    glowColor: glowColor,
+                    isPlaying: viewModel.isPlaying,
+                    renderState: renderState
+                )
+                .offset(y: Self.gapIndicatorOutset)
+                .transition(.opacity)
+            }
+        }
+        // ✅ Fundido SCOPED al indicador: antes vivía en la raíz de la vista y, en
+        // el mismo update en que el interludio termina, también cambian la línea
+        // activa y el scroll de la lista; desde la raíz esa animación envolvía
+        // TODO el layout del LazyVStack (frames de más en el cambio de verso).
+        .animation(.easeInOut(duration: 0.3), value: isHost)
+        // ✅ Sin hit-testing: los toques de la fila siguen siendo del seek.
+        .allowsHitTesting(false)
     }
 
     // MARK: - Seek a línea
@@ -543,13 +581,16 @@ private struct LyricsArtworkBackground: View, Equatable {
 // MARK: - Indicador de interludio ("• • •" durante el hueco instrumental)
 // ✅ Estilo Aurora: tres puntos que RESPIRAN (opacidad 0.4 → 1.0 en un ciclo
 //    lento de ~2.6 s, con el acento de la carátula) mientras dura el interludio
-//    (hueco ≥ 3s detectado por LyricsViewModel). Es un OVERLAY del ZStack raíz:
-//    no añade/quita filas del LazyVStack jamás.
-// ✅ Cero frames cuando no hay interludio: la vista solo existe si
-//    `isInstrumentalGap == true` (el `if` del ZStack) y, dentro, el TimelineView
-//    se desarma si no hay reproducción o la escena no está activa. Mismo patrón
-//    que la línea activa del karaoke: la suscripción de frames vive dentro del
-//    estado que la necesita, nunca en la vista completa.
+//    (hueco ≥ 3s detectado por LyricsViewModel).
+// ✅ EN EL FLUJO, no flotando: el contenedor lo cuelga de la fila focal con
+//    `.overlay` (ver `LyricsView.interludeIndicator`), así ocupa la banda vacía
+//    que YA existe entre las dos líneas —su propio espacio, en la misma columna
+//    que el texto— sin cambiar el alto de la fila ni añadir hijos al LazyVStack.
+// ✅ Cero frames cuando no hay interludio: la vista solo existe con su flag
+//    activo (el `if` del contenedor) y, dentro, el TimelineView se desarma si no
+//    hay reproducción o la escena no está activa. Mismo patrón que la línea
+//    activa del karaoke: la suscripción de frames vive dentro del estado que la
+//    necesita, nunca en la vista completa.
 // ✅ `TimelineView(.animation)` y NO `repeatForever`: la respiración se calcula
 //    con una fase continua sobre la fecha de CADA frame, así el ritmo no depende
 //    del momento en que se insertó el overlay (con `repeatForever` el arranque
@@ -562,6 +603,11 @@ private struct LyricInstrumentalIndicator: View {
     /// si se paga el halo (la MISMA condición que usa el karaoke para su glow).
     let renderState: LyricRenderState
 
+    /// ✅ Radio de un punto, expuesto al CONTENEDOR: la fila que aloja el
+    /// indicador necesita saber cuánto mide para centrarlo en la banda vacía (la
+    /// separación del stack la conoce el stack, no este view).
+    static let dotRadius: CGFloat = Design.dotSize / 2
+
     /// ✅ Identidad y calibración del indicador en un solo sitio: el tamaño y el
     /// espaciado no cambian; lo que respira es la opacidad.
     private enum Design {
@@ -570,7 +616,10 @@ private struct LyricInstrumentalIndicator: View {
         static let dotCount = 3
         /// ✅ Ciclo de respiración (~2.6 s): lento, nunca parpadeo.
         static let breathPeriod: Double = 2.6
-        static let minOpacity: Double = 0.4
+        /// ✅ Mismo suelo de tenuidad que la letra que aún no suena
+        /// (`LyricDim.inactiveOpacity`): el indicador pertenece a la familia de
+        /// las líneas inactivas y el pulso sube desde ahí, nunca más apagado.
+        static let minOpacity: Double = LyricDim.inactiveOpacity
         static let maxOpacity: Double = 1.0
         /// ✅ Desfase entre puntos: la onda recorre el grupo (orgánico), no son
         /// tres latidos sincronizados.
@@ -594,8 +643,11 @@ private struct LyricInstrumentalIndicator: View {
                 dots(opacities: Array(repeating: Design.restingOpacity, count: Design.dotCount))
             }
         }
-        .padding(.vertical, 10)
-        .padding(.horizontal, 2)
+        // ✅ Sin padding propio: la colocación la decide la FILA que lo aloja
+        // (alineación por `.bottomLeading` y `gapIndicatorOutset`), que es quien
+        // conoce la separación del stack y el padding del contenido. Así el
+        // indicador queda en la misma columna que el texto sin duplicar aquí ni
+        // el 24 ni el 8.
     }
 
     /// ✅ ¿Se piden frames? Solo con reproducción Y escena en primer plano Y sin

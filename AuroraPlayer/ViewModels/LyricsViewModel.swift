@@ -24,10 +24,11 @@ final class LyricsViewModel: ObservableObject {
     @Published private(set) var lyricsRevision: Int = 0
     /// ✅ INTERLUDIO (gap instrumental ENTRE líneas): la línea anterior ya cerró
     /// su barrido (timeMs ≥ fin efectivo) y la siguiente tarda ≥
-    /// `instrumentalGapThresholdMs` en empezar. La vista lo muestra como OVERLAY
-    /// EXTERNO (fuera del LazyVStack): el intento anterior lo insertaba como
-    /// pseudo-fila y el cambio de estructura del LazyVStack hacía desaparecer
-    /// letras. Se recalcula SOLO en tick/boundary/seek, nunca por frame.
+    /// `instrumentalGapThresholdMs` en empezar. La vista lo cuelga de la fila
+    /// focal como `.overlay` (en la banda vacía entre las dos líneas): el intento
+    /// anterior lo insertaba como pseudo-fila DENTRO del ForEach y el diff del
+    /// LazyVStack hacía desaparecer letras. Se recalcula SOLO en tick/boundary/
+    /// seek, nunca por frame.
     @Published private(set) var isInstrumentalGap = false
     /// Hueco mínimo (ms) entre el fin efectivo de una línea y el inicio de la
     /// siguiente para considerarlo interludio. Por debajo, el hueco es un
