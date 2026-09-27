@@ -45,6 +45,15 @@ struct LyricsView: View {
     /// vsync y se sueltan las pasadas más caras.
     /// ✅ Mismo patrón que `VisualizerFrameRate`: singleton observado por la vista.
     @ObservedObject private var captureMonitor = LyricCaptureMonitor.shared
+    /// ✅ Acento OBSERVADO: ThemeManager extrae el color de la carátula en
+    /// background y lo publica un instante después del cambio de canción. Con la
+    /// vista suscrita, el fondo se re-tiñe en cuanto el acento real está listo
+    /// (sin esperar al siguiente verso) y el cambio se ve suave, nunca un flash
+    /// con el color del acento anterior.
+    @ObservedObject private var theme = ThemeManager.shared
+    /// ✅ "Reducir transparencia": el mismo ajuste que respeta `NowPlayingView`.
+    /// Con él no se paga material de vidrio ni desenfoque de carátula.
+    @AppStorage("com.aurora.reduceTransparency") private var reduceTransparency = false
 
     /// ✅ Petición de centrado: el `token` garantiza que SwiftUI reciba un
     /// cambio aunque la línea destino sea la misma (al cambiar de canción), así
@@ -91,8 +100,12 @@ struct LyricsView: View {
             // ✅ Fondo como vista propia y `Equatable`: al cambiar de línea activa
             // este body se re-evalúa, pero el blur de pantalla completa NO vuelve
             // a componerse si la carátula y el acento siguen siendo los mismos.
-            LyricsArtworkBackground(artwork: song?.artwork, accentToken: AppTheme.accentUIColor)
-                .equatable()
+            LyricsArtworkBackground(
+                artwork: song?.artwork,
+                accentToken: AppTheme.accentUIColor,
+                reduceTransparency: reduceTransparency
+            )
+            .equatable()
 
             VStack(spacing: 0) {
                 // Header transparente
@@ -387,46 +400,120 @@ struct LyricsView: View {
     }
 }
 
-// MARK: - Fondo de carátula difuminada
+// MARK: - Fondo dinámico "Aurora" (carátula desenfocada + vidrio + tinte)
 /// ✅ Vista PROPIA y `Equatable`: el body de `LyricsView` se re-evalúa en cada
 /// cambio de línea activa; con `.equatable()` esta sub-vista no vuelve a componer
-/// el blur de pantalla completa si la carátula y el acento no han cambiado (era
-/// el candidato a los tirones al cambiar de verso).
+/// el desenfoque de pantalla completa si la carátula y el acento no han cambiado
+/// (era el candidato a los tirones al cambiar de verso).
+/// ✅ Tres capas y TODAS estáticas: carátula desenfocada, vidrio esmerilado y
+/// tinte del acento. Aquí está la clave de los 60 fps: el material necesita
+/// muestrear lo que tiene DETRÁS, y detrás solo hay capas fijas (la carátula y el
+/// propio material); lo que sí anima —el karaoke, los puntos del interludio—
+/// vive POR ENCIMA del vidrio, así que el fondo se compone una vez al cambiar de
+/// canción y no se vuelve a tocar ni un frame más.
+/// ✅ Sin `.drawingGroup()`: rasterizaría el material dentro de un pase Metal y
+/// los materiales pierden ahí su muestreo del fondo (se ven como color plano).
 private struct LyricsArtworkBackground: View, Equatable {
     let artwork: UIImage?
     /// ✅ Solo como TOKEN de comparación: el color se pinta con `AppTheme.accent`
     /// para no alterar el tono con conversiones de espacio de color.
     let accentToken: UIColor
+    /// ✅ "Reducir transparencia": fondo plano, sin material ni desenfoque.
+    let reduceTransparency: Bool
 
     static func == (lhs: LyricsArtworkBackground, rhs: LyricsArtworkBackground) -> Bool {
-        guard lhs.accentToken == rhs.accentToken else { return false }
+        guard lhs.accentToken == rhs.accentToken,
+              lhs.reduceTransparency == rhs.reduceTransparency else { return false }
         if let lhsArtwork = lhs.artwork, let rhsArtwork = rhs.artwork {
             return lhsArtwork === rhsArtwork
         }
         return lhs.artwork == nil && rhs.artwork == nil
     }
 
+    /// ✅ Calibración del fondo en UN solo sitio (intensidad, desenfoque y tinte).
+    private enum Design {
+        /// ✅ Miniatura de 400 px + desenfoque de 40 pt: mismo aspecto que
+        /// desenfocar la carátula completa, pero decodificando ~1/10 de los
+        /// píxeles (patrón que ya usa la cabecera de `PlaylistsView`). En un 8 Plus
+        /// es la diferencia entre pagar el desenfoque una vez o arriesgar un pico
+        /// de memoria al abrir la hoja.
+        static let thumbnailSize = CGSize(width: 400, height: 400)
+        static let artworkBlurRadius: CGFloat = 40
+        /// ✅ Techo del rango pedido (0.35-0.45): el vidrio de encima ya rebaja la
+        /// presencia de la carátula, así que la capa de abajo va generosa.
+        static let artworkOpacity: Double = 0.45
+        /// ✅ Tinte del acento: fuerte arriba (la "aurora") y desvanecido abajo.
+        static let accentTopOpacity: Double = 0.30
+        static let accentMidOpacity: Double = 0.08
+        /// ✅ Con "reducir transparencia" (o sin carátula) la base es plana, así que
+        /// el tinte sube un poco para que el fondo siga teniendo identidad.
+        static let flatTopOpacity: Double = 0.18
+    }
+
     var body: some View {
         GeometryReader { geometry in
-            Group {
-                if let artwork {
-                    Image(uiImage: artwork)
-                        .resizable()
-                        .interpolation(.medium)
-                        .scaledToFill()
-                        .frame(width: geometry.size.width, height: geometry.size.height)
-                        .blur(radius: 60)
-                        .opacity(0.4)
-                        .overlay(Color(UIColor.systemBackground).opacity(0.72))
-                } else {
-                    LinearGradient(
-                        colors: [AppTheme.accent.opacity(0.12), Color(UIColor.systemBackground)],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                }
+            ZStack {
+                artworkLayer(in: geometry.size)
+                glassLayer
+                tintLayer
             }
+            .frame(width: geometry.size.width, height: geometry.size.height)
+            .clipped()
         }
+        .ignoresSafeArea()
+        .allowsHitTesting(false)
+    }
+
+    /// 1️⃣ Carátula desenfocada (la única fuente de color del fondo).
+    @ViewBuilder
+    private func artworkLayer(in size: CGSize) -> some View {
+        if let artwork, !reduceTransparency {
+            Image(uiImage: AppTheme.thumbnail(from: artwork, size: Design.thumbnailSize))
+                .resizable()
+                .interpolation(.medium)
+                .scaledToFill()
+                .frame(width: size.width, height: size.height)
+                .blur(radius: Design.artworkBlurRadius)
+                .opacity(Design.artworkOpacity)
+        } else {
+            Color(UIColor.systemBackground)
+        }
+    }
+
+    /// 2️⃣ Vidrio esmerilado: `.ultraThinMaterial` (el más transparente de los
+    /// materiales del sistema, el único que deja leer la carátula que tiene
+    /// debajo). Con "reducir transparencia" se sustituye por superficie opaca,
+    /// igual que hace `nativeGlass` en el resto de la app.
+    /// ⚠️ El vidrio va DEBAJO del tinte a propósito: el material difumina lo que
+    /// tiene detrás y, si el acento quedara debajo, entraría al vídeo lavado. La
+    /// carátula —que sí debe fundirse con el vidrio— está debajo, que es lo que
+    /// pide el efecto esmerilado.
+    @ViewBuilder
+    private var glassLayer: some View {
+        if reduceTransparency {
+            Color(UIColor.secondarySystemBackground)
+        } else {
+            Rectangle().fill(.ultraThinMaterial)
+        }
+    }
+
+    /// 3️⃣ Tinte del acento ACTUAL (`AppTheme.accent` respeta "acento desde
+    /// carátula"): si la portada es gris-azulada, el fondo queda gris-azulado.
+    /// Ningún color hardcodeado aquí.
+    private var tintLayer: some View {
+        LinearGradient(
+            stops: [
+                .init(color: AppTheme.accent.opacity(tintTopOpacity), location: 0),
+                .init(color: AppTheme.accent.opacity(Design.accentMidOpacity), location: 0.45),
+                .init(color: AppTheme.accent.opacity(0), location: 1)
+            ],
+            startPoint: .top,
+            endPoint: .bottom
+        )
+    }
+
+    private var tintTopOpacity: Double {
+        reduceTransparency || artwork == nil ? Design.flatTopOpacity : Design.accentTopOpacity
     }
 }
 
