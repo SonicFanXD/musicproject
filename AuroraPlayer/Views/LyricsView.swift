@@ -322,6 +322,22 @@ struct LyricsView: View {
             : .spring(response: 0.35, dampingFraction: 0.85)
     }
 
+    /// ✅ Ancla del efecto lupa: la línea ACTIVA o, mientras no hay activa (intro
+    /// instrumental / outro), la provisional que el scroll centra. Es el mismo
+    /// criterio con el que se centra la lista, así el foco visual y el centro de
+    /// la pantalla no pueden discrepar al abrir ni al terminar la canción.
+    private var focusAnchorID: Int? {
+        viewModel.activeID ?? centeringFallbackLineID()
+    }
+
+    /// ✅ Distancia de una fila al foco, medida en LÍNEAS (`LyricsLine.id` es el
+    /// índice: invariante de los dos parsers). No se mide geometría por frame a
+    /// propósito: ver `LyricFocus`.
+    private func focusDistance(to lineID: Int) -> Int {
+        guard let anchor = focusAnchorID else { return LyricFocus.farDistance }
+        return min(abs(lineID - anchor), LyricFocus.farDistance)
+    }
+
     /// ✅ Condiciones de render que comparten la vista y TODAS las filas: se
     /// calculan en un solo sitio para que el criterio no se pueda desincronizar.
     private var renderState: LyricRenderState {
@@ -346,6 +362,9 @@ struct LyricsView: View {
             // se mide para trocear las filas que SwiftUI envolvería.
             availableWidth: max(0, contentWidth - Self.horizontalPadding * 2),
             glowColor: glowColor,
+            // ✅ Distancia al foco de la línea ACTIVA. Con ella se resuelve el
+            // efecto lupa sin medir geometría por frame (ver `LyricFocus`).
+            focusDistance: focusDistance(to: line.id),
             // ✅ Condiciones de render (overlay del sistema / grabación): van como
             // valor para que formen parte de la igualdad de la fila; si no, el
             // diff de `.equatable()` no las vería cambiar.
@@ -750,6 +769,9 @@ private struct LyricLineView: View, Equatable {
     /// ✅ Acento (de la carátula si el ajuste está activo): con él se pinta el
     /// "glow" de la capa brillante del karaoke.
     let glowColor: Color
+    /// ✅ Distancia (en líneas) a la línea activa: alimenta el efecto lupa de las
+    /// filas que no están en el foco. Forma parte de la igualdad de la vista.
+    let focusDistance: Int
     /// ✅ Overlay del sistema / grabación de pantalla: cambia el ritmo del reloj
     /// de frames y qué pasadas caras (halo, desenfoque) se pagan.
     let renderState: LyricRenderState
@@ -772,6 +794,7 @@ private struct LyricLineView: View, Equatable {
             && lhs.line == rhs.line
             && lhs.availableWidth == rhs.availableWidth
             && lhs.glowColor == rhs.glowColor
+            && lhs.focusDistance == rhs.focusDistance
             && lhs.renderState == rhs.renderState
     }
 
@@ -816,24 +839,47 @@ private struct LyricLineView: View, Equatable {
                         removal: .opacity.animation(.easeInOut(duration: 0.2))
                     ))
             } else {
-                dimmedRows(rows)
-                    // ✅ Profundidad MUY sutil (0.5pt), y SOLO en las líneas
-                    // inactivas: la activa es la que pide frames a 60 Hz y no
-                    // debe pagar ninguna pasada de blur. Si en el iPhone 8 Plus
-                    // no convence, basta con borrar esta línea.
-                    // ✅ Bajo grabación se suelta: cada blur es una pasada fuera de
-                    // pantalla por línea y la captura no siempre la completa, así
-                    // que en el vídeo se veía como parpadeo.
-                    .modifier(InactiveDepthBlur(enabled: renderState.usesInactiveDepthBlur))
+                dimmedRows(rows, opacityMultiplier: focus.dimMultiplier)
+                    // ✅ Profundidad SOLO de las líneas inactivas y SOLO a partir del
+                    // segundo nivel de distancia: la activa es la que pide frames a
+                    // 60 Hz y no debe pagar ninguna pasada fuera de pantalla, y la
+                    // vecina (distancia 1) conserva la nitidez del texto que el
+                    // usuario está a punto de cantar.
+                    // ✅ Bajo grabación el radio llega en 0 y el modificador
+                    // desaparece: cada blur es una pasada por línea y la captura no
+                    // siempre la completa (en el vídeo se veía como parpadeo).
+                    .modifier(InactiveDepthBlur(radius: focus.blurRadius))
                     .transition(.opacity)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 12)
-        // ✅ "Pop" premium al cambiar de línea: las inactivas "respiran" algo
-        // más pequeñas (0.96) y la activa recupera la escala completa.
-        .scaleEffect(isActive ? 1.0 : 0.96)
-        .animation(lineActivation, value: isActive)
+        // ✅ EFECTO LUPA: "pop" premium al cambiar de línea y, además, las filas
+        // que se alejan del foco siguen encogiéndose y perdiendo tenuidad (el
+        // desenfoque va en el modificador de arriba). El valor es el mismo que
+        // alimenta la animación, así que una sola declaración cubre los dos casos
+        // y la fila ACTIVA cae en la identidad: no paga ningún efecto extra.
+        .scaleEffect(focus.scale)
+        // ✅ Una sola animación por cambio: entrar o salir del foco usa el spring
+        // de la casa; un paso de distancia entre líneas ya inactivas usa el
+        // easeInOut corto del efecto lupa. Encadenar dos `.animation(value:)`
+        // sobre la misma escala dejaría la curva a merced del orden.
+        .animation(focusAnimation, value: focus)
+    }
+
+    /// ✅ Estilo del foco de esta fila: distancia 0 = la línea enfocada (la
+    /// activa), que es la única que no recibe NINGÚN efecto (conserva su escala
+    /// completa y su karaoke intacto).
+    private var focus: LyricFocus.Style {
+        LyricFocus.style(
+            distance: isActive ? 0 : focusDistance,
+            blurEnabled: renderState.usesInactiveDepthBlur
+        )
+    }
+
+    /// ✅ Curva del cambio de foco (ver `body`).
+    private var focusAnimation: Animation {
+        isActive ? lineActivation : .easeInOut(duration: LyricFocus.transitionDuration)
     }
 
     /// ✅ Spring del cambio de línea (activación de la capa brillante y pop de
@@ -940,12 +986,16 @@ private struct LyricLineView: View, Equatable {
 
     /// ✅ Misma estructura de filas que la capa activa: el texto de una línea
     /// normal (una sola fila) se dibuja exactamente igual que antes.
-    private func dimmedRows(_ rows: [RenderRow]) -> some View {
+    /// ✅ `opacityMultiplier` es el factor del efecto lupa: NUNCA una opacidad
+    /// absoluta, para no tocar la tenuidad con la que Aurora Player identifica la
+    /// letra que aún no suena (0.4) — la fila vecina a la activa va igual que
+    /// siempre y solo las lejanas se atenúan un poco más.
+    private func dimmedRows(_ rows: [RenderRow], opacityMultiplier: Double) -> some View {
         VStack(alignment: .leading, spacing: Self.rowSpacing) {
             ForEach(rows.indices, id: \.self) { index in
                 Text(rows[index].text)
                     .font(.system(size: rows[index].fontSize, weight: fontWeight))
-                    .foregroundStyle(Color.primary.opacity(LyricDim.inactiveOpacity))
+                    .foregroundStyle(Color.primary.opacity(LyricDim.inactiveOpacity * opacityMultiplier))
                     // ✅ Misma escala/tenuidad que en la capa activa: el texto no
                     // puede cambiar de tamaño al activarse la línea.
                     .opacity(rows[index].isBackground ? LyricBackgroundVoice.opacity : 1)
@@ -991,6 +1041,71 @@ private struct LyricLineView: View, Equatable {
 /// activarse su línea (el único cambio es el relleno y el glow).
 private enum LyricDim {
     static let inactiveOpacity: Double = 0.4
+}
+
+// MARK: - Efecto lupa: protagonismo según la distancia a la línea activa
+/// ✅ iOS 16 NO tiene `scrollTransition` (iOS 17) ni `visualEffect` (iOS 17), así
+/// que el efecto de enfoque del scroll se calcula con DATOS, no con geometría por
+/// frame: la distancia de cada fila a la línea activa, medida en LÍNEAS.
+///
+/// ⚠️ Por qué NO se mide la distancia en píxeles al centro del viewport con
+/// `GeometryReader` + `PreferenceKey` (la alternativa "literal"): obligaría a
+/// publicar y recomputar la geometría de TODAS las filas visibles en cada frame
+/// del scroll, y eso (a) invalida el `.equatable()` que hoy evita re-evaluar el
+/// LazyVStack, (b) re-rasteriza el desenfoque de cada fila inactiva en cada frame
+/// y (c) realimenta layout → geometría → layout, que es la fuente clásica de
+/// tirones. En un A11, con karaoke a 60 fps y grabación activa, no se sostiene — y
+/// la regla del proyecto es no pagar ningún efecto con frames.
+///
+/// ✅ Y no hace falta medirlo: el auto-scroll mantiene SIEMPRE la línea activa
+/// centrada (spring de 0.35 s) —es el 95 % del tiempo de esta vista— y la regla de
+/// diseño dice que la línea ACTIVA no recibe el efecto, es decir, el foco ES la
+/// línea activa. Con el índice se obtiene el mismo degradado radial durante la
+/// reproducción sin una sola operación por frame: el estilo solo cambia cuando
+/// cambia la línea activa (una vez por verso, 1-2 filas por vez) y la transición
+/// la interpola SwiftUI.
+///
+/// ✅ Al migrar a iOS 17+, este bloque se sustituye por `.scrollTransition` sin
+/// tocar nada más: la vista ya consume exactamente (escala, tenuidad, desenfoque).
+private enum LyricFocus {
+    /// ✅ Distancia (en líneas) a la que el efecto llega a su tope. Una canción con
+    /// 30 líneas fuera de pantalla cuesta lo mismo que una con 3: no se itera
+    /// ninguna fila, solo se compara un entero por fila.
+    static let farDistance = 3
+
+    /// ✅ Duración del paso de una fila de un nivel de foco a otro.
+    static let transitionDuration: Double = 0.25
+
+    struct Style: Equatable {
+        let scale: CGFloat
+        /// ✅ Multiplicador del 0.4 ya calibrado de la letra inactiva: el efecto
+        /// NUNCA fija una opacidad absoluta, para no alterar la tenuidad que
+        /// identifica a Aurora Player.
+        let dimMultiplier: Double
+        /// ✅ Radio del desenfoque de profundidad (0 = sin pasada fuera de
+        /// pantalla). Bajo grabación la política lo apaga desde el llamador.
+        let blurRadius: CGFloat
+    }
+
+    /// ✅ La escalera del efecto. Nivel 0 = la línea enfocada (identidad total) y a
+    /// partir de ahí un degradado suave, nunca agresivo: la calibración vive aquí
+    /// y en un solo sitio para poder ajustarla tras la prueba en dispositivo.
+    static func style(distance: Int, blurEnabled: Bool) -> Style {
+        switch distance {
+        case ...0:
+            // Foco: sin escala, sin atenuación extra y sin desenfoque. La línea
+            // activa —la única que pide frames— no paga absolutamente nada.
+            return Style(scale: 1.0, dimMultiplier: 1.0, blurRadius: 0)
+        case 1:
+            // Vecina: conserva el "pop" (0.96) y la tenuidad de siempre, y el
+            // texto que el usuario está a punto de cantar sigue nítido.
+            return Style(scale: 0.96, dimMultiplier: 1.0, blurRadius: 0)
+        case 2:
+            return Style(scale: 0.93, dimMultiplier: 0.88, blurRadius: blurEnabled ? 1.5 : 0)
+        default:
+            return Style(scale: 0.90, dimMultiplier: 0.80, blurRadius: blurEnabled ? 2.5 : 0)
+        }
+    }
 }
 
 // MARK: - Texto con relleno progresivo (dos capas + máscara)
@@ -1252,16 +1367,17 @@ private enum LyricCapturePolicy {
     static let dropsInactiveBlurWhileCaptured = true
 }
 
-/// ✅ Desenfoque sutil SOLO de las líneas inactivas, evitable: `.blur(radius: 0)`
-/// seguiría creando la pasada fuera de pantalla, así que bajo captura se quita el
-/// modificador entero en vez de anular el radio.
+/// ✅ Desenfoque de profundidad de las líneas que se alejan del foco, evitable:
+/// `.blur(radius: 0)` seguiría creando la pasada fuera de pantalla, así que con
+/// radio 0 (foco, fila vecina o grabación) se quita el modificador entero en vez
+/// de anularlo.
 private struct InactiveDepthBlur: ViewModifier {
-    let enabled: Bool
+    let radius: CGFloat
 
     @ViewBuilder
     func body(content: Content) -> some View {
-        if enabled {
-            content.blur(radius: 0.5)
+        if radius > 0 {
+            content.blur(radius: radius)
         } else {
             content
         }
