@@ -1935,11 +1935,30 @@ class AudioEngine: NSObject, ObservableObject {
     /// es idéntico al anterior: cero coste de CPU y ruta bit-perfect intacta.
     private var srcConversionActive = false
 
+    /// ✅ DIAGNÓSTICO SRC: último estado logueado; solo se escribe la
+    /// TRANSICIÓN (reconexiones repetidas del grafo no generan spam).
+    private var srcLoggedActive: Bool?
+
     private func updateSrcConversionState() {
         let hwRate = hardwareOutputFormat().sampleRate
         let source = sampleRate > 0 ? sampleRate : (currentSong?.sampleRate ?? 0)
         let active = source > 0 && hwRate > 1 && abs(hwRate - source) > 1
         srcConversionActive = active
+        // ✅ REMUESTREO HI-RES (DIAGNÓSTICO, una línea por transición de
+        // estado): tasa del ARCHIVO (render nativo), tasa del HARDWARE, si el
+        // converter está activo y la quality usada. Verificación esperada:
+        //   · 96 kHz sobre HW 44.1/48 → "SRC Hi-Res ACTIVADO … quality .max".
+        //   · 44.1 sobre HW 44.1      → "SRC Hi-Res INACTIVO" (sin remuestreo).
+        // quality .max = AVAudioQualityMax (0x7F), propiedad documentada en
+        // Apple TN3136 (disponible desde iOS 9). El algoritmo no se fija: no
+        // existe constant pública documentada para sampleRateConverterAlgorithm.
+        guard source > 0, srcLoggedActive != active else { return }
+        srcLoggedActive = active
+        if active {
+            AppLog.info(.playback, String(format: "SRC Hi-Res ACTIVADO: archivo %.0f Hz → hardware %.0f Hz (AVAudioConverter, sampleRateConverterQuality = .max [0x7F], algoritmo por defecto del sistema)", source, hwRate))
+        } else {
+            AppLog.info(.playback, String(format: "SRC Hi-Res INACTIVO: archivo %.0f Hz, hardware %.0f Hz (sin remuestreo en el grafo; bit-perfect posible en ruta cableada sin EQ/mono/limiter)", source, hwRate))
+        }
     }
 
     /// ✅ HI-RES: abre el archivo DECODIFICANDO a float32 estándar A LA MISMA
