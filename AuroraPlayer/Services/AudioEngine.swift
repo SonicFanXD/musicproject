@@ -919,6 +919,15 @@ class AudioEngine: NSObject, ObservableObject {
             }
         }
 
+        // ✅ FIX CRASH AL REANUDAR TRAS CAMBIO DE RUTA: consultar el formato
+        // del hardware DESPUÉS de reactivar la sesión (paso 1): con la ruta
+        // activa, el outputNode ya reporta la tasa/canales reales de la ruta
+        // vigente; hacerlo antes (con el engine detenido y la ruta en
+        // transición) podía devolver 0 Hz / 0 canales y alimentar la conexión
+        // con un formato inválido (IsFormatSampleRateAndChannelCountValid).
+        // reconnectPlayerNode conserva además su red de saneamiento para el
+        // caso en que iOS aún no haya estabilizado la ruta.
+
         // ⚠️ FIX silencio tras desconectar audífonos: antes solo se
         // reconectaba el playerNode con el formato correcto DENTRO del
         // catch (si engine.start() lanzaba error). Pero tras un cambio de
@@ -1204,6 +1213,26 @@ class AudioEngine: NSObject, ObservableObject {
     }
 
     private func reconnectPlayerNode(format: AVAudioFormat) {
+        // ✅ FIX CRASH AL REANUDAR TRAS CAMBIO DE RUTA: un formato con tasa o
+        // canales inválidos (0 Hz / 0 ch, posible en el instante en que el
+        // hardware está en transición tras desconectar audífonos/BT) hace que
+        // AVAudioEngine.connect dispare la aserción interna
+        // "required condition is false: IsFormatSampleRateAndChannelCountValid(format)"
+        // — una NSException NO capturable con do/catch (el catch de resume()
+        // no la detiene). La política de makeHardwareFormat ya cae a la tasa
+        // de la sesión cuando la del hardware es irreal; aquí se aplica el
+        // mismo saneamiento para canales/tasa como ÚLTIMA red: si el formato
+        // que llega es irreal se sustituye por el formato estándar de la
+        // sesión (tasa concedida, 2 canales), que es válido tras
+        // setActive(true). Sin remuestreo falso: solo evita conectar el grafo
+        // con basura y degrada a la tasa de sesión en el caso extremo.
+        var format = format
+        if format.sampleRate <= 1 || format.channelCount <= 0 || format.channelCount > 64 {
+            let sessionRate = AVAudioSession.sharedInstance().sampleRate
+            AppLog.warning(.playback, String(format: "Formato de conexión inválido (%.0f Hz · %d canales): usando fallback de sesión a %.0f Hz · 2 canales", format.sampleRate, format.channelCount, sessionRate))
+            format = AVAudioFormat(standardFormatWithSampleRate: sessionRate, channels: 2)
+                ?? format
+        }
         if engine.isRunning {
             engine.stop()
         }
@@ -1920,13 +1949,20 @@ class AudioEngine: NSObject, ObservableObject {
 
     /// Formato de conexión/render del grafo: tasa REAL del hardware (fallback:
     /// la negociada por la sesión) a 2 canales float32 no interleaved.
+    /// ✅ FIX CRASH AL REANUDAR TRAS CAMBIO DE RUTA: la tasa del outputNode
+    /// puede ser irreal (0 Hz) y el channelCount 0 mientras la ruta está en
+    /// transición (audífonos recién desconectados). Con tasas/canales no
+    /// válidos se cae al formato estándar de la sesión, que es válido tras
+    /// setActive(true); reconnectPlayerNode mantiene una última red igual.
     private func makeHardwareFormat() -> AVAudioFormat {
+        let session = AVAudioSession.sharedInstance()
         let rate = hardwareOutputFormat().sampleRate
-        if rate > 1 {
+        let channels = hardwareOutputFormat().channelCount
+        if rate > 1 && channels > 0 {
             return AVAudioFormat(standardFormatWithSampleRate: rate, channels: 2)
                 ?? hardwareOutputFormat()
         }
-        return AVAudioFormat(standardFormatWithSampleRate: AVAudioSession.sharedInstance().sampleRate, channels: 2)
+        return AVAudioFormat(standardFormatWithSampleRate: session.sampleRate, channels: 2)
             ?? hardwareOutputFormat()
     }
 
@@ -2134,6 +2170,13 @@ class AudioEngine: NSObject, ObservableObject {
         wallAnchor = CACurrentMediaTime()
         clock.time = current
         isPlaying = false
+        // ✅ FIX CRASH AL REANUDAR TRAS CAMBIO DE RUTA: loguear el estado SRC
+        // de salida (solo lectura) para que la auditoría en LogsView muestre
+        // contra qué tasa quedaba el converter al suspender por pérdida de
+        // ruta, sin alterar comportamiento.
+        let srcHwRate = hardwareOutputFormat().sampleRate
+        let srcFileRate = sampleRate > 0 ? sampleRate : (currentSong?.sampleRate ?? 0)
+        AppLog.info(.playback, String(format: "SRC suspendido por pérdida de ruta: archivo %.0f Hz · hardware %.0f Hz · converter %@", srcFileRate, srcHwRate, srcConversionActive ? "activo" : "inactivo"))
         // ✅ Detener monitoreo de lyrics line-by-line
         Task { @MainActor in
             lyricsViewModel.stopMonitoring()
