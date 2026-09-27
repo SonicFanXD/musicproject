@@ -941,8 +941,9 @@ class AudioEngine: NSObject, ObservableObject {
         // ✅ REMUESTREO HI-RES: al reactivar el engine (segundo plano,
         // interrupción, cambio de ruta) el grafo se reengancha SIEMPRE al
         // formato del HARDWARE de salida (la tasa pudo haber cambiado). Los
-        // archivos se abren a su tasa nativa (makePlaybackFile) y la conexión
-        // lleva el AVAudioConverter, así que el SRC queda activo si procede.
+        // archivos se abren a su tasa nativa (makePlaybackFile) y el SRC
+        // interno del mixer del engine hace la conversión si las tasas
+        // difieren (calidad por defecto de iOS: no configurable desde la app).
         reconnectPlayerNode(format: makeHardwareFormat())
 
         // 2. Arrancar el engine con un reintento tras reconectar el grafo
@@ -1170,6 +1171,12 @@ class AudioEngine: NSObject, ObservableObject {
         engine.attach(playerNode)
         // ✅ Mono: el mezclador de downmix vive permanentemente en el grafo
         engine.attach(monoMixerNode)
+        // ✅ SRC Hi-Res (aclaración): cuando el grafo conecta a la tasa del
+        // hardware y el archivo está en otra, la conversión la ejecuta el SRC
+        // interno de los AVAudioMixerNode del engine. Su calidad NO es
+        // configurable desde la app: AVAudioMixerNode no expone
+        // sampleRateConverterQuality (esa propiedad solo existe en
+        // AVAudioConverter) y la que iOS aplica por defecto no está documentada.
     }
 
     private func setupEqualizer() {
@@ -1257,14 +1264,15 @@ class AudioEngine: NSObject, ObservableObject {
         // y CPU por buffer. El mezclador mono SOLO se inserta si el mono está
         // activo (antes estaba SIEMPRE, incluso en estéreo, sin aportar nada).
         // ✅ REMUESTREO HI-RES: la CONEXIÓN se hace al formato de hardware que
-        // llega (makeHardwareFormat), nunca al del archivo. Si difieren, el
-        // mixer de conexión inserta y ejecuta un AVAudioConverter con
-        // sampleRateConverterQuality = .max (Apple TN3136) en la entrada del
-        // primer nodo: sustituye al resampler de calidad media del
-        // mainMixerNode por uno de máxima calidad (latencia despreciable,
-        // <3 ms). Con tasas iguales queda en paso directo: sin coste y sin
-        // alterar la ruta bit-perfect. EQ/mono/mainMixer procesan a la tasa
-        // del hardware, que es para la que está diseñado el EQ de 10 bandas.
+        // llega (makeHardwareFormat), nunca al del archivo. Si difieren, la
+        // conversión la ejecuta el SRC interno del mixer de conexión del
+        // engine (AVAudioMixerNode no expone sampleRateConverterQuality: esa
+        // propiedad solo existe en AVAudioConverter, y TN3136 documenta su uso
+        // MANUAL, no el SRC interno del engine). La calidad aplicada es la
+        // por defecto de iOS, no configurable desde la app. Con tasas iguales
+        // queda en paso directo: sin coste y sin alterar la ruta bit-perfect.
+        // EQ/mono/mainMixer procesan a la tasa del hardware, que es para la
+        // que está diseñado el EQ de 10 bandas.
         updateSrcConversionState()
         var last: AVAudioNode = playerNode
         if let eq = equalizerNode {
@@ -1766,10 +1774,10 @@ class AudioEngine: NSObject, ObservableObject {
                 // Cable / DAC USB / altavoz: tasa NATIVA del archivo; si el
                 // hardware no la soporta iOS elige la mas cercana.
                 // ✅ REMUESTREO HI-RES: sin cambios de semántica. Si el DAC
-                // acepta la tasa nativa, sesión y grafo van a esa tasa y el
-                // converter queda en paso directo (bit-perfect intacto). Si NO
-                // la acepta, el hardware se queda en su tasa y el SRC .max
-                // hace la conversión en el grafo (en vez del mixer de salida).
+                // acepta la tasa nativa, sesión y grafo van a esa tasa y no hay
+                // conversión (bit-perfect intacto). Si NO la acepta, el
+                // hardware se queda en su tasa y el SRC interno del grafo hace
+                // la conversión (en vez del mixer de salida).
                 if !isBluetoothRoute, abs(session.sampleRate - sampleRate) > 1 {
                     try session.setPreferredSampleRate(sampleRate)
                 }
@@ -1779,7 +1787,7 @@ class AudioEngine: NSObject, ObservableObject {
 
             // ✅ Reconectar el graph y relanzar el engine desde estado limpio.
             // ✅ REMUESTREO HI-RES: la conexión usa el formato REAL del
-            // hardware; el converter de la conexión (quality .max) hace el SRC
+            // hardware; el SRC interno del mixer del engine hace la conversión
             // solo cuando la tasa del archivo difiere.
             reconnectPlayerNode(format: makeHardwareFormat())
             try startEngineSafely()
@@ -1931,17 +1939,17 @@ class AudioEngine: NSObject, ObservableObject {
         }
     }
 
-    // MARK: - Remuestreo Hi-Res (AVAudioConverter)
+    // MARK: - Remuestreo Hi-Res (SRC interno del engine)
 
     /// ✅ REMUESTREO HI-RES (infraestructura): formato de CONEXIÓN del grafo =
     /// el del hardware de salida (outputNode, tasa real del DAC/ruta), no el
     /// del archivo. Los AVAudioFile se abren a su tasa NATIVA (makePlaybackFile)
-    /// y la conversión la ejecuta el AVAudioConverter de la conexión
-    /// playerNode→EQ, configurado con sampleRateConverterQuality = .max
-    /// (Apple TN3136). Con tasas iguales el converter queda en paso directo
-    /// (ruta bit-perfect intacta); con 96 kHz sobre hardware 44.1/48 sustituye
-    /// el resampler de calidad media del mainMixerNode por uno de máxima
-    /// calidad. La señal que procesan EQ/mono/headroom pasa a la tasa del
+    /// y la conversión la ejecuta el SRC interno del mixer del engine (su
+    /// calidad es la por defecto de iOS: AVAudioMixerNode no permite
+    /// configurarla; TN3136 documenta solo el AVAudioConverter manual). Con
+    /// tasas iguales no hay conversión (ruta bit-perfect intacta); con 96 kHz
+    /// sobre hardware 44.1/48 el SRC interno la hace a la calidad que iOS
+    /// aplique. La señal que procesan EQ/mono/headroom pasa a la tasa del
     /// hardware (el EQ de 10 bandas está diseñado para 44.1/48 kHz).
     private func hardwareOutputFormat() -> AVAudioFormat {
         engine.outputNode.outputFormat(forBus: 0)
@@ -1991,17 +1999,18 @@ class AudioEngine: NSObject, ObservableObject {
         // THROTTLE: si la tasa es la misma que la última logueada no se repite
         // ni por canción ni por reconexión del grafo.
         // Verificación esperada:
-        //   · 96 kHz sobre HW 44.1/48 → "SRC Hi-Res ACTIVADO … quality .max".
+        //   · 96 kHz sobre HW 44.1/48 → "SRC Hi-Res ACTIVADO …".
         //   · 44.1 sobre HW 44.1      → "SRC Hi-Res INACTIVO" (sin remuestreo).
-        // quality .max = AVAudioQualityMax (0x7F), propiedad documentada en
-        // Apple TN3136 (disponible desde iOS 9). El algoritmo no se fija: no
-        // existe constant pública documentada para sampleRateConverterAlgorithm.
+        // La conversión la hace el SRC interno del mixer del engine con la
+        // calidad POR DEFECTO de iOS: AVAudioMixerNode no expone
+        // sampleRateConverterQuality (solo AVAudioConverter la tiene) y no
+        // existe API para fijarla desde una app.
         let rateChanged = srcLoggedSourceRate.map { abs($0 - source) > 1 } ?? true
         guard source > 0, srcLoggedActive != active || rateChanged else { return }
         srcLoggedActive = active
         srcLoggedSourceRate = source
         if active {
-            AppLog.info(.playback, String(format: "SRC Hi-Res ACTIVADO: archivo %.0f Hz → hardware %.0f Hz (AVAudioConverter, sampleRateConverterQuality = .max [0x7F], algoritmo por defecto del sistema)", source, hwRate))
+            AppLog.info(.playback, String(format: "SRC Hi-Res ACTIVADO: archivo %.0f Hz → hardware %.0f Hz (SRC interno del mixer del engine, calidad por defecto de iOS: no configurable desde la app)", source, hwRate))
         } else {
             AppLog.info(.playback, String(format: "SRC Hi-Res INACTIVO: archivo %.0f Hz, hardware %.0f Hz (sin remuestreo en el grafo; bit-perfect posible en ruta cableada sin EQ/mono/limiter)", source, hwRate))
         }
@@ -2010,9 +2019,10 @@ class AudioEngine: NSObject, ObservableObject {
     /// ✅ HI-RES: abre el archivo DECODIFICANDO a float32 estándar A LA MISMA
     /// TASA NATIVA del material (AVAudioFile(forReading:commonFormat:) no
     /// remuestrea: solo fija el formato de render; la tasa y los canales salen
-    /// del archivo). El cambio de tasa lo hace el AVAudioConverter de la
-    /// conexión con quality .max, nunca el decodificador. Normaliza codecs
-    /// cuyo processingFormat nativo no es float32 no interleaved.
+    /// del archivo). El cambio de tasa lo hace el SRC interno del mixer del
+    /// engine (calidad por defecto de iOS, no configurable), nunca el
+    /// decodificador. Normaliza codecs cuyo processingFormat nativo no es
+    /// float32 no interleaved.
     private func makePlaybackFile(_ url: URL) throws -> AVAudioFile {
         let container = try AVAudioFile(forReading: url)
         let source = container.processingFormat
