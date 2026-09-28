@@ -249,6 +249,10 @@ class AudioEngine: NSObject, ObservableObject {
     /// Estado "desfase alto" para loguear SOLO las transiciones del umbral
     /// (sin un log por tick cuando el desfase se mantiene alto).
     private var clockDriftHighActive = false
+    // ✅ FIX spam drift: cooldown de 30 s para el log de transición del umbral.
+    private var clockDriftLastLogTime: TimeInterval = 0
+    // ✅ FIX drift persistente: anti-rebote de la auto-corrección (mínimo 5 s).
+    private var clockDriftLastCorrectionTime: TimeInterval = 0
 
     /// Posición de reproducción extrapolada (solo mientras isPlaying).
     // ✅ TRACKING de archivo programado: permite a `resume()` detectar si el
@@ -1079,17 +1083,25 @@ class AudioEngine: NSObject, ObservableObject {
         do {
             var options: AVAudioSession.CategoryOptions = [.allowBluetoothA2DP]
             if allowAirPlay { options.insert(.allowAirPlay) }
-            try session.setCategory(
-                .playback,
-                mode: sessionMode,
-                // ✅ MÁXIMA CALIDAD BT: SOLO perfiles de música (A2DP/AirPlay).
-                // Quitado .allowBluetoothHFP: HFP es el perfil de llamadas (SCO,
-                // mono 8/16kHz, mSBC/CVSD) — si lo permitimos y el A2DP falla o
-                // tarda, iOS puede enrutar la música por HFP y suena comprimido.
-                // Los controles del auricular (play/pausa/siguiente) siguen
-                // funcionando por AVRCP sobre A2DP sin necesidad de HFP.
-                options: options
-            )
+            // ✅ FIX -50 determinista: etiquetar la llamada culpable en el log
+            // SIN perder el backoff: cada bloque específico loguea y RELANZA,
+            // y el catch externo sigue siendo quien dispara el reintento.
+            do {
+                try session.setCategory(
+                    .playback,
+                    mode: sessionMode,
+                    // ✅ MÁXIMA CALIDAD BT: SOLO perfiles de música (A2DP/AirPlay).
+                    // Quitado .allowBluetoothHFP: HFP es el perfil de llamadas (SCO,
+                    // mono 8/16kHz, mSBC/CVSD) — si lo permitimos y el A2DP falla o
+                    // tarda, iOS puede enrutar la música por HFP y suena comprimido.
+                    // Los controles del auricular (play/pausa/siguiente) siguen
+                    // funcionando por AVRCP sobre A2DP sin necesidad de HFP.
+                    options: options
+                )
+            } catch {
+                AppLog.error(.playback, error, context: "configureSession: setCategory")
+                throw error
+            }
 
             // ✅ AUDIÓFILO (BT): en A2DP la latencia la impone el ENLACE
             // (100-300 ms), así que un buffer de render de 8 ms NO reduce la
@@ -1167,7 +1179,12 @@ class AudioEngine: NSObject, ObservableObject {
             // (DAC/BT/altavoz) solo cuando el hardware no acepta el rate nativo.
             // ✅ La opción .notifyOthersOnDeactivation solo tiene efecto al
             // DESACTIVAR la sesión (abajo, en stop()); al activarla es inerte.
-            try session.setActive(true)
+            do {
+                try session.setActive(true)
+            } catch {
+                AppLog.error(.playback, error, context: "configureSession: setActive")
+                throw error
+            }
             // ✅ 3.0.1: buffer REAL concedido, leído cuando el audio server ya
             // aplicó (o redondeó) la petición. Comparado con "pedido" dice si el
             // hardware aceptó los 8 ms o si sirvió su valor por defecto.
@@ -2228,6 +2245,9 @@ class AudioEngine: NSObject, ObservableObject {
         // de salida (solo lectura) para que la auditoría en LogsView muestre
         // contra qué tasa quedaba el converter al suspender por pérdida de
         // ruta, sin alterar comportamiento.
+        // ✅ FIX log mentiroso: refrescar el estado ANTES de loguearlo — si no,
+        // el log puede decir "converter activo" con rates ya iguales.
+        updateSrcConversionState()
         let srcHwRate = hardwareOutputFormat().sampleRate
         let srcFileRate = sampleRate > 0 ? sampleRate : (currentSong?.sampleRate ?? 0)
         AppLog.info(.playback, String(format: "SRC suspendido por pérdida de ruta: archivo %.0f Hz · hardware %.0f Hz · converter %@", srcFileRate, srcHwRate, srcConversionActive ? "activo" : "inactivo"))
@@ -3147,11 +3167,28 @@ class AudioEngine: NSObject, ObservableObject {
         // los episodios documentados sin inundar el log. La corrección queda
         // a decisión con estos datos.
         let isHigh = abs(drift) > 0.1
-        if isHigh != clockDriftHighActive {
+        // ✅ FIX spam: cooldown de 30 s. El valor oscila alrededor del umbral
+        // y sin cooldown el log se llena con cientos de líneas por minuto.
+        if isHigh != clockDriftHighActive,
+           CACurrentMediaTime() - clockDriftLastLogTime > 30 {
             clockDriftHighActive = isHigh
+            clockDriftLastLogTime = CACurrentMediaTime()
             if isHigh {
                 AppLog.info(.playback, String(format: "Drift de reloj supera 100 ms: %.0f ms — solo medición, sin corrección", drift * 1000))
             }
+        }
+
+        // ✅ FIX drift persistente: si el desfase supera 500 ms y no se ha
+        // corregido en los últimos 5 s, re-anclar el reloj de pared a la
+        // posición audible del nodo. Corrige el drift que sobrevive a cambios
+        // de ruta sin re-anclaje, sin esperar al siguiente anclaje natural.
+        if abs(drift) > 0.5,
+           CACurrentMediaTime() - clockDriftLastCorrectionTime > 5 {
+            clockDriftLastCorrectionTime = CACurrentMediaTime()
+            posAnchor = audible
+            wallAnchor = CACurrentMediaTime()
+            clockDriftReference = nil
+            AppLog.info(.playback, String(format: "Drift corregido: %.0f ms", drift * 1000))
         }
     }
 
@@ -3612,13 +3649,20 @@ class AudioEngine: NSObject, ObservableObject {
                         self.clearChainedAhead()
                         do {
                             try self.startEngineSafely()
-                            self.anchorPlaybackPosition(position)
                             // ✅ 3.0.1 BIT-PERFECT: el dispositivo nuevo puede haber
                             // negociado otra tasa; se recupera la nativa del archivo
                             // antes de reprogramar (solo en ruta cableada, y solo si
                             // realmente difiere).
                             self.reassertNativeSampleRateIfNeeded()
                             self.scheduleFile(file, from: position, generation: self.scheduleGeneration)
+                            // ✅ FIX drift tras reconexión: el ancla va DESPUÉS de
+                            // reprogramar, justo antes de que arranque el nuevo
+                            // render. Antes se anclaba al iniciar el engine y el
+                            // host se adelantaba durante la reprogramación/arranque
+                            // de la ruta nueva → drift de cientos de ms persistente.
+                            self.anchorPlaybackPosition(position)
+                            self.clock.time = position
+                            self.currentTime = position
                             self.scheduleAheadIfPossible()
                             AppLog.info(.playback, "Ruta cambiada a \(route?.portName ?? "?") en reproducción activa: grafo reconectado")
                         } catch {

@@ -1527,8 +1527,6 @@ class FileAccessService: ObservableObject {
                     ext: url.pathExtension,
                     sampleRate: sampleRate
                 )
-                // ✅ DEBUG: Log para verificar extracción de bitDepth
-                AppLog.debug(.metadata, "Archivo: \(url.lastPathComponent) - bitDepth extraído: \(bitDepth) (raw: \(fileBits))")
             }
         }
         // ✅ LOSSLESS → profundidad real; LOSSY (MP3/AAC, bitDepth 0) →
