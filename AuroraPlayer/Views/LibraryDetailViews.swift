@@ -466,6 +466,12 @@ struct AlbumDetailView: View {
                     Text(Localization.localized("details.play")).font(.system(size: 15, weight: .bold, design: .rounded))
                 }
                 .foregroundStyle(onTintColor).frame(maxWidth: .infinity).frame(height: 48)
+                // ✅ AURORA DESIGN (excepción justificada): el botón de Play NO
+                // se migra a `auroraPrimaryAction()`. Su relleno es el gradiente
+                // text-safe de ESTA vista (dos colores REALES de DetailAccent,
+                // que puede ser el de la carátula) y el texto va con
+                // `onTintColor` (blanco o negro según luminancia), no con el
+                // blanco fijo del sistema.
                 .background {
                     Capsule().fill(
                         accent.textSafeGradient()
@@ -474,7 +480,7 @@ struct AlbumDetailView: View {
                 .contentShape(Capsule())
                 .shadow(color: tintColor.opacity(0.5), radius: 10, x: 0, y: 5)
             }
-            .buttonStyle(PressableButtonStyle(scale: 0.97))
+            .buttonStyle(PressableButtonStyle(scale: AuroraPressScale.button))
 
             Button {
                 Haptics.medium()
@@ -496,6 +502,14 @@ struct AlbumDetailView: View {
                 // ✅ Se MANTIENE el material de vidrio (identidad de la app) y el
                 // acento va como velo encima; antes eran dos círculos apilados
                 // (material + color), ahora una sola cápsula con el mismo vidrio.
+                // ✅ AURORA DESIGN (excepción justificada): NO se migra a
+                // `auroraSecondaryAction(accent:)`. Ese modifier añade su propio
+                // font 16 + padding 20/12 SOBRE el contenido: aplicado antes del
+                // .frame(height: 48) el botón quedaría en ~43pt (rompe el
+                // emparejamiento con Play) y aplicado después en 72pt; está
+                // pensado para botones de tamaño intrínseco, no para este par
+                // 50/50 de altura fija. Además el velo de aquí es el gradiente
+                // de dos colores de la vista, no un acento plano al 12%.
                 .background {
                     Capsule().fill(AnyShapeStyle(.ultraThinMaterial))
                 }
@@ -508,7 +522,7 @@ struct AlbumDetailView: View {
                 .contentShape(Capsule())
             }
             .accessibilityLabel(Localization.localized("details.shuffle"))
-            .buttonStyle(PressableButtonStyle(scale: 0.97))
+            .buttonStyle(PressableButtonStyle(scale: AuroraPressScale.button))
         }
         .padding(.horizontal, 4)
     }
@@ -521,6 +535,9 @@ struct AlbumDetailView: View {
             }
             // ✅ FIX: padding simétrico para que el texto quede centrado
             // dentro de la cápsula de vidrio (antes era solo .top, quedaba descentrado)
+            // ✅ AURORA DESIGN (excepción, mismo caso que `statPill`): chip
+            // informacional NO seleccionable ("Disco 1"); el sistema no tiene
+            // variante informacional de `auroraChip`, así que se conserva el vidrio.
             .padding(.horizontal, 12).padding(.vertical, 6)
             .nativeGlassCapsule()
             .padding(.horizontal, 4)
@@ -560,6 +577,12 @@ struct AlbumDetailView: View {
         .foregroundStyle(highlighted ? tintColor : Color.secondary)
         .padding(.horizontal, 12).padding(.vertical, 6)
         .fixedSize()
+        // ✅ AURORA DESIGN (excepción justificada): la píldora de datos se queda
+        // con `nativeGlassCapsule()`. Es un chip INFORMACIONAL no seleccionable:
+        // `auroraChip` impondría font 12 + padding 16/8 y el sistema no tiene
+        // caso "informational", así que se perdería el estado `highlighted` del
+        // pill de bit-perfect y la píldora se encogería. Sigue respetando
+        // "Reducir transparencia" (glassStyle cae a superficie opaca).
         .nativeGlassCapsule()
     }
 
@@ -666,19 +689,27 @@ struct AlbumSongRow: View {
                     .font(.system(size: 11, weight: .medium).monospacedDigit()).foregroundStyle(.tertiary)
             }
             .padding(.horizontal, 16).padding(.vertical, 14)
+            // ✅ AURORA DESIGN: fila = superficie flat del sistema (radio .md en
+            // vez de 20, borde sutil, sin sombra; 60fps: cero blur por fila).
+            // El estado current conserva su velo accent y se aplica DESPUÉS del
+            // card, para que la superficie del sistema quede DEBAJO del acento
+            // (mismo orden aprobado en la biblioteca, FASE B1).
             .background {
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .fill(isCurrent ? tintColor.opacity(0.12) : Color(UIColor.secondarySystemBackground).opacity(0.6))
+                if isCurrent {
+                    RoundedRectangle(cornerRadius: AuroraRadius.md, style: .continuous)
+                        .fill(tintColor.opacity(0.12))
+                }
             }
             .contentShape(Rectangle())
+            .auroraCard(radius: AuroraRadius.md, style: .flat, withShadow: false)
             .overlay {
                 if isCurrent {
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    RoundedRectangle(cornerRadius: AuroraRadius.md, style: .continuous)
                         .strokeBorder(tintColor.opacity(0.3), lineWidth: 1)
                 }
             }
         }
-        .buttonStyle(PressableButtonStyle(scale: 0.98))
+        .buttonStyle(PressableButtonStyle(scale: AuroraPressScale.row))
         // ✅ Acciones rápidas (mantener pulsada la fila): añadir a la cola y me
         // gusta. Menú contextual en vez de swipeActions por lo explicado arriba.
         .contextMenu {
@@ -743,15 +774,17 @@ struct EqualizerBars: View {
 
 // MARK: - Header de secci�n reutilizable (con gradiente sutil y color din�mico)
 private func sectionHeader(icon: String, title: String, accent: DetailAccent) -> some View {
-    return HStack(spacing: 8) {
-        Image(systemName: icon)
-            .font(.system(size: 14, weight: .semibold))
-            .foregroundStyle(accent.gradient(start: .top, end: .bottom))
-        Text(title)
-            .font(.system(size: 20, weight: .bold, design: .rounded))
-            .foregroundStyle(.primary)
-        Spacer()
-    }.padding(.top, 4)
+    // ✅ AURORA DESIGN: header de sección del sistema (icon-badge .medium +
+    // título 18 rounded). El wrapper se mantiene porque las 3 llamadas pasan un
+    // título ya localizado y el acento de ESTA vista (DetailAccent), que no es
+    // el acento de la app que consumen los headers del sistema.
+    // Cambios visuales DELIBERADOS de la migración: el icono pasa de glifo 14pt
+    // con gradiente VERTICAL de dos colores a `accent.primary` sólido dentro del
+    // badge (velo 0.22 → 0.08, el lenguaje de Settings/AudioQualityDetail), el
+    // título baja de 20 a 18 y la fila crece de ~17 a 34pt por el badge. El
+    // `.padding(.top, 4)` se conserva para no mover las secciones.
+    return AuroraSectionHeader(icon: icon, title: title, color: accent.primary)
+        .padding(.top, 4)
 }
 
 // MARK: - Artist Detail (perfil inmersivo premium)
@@ -1042,6 +1075,12 @@ struct ArtistDetailView: View {
                     Text(Localization.localized("details.play")).font(.system(size: 15, weight: .bold, design: .rounded))
                 }
                 .foregroundStyle(onTintColor).frame(maxWidth: .infinity).frame(height: 48)
+                // ✅ AURORA DESIGN (excepción justificada): el botón de Play NO
+                // se migra a `auroraPrimaryAction()`. Su relleno es el gradiente
+                // text-safe de ESTA vista (dos colores REALES de DetailAccent,
+                // que puede ser el de la carátula) y el texto va con
+                // `onTintColor` (blanco o negro según luminancia), no con el
+                // blanco fijo del sistema.
                 .background {
                     Capsule().fill(
                         accent.textSafeGradient()
@@ -1050,7 +1089,7 @@ struct ArtistDetailView: View {
                 .contentShape(Capsule())
                 .shadow(color: tintColor.opacity(0.5), radius: 10, x: 0, y: 5)
             }
-            .buttonStyle(PressableButtonStyle(scale: 0.97))
+            .buttonStyle(PressableButtonStyle(scale: AuroraPressScale.button))
 
             Button {
                 Haptics.medium()
@@ -1072,6 +1111,14 @@ struct ArtistDetailView: View {
                 // ✅ Se MANTIENE el material de vidrio (identidad de la app) y el
                 // acento va como velo encima; antes eran dos círculos apilados
                 // (material + color), ahora una sola cápsula con el mismo vidrio.
+                // ✅ AURORA DESIGN (excepción justificada): NO se migra a
+                // `auroraSecondaryAction(accent:)`. Ese modifier añade su propio
+                // font 16 + padding 20/12 SOBRE el contenido: aplicado antes del
+                // .frame(height: 48) el botón quedaría en ~43pt (rompe el
+                // emparejamiento con Play) y aplicado después en 72pt; está
+                // pensado para botones de tamaño intrínseco, no para este par
+                // 50/50 de altura fija. Además el velo de aquí es el gradiente
+                // de dos colores de la vista, no un acento plano al 12%.
                 .background {
                     Capsule().fill(AnyShapeStyle(.ultraThinMaterial))
                 }
@@ -1084,7 +1131,7 @@ struct ArtistDetailView: View {
                 .contentShape(Capsule())
             }
             .accessibilityLabel(Localization.localized("details.shuffle"))
-            .buttonStyle(PressableButtonStyle(scale: 0.97))
+            .buttonStyle(PressableButtonStyle(scale: AuroraPressScale.button))
         }
         .padding(.horizontal, 4)
     }
@@ -1102,6 +1149,12 @@ struct ArtistDetailView: View {
         .foregroundStyle(highlighted ? tintColor : Color.secondary)
         .padding(.horizontal, 12).padding(.vertical, 6)
         .fixedSize()
+        // ✅ AURORA DESIGN (excepción justificada): la píldora de datos se queda
+        // con `nativeGlassCapsule()`. Es un chip INFORMACIONAL no seleccionable:
+        // `auroraChip` impondría font 12 + padding 16/8 y el sistema no tiene
+        // caso "informational", así que se perdería el estado `highlighted` del
+        // pill de bit-perfect y la píldora se encogería. Sigue respetando
+        // "Reducir transparencia" (glassStyle cae a superficie opaca).
         .nativeGlassCapsule()
     }
 
@@ -1148,15 +1201,25 @@ struct ArtistAlbumCard: View {
                     Image(uiImage: AppTheme.thumbnail(from: artwork, size: CGSize(width: 300, height: 300)))
                         .resizable().scaledToFill()
                         .frame(width: 150, height: 150)
-                        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                        // ✅ AURORA DESIGN (excepción justificada): aquí NO hay card
+                        // que migrar. Los radios 20 de esta tarjeta son la FORMA DE
+                        // LA CARÁTULA (clipShape + borde + placeholder vacío), no el
+                        // fondo de una card: la tarjeta es carátula + texto, igual
+                        // que `playlistLibraryCard` de la biblioteca. Se alinean al
+                        // radio .md (18) para coincidir con las filas. Un
+                        // `auroraCard` aquí exigiría padding interno (cambiaría el
+                        // ancho de 150 y el layout del carrusel) y DUPLICARÍA la
+                        // sombra de la carátula: 2 pasadas offscreen por tarjeta en
+                        // A11, prohibido (sombra siempre single).
+                        .clipShape(RoundedRectangle(cornerRadius: AuroraRadius.md, style: .continuous))
                         .overlay {
-                            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                            RoundedRectangle(cornerRadius: AuroraRadius.md, style: .continuous)
                                 .strokeBorder(.white.opacity(0.15), lineWidth: 1)
                         }
                         .shadow(color: .black.opacity(0.25), radius: 14, x: 0, y: 7)
                 } else {
                     ZStack {
-                        RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        RoundedRectangle(cornerRadius: AuroraRadius.md, style: .continuous)
                             .fill(
                                 LinearGradient(colors: accent.colors(primaryOpacity: 0.25, secondaryOpacity: 0.18), startPoint: .topLeading, endPoint: .bottomTrailing)
                             )
@@ -1231,20 +1294,28 @@ struct ArtistSongRow: View {
                     .font(.system(size: 11, weight: .medium).monospacedDigit()).foregroundStyle(.tertiary)
             }
             .padding(.horizontal, 16).padding(.vertical, 14)
+            // ✅ AURORA DESIGN: fila = superficie flat del sistema (radio .md en
+            // vez de 20, borde sutil, sin sombra; 60fps: cero blur por fila).
+            // El estado current conserva su velo accent y se aplica DESPUÉS del
+            // card, para que la superficie del sistema quede DEBAJO del acento
+            // (mismo orden aprobado en la biblioteca, FASE B1).
             .background {
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .fill(isCurrent ? tintColor.opacity(0.12) : Color(UIColor.secondarySystemBackground).opacity(0.6))
+                if isCurrent {
+                    RoundedRectangle(cornerRadius: AuroraRadius.md, style: .continuous)
+                        .fill(tintColor.opacity(0.12))
+                }
             }
             .contentShape(Rectangle())
+            .auroraCard(radius: AuroraRadius.md, style: .flat, withShadow: false)
             .overlay {
                 if isCurrent {
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    RoundedRectangle(cornerRadius: AuroraRadius.md, style: .continuous)
                         .strokeBorder(tintColor.opacity(0.3), lineWidth: 1)
                 }
             }
         }
         // ? Feedback de presi�n al tocar (micro-escala, animaci�n GPU)
-        .buttonStyle(PressableButtonStyle(scale: 0.98))
+        .buttonStyle(PressableButtonStyle(scale: AuroraPressScale.row))
         // ✅ Acciones rápidas (mantener pulsada la fila): añadir a la cola y me
         // gusta. Menú contextual en vez de swipeActions por lo explicado arriba.
         .contextMenu {
