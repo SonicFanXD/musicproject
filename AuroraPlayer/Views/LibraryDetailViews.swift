@@ -510,9 +510,12 @@ struct AlbumDetailView: View {
                 // pensado para botones de tamaño intrínseco, no para este par
                 // 50/50 de altura fija. Además el velo de aquí es el gradiente
                 // de dos colores de la vista, no un acento plano al 12%.
-                .background {
-                    Capsule().fill(AnyShapeStyle(.ultraThinMaterial))
-                }
+                // ✅ FIX REDUCIR TRANSPARENCIA: el vidrio del fondo SÍ usa la
+                // superficie del sistema (antes `.ultraThinMaterial` a pelo, que
+                // ignoraba el ajuste y no reaccionaba): con el ajuste activo cae
+                // a opaco, igual que el resto de la app. El velo y el borde de
+                // abajo (que no son vidrio) no cambian.
+                .nativeGlassCapsule()
                 .overlay {
                     Capsule().fill(accent.gradient(primaryOpacity: 0.22, secondaryOpacity: 0.12))
                 }
@@ -529,18 +532,15 @@ struct AlbumDetailView: View {
 
     private func discSection(disc: Int, songs: [Song]) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
-                Image(systemName: "opticaldisc").font(.system(size: 13, weight: .semibold)).foregroundStyle(tintColor.opacity(0.9))
-                Text("\(Localization.localized("details.disc")) \(disc)").font(.system(size: 15, weight: .semibold)).foregroundStyle(.secondary)
-            }
-            // ✅ FIX: padding simétrico para que el texto quede centrado
-            // dentro de la cápsula de vidrio (antes era solo .top, quedaba descentrado)
-            // ✅ AURORA DESIGN (excepción, mismo caso que `statPill`): chip
-            // informacional NO seleccionable ("Disco 1"); el sistema no tiene
-            // variante informacional de `auroraChip`, así que se conserva el vidrio.
-            .padding(.horizontal, 12).padding(.vertical, 6)
-            .nativeGlassCapsule()
-            .padding(.horizontal, 4)
+            // ✅ AURORA DESIGN: la cápsula "Disco N" es un chip informacional del
+            // sistema (mismo caso que `statPill`), no un HStack + vidrio a mano:
+            // el padding simétrico y el vidrio reactivo viven dentro del chip.
+            // Deltas visuales al migrar: el texto baja de 15 a 13 semibold
+            // (contrato de chips) y el icono de 13 a 12, y ambos pasan a UN solo
+            // color, así que el icono pierde el tinte de acento al 0.9 que tenía
+            // y queda `.secondary` como el texto. El padding exterior de 4 no cambia.
+            AuroraInfoChip(icon: "opticaldisc", text: "\(Localization.localized("details.disc")) \(disc)")
+                .padding(.horizontal, 4)
             ForEach(Array(songs.enumerated()), id: \.element.id) { index, song in
                 // ✅ FIX multi-disco: la cola es el ÁLBUM COMPLETO (cachedSongs
                 // viene ordenado disco 1 → disco 2 → pistas). Antes se pasaba
@@ -565,25 +565,12 @@ struct AlbumDetailView: View {
     }
 
     private func statPill(icon: String, text: String, highlighted: Bool = false) -> some View {
-        HStack(spacing: 5) {
-            Image(systemName: icon).font(.system(size: 12, weight: .semibold))
-            // lineLimit(1) + fixedSize: el texto NUNCA se parte ni corta con
-            // guiones — la píldora mantiene su tamaño intrínseco y el
-            // FlowLayout la acomoda entera en la siguiente fila si no cabe.
-            // ✅ 13 semibold: la píldora es dato de cabecera, no letra pequeña.
-            Text(text).font(.system(size: 13, weight: .semibold).monospacedDigit())
-                .lineLimit(1)
-        }
-        .foregroundStyle(highlighted ? tintColor : Color.secondary)
-        .padding(.horizontal, 12).padding(.vertical, 6)
-        .fixedSize()
-        // ✅ AURORA DESIGN (excepción justificada): la píldora de datos se queda
-        // con `nativeGlassCapsule()`. Es un chip INFORMACIONAL no seleccionable:
-        // `auroraChip` impondría font 12 + padding 16/8 y el sistema no tiene
-        // caso "informational", así que se perdería el estado `highlighted` del
-        // pill de bit-perfect y la píldora se encogería. Sigue respetando
-        // "Reducir transparencia" (glassStyle cae a superficie opaca).
-        .nativeGlassCapsule()
+        // ✅ AURORA DESIGN: la píldora de datos es el chip informacional del
+        // sistema. Este wrapper conserva el mapeo de ESTA vista (dato normal =
+        // `.secondary`; dato destacado = acento de la vista), así no cambian las
+        // llamadas. `fixedSize`, `lineLimit(1)`, la tipografía de chip y el
+        // vidrio reactivo a "Reducir transparencia" viven dentro del chip.
+        AuroraInfoChip(icon: icon, text: text, color: highlighted ? tintColor : Color.secondary)
     }
 
     // ✅ Formatea kHz UNA sola vez y sin duplicar: 44100 → "44.1 kHz",
@@ -862,7 +849,12 @@ struct ArtistDetailView: View {
                                     } label: {
                                         ArtistAlbumCard(album: album)
                                     }
-                                    .buttonStyle(.plain)
+                                    // ✅ AURORA DESIGN: feedback de presión del
+                                    // sistema en el único sitio que no lo tenía.
+                                    // Sigue siendo un NavigationLink normal: el
+                                    // ButtonStyle solo dibuja el label, no
+                                    // intercepta la acción de navegación.
+                                    .buttonStyle(PressableButtonStyle(scale: AuroraPressScale.chip))
                                 }
                             }
                             .padding(.horizontal, 20).padding(.vertical, 4)
@@ -1119,9 +1111,12 @@ struct ArtistDetailView: View {
                 // pensado para botones de tamaño intrínseco, no para este par
                 // 50/50 de altura fija. Además el velo de aquí es el gradiente
                 // de dos colores de la vista, no un acento plano al 12%.
-                .background {
-                    Capsule().fill(AnyShapeStyle(.ultraThinMaterial))
-                }
+                // ✅ FIX REDUCIR TRANSPARENCIA: el vidrio del fondo SÍ usa la
+                // superficie del sistema (antes `.ultraThinMaterial` a pelo, que
+                // ignoraba el ajuste y no reaccionaba): con el ajuste activo cae
+                // a opaco, igual que el resto de la app. El velo y el borde de
+                // abajo (que no son vidrio) no cambian.
+                .nativeGlassCapsule()
                 .overlay {
                     Capsule().fill(accent.gradient(primaryOpacity: 0.22, secondaryOpacity: 0.12))
                 }
@@ -1137,25 +1132,12 @@ struct ArtistDetailView: View {
     }
 
     private func statPill(icon: String, text: String, highlighted: Bool = false) -> some View {
-        HStack(spacing: 5) {
-            Image(systemName: icon).font(.system(size: 12, weight: .semibold))
-            // lineLimit(1) + fixedSize: el texto NUNCA se parte ni corta con
-            // guiones — la píldora mantiene su tamaño intrínseco y el
-            // FlowLayout la acomoda entera en la siguiente fila si no cabe.
-            // ✅ 13 semibold: la píldora es dato de cabecera, no letra pequeña.
-            Text(text).font(.system(size: 13, weight: .semibold).monospacedDigit())
-                .lineLimit(1)
-        }
-        .foregroundStyle(highlighted ? tintColor : Color.secondary)
-        .padding(.horizontal, 12).padding(.vertical, 6)
-        .fixedSize()
-        // ✅ AURORA DESIGN (excepción justificada): la píldora de datos se queda
-        // con `nativeGlassCapsule()`. Es un chip INFORMACIONAL no seleccionable:
-        // `auroraChip` impondría font 12 + padding 16/8 y el sistema no tiene
-        // caso "informational", así que se perdería el estado `highlighted` del
-        // pill de bit-perfect y la píldora se encogería. Sigue respetando
-        // "Reducir transparencia" (glassStyle cae a superficie opaca).
-        .nativeGlassCapsule()
+        // ✅ AURORA DESIGN: la píldora de datos es el chip informacional del
+        // sistema. Este wrapper conserva el mapeo de ESTA vista (dato normal =
+        // `.secondary`; dato destacado = acento de la vista), así no cambian las
+        // llamadas. `fixedSize`, `lineLimit(1)`, la tipografía de chip y el
+        // vidrio reactivo a "Reducir transparencia" viven dentro del chip.
+        AuroraInfoChip(icon: icon, text: text, color: highlighted ? tintColor : Color.secondary)
     }
 
     private func formatLongDuration(_ seconds: TimeInterval) -> String {
@@ -1244,7 +1226,11 @@ struct ArtistAlbumCard: View {
         .frame(width: 150)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(album.name), \(cardSubtitle)")
-        // ? Micro-escala al presionar la tarjeta (feedback premium, GPU)
+        // ✅ AURORA DESIGN: la micro-escala al presionar la aporta el
+        // `PressableButtonStyle` del NavigationLink del carrusel (hasta ahora
+        // este comentario prometía un feedback que no existía: `.plain` no anima
+        // nada). El contentShape se queda: hace táctil todo el rect de 150pt,
+        // incluidos los huecos transparentes entre carátula y textos.
         .contentShape(Rectangle())
     }
 }

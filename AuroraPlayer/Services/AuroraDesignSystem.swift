@@ -395,6 +395,44 @@ extension View {
     }
 }
 
+// MARK: - Chip informacional
+
+/// ✅ AURORA DESIGN: chip INFORMACIONAL del sistema: NO es seleccionable y no
+/// tiene estado. Icono opcional + dato sobre la superficie de vidrio del sistema
+/// (reactiva a "Reducir transparencia"). Cierra el hueco que quedaba entre
+/// `auroraChip` (seleccionable: tabs, presets, filtros) y los datos de cabecera
+/// de las vistas de detalle (recuento, duración, kHz, bit-perfect), que hasta
+/// ahora iban con HStack + nativeGlassCapsule + font/padding a mano en cada
+/// sitio. Un solo color para icono y texto: `.secondary` para un dato normal y
+/// el acento de la vista para uno destacado (el pill de bit-perfect).
+struct AuroraInfoChip: View {
+    let icon: String?
+    let text: String
+    var color: Color = .secondary
+
+    var body: some View {
+        HStack(spacing: 5) {
+            if let icon {
+                Image(systemName: icon)
+                    .font(.system(size: 12, weight: .semibold))
+            }
+            // ✅ 13 semibold: el chip es dato de cabecera, no letra pequeña
+            // (contrato tipográfico: chips y pills 10-13pt).
+            Text(text)
+                .font(.system(size: 13, weight: .semibold).monospacedDigit())
+                .lineLimit(1)
+        }
+        .foregroundStyle(color)
+        .padding(.horizontal, AuroraSpacing.md)
+        .padding(.vertical, 6)
+        // ✅ fixedSize: el chip NUNCA se parte ni se corta con guiones — mantiene
+        // su tamaño intrínseco y el FlowLayout lo acomoda entero en la fila
+        // siguiente si no cabe.
+        .fixedSize()
+        .nativeGlassCapsule()
+    }
+}
+
 // MARK: - Section header
 
 /// ✅ AURORA DESIGN: header de sección con icon-badge + título (el lenguaje
