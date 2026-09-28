@@ -108,6 +108,16 @@ class FileAccessService: ObservableObject {
     // SIN tocar isScanning/scanTotal (sin tarjeta compacta ni re-renders).
     // Solo si aparecen canciones NUEVAS se indexan e incorporan al final.
     private var isBackgroundDetecting = false
+    // ✅ FIX ráfaga .active: cooldown entre ciclos COMPLETADOS de detección
+    // silenciosa. La escena puede volver a .active varias veces en segundos
+    // (sheets, Centro de Control, desbloqueo) y el guard de solapamiento no
+    // cubre la ventana entre fin de ciclo y siguiente .active: con 1 carpeta
+    // es inocuo, con miles de archivos son enumeraciones completas repetidas.
+    private var lastSilentScanFinishedAt: TimeInterval = 0
+    // ✅ La primera detección SIEMPRE pasa: con el timestamp a 0, el guard de
+    // 30 s bloquearía la detección del arranque (CACurrentMediaTime empieza
+    // cerca de 0 al iniciar el proceso).
+    private var hasFinishedSilentScan = false
     private var activeSilentDiscoveries = 0
     // ✅ A7: fuentes que TERMINARON de enumerar con éxito en el ciclo
     // silencioso en curso. La poda de borrados solo se habilita si
@@ -514,6 +524,9 @@ class FileAccessService: ObservableObject {
         // del rescan en curso (se descartaban sin contar en scanProcessed) →
         // isScanning atascado y la animación congelada. El rescan activo ya
         // incorporará las canciones nuevas por sí mismo.
+        // ✅ Cooldown de 30 s entre ciclos completados (la primera detección
+        // no se toca: ver hasFinishedSilentScan). No afecta al rescan manual.
+        if hasFinishedSilentScan, CACurrentMediaTime() - lastSilentScanFinishedAt <= 30 { return }
         guard !isBackgroundDetecting, !isScanning, hasEverLoadedSongs, !folders.isEmpty || !files.isEmpty else { return }
         // ✅ La caché ya pobló `songs` + `indexedSongKeys` en init: NO se
         // reconstruyen aquí (antes se hacía `Set(songs.map...)` en el main
@@ -895,6 +908,8 @@ class FileAccessService: ObservableObject {
               silentBatches.isEmpty,
               silentInFlight == 0 else { return }
         isBackgroundDetecting = false
+        lastSilentScanFinishedAt = CACurrentMediaTime()
+        hasFinishedSilentScan = true
         let found = silentProcessed
         silentTotal = 0
         silentProcessed = 0

@@ -26,6 +26,11 @@ struct NowPlayingView: View {
     @State private var showEqualizer = false
     @State private var showQueue = false
     @State private var showQualityDetail = false
+    // ✅ FIX log duplicado: el sheet se monta-desecha-vuelve a montar durante
+    // la transición (ciclo de vida conocido de .sheet) y el onAppear corre dos
+    // veces. El resto de acciones son idempotentes; el LOG no: se guarda tras
+    // este flag para que "NowPlaying abierto" aparezca una sola vez.
+    @State private var hasLoggedAppear = false
     // ✅ NUEVO: menú de 3 puntos → ver artista / álbum / letras / cola / compartir
     @State private var showArtistDetail = false
     @State private var showAlbumDetail = false
@@ -224,7 +229,10 @@ struct NowPlayingView: View {
             }
             }
             .onAppear {
-                AppLog.info(.interface, "NowPlaying abierto: '\(audioEngine.currentSong?.displayName ?? "—")'")
+                if !hasLoggedAppear {
+                    hasLoggedAppear = true
+                    AppLog.info(.interface, "NowPlaying abierto: '\(audioEngine.currentSong?.displayName ?? "—")'")
+                }
                 withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
                     artworkScale = 1.0
                 }

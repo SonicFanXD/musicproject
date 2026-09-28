@@ -1313,15 +1313,15 @@ class AudioEngine: NSObject, ObservableObject {
             } else {
                 switch level {
                 case .primary:
-                    AppLog.warning(.playback, "setupSession: 3 reintentos agotados; re-negociando sesión (setActive(false) + reintento)")
+                    AppLog.warning(.playback, "setupSession: nivel .primary agotado; re-negociando sesión (setActive(false) + reintento)")
                     configureSession(allowAirPlay: allowAirPlay, level: .renegotiate, attempt: 0)
                 case .renegotiate:
                     // ✅ Última línea: la sesión conserva su categoría vigente (el
                     // sistema asigna la del proceso) y solo se intenta activar.
-                    AppLog.warning(.playback, "setupSession: 3 reintentos agotados; activando sin setCategory")
+                    AppLog.warning(.playback, "setupSession: nivel .renegotiate agotado; degradando a .activeOnly (activación sin setCategory)")
                     configureSession(allowAirPlay: allowAirPlay, level: .activeOnly, attempt: 0)
                 case .activeOnly:
-                    AppLog.warning(.playback, "setupSession: activación sin setCategory agotada; la sesión queda sin configurar")
+                    AppLog.warning(.playback, "setupSession: nivel .activeOnly agotado; la sesión queda sin configurar")
                 }
             }
         }
