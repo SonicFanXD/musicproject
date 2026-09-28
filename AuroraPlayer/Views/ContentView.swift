@@ -446,7 +446,8 @@ struct ContentView: View {
                     }
                     .shadow(color: AppTheme.accent.opacity(0.35), radius: 10, x: 0, y: 5)
                 }
-                .buttonStyle(PressableButtonStyle(scale: 0.96))
+                // ✅ AURORA DESIGN: escala de presión unificada del sistema.
+                .buttonStyle(PressableButtonStyle(scale: AuroraPressScale.button))
             }
         }
     }
@@ -503,10 +504,9 @@ struct ContentView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 9)
-        .background {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color(UIColor.secondarySystemBackground))
-        }
+        // ✅ AURORA DESIGN: superficie flat del sistema (radio .md, borde sutil,
+        // sin sombra) — el campo vive sobre el fondo, cero blur.
+        .auroraCard(radius: AuroraRadius.md, style: .flat, withShadow: false)
         .contentShape(Rectangle())
         .onTapGesture {
             searchFieldFocused = true
@@ -550,7 +550,7 @@ struct ContentView: View {
                             }
                         }
                     }
-                    .buttonStyle(PressableButtonStyle(scale: 0.95))
+                    .buttonStyle(PressableButtonStyle(scale: AuroraPressScale.chip))
                 }
             }
             .padding(.horizontal, 16)
@@ -750,15 +750,9 @@ struct ContentView: View {
         // ✅ SIN BLUR (era enhancedGlass/.ultraThinMaterial): esta tarjeta se
         // re-renderiza en cada lote de indexación → blur re-computado constante
         // = calor. Fondo opaco + borde sutil = mismo look premium, cero costo.
-        .background {
-            RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .fill(Color(UIColor.secondarySystemGroupedBackground))
-                .shadow(color: .black.opacity(0.06), radius: 12, y: 5)
-        }
-        .overlay {
-            RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.06), lineWidth: 0.5)
-        }
+        // ✅ AURORA DESIGN: card del sistema en variante flat (radio .xl, borde
+        // y sombra single soft unificados). Sigue SIN blur.
+        .auroraCard(radius: AuroraRadius.xl, style: .flat, withShadow: true)
     }
 
     private var compactIndexingRow: some View {
@@ -1014,20 +1008,20 @@ struct ContentView: View {
         .padding(.vertical, 12)
         .background {
                 if isCurrent {
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    // ✅ Estado current SIN migrar al modifier genérico (regla del
+                    // spec): velo accent + borde accent, radio alineado a .md (18).
+                    RoundedRectangle(cornerRadius: AuroraRadius.md, style: .continuous)
                         .fill(AppTheme.accentGradient(opacity: 0.08))
                         .overlay(
-                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            RoundedRectangle(cornerRadius: AuroraRadius.md, style: .continuous)
                                 .strokeBorder(AppTheme.accent.opacity(0.2), lineWidth: 0.5)
                         )
-                } else {
-                    // ✅ 60fps: color OPACO (no material blur) — en listas largas
-                    // iOS degrada con muchos blurs simultáneos. IDÉNTICO look,
-                    // pero sin re-render de blur por fila.
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(Color(UIColor.secondarySystemBackground).opacity(0.6))
                 }
             }
+        // ✅ AURORA DESIGN: fila = superficie flat del sistema (radio .md, borde
+        // sutil, sin sombra; 60fps: cero blur por fila). Va DESPUÉS del velo
+        // current para que el card quede DEBAJO del estado accent.
+        .auroraCard(radius: AuroraRadius.md, style: .flat, withShadow: false)
             .contextMenu {
             Button {
                 playSong(song)
@@ -1742,7 +1736,10 @@ struct CategorySortMenu<Option: RawRepresentable & Hashable & CaseIterable>: Vie
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
             .background {
-                Capsule().fill(Color.secondary.opacity(0.1))
+                // ✅ AURORA DESIGN: mismo fill que el chip no seleccionado del
+                // sistema (0.12). No migra a auroraChip completo: impondría su
+                // font/padding al trigger compacto del sort.
+                Capsule().fill(Color.secondary.opacity(0.12))
             }
         }
         .buttonStyle(.plain)
@@ -1800,11 +1797,9 @@ private func albumListRow(_ album: Album) -> some View {
         // (antes se veía una flecha DUPLICADA en cada fila de álbumes)
     }
     .padding(.horizontal, 14).padding(.vertical, 12)
-    .background {
-        // ✅ 60fps: color OPACO (no material blur) para listas largas
-        RoundedRectangle(cornerRadius: 16, style: .continuous)
-            .fill(Color(UIColor.secondarySystemBackground).opacity(0.6))
-    }
+    // ✅ AURORA DESIGN: fila flat del sistema (radio .md, borde sutil, sin
+    // sombra — misma jerarquía que la fila de canción; 60fps: cero blur).
+    .auroraCard(radius: AuroraRadius.md, style: .flat, withShadow: false)
 }
 
 private func artistListRow(_ artist: Artist) -> some View {
@@ -1842,11 +1837,9 @@ private func artistListRow(_ artist: Artist) -> some View {
         // (antes se veía una flecha DUPLICADA en cada fila de artistas)
     }
     .padding(.horizontal, 14).padding(.vertical, 12)
-    .background {
-        // ✅ 60fps: color OPACO (no material blur) para listas largas
-        RoundedRectangle(cornerRadius: 16, style: .continuous)
-            .fill(Color(UIColor.secondarySystemBackground).opacity(0.6))
-    }
+    // ✅ AURORA DESIGN: fila flat del sistema (radio .md, borde sutil, sin
+    // sombra — misma jerarquía que la fila de canción; 60fps: cero blur).
+    .auroraCard(radius: AuroraRadius.md, style: .flat, withShadow: false)
 }
 
 struct ContentUnavailableLibraryView: View {
@@ -1856,12 +1849,10 @@ struct ContentUnavailableLibraryView: View {
 
     var body: some View {
         VStack(spacing: 16) {
-            ZStack {
-                Circle().fill(AppTheme.accentGradient(opacity: 0.1)).frame(width: 80, height: 80)
-                Image(systemName: icon)
-                    .font(.system(size: 36, weight: .semibold))
-                    .foregroundStyle(AppTheme.accentGradient)
-            }
+            // ✅ AURORA DESIGN: badge hero del sistema (88pt circle, gradiente
+            // dos paradas 0.22→0.08, icono accent sólido — regla 2.7).
+            Image(systemName: icon)
+                .auroraIconBadge(size: AuroraIconSize.hero, color: AppTheme.accent, shape: .circle, iconSize: 36)
             Text(title)
                 .font(.system(size: 20, weight: .bold, design: .rounded))
                 .foregroundStyle(.primary)
