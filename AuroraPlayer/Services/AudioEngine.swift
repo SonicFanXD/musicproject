@@ -1073,7 +1073,7 @@ class AudioEngine: NSObject, ObservableObject {
     // ✅ FIX -50 en cold start: se invoca desde didBecomeActive
     // (configureSessionOnActivation), no desde init().
     private func setupSession() {
-        configureSession(allowAirPlay: true, didRetryDegraded: false)
+        configureSession(allowAirPlay: true, level: .primary)
     }
     
     // ✅ AUDIÓFILO: método público para cambiar el modo de audio dinámicamente
@@ -1081,16 +1081,33 @@ class AudioEngine: NSObject, ObservableObject {
         UserDefaults.standard.set(modeIndex, forKey: "com.aurora.audioSessionMode")
         UserDefaults.standard.synchronize()
         // Reconfigurar la sesión con el nuevo modo
-        configureSession(allowAirPlay: true, didRetryDegraded: false)
+        configureSession(allowAirPlay: true, level: .primary)
     }
 
-    /// Configura la sesión de audio. Si el arranque ocurre antes de que el
-    /// audio server esté listo (cold start en A11), setCategory/setActive
-    /// puede devolver -50 (paramErr) — error TRANSITORIO que el catch anterior
-    /// tragaba sin más, dejando la sesión sin configurar hasta la siguiente
-    /// canción. Ahora se reintenta con backoff (0.15/0.3/0.6 s) y solo al
-    /// agotarlo se degrada sin AirPlay.
-    private func configureSession(allowAirPlay: Bool, didRetryDegraded: Bool, attempt: Int = 0) {
+    // ✅ FIX -50: niveles de degradado de la sesión. `.primary` = opciones
+    // vacías; `.renegotiate` = soltar la sesión (setActive(false) +
+    // .notifyOthersOnDeactivation) y volver a intentar .primary: resuelve los
+    // -50 transitorios por sesión retenida por otra app SIN renunciar a la
+    // exclusividad (antes .mixWithOthers, que mezclaba con Spotify/Apple
+    // Music — inaceptable en una app audiófila); `.activeOnly` = sin
+    // setCategory, solo activar la sesión con la categoría vigente del proceso.
+    private enum SessionFallbackLevel {
+        case primary, renegotiate, activeOnly
+    }
+
+    /// Configura la sesión de audio. Las opciones .allowBluetoothA2DP y
+    /// .allowAirPlay (rawValue 32/96) son paramErr (-50) con la categoría
+    /// .playback en iOS 16.7.16: solo existen para .playAndRecord/.record.
+    /// La escalera `SessionFallbackLevel` reintenta con backoff
+    /// (0.15/0.3/0.6 s): [] ×3 → re-negociación (setActive(false) + [] ×3)
+    /// → activar sin setCategory.
+    ///
+    /// - Parameter allowAirPlay: DEPRECATED no-op. Con .playback las rutas
+    ///   A2DP/AirPlay van por defecto y la opción era paramErr; se conserva
+    ///   solo por compatibilidad de call sites y debe eliminarse en la
+    ///   próxima limpieza. (Swift no admite @available(*, deprecated) en un
+    ///   parámetro: la marca vive aquí, en el contrato.)
+    private func configureSession(allowAirPlay: Bool, level: SessionFallbackLevel = .primary, attempt: Int = 0) {
         let session = AVAudioSession.sharedInstance()
         
         // ✅ AUDIÓFILO: obtener el modo preferido de configuración
@@ -1101,43 +1118,58 @@ class AudioEngine: NSObject, ObservableObject {
         let sessionMode: AVAudioSession.Mode = (modeIndex == 1 && isWiredRoute) ? .measurement : .default
         
         do {
-            var options: AVAudioSession.CategoryOptions = [.allowBluetoothA2DP]
-            if allowAirPlay { options.insert(.allowAirPlay) }
-            // ✅ FIX -50: desactivar la sesión antes de cambiar la categoría.
-            // iOS rechaza setCategory con -50 si la sesión ya está activa en
-            // ciertos estados (p. ej., activada implícitamente por
-            // MPRemoteCommandCenter.shared() en init).
-            // ✅ LÍMITE: solo con reproducción parada. En reconfiguraciones en
-            // activo (modo de audio en Settings, reintentos) desactivar cortaría
-            // el audio y avisaría a otras apps (.notifyOthersOnDeactivation).
-            if !isPlaying {
-                do {
-                    try session.setActive(false, options: .notifyOthersOnDeactivation)
-                } catch {
-                    // No es un error: la sesión ya estaba inactiva.
-                    AppLog.debug(.playback, "configureSession: setActive(false) previo no aplicable (\(error.localizedDescription))")
+            // ✅ FIX -50: .allowBluetoothA2DP y .allowAirPlay solo son válidas
+            // para .playAndRecord/.record; con .playback las rutas de música
+            // (A2DP/AirPlay) van por defecto y especificarlas es paramErr
+            // (rawValue 96/32 del log del 2026-09-28). Evidencia: la opción 32
+            // falla TAMBIÉN con la sesión inactiva, y los AirPods Pro 3 se
+            // enrutan por A2DP sin ninguna opción aplicada.
+            // ✅ En todos los niveles con setCategory las opciones son []: el
+            // nivel 2 ya no usa .mixWithOthers (mezclar con otra música es
+            // inaceptable aquí) sino re-negociación; en .activeOnly no se
+            // intenta setCategory en absoluto (más abajo).
+            var options: AVAudioSession.CategoryOptions = []
+            if level != .activeOnly {
+                // ✅ FIX -50: desactivar la sesión antes de cambiar la categoría.
+                // iOS rechaza setCategory con -50 si la sesión ya está activa en
+                // ciertos estados (p. ej., activada implícitamente por
+                // MPRemoteCommandCenter.shared() en init).
+                // ✅ LÍMITE: solo con reproducción parada. En reconfiguraciones en
+                // activo (modo de audio en Settings, reintentos) desactivar cortaría
+                // el audio y avisaría a otras apps (.notifyOthersOnDeactivation).
+                // ✅ EXCEPCIÓN (.renegotiate): se fuerza setActive(false) aunque
+                // isPlaying — es la única forma de soltar la sesión que otra app
+                // pudo dejar retenida; el corte instantáneo es preferible a
+                // seguir sin sesión configurada (decisión documentada).
+                if !isPlaying || level == .renegotiate {
+                    do {
+                        try session.setActive(false, options: .notifyOthersOnDeactivation)
+                    } catch {
+                        // No es un error: la sesión ya estaba inactiva.
+                        AppLog.debug(.playback, "configureSession: setActive(false) previo no aplicable (\(error.localizedDescription))")
+                    }
                 }
-            }
-            AppLog.info(.playback, "configureSession: estado previo · categoría \(session.category.rawValue) · modo \(session.mode.rawValue)")
-            // ✅ FIX -50 determinista: etiquetar la llamada culpable en el log
-            // SIN perder el backoff: cada bloque específico loguea y RELANZA,
-            // y el catch externo sigue siendo quien dispara el reintento.
-            AppLog.info(.playback, "configureSession: intento · categoría .playback · modo \(sessionMode == .measurement ? "measurement" : "default") · opciones \(options)")
-            do {
-                try session.setCategory(
-                    .playback,
-                    mode: sessionMode,
-                    // ✅ MÁXIMA CALIDAD BT: SOLO perfiles de música (A2DP/AirPlay).
-                    // Quitado .allowBluetoothHFP: HFP es el perfil de llamadas (SCO,
-                    // mono 8/16kHz, mSBC/CVSD) — si lo permitimos y el A2DP falla o
-                    // tarda, iOS puede enrutar la música por HFP y suena comprimido.
-                    // Los controles del auricular (play/pausa/siguiente) siguen
-                    // funcionando por AVRCP sobre A2DP sin necesidad de HFP.
-                    options: options
-                )
-            } catch {
-                AppLog.error(.playback, error, context: "configureSession: setCategory")
-                throw error
+                AppLog.info(.playback, "configureSession: estado previo · categoría \(session.category.rawValue) · modo \(session.mode.rawValue)")
+                // ✅ FIX -50 determinista: etiquetar la llamada culpable en el log
+                // SIN perder el backoff: cada bloque específico loguea y RELANZA,
+                // y el catch externo sigue siendo quien dispara el reintento.
+                AppLog.info(.playback, "configureSession: intento · categoría .playback · modo \(sessionMode == .measurement ? "measurement" : "default") · opciones \(options)")
+                do {
+                    try session.setCategory(
+                        .playback,
+                        mode: sessionMode,
+                        // ✅ MÁXIMA CALIDAD BT: SOLO perfiles de música (A2DP/AirPlay).
+                        // Quitado .allowBluetoothHFP: HFP es el perfil de llamadas (SCO,
+                        // mono 8/16kHz, mSBC/CVSD) — si lo permitimos y el A2DP falla o
+                        // tarda, iOS puede enrutar la música por HFP y suena comprimido.
+                        // Los controles del auricular (play/pausa/siguiente) siguen
+                        // funcionando por AVRCP sobre A2DP sin necesidad de HFP.
+                        options: options
+                    )
+                } catch {
+                    AppLog.error(.playback, error, context: "configureSession: setCategory")
+                    throw error
+                }
             }
 
             // ✅ AUDIÓFILO (BT): en A2DP la latencia la impone el ENLACE
@@ -1216,8 +1248,39 @@ class AudioEngine: NSObject, ObservableObject {
             // (DAC/BT/altavoz) solo cuando el hardware no acepta el rate nativo.
             // ✅ La opción .notifyOthersOnDeactivation solo tiene efecto al
             // DESACTIVAR la sesión (abajo, en stop()); al activarla es inerte.
+            // ✅ FIX soloAmbient: si .primary y .renegotiate han fallado, la
+            // sesión conserva su categoría previa (.soloAmbient en cold start)
+            // y activarla así deja la app silenciable por el mute switch y sin
+            // audio en background — peor que no reproducir. Intento best-effort
+            // ANTES de activar: el `try?` es deliberado, red de seguridad y no
+            // reintento de la escalera (no reinicia el backoff).
+            if level == .activeOnly {
+                // ✅ EVIDENCIA: si el best-effort falla queremos ver el PORQUÉ
+                // (-50, interrupción de otra app…), no solo que falló. Sigue
+                // sin ser reintento: no toca la escalera ni el backoff.
+                do {
+                    try session.setCategory(.playback, mode: .default, options: [])
+                } catch {
+                    AppLog.error(.playback, error, context: "activeOnly: best-effort setCategory")
+                }
+            }
             do {
                 try session.setActive(true)
+                // ✅ EVIDENCIA setActive: confirmar que la activación no falla
+                // en silencio (el fallo ya se loguea con context "setActive").
+                // La categoría se INTERPOLA (no hardcodeada): en .activeOnly el
+                // best-effort puede no haber recuperado .playback.
+                AppLog.info(.playback, "setupSession: setActive OK · categoría \(session.category.rawValue) · opciones \(options)")
+                if level == .activeOnly {
+                    // ✅ El best-effort de arriba puede haber recuperado .playback:
+                    // `session.category` refleja el setCategory aunque no se haya
+                    // activado aún, así que este check post-activación es fiable.
+                    if session.category != .playback {
+                        AppLog.error(.playback, "setupSession: sesión activada con categoría \(session.category.rawValue) — mute switch puede silenciar")
+                    } else {
+                        AppLog.warning(.playback, "setupSession: nivel activeOnly; setCategory best-effort recuperó .playback")
+                    }
+                }
             } catch {
                 AppLog.error(.playback, error, context: "configureSession: setActive")
                 throw error
@@ -1233,20 +1296,33 @@ class AudioEngine: NSObject, ObservableObject {
             updateAudioQuality()
         } catch {
             AppLog.error(.playback, error, context: "setupSession")
-            // ✅ FIX -50 en cold start (audio server aún no listo en A11): un único
-            // reintento degradado NO bastaba — el server tarda más que ese segundo
-            // intento y ambos fallaban seguidos. Backoff exponencial 0.15/0.3/0.6 s
-            // y solo al agotar los 3 se degrada sin AirPlay (esa rama vuelve con
-            // attempt 0, así que reintenta por su cuenta).
+            // ✅ FIX -50 en cold start: un único reintento NO bastaba — el server
+            // tarda más que ese segundo intento y ambos fallaban seguidos.
+            // Backoff exponencial 0.15/0.3/0.6 s y solo al agotar los 3 se
+            // degrada de nivel (ese nivel vuelve con attempt 0, así que
+            // reintenta por su cuenta).
+            // ✅ FIX -50: escalera de degradado con niveles explícitos:
+            // .primary ([] ×3 con backoff) → .renegotiate (setActive(false) +
+            // [] ×3) → .activeOnly (activar sin setCategory, ×3).
             if attempt < 3 {
                 let delay = 0.15 * pow(2.0, Double(attempt))
                 AppLog.warning(.playback, String(format: "setupSession falló; reintento %d/3 en %.0f ms", attempt + 1, delay * 1000))
                 DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-                    self?.configureSession(allowAirPlay: allowAirPlay, didRetryDegraded: didRetryDegraded, attempt: attempt + 1)
+                    self?.configureSession(allowAirPlay: allowAirPlay, level: level, attempt: attempt + 1)
                 }
-            } else if allowAirPlay && !didRetryDegraded {
-                AppLog.warning(.playback, "setupSession: 3 reintentos agotados; degradando sin AirPlay")
-                configureSession(allowAirPlay: false, didRetryDegraded: true)
+            } else {
+                switch level {
+                case .primary:
+                    AppLog.warning(.playback, "setupSession: 3 reintentos agotados; re-negociando sesión (setActive(false) + reintento)")
+                    configureSession(allowAirPlay: allowAirPlay, level: .renegotiate, attempt: 0)
+                case .renegotiate:
+                    // ✅ Última línea: la sesión conserva su categoría vigente (el
+                    // sistema asigna la del proceso) y solo se intenta activar.
+                    AppLog.warning(.playback, "setupSession: 3 reintentos agotados; activando sin setCategory")
+                    configureSession(allowAirPlay: allowAirPlay, level: .activeOnly, attempt: 0)
+                case .activeOnly:
+                    AppLog.warning(.playback, "setupSession: activación sin setCategory agotada; la sesión queda sin configurar")
+                }
             }
         }
     }

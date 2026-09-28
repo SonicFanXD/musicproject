@@ -456,6 +456,8 @@ final class Localization: ObservableObject {
         "nowPlaying.viewQueue": [.spanish: "Ver cola de reproducción", .english: "View play queue"],
         "nowPlaying.shareSong": [.spanish: "Compartir canción", .english: "Share song"],
         "common.ok": [.spanish: "OK", .english: "OK"],
+        // ✅ AURORA DESIGN: etiqueta VoiceOver del chevron de cierre de sheets.
+        "design.close": [.spanish: "Cerrar", .english: "Close"],
 
         // Presets de EQ
         "eq.flat": [.spanish: "Plano", .english: "Flat"],

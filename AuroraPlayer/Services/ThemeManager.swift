@@ -57,36 +57,63 @@ final class ThemeManager: ObservableObject {
     }
 
     /// Resuelve y publica el color dominante de la portada de una canción.
+    /// ✅ FIX main-thread: TODO el acceso a `song.artwork` va en background.
+    /// Es un cache miss que puede tocar disco (Data(contentsOf:) + UIImage,
+    /// ~5-20 ms en el A11) y caía EN el hilo principal justo al cambiar de
+    /// canción (didSet de currentSong → updateArtworkAccent): lag perceptible
+    /// al pulsar "siguiente" o abrir letras. Song es struct y `artwork` es
+    // computada sobre NSCache thread-safe + lectura de disco, así que el
+    // acceso concurrente es seguro (peor caso: decode duplicado, sin corrupción).
     private func resolveArtworkAccent(from song: Song?) {
-        guard let song, let artwork = song.artwork else {
+        guard let song else {
             artworkAccentColor = nil
             artworkAccentUIColor = nil
             artworkSecondaryColor = nil
             artworkSecondaryUIColor = nil
             return
         }
-        // ✅ PUNTO ÚNICO: primario y secundario salen del MISMO par resuelto
-        // (una sola pasada de clustering) y se cachean JUNTOS bajo la huella
-        // de la imagen. Ni la lectura ni las claves dependen del id de la
-        // canción: la misma carátula comparte sus colores en toda la app.
-        if let cached = AppTheme.cachedAccentPair(for: artwork) {
-            artworkAccentUIColor = cached.primary
-            artworkAccentColor = Self.normalizeArtworkAccent(cached.primary)
-            if let secondary = cached.secondary {
-                artworkSecondaryUIColor = secondary
-                artworkSecondaryColor = Self.normalizeArtworkAccent(secondary)
-                AppLog.info(.playback, "✅ PALETA DOS COLORES: secundario encontrado (cache)")
-            } else {
-                AppLog.info(.playback, "⚠️ PALETA DOS COLORES: sin secundario (cache)")
-            }
-            applyGlobalUIKitTint()
-            return
-        }
+        // Captura local del struct: evita releer la propiedad a través de self
+        // desde el closure en background.
+        let capturedSong = song
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self else { return }
+            guard let artwork = capturedSong.artwork else {
+                // ✅ Sin portada: publicar nil en main (los @Published solo se
+                // tocan desde el hilo principal). El guard respeta que el toggle
+                // pudo apagarse mientras volaba esta resolución.
+                DispatchQueue.main.async {
+                    guard self.accentFromArtwork else { return }
+                    self.artworkAccentColor = nil
+                    self.artworkAccentUIColor = nil
+                    self.artworkSecondaryColor = nil
+                    self.artworkSecondaryUIColor = nil
+                }
+                return
+            }
+            // ✅ PUNTO ÚNICO: primario y secundario salen del MISMO par resuelto
+            // (una sola pasada de clustering) y se cachean JUNTOS bajo la huella
+            // de la imagen. Ni la lectura ni las claves dependen del id de la
+            // canción: la misma carátula comparte sus colores en toda la app.
+            if let cached = AppTheme.cachedAccentPair(for: artwork) {
+                DispatchQueue.main.async {
+                    guard self.accentFromArtwork else { return }
+                    self.artworkAccentUIColor = cached.primary
+                    self.artworkAccentColor = Self.normalizeArtworkAccent(cached.primary)
+                    if let secondary = cached.secondary {
+                        self.artworkSecondaryUIColor = secondary
+                        self.artworkSecondaryColor = Self.normalizeArtworkAccent(secondary)
+                        AppLog.info(.playback, "✅ PALETA DOS COLORES: secundario encontrado (cache)")
+                    } else {
+                        AppLog.info(.playback, "⚠️ PALETA DOS COLORES: sin secundario (cache)")
+                    }
+                    self.applyGlobalUIKitTint()
+                }
+                return
+            }
             guard let pair = AppTheme.resolvedAccentPair(from: artwork) else { return }
             AppTheme.cacheAccentPair(pair, for: artwork)
             DispatchQueue.main.async {
-                guard let self, self.accentFromArtwork else { return }
+                guard self.accentFromArtwork else { return }
                 self.artworkAccentUIColor = pair.primary
                 self.artworkAccentColor = Self.normalizeArtworkAccent(pair.primary)
                 if let secondary = pair.secondary {

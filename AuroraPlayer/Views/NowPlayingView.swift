@@ -994,7 +994,13 @@ private struct ProgressScrubView: View {
             // indicador circular "botara" cada vez que el reloj (0.3s) movía
             // el progreso. Ahora: easing lineal suave para el avance normal
             // del reloj + spring SOLO para el cambio de tamaño al arrastrar.
-            .animation(.linear(duration: 0.25), value: progress)
+            // ✅ FIX scrub: durante el arrastre `progress` se actualiza a 60 fps
+            // desde `scrubPreviewTime` y animarlo con 0.25 s lineales ponía la
+            // barra ~0.25 s por detrás del dedo (más lento cuanto más rápido se
+            // arrastra). Con isScrubbing el cambio se aplica SIN animación →
+            // seguimiento 1:1; al soltar, el spring del siguiente .animation
+            // sigue animando el indicador y el ensanchado como hasta ahora.
+            .animation(isScrubbing ? nil : .linear(duration: 0.25), value: progress)
             .animation(.spring(response: 0.3, dampingFraction: 0.8), value: isScrubbing)
             .gesture(
                 DragGesture(minimumDistance: 0)
