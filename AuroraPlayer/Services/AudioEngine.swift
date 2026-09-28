@@ -1103,6 +1103,22 @@ class AudioEngine: NSObject, ObservableObject {
         do {
             var options: AVAudioSession.CategoryOptions = [.allowBluetoothA2DP]
             if allowAirPlay { options.insert(.allowAirPlay) }
+            // ✅ FIX -50: desactivar la sesión antes de cambiar la categoría.
+            // iOS rechaza setCategory con -50 si la sesión ya está activa en
+            // ciertos estados (p. ej., activada implícitamente por
+            // MPRemoteCommandCenter.shared() en init).
+            // ✅ LÍMITE: solo con reproducción parada. En reconfiguraciones en
+            // activo (modo de audio en Settings, reintentos) desactivar cortaría
+            // el audio y avisaría a otras apps (.notifyOthersOnDeactivation).
+            if !isPlaying {
+                do {
+                    try session.setActive(false, options: .notifyOthersOnDeactivation)
+                } catch {
+                    // No es un error: la sesión ya estaba inactiva.
+                    AppLog.debug(.playback, "configureSession: setActive(false) previo no aplicable (\(error.localizedDescription))")
+                }
+            }
+            AppLog.info(.playback, "configureSession: estado previo · categoría \(session.category.rawValue) · modo \(session.mode.rawValue)")
             // ✅ FIX -50 determinista: etiquetar la llamada culpable en el log
             // SIN perder el backoff: cada bloque específico loguea y RELANZA,
             // y el catch externo sigue siendo quien dispara el reintento.
