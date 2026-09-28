@@ -718,7 +718,15 @@ class AudioEngine: NSObject, ObservableObject {
         // ✅ Crossfade eliminado: limpiar preferencias obsoletas
         UserDefaults.standard.removeObject(forKey: "com.aurora.crossfadeEnabled")
         UserDefaults.standard.removeObject(forKey: "com.aurora.crossfadeDuration")
-        setupSession()
+        // ✅ FIX -50 en cold start: setCategory falla durante el launch
+        // (audio server aún no listo). Se difiere hasta didBecomeActive,
+        // que dispara justo después con el sistema ya estabilizado.
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(configureSessionOnActivation),
+            name: UIApplication.didBecomeActiveNotification,
+            object: nil
+        )
         setupEngine()
         setupEqualizer()
         observeRouteChanges()
@@ -1052,6 +1060,18 @@ class AudioEngine: NSObject, ObservableObject {
         }
     }
 
+    // ✅ FIX -50 en cold start: solo la primera activación de cada ciclo de
+    // vida; los cambios de ruta ya reconfiguran por su cuenta.
+    private var hasConfiguredSessionOnActivation = false
+
+    @objc private func configureSessionOnActivation() {
+        guard !hasConfiguredSessionOnActivation else { return }
+        hasConfiguredSessionOnActivation = true
+        setupSession()
+    }
+
+    // ✅ FIX -50 en cold start: se invoca desde didBecomeActive
+    // (configureSessionOnActivation), no desde init().
     private func setupSession() {
         configureSession(allowAirPlay: true, didRetryDegraded: false)
     }
@@ -1086,6 +1106,7 @@ class AudioEngine: NSObject, ObservableObject {
             // ✅ FIX -50 determinista: etiquetar la llamada culpable en el log
             // SIN perder el backoff: cada bloque específico loguea y RELANZA,
             // y el catch externo sigue siendo quien dispara el reintento.
+            AppLog.info(.playback, "configureSession: intento · categoría .playback · modo \(sessionMode == .measurement ? "measurement" : "default") · opciones \(options)")
             do {
                 try session.setCategory(
                     .playback,
@@ -3178,11 +3199,11 @@ class AudioEngine: NSObject, ObservableObject {
             }
         }
 
-        // ✅ FIX drift persistente: si el desfase supera 500 ms y no se ha
+        // ✅ FIX drift persistente: si el desfase supera 150 ms y no se ha
         // corregido en los últimos 5 s, re-anclar el reloj de pared a la
         // posición audible del nodo. Corrige el drift que sobrevive a cambios
         // de ruta sin re-anclaje, sin esperar al siguiente anclaje natural.
-        if abs(drift) > 0.5,
+        if abs(drift) > 0.15,
            CACurrentMediaTime() - clockDriftLastCorrectionTime > 5 {
             clockDriftLastCorrectionTime = CACurrentMediaTime()
             posAnchor = audible
