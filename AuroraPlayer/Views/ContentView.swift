@@ -342,8 +342,11 @@ struct ContentView: View {
                             .padding(.horizontal, 18)
                             .padding(.vertical, 10)
                             .background {
+                                // ✅ AURORA DESIGN: primer uso del vidrio del sistema en
+                                // esta vista (`auroraGlass()`): mismo Shape y tamaño, pero
+                                // reactivo a "Reducir transparencia".
                                 Capsule()
-                                    .fill(AnyShapeStyle(.ultraThinMaterial))
+                                    .auroraGlass()
                                     .shadow(color: .black.opacity(0.1), radius: 8, y: 4)
                             }
                             .padding(.bottom, 80)

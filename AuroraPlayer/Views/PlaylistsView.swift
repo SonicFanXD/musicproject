@@ -74,8 +74,11 @@ struct PlaylistsView: View {
         VStack(spacing: 16) {
             ZStack {
                 // ✅ Círculo con material de vidrio (estilo NowPlayingView)
+                // ✅ AURORA DESIGN: primer uso del vidrio del sistema en esta vista
+                // (`auroraGlass()`): mismo Shape y tamaño, reactivo a "Reducir
+                // transparencia".
                 Circle()
-                    .fill(AnyShapeStyle(.ultraThinMaterial))
+                    .auroraGlass()
                     .frame(width: 88, height: 88)
                     .overlay {
                         Circle()

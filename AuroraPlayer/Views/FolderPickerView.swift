@@ -90,8 +90,11 @@ struct FolderPickerView: View {
                     .scaleEffect(headerPulse ? 1.12 : 0.95)
                     .opacity(headerPulse ? 0.6 : 0.25)
 
+                // ✅ AURORA DESIGN: primer uso del vidrio del sistema en esta vista
+                // (`auroraGlass()`): mismo Shape y mismo tamaño, pero reactivo a
+                // "Reducir transparencia".
                 Circle()
-                    .fill(AnyShapeStyle(.ultraThinMaterial))
+                    .auroraGlass()
                     .frame(width: 76, height: 76)
                     .overlay {
                         Circle()
@@ -128,7 +131,7 @@ struct FolderPickerView: View {
         .padding(.vertical, 20)
         .background {
             RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .fill(AnyShapeStyle(.ultraThinMaterial))
+                .auroraGlass()
                 .shadow(color: .black.opacity(0.06), radius: 12, y: 5)
         }
         .animation(.easeOut(duration: 0.5).delay(0.1), value: appearAnimation)
@@ -173,7 +176,7 @@ struct FolderPickerView: View {
                 .padding(.vertical, 16) // Expanded touch target
                 .background {
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(.ultraThinMaterial)
+                        .auroraGlass()
                 }
                 .contentShape(Rectangle())
             }
@@ -214,7 +217,7 @@ struct FolderPickerView: View {
                 .padding(.vertical, 16) // Expanded touch target
                 .background {
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(.ultraThinMaterial)
+                        .auroraGlass()
                 }
                 .contentShape(Rectangle())
             }
@@ -254,7 +257,7 @@ struct FolderPickerView: View {
                 .padding(.vertical, 16) // Expanded touch target
                 .background {
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(.ultraThinMaterial)
+                        .auroraGlass()
                 }
                 .contentShape(Rectangle())
             }
@@ -281,7 +284,7 @@ struct FolderPickerView: View {
             .padding(.vertical, 12)
             .background {
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(.ultraThinMaterial)
+                    .auroraGlass()
             }
         }
     }
@@ -346,7 +349,7 @@ struct FolderPickerView: View {
                     }
                     .background {
                         RoundedRectangle(cornerRadius: 18, style: .continuous)
-                            .fill(AnyShapeStyle(.ultraThinMaterial))
+                            .auroraGlass()
                     }
                 }
             }
@@ -408,7 +411,7 @@ struct FolderPickerView: View {
                     }
                     .background {
                         RoundedRectangle(cornerRadius: 18, style: .continuous)
-                            .fill(AnyShapeStyle(.ultraThinMaterial))
+                            .auroraGlass()
                     }
                 }
             }
@@ -442,7 +445,7 @@ struct FolderPickerView: View {
                 .padding(.vertical, 30)
                 .background {
                     RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .fill(.ultraThinMaterial)
+                        .auroraGlass()
                 }
             }
         }

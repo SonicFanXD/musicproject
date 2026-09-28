@@ -151,7 +151,10 @@ struct PlayerBar: View {
                                 .foregroundStyle(fileAccessService.isLiked(song) ? .red : .secondary)
                                 .frame(width: 38, height: 38)
                                 .background {
-                                    Circle().fill(AnyShapeStyle(.ultraThinMaterial))
+                                    // ✅ AURORA DESIGN: primer uso del vidrio del sistema
+                                    // en esta vista (`auroraGlass()`): mismo Shape y tamaño,
+                                    // reactivo a "Reducir transparencia".
+                                    Circle().auroraGlass()
                                         .frame(width: 38, height: 38)
                                 }
                                 .contentShape(Circle())
@@ -170,7 +173,7 @@ struct PlayerBar: View {
                                     .foregroundStyle(.primary)
                                     .frame(width: 42, height: 42)
                                     .background {
-                                        Circle().fill(AnyShapeStyle(.ultraThinMaterial))
+                                        Circle().auroraGlass()
                                     }
                                     .contentShape(Circle())
                                     .scaleEffect(playButtonScale)
@@ -238,7 +241,7 @@ struct PlayerBar: View {
                                     .foregroundStyle(.primary)
                                     .frame(width: 42, height: 42)
                                     .background {
-                                        Circle().fill(AnyShapeStyle(.ultraThinMaterial))
+                                        Circle().auroraGlass()
                                     }
                                     .contentShape(Circle())
                             }
@@ -265,7 +268,7 @@ struct PlayerBar: View {
                 .background {
                     // ✅ Esquinas muy redondeadas (34pt) con material premium (estilo NowPlayingView)
                     RoundedRectangle(cornerRadius: 34, style: .continuous)
-                        .fill(AnyShapeStyle(.ultraThinMaterial))
+                        .auroraGlass()
                         .shadow(color: .black.opacity(0.18), radius: 20, x: 0, y: 8)
                     // Borde sutil superior para profundidad
                     RoundedRectangle(cornerRadius: 34, style: .continuous)

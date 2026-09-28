@@ -134,8 +134,11 @@ struct EqualizerView: View {
             }
             .padding(18)
             .background {
+                // ✅ AURORA DESIGN: primer uso del vidrio del sistema en esta vista
+                // (`auroraGlass()`): mismo Shape y tamaño, reactivo a "Reducir
+                // transparencia".
                 RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .fill(.ultraThinMaterial)
+                    .auroraGlass()
             }
         }
     }

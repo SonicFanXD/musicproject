@@ -258,8 +258,11 @@ struct LogsView: View {
         .frame(maxWidth: .infinity)
         .padding(.vertical, 10)
         .background {
+            // ✅ AURORA DESIGN: primer uso del vidrio del sistema en esta vista
+            // (`auroraGlass()`): mismo Shape y tamaño, reactivo a "Reducir
+            // transparencia".
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(.ultraThinMaterial)
+                .auroraGlass()
         }
     }
 
@@ -323,7 +326,7 @@ struct LogsView: View {
                 // el material, con una transición suave de 0,22 s.
                 .background {
                     ZStack {
-                        Capsule().fill(AnyShapeStyle(.ultraThinMaterial))
+                        Capsule().auroraGlass()
 
                         Capsule()
                             .fill(textSafeAccentGradient())
@@ -460,7 +463,7 @@ struct LogsView: View {
         .padding(.vertical, 12)
         .background {
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(AnyShapeStyle(.ultraThinMaterial))
+                .auroraGlass()
         }
         // ✅ Raya lateral de categoría: jerarquía visual instantánea
         .overlay(alignment: .leading) {
