@@ -265,13 +265,19 @@ struct PlayerBar: View {
                         onOpenNowPlaying: { openNowPlaying() }
                     )
                 }
-                .background {
-                    // ✅ Esquinas muy redondeadas (34pt) con material premium (estilo NowPlayingView)
-                    RoundedRectangle(cornerRadius: 34, style: .continuous)
-                        .auroraGlass()
-                        .shadow(color: .black.opacity(0.18), radius: 20, x: 0, y: 8)
+                // ✅ AURORA DESIGN: el contenedor nivel 1 de la app usa ya la card del
+                // sistema. Coincidencia EXACTA, no cambia nada: radio 34 =
+                // AuroraRadius.xxl y sombra 0.18/20/8 = AuroraShadow.medium. Va con
+                // `withBorder: false` porque su borde es propio (gradiente de TRES
+                // paradas blanco 0.15 → 0.03 → clear, que el borde estándar del
+                // sistema no reproduce): se conserva como overlay DESPUÉS del card.
+                // `auroraCard` añade clipShape (radio 34): verificado que ningún
+                // contenido cae en las esquinas recortadas (el artwork empieza en
+                // 14/12pt y la barra de progreso queda a 18pt de los bordes).
+                .auroraCard(radius: AuroraRadius.xxl, style: .glass, withBorder: false, withShadow: true)
+                .overlay {
                     // Borde sutil superior para profundidad
-                    RoundedRectangle(cornerRadius: 34, style: .continuous)
+                    RoundedRectangle(cornerRadius: AuroraRadius.xxl, style: .continuous)
                         .strokeBorder(
                             LinearGradient(
                                 colors: [.white.opacity(0.15), .white.opacity(0.03), .clear],

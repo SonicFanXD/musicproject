@@ -129,11 +129,12 @@ struct FolderPickerView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 20)
-        .background {
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .auroraGlass()
-                .shadow(color: .black.opacity(0.06), radius: 12, y: 5)
-        }
+        // ✅ AURORA DESIGN: los contenedores de este sheet pasan a ser cards del
+        // sistema (mismo vidrio reactivo, radio y sombra unificados). Este header:
+        // radio 24 original → .xl (28, +4pt) por jerarquía del sistema (card
+        // destacada/hero) y sombra 0.06/12/5 ≈ AuroraShadow.soft (0.06/10/4).
+        // Borde SÍ: no tenía y el sistema lo pone en sus glass cards.
+        .auroraCard(radius: AuroraRadius.xl, style: .glass, withBorder: true, withShadow: true)
         .animation(.easeOut(duration: 0.5).delay(0.1), value: appearAnimation)
     }
 
@@ -282,10 +283,10 @@ struct FolderPickerView: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
-            .background {
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .auroraGlass()
-            }
+            // ✅ AURORA DESIGN: card "Escaneando" → card del sistema, radio .md
+            // (18, +2pt desde 16 por consistencia con las listas vecinas) y sin
+            // sombra (no tenía).
+            .auroraCard(radius: AuroraRadius.md, style: .glass, withBorder: true, withShadow: false)
         }
     }
 
@@ -347,10 +348,12 @@ struct FolderPickerView: View {
                             }
                         }
                     }
-                    .background {
-                        RoundedRectangle(cornerRadius: 18, style: .continuous)
-                            .auroraGlass()
-                    }
+                    // ✅ AURORA DESIGN: contenedor de lista → card del sistema,
+                    // radio .md exacto (18) y sin sombra (no tenía). OJO: las filas
+                    // de dentro son full-bleed con radio 14, así que el clipShape
+                    // del card les redondea las esquinas extremas a 18 y el borde
+                    // pasa a ir por encima de su filo.
+                    .auroraCard(radius: AuroraRadius.md, style: .glass, withBorder: true, withShadow: false)
                 }
             }
 
@@ -409,10 +412,12 @@ struct FolderPickerView: View {
                             }
                         }
                     }
-                    .background {
-                        RoundedRectangle(cornerRadius: 18, style: .continuous)
-                            .auroraGlass()
-                    }
+                    // ✅ AURORA DESIGN: contenedor de lista → card del sistema,
+                    // radio .md exacto (18) y sin sombra (no tenía). OJO: las filas
+                    // de dentro son full-bleed con radio 14, así que el clipShape
+                    // del card les redondea las esquinas extremas a 18 y el borde
+                    // pasa a ir por encima de su filo.
+                    .auroraCard(radius: AuroraRadius.md, style: .glass, withBorder: true, withShadow: false)
                 }
             }
 
@@ -443,10 +448,9 @@ struct FolderPickerView: View {
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 30)
-                .background {
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .auroraGlass()
-                }
+                // ✅ AURORA DESIGN: estado vacío → card del sistema, radio .md
+                // exacto (18) y sin sombra (no tenía).
+                .auroraCard(radius: AuroraRadius.md, style: .glass, withBorder: true, withShadow: false)
             }
         }
     }

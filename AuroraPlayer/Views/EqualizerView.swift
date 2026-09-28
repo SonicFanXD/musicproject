@@ -133,13 +133,10 @@ struct EqualizerView: View {
                 }
             }
             .padding(18)
-            .background {
-                // ✅ AURORA DESIGN: primer uso del vidrio del sistema en esta vista
-                // (`auroraGlass()`): mismo Shape y tamaño, reactivo a "Reducir
-                // transparencia".
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .auroraGlass()
-            }
+            // ✅ AURORA DESIGN: panel de bandas → card del sistema. Radio .lg (22,
+            // +2pt desde el 20 original: el token más cercano) y sin sombra (no
+            // tenía). Vidrio reactivo a "Reducir transparencia".
+            .auroraCard(radius: AuroraRadius.lg, style: .glass, withBorder: true, withShadow: false)
         }
     }
 

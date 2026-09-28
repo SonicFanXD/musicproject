@@ -257,13 +257,9 @@ struct LogsView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 10)
-        .background {
-            // ✅ AURORA DESIGN: primer uso del vidrio del sistema en esta vista
-            // (`auroraGlass()`): mismo Shape y tamaño, reactivo a "Reducir
-            // transparencia".
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .auroraGlass()
-        }
+        // ✅ AURORA DESIGN: stat card → card del sistema, radio .sm exacto (14) y
+        // sin sombra (no tenía). Vidrio reactivo a "Reducir transparencia".
+        .auroraCard(radius: AuroraRadius.sm, style: .glass, withBorder: true, withShadow: false)
     }
 
     // MARK: - Category Filter
@@ -326,6 +322,7 @@ struct LogsView: View {
                 // el material, con una transición suave de 0,22 s.
                 .background {
                     ZStack {
+                        // ✅ AURORA DESIGN: vidrio del sistema (reactivo a "Reducir transparencia").
                         Capsule().auroraGlass()
 
                         Capsule()
@@ -461,10 +458,12 @@ struct LogsView: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
-        .background {
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .auroraGlass()
-        }
+        // ✅ AURORA DESIGN: fila de lista larga (LazyVStack) → superficie FLAT del
+        // sistema: cero blur por fila al scrollear en el A11 (cada material es un
+        // pase offscreen por frame). Radio .md (18, +2pt desde el 16 original) para
+        // alinearse con las filas del resto de la app; el texto sobre gris plano se
+        // lee mejor. El stat card de arriba sigue en glass (ahí sí hay vidrio).
+        .auroraCard(radius: AuroraRadius.md, style: .flat, withShadow: false)
         // ✅ Raya lateral de categoría: jerarquía visual instantánea
         .overlay(alignment: .leading) {
             Capsule()

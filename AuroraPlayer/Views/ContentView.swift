@@ -910,7 +910,10 @@ struct ContentView: View {
                         } label: {
                             playlistLibraryCard(playlist: playlist)
                         }
-                        .buttonStyle(.plain)
+                        // ✅ AURORA DESIGN: feedback de presión del sistema, el mismo
+                        // caso que ArtistAlbumCard. Sigue siendo un NavigationLink
+                        // normal: el ButtonStyle solo dibuja el label.
+                        .buttonStyle(PressableButtonStyle(scale: AuroraPressScale.chip))
                     }
                 }
                 .padding(.horizontal, 20)
