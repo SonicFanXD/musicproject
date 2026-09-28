@@ -1,6 +1,22 @@
 import SwiftUI
 import CoreImage
 
+// MARK: - Métricas del hero de detalle (Album / Artist)
+/// ✅ FIX FRANJA SUPERIOR: alto de la franja que ocupan el status bar + la
+/// navigation bar, que el fondo del hero debe tapar cuando el ScrollView ya no
+/// aporta ese inset. Se resuelve UNA vez por proceso (lectura de window, mismo
+/// patrón que FPSCounter) y NO en el body: el body del detalle se reevalúa en
+/// cada tick de scroll y ahí no puede haber una consulta a UIKit.
+/// En portrait es exacto (20+44 en iPhone 8 Plus; 44+44 con notch). En landscape
+/// la barra mide 44 y el valor queda algo alto: diferencia solo estética.
+enum DetailHeroMetrics {
+    static let topSafeInset: CGFloat = {
+        let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene
+        let inset = scene?.windows.first(where: { $0.isKeyWindow })?.safeAreaInsets.top ?? 0
+        return inset > 0 ? inset : 64
+    }()
+}
+
 // MARK: - Acento de las vistas de detalle (SIEMPRE de DOS colores)
 /// ✅ Regla única para Album/Artist detail:
 /// · Con "Acento desde portada" ACTIVO → color de ESTA carátula (álbum o
@@ -222,6 +238,11 @@ struct AlbumDetailView: View {
             if abs(offset - scrollOffset) > 1 { scrollOffset = offset }
         }
         .background(AppBackground().ignoresSafeArea())
+        // ✅ FIX FRANJA SUPERIOR: el ScrollView recortaba su contenido a su marco,
+        // que empieza por debajo del status bar + nav bar, así que el hero no
+        // podía pintar ahí y se veía el fondo de la app (negro arriba en oscuro).
+        // Con esto el contenido puede llegar a y=0: la franja se la come el hero.
+        .ignoresSafeArea(edges: .top)
         .navigationBarTitleDisplayMode(.inline)
         // ✅ BARRERA EMERGENTE (estilo Apple Music): el título aparece solo
         // cuando el hero ya casi salió de pantalla. Solo opacidad, sin recalculos.
@@ -358,6 +379,11 @@ struct AlbumDetailView: View {
             .opacity(appearAnimation ? 1.0 : 0)
             .animation(.easeOut(duration: 0.5).delay(0.15), value: appearAnimation)
         }
+        // ✅ FIX FRANJA SUPERIOR: el contenido del hero vuelve a su sitio (el
+        // ScrollView ya no aporta el inset, lo aporta aquí) y el fondo —que cuelga
+        // de ESTE frame con alignment .top— crece esos mismos puntos hacia
+        // arriba, hasta el borde de la pantalla. El contenido no se mueve.
+        .padding(.top, DetailHeroMetrics.topSafeInset)
         .frame(maxWidth: .infinity).padding(.bottom, 4)
         .background(alignment: .top) {
             GeometryReader { geometry in
@@ -386,6 +412,22 @@ struct AlbumDetailView: View {
                 // opacidad — no se recalcula ni el blur ni ningún material.
                 .scaleEffect(1 + detailHeroProgress(for: scrollOffset) * 0.14)
                 .opacity(1 - detailHeroProgress(for: scrollOffset) * 0.55)
+                // ✅ FIX CORTE DEL GRADIENTE: la capa terminaba en un borde duro
+                // (height + 80) contra el fondo de la app. El último tramo se
+                // desvanece a transparente justo donde acaba la capa, así que el
+                // hero se funde con el contenido en vez de cortarse. El mask va
+                // ANTES del .drawingGroup(): el fundido se cuece en la misma
+                // textura cacheada y no cuesta nada por frame en A11.
+                .mask(
+                    LinearGradient(
+                        stops: [
+                            .init(color: .black, location: 0),
+                            .init(color: .black, location: geometry.size.height / (geometry.size.height + 80)),
+                            .init(color: .clear, location: 1)
+                        ],
+                        startPoint: .top, endPoint: .bottom
+                    )
+                )
                 .clipped().ignoresSafeArea(edges: .top)
                 .drawingGroup() // ? Optimizaci�n GPU para 60fps
             }
@@ -824,6 +866,11 @@ struct ArtistDetailView: View {
             if abs(offset - scrollOffset) > 1 { scrollOffset = offset }
         }
         .background(AppBackground().ignoresSafeArea())
+        // ✅ FIX FRANJA SUPERIOR: el ScrollView recortaba su contenido a su marco,
+        // que empieza por debajo del status bar + nav bar, así que el hero no
+        // podía pintar ahí y se veía el fondo de la app (negro arriba en oscuro).
+        // Con esto el contenido puede llegar a y=0: la franja se la come el hero.
+        .ignoresSafeArea(edges: .top)
         .navigationBarTitleDisplayMode(.inline)
         // ✅ Barra emergente con el nombre del artista (mismo criterio que Album).
         .toolbar {
@@ -927,6 +974,11 @@ struct ArtistDetailView: View {
             .opacity(appearAnimation ? 1.0 : 0)
             .animation(.easeOut(duration: 0.5).delay(0.1), value: appearAnimation)
         }
+        // ✅ FIX FRANJA SUPERIOR: el contenido del hero vuelve a su sitio (el
+        // ScrollView ya no aporta el inset, lo aporta aquí) y el fondo —que cuelga
+        // de ESTE frame con alignment .top— crece esos mismos puntos hacia
+        // arriba, hasta el borde de la pantalla. El contenido no se mueve.
+        .padding(.top, DetailHeroMetrics.topSafeInset)
         .frame(maxWidth: .infinity).padding(.bottom, 4)
         .background(alignment: .top) {
             GeometryReader { geometry in
@@ -955,6 +1007,22 @@ struct ArtistDetailView: View {
                 // opacidad — no se recalcula ni el blur ni ningún material.
                 .scaleEffect(1 + detailHeroProgress(for: scrollOffset) * 0.14)
                 .opacity(1 - detailHeroProgress(for: scrollOffset) * 0.55)
+                // ✅ FIX CORTE DEL GRADIENTE: la capa terminaba en un borde duro
+                // (height + 80) contra el fondo de la app. El último tramo se
+                // desvanece a transparente justo donde acaba la capa, así que el
+                // hero se funde con el contenido en vez de cortarse. El mask va
+                // ANTES del .drawingGroup(): el fundido se cuece en la misma
+                // textura cacheada y no cuesta nada por frame en A11.
+                .mask(
+                    LinearGradient(
+                        stops: [
+                            .init(color: .black, location: 0),
+                            .init(color: .black, location: geometry.size.height / (geometry.size.height + 80)),
+                            .init(color: .clear, location: 1)
+                        ],
+                        startPoint: .top, endPoint: .bottom
+                    )
+                )
                 .clipped().ignoresSafeArea(edges: .top)
                 .drawingGroup() // ? Optimizaci�n GPU para 60fps
             }

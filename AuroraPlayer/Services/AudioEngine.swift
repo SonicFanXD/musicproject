@@ -67,6 +67,13 @@ class AudioEngine: NSObject, ObservableObject {
     // ✅ Tipo de salida (idioma-independiente): la detección por nombre
     // localizado ("Altavoz") fallaba fuera de español. Ahora usamos portType.
     @Published var outputPortType: String = ""
+    // ✅ FIX PERFIL BT DECLARADO: "A2DP" / "HFP" / "LE" / "" según el portType
+    // REAL de la salida. HFP = SCO (manos libres, mono, calidad de llamada): la
+    // música suena degradada y hasta ahora no había ni log ni UI que lo dijeran.
+    @Published var bluetoothProfile: String = ""
+    // Último perfil ya registrado en el log (privado, NO publicado): existe solo
+    // para loguear la TRANSICIÓN, no en cada refresco de telemetría.
+    private var lastLoggedBluetoothProfile: String?
     // ✅ Modelo real del dispositivo (ej. "iPhone 13 Pro") en vez de "iPhone".
     @Published var deviceModelName: String = AudioEngine.resolveDeviceModel()
 
@@ -102,6 +109,7 @@ class AudioEngine: NSObject, ObservableObject {
         case fallbackPlayer
         case unknownSourceRate
         case resampling(source: Double, output: Double)
+        case systemMonoAudio
         case eqOrMono
         case limiter
         case nonWiredRoute
@@ -376,20 +384,23 @@ class AudioEngine: NSObject, ObservableObject {
         }
 
         let fmt = file.processingFormat
-        // ✅ REMUESTREO HI-RES: el nodo rinde SIEMPRE al formato de conexión
-        // (tasa de hardware). Dos archivos con la MISMA tasa nativa comparten
-        // formato de nodo aunque el hardware esté en otra tasa, así que el
-        // guard compara el formato de RENDER (file.processingFormat) contra la
-        // identidad de conexión (connectedFormatKey es la del hardware) vía
-        // sampleRate de ambos: como el render ya es la tasa nativa del archivo
-        // y la conexión es fija, esta comparación es la identidad REAL de
-        // compatibilidad del encadenado.
-        guard connectedFormatKey == nil || (fmt.sampleRate > 0 && fmt.sampleRate == sampleRate) else {
-            // ✅ DIAGNÓSTICO GAPLESS (evidencia en dispositivo): si esta línea
-            // aparece en los logs justo antes de un punto de unión, el hueco
-            // audible es un cambio de formato REAL entre pistas, no un fallo
-            // del encadenado. Sin log, ese caso era indistinguible de un bug.
-            AppLog.warning(.playback, "Gapless: '\(song.displayName)' NO se encadena (formato \(Int(fmt.sampleRate)) Hz/\(fmt.channelCount)ch ≠ graph \(connectedFormatKey ?? "—"))")
+        // ✅ FIX GAPLESS ENTRE TASAS NATIVAS DISTINTAS: el guard comparaba la tasa
+        // del archivo siguiente contra la de la canción EN CURSO (`sampleRate`),
+        // y esa no es la referencia: el nodo rinde SIEMPRE al formato de conexión
+        // y el SRC del mixer convierte lo que llegue (así suena hoy un 96 kHz
+        // sobre un grafo de 48 kHz). Dos archivos de tasa distinta acaban en ese
+        // mismo SRC, así que se encadenan igual. Lo que sí impide encadenar es un
+        // formato que el mixer no pueda resolver: tasa irreal o de otro orden, o
+        // canales fuera de rango. El bit-perfect no se toca: donde se conserva
+        // (cable, sin EQ/mono/limiter, tasa del archivo = tasa del DAC) el grafo
+        // va en paso directo y el encadenado es idéntico al de antes.
+        let chainable = fmt.sampleRate > 1 && fmt.sampleRate <= 384_000 &&
+            fmt.channelCount >= 1 && fmt.channelCount <= 8
+        guard connectedFormatKey != nil && chainable else {
+            // ✅ DIAGNÓSTICO GAPLESS (evidencia en dispositivo): este warning ya NO
+            // aparece por tasas distintas — solo cuando el formato del archivo
+            // siguiente no es encadenable, y ahí el hueco es inevitable.
+            AppLog.warning(.playback, "Gapless: '\(song.displayName)' NO se encadena (formato no encadenable: \(fmt.sampleRate) Hz/\(fmt.channelCount)ch · graph \(connectedFormatKey ?? "—"))")
             return
         }
 
@@ -469,9 +480,16 @@ class AudioEngine: NSObject, ObservableObject {
         // ÷ nativos/s = segundos exactos con converter activo o sin él.
         duration = Double(file.length) / fmt.sampleRate
         sampleRate = fmt.sampleRate
-        currentTime = 0
-        clock.time = 0
-        anchorPlaybackPosition(0)
+        // ✅ FIX SINCRONIZACIÓN BARRA: el callback .dataPlayedBack llega cuando
+        // la canción nueva YA lleva sonando `joinLatenessMs` (5-30 ms en cable,
+        // 200-500 ms en Bluetooth). Anclar en 0 dejaba la barra por detrás del
+        // audio durante toda la pista y re-sembraba el error en cada transición.
+        // Se ancla en la posición real ya reproducida, clampeada a la duración
+        // nueva (por si el callback llega después del fin real).
+        let chainedStart = min(max(joinLatenessMs / 1000, 0), duration)
+        currentTime = chainedStart
+        clock.time = chainedStart
+        anchorPlaybackPosition(chainedStart)
         updateNowPlayingInfo()
         updateAudioQuality()
         addToHistory(song)
@@ -480,6 +498,7 @@ class AudioEngine: NSObject, ObservableObject {
         preloadNextSong()
 
         AppLog.info(.playback, String(format: "Gapless: encadenado '%@' (unión %+.0f ms respecto al fin de la anterior)", song.displayName, joinLatenessMs))
+        logQualityAuditLine(context: "gapless")
 
         // Dejar programada la que sigue, ahora que esta es la actual.
         scheduleAheadIfPossible()
@@ -700,6 +719,7 @@ class AudioEngine: NSObject, ObservableObject {
         setupEqualizer()
         observeRouteChanges()
         observeInterruptions()
+        observeSystemMonoAudio()
         // ✅ FIX detección inicial: forzar actualización de ruta al iniciar
         // para detectar dispositivos conectados al arrancar la app
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
@@ -1044,8 +1064,9 @@ class AudioEngine: NSObject, ObservableObject {
     /// audio server esté listo (cold start en A11), setCategory/setActive
     /// puede devolver -50 (paramErr) — error TRANSITORIO que el catch anterior
     /// tragaba sin más, dejando la sesión sin configurar hasta la siguiente
-    /// canción. Ahora se reintenta UNA vez degradado (sin AirPlay).
-    private func configureSession(allowAirPlay: Bool, didRetryDegraded: Bool) {
+    /// canción. Ahora se reintenta con backoff (0.15/0.3/0.6 s) y solo al
+    /// agotarlo se degrada sin AirPlay.
+    private func configureSession(allowAirPlay: Bool, didRetryDegraded: Bool, attempt: Int = 0) {
         let session = AVAudioSession.sharedInstance()
         
         // ✅ AUDIÓFILO: obtener el modo preferido de configuración
@@ -1146,7 +1167,11 @@ class AudioEngine: NSObject, ObservableObject {
             // (DAC/BT/altavoz) solo cuando el hardware no acepta el rate nativo.
             // ✅ La opción .notifyOthersOnDeactivation solo tiene efecto al
             // DESACTIVAR la sesión (abajo, en stop()); al activarla es inerte.
-            try session.setActive(true)
+            // ✅ FIX -50 en cold start: no reactivar una sesión ya activa (la
+            // categoría y el modo recién aplicados arriba ya están vigentes).
+            if !session.isActive {
+                try session.setActive(true)
+            }
             // ✅ 3.0.1: buffer REAL concedido, leído cuando el audio server ya
             // aplicó (o redondeó) la petición. Comparado con "pedido" dice si el
             // hardware aceptó los 8 ms o si sirvió su valor por defecto.
@@ -1158,10 +1183,19 @@ class AudioEngine: NSObject, ObservableObject {
             updateAudioQuality()
         } catch {
             AppLog.error(.playback, error, context: "setupSession")
-            // ✅ FIX -50 al arranque: reintento degradado UNA vez (sin AirPlay),
-            // también cubre combinaciones de opciones rechazadas por el HW.
-            if !didRetryDegraded {
-                AppLog.warning(.playback, "setupSession falló; reintentando degradado (sin AirPlay)")
+            // ✅ FIX -50 en cold start (audio server aún no listo en A11): un único
+            // reintento degradado NO bastaba — el server tarda más que ese segundo
+            // intento y ambos fallaban seguidos. Backoff exponencial 0.15/0.3/0.6 s
+            // y solo al agotar los 3 se degrada sin AirPlay (esa rama vuelve con
+            // attempt 0, así que reintenta por su cuenta).
+            if attempt < 3 {
+                let delay = 0.15 * pow(2.0, Double(attempt))
+                AppLog.warning(.playback, String(format: "setupSession falló; reintento %d/3 en %.0f ms", attempt + 1, delay * 1000))
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                    self?.configureSession(allowAirPlay: allowAirPlay, didRetryDegraded: didRetryDegraded, attempt: attempt + 1)
+                }
+            } else if allowAirPlay && !didRetryDegraded {
+                AppLog.warning(.playback, "setupSession: 3 reintentos agotados; degradando sin AirPlay")
                 configureSession(allowAirPlay: false, didRetryDegraded: true)
             }
         }
@@ -1411,6 +1445,8 @@ class AudioEngine: NSObject, ObservableObject {
             return "tasa de la fuente desconocida"
         case .resampling(let source, let output):
             return String(format: "remuestreo %.0f → %.0f Hz", source, output)
+        case .systemMonoAudio:
+            return "Mono Audio activo en Accesibilidad del sistema"
         case .eqOrMono:
             return "EQ o mono procesando"
         case .limiter:
@@ -1433,6 +1469,13 @@ class AudioEngine: NSObject, ObservableObject {
         // Se cae a la del índice solo si el motor todavía no tiene archivo cargado.
         let sourceRate = (audioFile != nil && sampleRate > 0) ? sampleRate : (currentSong?.sampleRate ?? 0)
         let processing = (isEQEnabled && eqPreset != .flat) || isMonoAudioEnabled
+        // ✅ FIX BIT-PERFECT HONESTO CON MONO DEL SISTEMA: iOS puede forzar el
+        // downmix mono de TODO el audio (incluida la salida cableada) desde
+        // Accesibilidad y la app no puede desactivarlo — pero SÍ leerlo. Sin este
+        // término el indicador decía "Bit-Perfect: sí" mientras iOS procesaba la
+        // señal: mentira activa en la UI. No es el mono de la app, es el del
+        // sistema, y va aparte para poder decir la causa exacta.
+        let systemMono = UIAccessibility.isMonoAudioEnabled
         // ✅ FIX A9+C3: en modo de respaldo (AVPlayer) el grafo propio —EQ, mono y
         // headroom— NO está en uso, así que el indicador no puede afirmar
         // "bit-perfect": describiría un motor que no es el que suena. Sin este
@@ -1440,7 +1483,7 @@ class AudioEngine: NSObject, ObservableObject {
         // a la del índice y la fila podía decir "Sí (sin remuestreo)" justo debajo
         // del chip que avisa de que no hay bit-perfect.
         let unityGain = !isLimiterEnabled && isWiredRoute && !isAVPlayerActive
-        let value = sourceRate > 0 && abs(outputRate - sourceRate) < 1 && !processing && unityGain
+        let value = sourceRate > 0 && abs(outputRate - sourceRate) < 1 && !processing && unityGain && !systemMono
         // ✅ FASE C4: la causa EXACTA se calcula SIEMPRE (no solo en la
         // transición), porque la vista de calidad la muestra literalmente; el log
         // se sigue escribiendo solo cuando el valor CAMBIA (no en cada refresco).
@@ -1458,6 +1501,10 @@ class AudioEngine: NSObject, ObservableObject {
             reason = .unknownSourceRate
         } else if abs(outputRate - sourceRate) >= 1 {
             reason = .resampling(source: sourceRate, output: outputRate)
+        } else if systemMono {
+            // ✅ Causa más específica que `processing`: este downmix lo aplica iOS
+            // fuera del grafo, no el EQ/mono de la app.
+            reason = .systemMonoAudio
         } else if processing {
             reason = .eqOrMono
         } else if isLimiterEnabled {
@@ -1800,6 +1847,7 @@ class AudioEngine: NSObject, ObservableObject {
             let playChannels = Int(file.processingFormat.channelCount)
             let renderSampleRate = file.processingFormat.sampleRate
             AppLog.info(.playback, String(format: "▶ Reproduciendo '%@' (%@ · %.0f Hz · %d bits · %d canales · %.1fs)", song.displayName, song.formatDescription, renderSampleRate, playBits > 0 ? playBits : 0, playChannels, duration))
+            logQualityAuditLine(context: "play")
 
             // ✅ 3.0.1 DIAGNÓSTICO: formato REAL de E/S del hardware (lo que
             // negoció el sistema) + latencia y buffer concedidos al arrancar la
@@ -3404,6 +3452,30 @@ class AudioEngine: NSObject, ObservableObject {
             } else {
                 self.bluetoothCodec = ""
             }
+
+            // ✅ FIX PERFIL BT DECLARADO: iOS NO permite forzar la vuelta de HFP a
+            // A2DP desde la app (el SCO lo libera el sistema), pero sí detectar el
+            // estado y declararlo. Mismo switch que el codec, sobre el portType.
+            let newProfile: String
+            if portType == AVAudioSession.Port.bluetoothA2DP.rawValue {
+                newProfile = "A2DP"
+            } else if portType == AVAudioSession.Port.bluetoothHFP.rawValue {
+                newProfile = "HFP"
+            } else if portType == AVAudioSession.Port.bluetoothLE.rawValue {
+                newProfile = "LE"
+            } else {
+                newProfile = ""
+            }
+            self.bluetoothProfile = newProfile
+            // Log SOLO en la transición (no en cada refresco de la telemetría).
+            if newProfile != self.lastLoggedBluetoothProfile {
+                if newProfile == "HFP" && self.lastLoggedBluetoothProfile == "A2DP" {
+                    AppLog.warning(.playback, "BT degradado a HFP (manos libres, mono)")
+                } else if newProfile == "A2DP" && self.lastLoggedBluetoothProfile == "HFP" {
+                    AppLog.info(.playback, "BT restaurado a A2DP (estéreo)")
+                }
+                self.lastLoggedBluetoothProfile = newProfile
+            }
             
             // ✅ AUDIÓFILO: información del DAC USB conectado
             if portType == AVAudioSession.Port.usbAudio.rawValue {
@@ -3437,8 +3509,40 @@ class AudioEngine: NSObject, ObservableObject {
         }
     }
 
+    /// ✅ FIX 6: una sola línea con TODO lo que importa para diagnosticar un
+    /// problema de calidad (ruta, tasas, SRC, mono, EQ, ganancia, perfil BT).
+    /// Se llama en tres puntos de cambio real: play manual, gapless y cambio
+    /// de ruta. No se llama en cada tick ni en cada refresh de telemetría.
+    private func logQualityAuditLine(context: String) {
+        let session = AVAudioSession.sharedInstance()
+        let graphRate = engine.outputNode.outputFormat(forBus: 0).sampleRate
+        let src = srcConversionActive ? "SRC activo" : "sin SRC"
+        let mono = isMonoAudioEnabled ? "mono" : "estéreo"
+        let eq = (isEQEnabled && eqPreset != .flat) ? "EQ \(eqPreset.rawValue)" : "sin EQ"
+        let systemMono = UIAccessibility.isMonoAudioEnabled ? " · mono-sistema" : ""
+        let bt = bluetoothProfile.isEmpty ? "sin BT" : "BT \(bluetoothProfile)"
+        AppLog.info(.playback, String(format: "Auditoría [%@]: ruta %@ · sesión %.0f Hz · grafo %.0f Hz · archivo %.0f Hz · %@ · %@ · %@ · ganancia %.3f · %@%@",
+                                      context,
+                                      routeDisplay,
+                                      session.sampleRate,
+                                      graphRate,
+                                      sampleRate,
+                                      src,
+                                      mono,
+                                      eq,
+                                      outputGain,
+                                      bt,
+                                      systemMono))
+    }
+
     // ✅ Auto-reanudación al conectar audífonos
     private var wasPlayingBeforeRouteChange = false
+    // ✅ FIX resume() fantasma tras desconectar BT: cada notificación de ruta
+    // invalida los bloques diferidos de las notificaciones anteriores. iOS emite
+    // .newDeviceAvailable (aparece el altavoz interno) y .oldDeviceUnavailable
+    // (se va el Bluetooth) casi a la vez; el bloque diferido de la primera no
+    // sabía que la ruta ya había cambiado y reanudaba en el altavoz interno.
+    private var routeChangeGeneration = 0
 
     /// ¿La salida de audio dada es de tipo "audífonos/BT/dispositivo externo"?
     private static func isHeadphonePort(_ port: AVAudioSession.Port) -> Bool {
@@ -3453,6 +3557,12 @@ class AudioEngine: NSObject, ObservableObject {
             queue: .main
         ) { [weak self] notification in
             guard let self = self else { return }
+
+            // ✅ FIX resume() fantasma: la generación sube ANTES de cualquier rama
+            // (incluida la suspensión por pérdida de ruta), así el bloque diferido
+            // de un .newDeviceAvailable anterior queda invalidado.
+            self.routeChangeGeneration &+= 1
+            let gen = self.routeChangeGeneration
 
             let reasonRaw = notification.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt ?? 0
             let reason = AVAudioSession.RouteChangeReason(rawValue: reasonRaw)
@@ -3470,15 +3580,26 @@ class AudioEngine: NSObject, ObservableObject {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
                     guard let self = self else { return }
                     let route = AVAudioSession.sharedInstance().currentRoute.outputs.first
-                    _ = route.map { output in
-                        Self.isHeadphonePort(output.portType)
-                    } ?? false
+                    // ✅ FIX resume() fantasma tras desconectar BT: DOS barreras, la
+                    // generación (¿sigue vigente esta decisión?) y el portType real
+                    // (¿es el altavoz interno?). El resultado de esta comprobación YA
+                    // se calculaba aquí y se DESCARTABA (`_ =`): ahora gobierna la
+                    // reanudación. `usbAudio` se suma a la lista de isHeadphonePort
+                    // porque el helper no incluye los DAC USB/Lightning.
+                    let canAutoResume = gen == self.routeChangeGeneration
+                        && (route.map { output in
+                            Self.isHeadphonePort(output.portType) || output.portType == .usbAudio
+                        } ?? false)
 
                     // ✅ FIX desconexión BT: reanudar en CUALQUIER ruta (no solo audífonos)
                     // Si estaba reproduciendo y se cambió de ruta, reanudar si está pausado
-                    if wasPlaying && !self.isPlaying {
+                    if wasPlaying && !self.isPlaying, canAutoResume {
                         self.resume()
                         AppLog.info(.playback, "Ruta cambiada a \(route?.portName ?? "?"): reproducción reanudada")
+                    } else if wasPlaying && !self.isPlaying {
+                        // ✅ Evidencia en dispositivo: aquí vivía la reanudación fantasma
+                        // en el altavoz interno (descartada por generación o por ruta).
+                        AppLog.info(.playback, "Ruta cambiada a \(route?.portName ?? "?"): reanudación automática descartada")
                     } else if wasPlaying && self.isPlaying, !self.isAVPlayerActive, let file = self.audioFile {
                         // ✅ FIX simétrico: si la reproducción NUNCA se pausó
                         // (el motor siguió "corriendo" durante el cambio de
@@ -3579,6 +3700,7 @@ class AudioEngine: NSObject, ObservableObject {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
                 self?.updateRouteName()
                 self?.updateAudioQuality()
+                self?.logQualityAuditLine(context: "ruta")
             }
         }
     }
@@ -3621,6 +3743,21 @@ class AudioEngine: NSObject, ObservableObject {
                     self.wasPlayingBeforeRouteChange = false
                 }
             }
+        }
+    }
+
+    /// ✅ FIX BIT-PERFECT HONESTO (mono del sistema): Mono Audio se activa en
+    /// Ajustes › Accesibilidad, fuera de la app. Sin este observer el indicador
+    /// solo se corregía en el siguiente cambio de pista/ruta/ganancia, así que
+    /// podía decir "Bit-Perfect: sí" con el sistema en mono.
+    private func observeSystemMonoAudio() {
+        NotificationCenter.default.addObserver(
+            forName: UIAccessibility.monoAudioStatusDidChangeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self = self else { return }
+            self.refreshBitPerfect(outputRate: self.outputSampleRate)
         }
     }
 

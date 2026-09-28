@@ -452,10 +452,62 @@ struct AudioQualityDetailView: View {
                 detailRow(Localization.localized("quality.usbDAC"), audioEngine.usbDACInfo)
             }
 
+            // ✅ FIX PERFIL BT DECLARADO: la música por HFP suena en mono y con
+            // calidad de llamada (SCO) y la app no puede forzar la vuelta a A2DP.
+            // Lo único honesto es decirlo y dar la salida manual (reconectar).
+            if audioEngine.bluetoothProfile == "HFP" {
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(.orange)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(Localization.localized("quality.bluetoothHFPWarning"))
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(.primary)
+                        Text(Localization.localized("quality.bluetoothHFPHint"))
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 18).padding(.vertical, 14)
+                .background(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(Color(UIColor.tertiarySystemBackground).opacity(0.4))
+                )
+            }
+
             // ✅ AUDIÓFILO: Modo de sesión
             if !audioEngine.audioSessionMode.isEmpty {
                 detailRow(Localization.localized("quality.sessionMode"), audioEngine.audioSessionMode)
             }
+
+            // Nota de volumen del sistema
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: "speaker.wave.2")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(.blue)
+                Text(Localization.localized("quality.volumeHonestyNote"))
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 18).padding(.vertical, 10)
+
+            // Nota del adaptador Lightning
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: "cable.connector")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(.blue)
+                Text(Localization.localized("quality.lightningDACNote"))
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 18).padding(.vertical, 10)
         }
     }
 
@@ -721,6 +773,8 @@ struct AudioQualityDetailView: View {
                 AlbumDetailView.khzLabel(source),
                 AlbumDetailView.khzLabel(output)
             )
+        case .systemMonoAudio:
+            return Localization.localized("quality.causeSystemMono")
         case .eqOrMono:
             return Localization.localized("quality.causeProcessing")
         case .limiter:

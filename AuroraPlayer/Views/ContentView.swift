@@ -11,6 +11,11 @@ struct ContentView: View {
 
     @State private var hasRestored = false
     @State private var isInitialLoad = true
+    // ✅ FIX splash invisible: la caché de biblioteca se decodifica en background
+    // y puede terminar ANTES del primer frame → el splash se retiraba en el mismo
+    // ciclo de layout en el que nacía. Este flag garantiza un tiempo MÍNIMO
+    // visible, en paralelo a `isInitialLibraryLoaded`.
+    @State private var splashMinimumElapsed = false
     @State private var showSettings = false
     @State private var showPlaylists = false
     @State private var showFolderPicker = false
@@ -281,15 +286,23 @@ struct ContentView: View {
                     // ✅ INDEXACIÓN: decidir tarjeta grande vs indicador compacto.
                     syncFirstTimeIndexing()
                     maybeAutoResume()
-                    if fileAccessService.isInitialLibraryLoaded {
-                        withAnimation(.easeOut(duration: 0.3)) { isInitialLoad = false }
-                    }
+                    // ✅ FIX splash invisible: con la caché ya cargada (ruta rápida)
+                    // el splash sólo sale si además ha pasado el tiempo mínimo.
+                    dismissSplashIfReady()
                 }
                 .task {
-                    try? await Task.sleep(nanoseconds: 8_000_000_000)
-                    if isInitialLoad {
-                        withAnimation(.easeOut(duration: 0.3)) { isInitialLoad = false }
-                    }
+                    // ✅ FIX splash invisible: tiempo mínimo visible (1,2 s) antes
+                    // de poder retirarlo. La entrada del SplashView (spring 0,7 s
+                    // con delays 0,25/0,4) ya ha asentado al llegar aquí, así que
+                    // la salida no pilla la animación a medias.
+                    try? await Task.sleep(nanoseconds: 1_200_000_000)
+                    splashMinimumElapsed = true
+                    dismissSplashIfReady()
+                    // Red de seguridad (mismos 8 s desde el arranque): si la
+                    // biblioteca aún no está lista, el splash sale igual y el
+                    // escaneo continúa en background.
+                    try? await Task.sleep(nanoseconds: 6_800_000_000)
+                    dismissSplashIfReady(force: true)
                 }
                 .sheet(isPresented: $showFolderPicker) {
                     FolderPickerView(fileAccessService: fileAccessService)
@@ -302,9 +315,7 @@ struct ContentView: View {
                         // biblioteca terminó de cargar DESPUÉS del onAppear, el
                         // restore recién ocurrió aquí — reintentar el auto-resume.
                         maybeAutoResume()
-                        withAnimation(.easeOut(duration: 0.3)) {
-                            isInitialLoad = false
-                        }
+                        dismissSplashIfReady()
                     }
                 }
                 .onChange(of: audioEngine.currentSong?.id) { _ in
@@ -1371,6 +1382,15 @@ struct ContentView: View {
         // Los discos se cuentan por su número real (nil ⇒ disco 1).
         let discs = Set(album.songs.map { $0.discNumber ?? 1 }).count
         return (album.songs.count, max(discs, 1))
+    }
+
+    /// ✅ FIX splash invisible: única puerta de salida del splash. Se retira
+    /// cuando la biblioteca está cargada Y ha pasado el tiempo mínimo visible
+    /// (1,2 s), o cuando vence el timeout de seguridad (`force`).
+    private func dismissSplashIfReady(force: Bool = false) {
+        guard isInitialLoad else { return }
+        guard force || (fileAccessService.isInitialLibraryLoaded && splashMinimumElapsed) else { return }
+        withAnimation(.easeOut(duration: 0.3)) { isInitialLoad = false }
     }
 
     private func restoreLibraryIfNeeded() {

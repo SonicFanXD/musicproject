@@ -433,7 +433,19 @@ class FileAccessService: ObservableObject {
         isScanning = !folders.isEmpty || !files.isEmpty
         AppLog.info(.library, "Re-escaneo iniciado: \(folders.count) carpetas, \(files.count) archivos sueltos")
         guard !folders.isEmpty || !files.isEmpty else {
+            // ✅ FIX biblioteca vacía: borrar el caché de disco NO bastaba — la
+            // lista en memoria seguía poblada, y `deinit` volvía a escribirla en
+            // el JSON al morir el proceso (por eso reaparecía al reiniciar). Se
+            // limpia TODO el estado de biblioteca en un solo punto: `songs = []`
+            // dispara el didSet → needsRebuild = true → álbumes y artistas se
+            // recalculan vacíos al siguiente acceso, sin colecciones huérfanas.
+            songs = []
+            pendingSongs = []
+            indexedSongKeys = Set()
+            seenOnDiskKeys = []
             removeCachedSongs()
+            saveCachedSongs()
+            AppLog.info(.library, "Biblioteca vacía: sin carpetas ni archivos (estado y caché limpiados)")
             return
         }
         // ✅ IMPORTANTE: NO guardar caché vacío aquí, solo al completar.
@@ -1065,6 +1077,10 @@ class FileAccessService: ObservableObject {
 
             DispatchQueue.main.async {
                 self.isSortScheduled = false
+                // ✅ FIX biblioteca vacía: si mientras se ordenaba en background el
+                // usuario borró la última carpeta/archivo, este sort ya es obsoleto
+                // y no puede publicar la lista vieja encima del estado vacío.
+                guard !self.folders.isEmpty || !self.files.isEmpty else { return }
                 self.songs = sortedSongs
                 // ✅ ANTES `pendingSongs.removeAll()` borraba TODO, incluso las
                 // canciones que llegaron (desde el main) MIENTRAS se ordenaba en
@@ -1162,6 +1178,9 @@ class FileAccessService: ObservableObject {
 
             DispatchQueue.main.async {
                 self.isSortScheduled = false
+                // ✅ FIX biblioteca vacía: mismo motivo que en scheduleSortAndCache
+                // — sin fuentes, este sort obsoleto no publica nada.
+                guard !self.folders.isEmpty || !self.files.isEmpty else { return }
                 let addedCount = sortedSongs.count - self.songs.count
                 self.songs = sortedSongs
                 self.indexedSongKeys = Set(sortedSongs.map { Self.libraryKey(for: $0.url) })

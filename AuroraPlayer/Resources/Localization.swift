@@ -408,13 +408,30 @@ final class Localization: ObservableObject {
         "quality.routeBluetooth": [.spanish: "Bluetooth", .english: "Bluetooth"],
         "quality.bluetoothA2DP": [.spanish: "A2DP (iOS)", .english: "A2DP (iOS)"],
         "quality.bluetoothHFP": [.spanish: "HFP (llamadas)", .english: "HFP (calls)"],
+        "quality.bluetoothHFPWarning": [
+            .spanish: "Bluetooth en modo llamada (HFP)",
+            .english: "Bluetooth in call mode (HFP)"
+        ],
+        "quality.bluetoothHFPHint": [
+            .spanish: "La música suena en mono y con calidad reducida. iOS no permite forzar la vuelta a A2DP desde la app. Desconecta y vuelve a conectar el auricular para recuperar el estéreo.",
+            .english: "Audio is mono and reduced quality. iOS does not allow forcing back to A2DP from the app. Disconnect and reconnect the headphones to recover stereo."
+        ],
         "quality.bluetoothLE": [.spanish: "BLE (iOS)", .english: "BLE (iOS)"],
+        "quality.volumeHonestyNote": [
+            .spanish: "Con el volumen del sistema al máximo, el DAC puede recibir la señal sin atenuación digital. Por debajo del máximo, iOS o el DAC pueden atenuar por software.",
+            .english: "At maximum system volume, the DAC may receive the signal without digital attenuation. Below maximum, iOS or the DAC may attenuate in software."
+        ],
+        "quality.lightningDACNote": [
+            .spanish: "El adaptador Lightning a 3.5 mm de Apple está limitado a 24-bit/48 kHz. Los archivos por encima de 48 kHz se remuestrean siempre con ese adaptador. Para Hi-Res real, usar un DAC USB.",
+            .english: "Apple's Lightning to 3.5 mm adapter is limited to 24-bit/48 kHz. Files above 48 kHz are always resampled with that adapter. For true Hi-Res, use a USB DAC."
+        ],
         "quality.shortYes": [.spanish: "Sí", .english: "Yes"],
         // ✅ FASE C4: causas EXACTAS de la pérdida de bit-perfect
         "quality.causeDolby": [.spanish: "AVPlayer (Dolby)", .english: "AVPlayer (Dolby)"],
         "quality.causeFallback": [.spanish: "AVPlayer (motor de respaldo)", .english: "AVPlayer (fallback engine)"],
         "quality.causeUnknownRate": [.spanish: "tasa de la fuente desconocida", .english: "unknown source rate"],
         "quality.causeResampling": [.spanish: "remuestreo %@ → %@", .english: "resampling %@ → %@"],
+        "quality.causeSystemMono": [.spanish: "Mono Audio activo en Accesibilidad del sistema", .english: "Mono Audio enabled in system Accessibility"],
         "quality.causeProcessing": [.spanish: "EQ o mono activos", .english: "EQ or mono active"],
         "quality.causeLimiter": [.spanish: "limiter activo", .english: "limiter active"],
         "quality.causeRoute": [.spanish: "salida no cableada", .english: "non-wired output"],
