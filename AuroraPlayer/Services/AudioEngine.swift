@@ -1167,11 +1167,7 @@ class AudioEngine: NSObject, ObservableObject {
             // (DAC/BT/altavoz) solo cuando el hardware no acepta el rate nativo.
             // ✅ La opción .notifyOthersOnDeactivation solo tiene efecto al
             // DESACTIVAR la sesión (abajo, en stop()); al activarla es inerte.
-            // ✅ FIX -50 en cold start: no reactivar una sesión ya activa (la
-            // categoría y el modo recién aplicados arriba ya están vigentes).
-            if !session.isActive {
-                try session.setActive(true)
-            }
+            try session.setActive(true)
             // ✅ 3.0.1: buffer REAL concedido, leído cuando el audio server ya
             // aplicó (o redondeó) la petición. Comparado con "pedido" dice si el
             // hardware aceptó los 8 ms o si sirvió su valor por defecto.
