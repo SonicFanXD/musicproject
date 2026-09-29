@@ -6,6 +6,11 @@ struct QueueView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var selectedTab: QueueTab = .nextUp
+    // ✅ E3.2: modo edición EXPLÍCITO para el arrastre de "En cola". Con el menú
+    // contextual en cada fila, el toque sostenido abre el menú y el arrastre
+    // (que sin edición necesita ESE mismo gesto) no llega a arrancar. En edición
+    // aparecen los tiradores y arrastrar funciona sin competir con el menú.
+    @State private var editMode: EditMode = .inactive
     // ✅ E3: `editableQueue` ELIMINADO. Antes esta vista editaba una copia local
     // y al aplicarla reescribía el orden COMPLETO del álbum/playlist
     // (reorderNextUpQueue → rebuildPlaylistFromQueue): reordenar la cola del
@@ -66,6 +71,9 @@ struct QueueView: View {
                     .listStyle(.plain)
                     .scrollContentBackground(.hidden)
                     .scrollIndicators(.hidden)
+                    // ✅ E3.2: el modo edición lo controla el botón "Editar" de la
+                    // cabecera de "En cola" (es la sección con .onMove).
+                    .environment(\.editMode, $editMode)
                 }
             }
             // ✅ AURORA DESIGN: el toolbar se sustituye por el header del sistema.
@@ -196,14 +204,11 @@ struct QueueView: View {
                         // y con eso reescribía el orden del álbum: el bug de diseño.
                         audioEngine.play(song: song, from: audioEngine.manualQueue)
                     }
-                    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                        Button(role: .destructive) {
-                            Haptics.light()
-                            audioEngine.removeFromQueue(at: position)
-                        } label: {
-                            Label(Localization.localized("queue.remove"), systemImage: "trash")
-                        }
-                    }
+                    // ✅ E3.2: ORDEN de modificadores. El `.swipeActions` va el
+                    // ÚLTIMO (por FUERA del menú contextual): la List necesita ver
+                    // el trait de swipe en el modificador más externo de la fila; con
+                    // el `.contextMenu` envolviéndolo desde fuera, el gesto de swipe
+                    // dejaba de responder (regresión de E3 al añadir el menú).
                     .contextMenu {
                         Button {
                             Haptics.light()
@@ -224,6 +229,14 @@ struct QueueView: View {
                             audioEngine.removeFromQueue(at: position)
                         } label: {
                             Label(Localization.localized("queue.removeItem"), systemImage: "trash")
+                        }
+                    }
+                    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                        Button(role: .destructive) {
+                            Haptics.light()
+                            audioEngine.removeFromQueue(at: position)
+                        } label: {
+                            Label(Localization.localized("queue.remove"), systemImage: "trash")
                         }
                     }
                 }
@@ -285,11 +298,29 @@ struct QueueView: View {
 
             Spacer()
 
+            // ✅ E3.2: "Limpiar" se OCULTA mientras se edita (en edición la acción
+            // principal es arrastrar; vaciar la cola ahí sería un accidente).
+            if editMode != .active {
+                Button {
+                    Haptics.light()
+                    audioEngine.clearQueue()
+                } label: {
+                    Text(Localization.localized("queue.clear"))
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(AppTheme.accent)
+                }
+                .buttonStyle(.plain)
+            }
+
+            // ✅ E3.2: alterna el modo edición. Mismo lenguaje que "Limpiar"
+            // (texto accent, sin fondo ni cápsula).
             Button {
                 Haptics.light()
-                audioEngine.clearQueue()
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    editMode = editMode == .active ? .inactive : .active
+                }
             } label: {
-                Text(Localization.localized("queue.clear"))
+                Text(Localization.localized(editMode == .active ? "queue.doneEditing" : "queue.edit"))
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(AppTheme.accent)
             }

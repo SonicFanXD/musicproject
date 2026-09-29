@@ -287,6 +287,9 @@ final class Localization: ObservableObject {
         "queue.inQueue": [.spanish: "En cola", .english: "In Queue"],
         "queue.clear": [.spanish: "Limpiar", .english: "Clear"],
         "queue.removeItem": [.spanish: "Eliminar de la cola", .english: "Remove from Queue"],
+        // ✅ E3.2: botón que alterna el modo edición (arrastrar) de la cola manual.
+        "queue.edit": [.spanish: "Editar", .english: "Edit"],
+        "queue.doneEditing": [.spanish: "Hecho", .english: "Done"],
         "queue.historyTitle": [.spanish: "Historial de reproducción", .english: "Playback History"],
 
         // Lyrics
