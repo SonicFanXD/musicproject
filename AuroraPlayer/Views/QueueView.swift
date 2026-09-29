@@ -187,63 +187,73 @@ struct QueueView: View {
             // ---- 2. "En cola": la cola MANUAL del usuario. Es la ÚNICA sección
             // editable (arrastre, swipe, menú) y edita `audioEngine.manualQueue`
             // directamente: nunca más el orden del álbum.
+            // ✅ E3.3: el `if` envuelve SOLO la cabecera. El ForEach vuelve a ser
+            // hijo DIRECTO del Section: dentro de un condicional, la List no lo
+            // reconoce como hijo editable (ni tiradores de arrastre ni swipe).
             if !audioEngine.manualQueue.isEmpty {
                 manualQueueHeader
+            }
 
-                // ✅ FIX iOS 16: las filas DEBEN ser hijas directas del Section para
-                // que .swipeActions/.onMove funcionen (anidadas en un VStack son inertes).
-                // ✅ PERF: identidad por OFFSET (enumerated, id: \.offset) y NO por
-                // Song.id: la cola manual admite la misma canción dos veces
-                // (addToQueue no deduplica) y un ForEach con ids duplicados
-                // produce diff impredecible (filas que saltan/desaparecen) y
-                // el warning "AttributeGraph: cycle detected" en runtime.
-                ForEach(Array(audioEngine.manualQueue.enumerated()), id: \.offset) { position, song in
-                    queueSongRow(song) {
-                        // ✅ E3: el toque reproduce LA COLA como contexto. La
-                        // llamada antigua construía [canción actual] + cola entera
-                        // y con eso reescribía el orden del álbum: el bug de diseño.
+            // ✅ FIX iOS 16: las filas DEBEN ser hijas directas del Section para que
+            // .swipeActions/.onMove/.onDelete funcionen (anidadas en un VStack son inertes).
+            // ✅ PERF: identidad por OFFSET (enumerated, id: \.offset) y NO por
+            // Song.id: la cola manual admite la misma canción dos veces
+            // (addToQueue no deduplica) y un ForEach con ids duplicados
+            // produce diff impredecible (filas que saltan/desaparecen) y
+            // el warning "AttributeGraph: cycle detected" en runtime.
+            // NOTA: el valor del par (position, song) se captura por VALOR, así que
+            // ninguna edición puede dejar un índice fuera de rango.
+            ForEach(Array(audioEngine.manualQueue.enumerated()), id: \.offset) { position, song in
+                queueSongRow(song) {
+                    // ✅ E3: el toque reproduce LA COLA como contexto. La
+                    // llamada antigua construía [canción actual] + cola entera
+                    // y con eso reescribía el orden del álbum: el bug de diseño.
+                    audioEngine.play(song: song, from: audioEngine.manualQueue)
+                }
+                // ✅ E3.2: ORDEN de modificadores. El `.swipeActions` va el
+                // ÚLTIMO (por FUERA del menú contextual): la List necesita ver
+                // el trait de swipe en el modificador más externo de la fila.
+                .contextMenu {
+                    Button {
+                        Haptics.light()
                         audioEngine.play(song: song, from: audioEngine.manualQueue)
+                    } label: {
+                        Label(Localization.localized("context.playNow"), systemImage: "play.circle.fill")
                     }
-                    // ✅ E3.2: ORDEN de modificadores. El `.swipeActions` va el
-                    // ÚLTIMO (por FUERA del menú contextual): la List necesita ver
-                    // el trait de swipe en el modificador más externo de la fila; con
-                    // el `.contextMenu` envolviéndolo desde fuera, el gesto de swipe
-                    // dejaba de responder (regresión de E3 al añadir el menú).
-                    .contextMenu {
-                        Button {
-                            Haptics.light()
-                            audioEngine.play(song: song, from: audioEngine.manualQueue)
-                        } label: {
-                            Label(Localization.localized("context.playNow"), systemImage: "play.circle.fill")
-                        }
-                        Button {
-                            Haptics.light()
-                            audioEngine.playNext(song)
-                        } label: {
-                            Label(Localization.localized("context.playNext"), systemImage: "text.line.first.and.arrowtriangle.forward")
-                        }
-                        Button {
-                            Haptics.light()
-                            // Por ÍNDICE y no por id: la misma canción puede estar
-                            // dos veces en la cola.
-                            audioEngine.removeFromQueue(at: position)
-                        } label: {
-                            Label(Localization.localized("queue.removeItem"), systemImage: "trash")
-                        }
+                    Button {
+                        Haptics.light()
+                        audioEngine.playNext(song)
+                    } label: {
+                        Label(Localization.localized("context.playNext"), systemImage: "text.line.first.and.arrowtriangle.forward")
                     }
-                    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                        Button(role: .destructive) {
-                            Haptics.light()
-                            audioEngine.removeFromQueue(at: position)
-                        } label: {
-                            Label(Localization.localized("queue.remove"), systemImage: "trash")
-                        }
+                    Button {
+                        Haptics.light()
+                        // Por ÍNDICE y no por id: la misma canción puede estar
+                        // dos veces en la cola.
+                        audioEngine.removeFromQueue(at: position)
+                    } label: {
+                        Label(Localization.localized("queue.removeItem"), systemImage: "trash")
                     }
                 }
-                .onMove { from, to in
-                    Haptics.light()
-                    moveManualQueue(from: from, to: to)
+                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                    Button(role: .destructive) {
+                        Haptics.light()
+                        audioEngine.removeFromQueue(at: position)
+                    } label: {
+                        Label(Localization.localized("queue.remove"), systemImage: "trash")
+                    }
                 }
+            }
+            .onMove { from, to in
+                Haptics.light()
+                moveManualQueue(from: from, to: to)
+            }
+            // ✅ E3.3: `.onDelete` es el trait que la List usa para el borrado del
+            // modo edición (los controles rojos). Su ausencia es la razón de que al
+            // pulsar "Editar" no apareciera ninguna acción de borrado.
+            .onDelete { offsets in
+                Haptics.light()
+                deleteFromManualQueue(offsets)
             }
 
             // ---- 3. "A continuación": el resto del orden del álbum/playlist.
@@ -341,6 +351,15 @@ struct QueueView: View {
         guard let first = source.first else { return }
         let engineDestination = destination > first ? destination - 1 : destination
         audioEngine.moveInQueue(from: first, to: engineDestination)
+    }
+
+    /// ✅ E3.3: borrado por lotes del modo edición. Los índices llegan en orden
+    /// ascendente; se recorre al revés para que cada `remove(at:)` no desplace a
+    /// los que quedan por borrar.
+    private func deleteFromManualQueue(_ offsets: IndexSet) {
+        for index in offsets.sorted(by: >) {
+            audioEngine.removeFromQueue(at: index)
+        }
     }
 
     @ViewBuilder
