@@ -1064,14 +1064,15 @@ struct ContentView: View {
             }
             
             Button {
-                // ✅ Mismo contexto filtrado que playSong(): el "siguiente"
-                // se resuelve dentro de la lista visible (búsqueda/orden).
-                if let nextIndex = filteredSongs.firstIndex(where: { $0.id == song.id }) {
-                    let playNextSongs = Array(filteredSongs.suffix(from: min(nextIndex + 1, filteredSongs.count)))
-                    if let nextSong = playNextSongs.first {
-                        audioEngine.play(song: nextSong, from: filteredSongs)
-                    }
-                }
+                // ✅ FASE E2: "Reproducir siguiente" de verdad. Antes esta acción
+                // NO encolaba la canción tocada: buscaba la siguiente de la lista
+                // visible y llamaba a play(song:from:), o sea REEMPLAZABA toda la
+                // reproducción por un tramo recortado (y de paso arrancaba esa
+                // otra canción). Ahora inserta LA CANCIÓN TOCADA al principio de
+                // la cola manual: suena justo después de la actual, por delante
+                // del resto de la cola y sin tocar lo que suena.
+                audioEngine.playNext(song)
+                Haptics.light()
             } label: {
                 Label(Localization.localized("context.playNext"), systemImage: "text.line.first.and.arrowtriangle.forward")
             }
