@@ -2972,6 +2972,13 @@ class AudioEngine: NSObject, ObservableObject {
            playbackOrder[currentIndex].id != currentSong?.id {
             currentIndex -= 1
         }
+        // ✅ E3.5: si la canción ya está en el ORDEN por delante de la actual, se
+        // QUITA de ahí antes de encolarla. Si no, sonaría dos veces: ahora desde
+        // la cola manual (que `computeNextIndex()` consume con prioridad) y otra
+        // vez al llegar el orden a su posición original, que seguía intacta.
+        if let removedIndex = removeQueuedCopyFromOrder(song) {
+            AppLog.info(.playback, "Reproducir siguiente: quitada de la posición \(removedIndex) del orden")
+        }
         manualQueue.insert(song, at: 0)
         updateNextUpQueue()
         // ✅ FASE B4: mismo criterio que add/remove/reorder — la cola es estado
@@ -2983,8 +2990,55 @@ class AudioEngine: NSObject, ObservableObject {
             : "Reproducir siguiente: \(song.title)")
     }
 
+    /// ✅ E3.5 — De-duplicación al ENCOLAR (estilo Spotify): MUEVE la canción, no
+    /// la duplica.
+    ///
+    /// Si la canción que el usuario manda a la cola manual está TAMBIÉN en el
+    /// orden (`playbackOrder`) por delante de la posición actual, se quita de ahí.
+    /// Sin esto sonaba dos veces: la primera desde la cola manual (que
+    /// `computeNextIndex()` consume con prioridad) y la segunda cuando el orden
+    /// llegaba a su posición original, porque `addToQueue`/`playNext` solo tocaban
+    /// `manualQueue` y nadie quitaba la copia del orden.
+    ///
+    /// Mira SOLO desde `currentIndex + 1`: la canción que suena (y, en repeat-one,
+    /// la que se va a repetir, que en el orden vive EN `currentIndex`) no se toca
+    /// nunca. Devuelve el índice quitado para el log del llamador, o nil si no
+    /// había copia en el orden.
+    private func removeQueuedCopyFromOrder(_ song: Song) -> Int? {
+        // El clamp evita el crash de un rango `[n...]` cuando currentIndex ya está
+        // al final del orden (n > count aborta el proceso).
+        let from = max(currentIndex + 1, 0)
+        guard from < playbackOrder.count,
+              let index = (from..<playbackOrder.count).first(where: { playbackOrder[$0].id == song.id })
+        else { return nil }
+        // La transición de gapless apunta por ÍNDICE. Si la copia que se quita es
+        // justo la que ya está programada en el nodo, ese índice pasa a señalar a
+        // OTRA canción (todo lo posterior se desplaza) y `commitChainedSong()` la
+        // promovería con el estado equivocado: se invalida el token (0) para que al
+        // terminar la actual el motor recalcule con el orden YA corregido. El audio
+        // huérfano de esa transición lo descarta `playCurrentSong`
+        // (`playerNode.stop()`), igual que en el desalojo de E1.5.
+        if chainedAheadIndex == index { invalidateChainedAhead() }
+        playbackOrder.remove(at: index)
+        // Si la transición encolada estaba DESPUÉS de la copia quitada, su índice
+        // se desplaza con el array: sin corregirlo, al promover se saltaría una
+        // canción (prioridad nº1: nada de saltos).
+        if let chained = chainedAheadIndex, chained > index { chainedAheadIndex = chained - 1 }
+        // `playbackQueue` es el espejo publicado del orden y lo consume la UI (es el
+        // contexto que usa "Reproducir ahora" en la cola): si no se refresca, ese
+        // camino reconstruiría el orden con la canción ya quitada y la duplicaría
+        // otra vez.
+        updatePlaybackQueue()
+        return index
+    }
+
     // ✅ MEJORA QUEUE: añadir canción a la cola manual
     func addToQueue(_ song: Song) {
+        // ✅ E3.5: misma de-duplicación que en playNext. Sin esto, encolar desde
+        // "A continuación" dejaba la canción en las dos listas (y sonaba dos veces).
+        if let removedIndex = removeQueuedCopyFromOrder(song) {
+            AppLog.info(.playback, "Añadido a cola: quitada de la posición \(removedIndex) del orden")
+        }
         manualQueue.append(song)
         updateNextUpQueue()
         // ✅ FASE B4: la cola forma parte del estado que se publica a iOS (la

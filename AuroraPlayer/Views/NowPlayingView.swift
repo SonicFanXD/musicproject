@@ -293,7 +293,9 @@ struct NowPlayingView: View {
                 EqualizerView(audioEngine: audioEngine)
             }
             .sheet(isPresented: $showQueue) {
-                QueueView(audioEngine: audioEngine)
+                // ✅ E3.4: la cola necesita el servicio de archivos para el item
+                // "Me gusta" del menú de "A continuación". Ya vivía aquí al lado.
+                QueueView(audioEngine: audioEngine, fileAccessService: fileAccessService)
             }
             .overlay {
                 if showQualityDetail {

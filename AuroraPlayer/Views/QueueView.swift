@@ -3,6 +3,11 @@ import UIKit
 
 struct QueueView: View {
     @ObservedObject var audioEngine: AudioEngine
+    // ✅ E3.4: el menú de "A continuación" incluye "Me gusta", así que la vista
+    // necesita el servicio para leer `isLiked(song)` (misma fuente de verdad que
+    // ContentView / LibraryDetailViews / PlaylistsView). Se observa para que la
+    // etiqueta del corazón siga al estado real.
+    @ObservedObject var fileAccessService: FileAccessService
     @Environment(\.dismiss) private var dismiss
 
     @State private var selectedTab: QueueTab = .nextUp
@@ -274,6 +279,45 @@ struct QueueView: View {
                         // fila del álbum). La cola manual no se pierde: el motor le
                         // sigue dando prioridad al calcular la siguiente.
                         audioEngine.play(song: song, from: audioEngine.playbackQueue)
+                    }
+                    // ✅ E3.4: control INDIRECTO sobre el resto del orden. La sección
+                    // sigue siendo solo lectura (sin swipe, sin arrastre, sin
+                    // onMove/onDelete): desde aquí se MUEVEN canciones a la cola
+                    // manual, y es en "En cola" donde se editan.
+                    // Mismas claves e iconos que los menús de ContentView,
+                    // LibraryDetailViews y PlaylistsView (no se inventa ninguno).
+                    .contextMenu {
+                        Button {
+                            Haptics.light()
+                            // Mismo comportamiento que el toque de la fila.
+                            audioEngine.play(song: song, from: audioEngine.playbackQueue)
+                        } label: {
+                            Label(Localization.localized("context.playNow"), systemImage: "play.circle.fill")
+                        }
+                        Button {
+                            Haptics.light()
+                            // Al PRINCIPIO de la cola manual: suena en cuanto acabe
+                            // la canción actual (y desaloja lo ya encolado, E1.5).
+                            audioEngine.playNext(song)
+                        } label: {
+                            Label(Localization.localized("context.playNext"), systemImage: "text.line.first.and.arrowtriangle.forward")
+                        }
+                        Button {
+                            Haptics.light()
+                            // Al FINAL de la cola manual.
+                            audioEngine.addToQueue(song)
+                        } label: {
+                            Label(Localization.localized("actions.addToQueue"), systemImage: "text.badge.plus")
+                        }
+                        Button {
+                            Haptics.light()
+                            fileAccessService.toggleLike(song)
+                        } label: {
+                            Label(
+                                Localization.localized(fileAccessService.isLiked(song) ? "actions.unlike" : "actions.like"),
+                                systemImage: fileAccessService.isLiked(song) ? "heart.slash" : "heart"
+                            )
+                        }
                     }
                 }
             }
