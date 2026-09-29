@@ -1081,7 +1081,7 @@ class AudioEngine: NSObject, ObservableObject {
     // ✅ FIX -50 en cold start: se invoca desde didBecomeActive
     // (configureSessionOnActivation), no desde init().
     private func setupSession() {
-        configureSession(allowAirPlay: true, level: .primary)
+        configureSession(level: .primary)
     }
     
     // ✅ AUDIÓFILO: método público para cambiar el modo de audio dinámicamente
@@ -1089,7 +1089,7 @@ class AudioEngine: NSObject, ObservableObject {
         UserDefaults.standard.set(modeIndex, forKey: "com.aurora.audioSessionMode")
         UserDefaults.standard.synchronize()
         // Reconfigurar la sesión con el nuevo modo
-        configureSession(allowAirPlay: true, level: .primary)
+        configureSession(level: .primary)
     }
 
     // ✅ FIX -50: niveles de degradado de la sesión. `.primary` = opciones
@@ -1109,13 +1109,7 @@ class AudioEngine: NSObject, ObservableObject {
     /// La escalera `SessionFallbackLevel` reintenta con backoff
     /// (0.15/0.3/0.6 s): [] ×3 → re-negociación (setActive(false) + [] ×3)
     /// → activar sin setCategory.
-    ///
-    /// - Parameter allowAirPlay: DEPRECATED no-op. Con .playback las rutas
-    ///   A2DP/AirPlay van por defecto y la opción era paramErr; se conserva
-    ///   solo por compatibilidad de call sites y debe eliminarse en la
-    ///   próxima limpieza. (Swift no admite @available(*, deprecated) en un
-    ///   parámetro: la marca vive aquí, en el contrato.)
-    private func configureSession(allowAirPlay: Bool, level: SessionFallbackLevel = .primary, attempt: Int = 0) {
+    private func configureSession(level: SessionFallbackLevel = .primary, attempt: Int = 0) {
         let session = AVAudioSession.sharedInstance()
         
         // ✅ AUDIÓFILO: obtener el modo preferido de configuración
@@ -1157,11 +1151,6 @@ class AudioEngine: NSObject, ObservableObject {
                         AppLog.debug(.playback, "configureSession: setActive(false) previo no aplicable (\(error.localizedDescription))")
                     }
                 }
-                AppLog.info(.playback, "configureSession: estado previo · categoría \(session.category.rawValue) · modo \(session.mode.rawValue)")
-                // ✅ FIX -50 determinista: etiquetar la llamada culpable en el log
-                // SIN perder el backoff: cada bloque específico loguea y RELANZA,
-                // y el catch externo sigue siendo quien dispara el reintento.
-                AppLog.info(.playback, "configureSession: intento · categoría .playback · modo \(sessionMode == .measurement ? "measurement" : "default") · opciones \(options)")
                 do {
                     try session.setCategory(
                         .playback,
@@ -1316,18 +1305,18 @@ class AudioEngine: NSObject, ObservableObject {
                 let delay = 0.15 * pow(2.0, Double(attempt))
                 AppLog.warning(.playback, String(format: "setupSession falló; reintento %d/3 en %.0f ms", attempt + 1, delay * 1000))
                 DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-                    self?.configureSession(allowAirPlay: allowAirPlay, level: level, attempt: attempt + 1)
+                    self?.configureSession(level: level, attempt: attempt + 1)
                 }
             } else {
                 switch level {
                 case .primary:
                     AppLog.warning(.playback, "setupSession: nivel .primary agotado; re-negociando sesión (setActive(false) + reintento)")
-                    configureSession(allowAirPlay: allowAirPlay, level: .renegotiate, attempt: 0)
+                    configureSession(level: .renegotiate, attempt: 0)
                 case .renegotiate:
                     // ✅ Última línea: la sesión conserva su categoría vigente (el
                     // sistema asigna la del proceso) y solo se intenta activar.
                     AppLog.warning(.playback, "setupSession: nivel .renegotiate agotado; degradando a .activeOnly (activación sin setCategory)")
-                    configureSession(allowAirPlay: allowAirPlay, level: .activeOnly, attempt: 0)
+                    configureSession(level: .activeOnly, attempt: 0)
                 case .activeOnly:
                     AppLog.warning(.playback, "setupSession: nivel .activeOnly agotado; la sesión queda sin configurar")
                 }
@@ -2945,6 +2934,53 @@ class AudioEngine: NSObject, ObservableObject {
         // bloqueo, CarPlay) queden sincronizadas con la app.
         updateNowPlayingInfo(force: true)
         AppLog.info(.playback, "Repetición: \(name)")
+    }
+
+    // ✅ MEJORA QUEUE (FASE E1): "Reproducir siguiente". A diferencia de
+    // addToQueue (que añade al FINAL: suena después de todo lo que ya estaba
+    // en cola), aquí la canción se inserta al PRINCIPIO de `manualQueue`, y
+    // computeNextIndex() consume `removeFirst()` justo después de la actual:
+    // suena inmediatamente después, por delante del resto de la cola manual.
+    // Es la operación que el menú contextual anunciaba como "Reproducir
+    // siguiente" y que en realidad reemplazaba la lista entera (play(song:
+    // from:) con una lista recortada).
+    //
+    // ✅ E1.5 — desalojo del encolado: como el motor ya dejó programada la
+    // siguiente en el nodo (encadenado gapless, ver scheduleAheadIfPossible),
+    // esa transición ganaría a la recién insertada: el audio está ya en el
+    // `playerNode` y no se puede desprogramar un segmento suelto. Se desaloja
+    // con invalidateChainedAhead() (token a 0, sin apilar otra transición
+    // encima): al terminar la canción actual el motor cae al respaldo atómico
+    // y recalcula con la cola YA modificada, así que suena X y no B.
+    // Coste declarado: esa transición concreta deja de ser gapless (~0,15 s del
+    // respaldo atómico) y el audio huérfano de B lo descarta playCurrentSong.
+    func playNext(_ song: Song) {
+        // ✅ E1.5: se comprueba ANTES de desalojar, solo para el log.
+        let hadChainedAhead = chainedAheadIndex != nil
+        invalidateChainedAhead()
+        // ✅ E1.5 — guard anti-deriva: si el encolado salió de la COLA MANUAL,
+        // computeNextIndex() ya adelantó `currentIndex` a ESA canción
+        // (`currentIndex = insertionIndex`) mientras sonaba la anterior, y el
+        // respaldo atómico que dispara el desalojo reproduce
+        // `currentIndex + 1`: la canción encolada, que vive EN `currentIndex`,
+        // se quedaría sin sonar. Se retrocede el puntero a la canción que suena.
+        // El guard es por IDENTIDAD, no por heurística: en repeat-one el
+        // encolado ES la canción actual (playbackOrder[currentIndex].id ==
+        // currentSong.id) y ahí no hay deriva que corregir.
+        if let chained = chainedAheadIndex, chained == currentIndex,
+           playbackOrder.indices.contains(currentIndex),
+           playbackOrder[currentIndex].id != currentSong?.id {
+            currentIndex -= 1
+        }
+        manualQueue.insert(song, at: 0)
+        updateNextUpQueue()
+        // ✅ FASE B4: mismo criterio que add/remove/reorder — la cola es estado
+        // que se publica a iOS (la "siguiente" que anuncian CC/bloqueo/CarPlay
+        // sale de ella).
+        updateNowPlayingInfo(force: true)
+        AppLog.info(.playback, hadChainedAhead
+            ? "Reproducir siguiente (desalojando encolado): \(song.title)"
+            : "Reproducir siguiente: \(song.title)")
     }
 
     // ✅ MEJORA QUEUE: añadir canción a la cola manual
