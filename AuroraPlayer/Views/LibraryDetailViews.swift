@@ -244,9 +244,27 @@ struct AlbumDetailView: View {
         // Con esto el contenido puede llegar a y=0: la franja se la come el hero.
         .ignoresSafeArea(edges: .top)
         .navigationBarTitleDisplayMode(.inline)
+        // ✅ FIX BACK TEXT: back nativo oculto (salía "Back" en inglés y con el
+        // azul del asset). Back propio: acento vivo + texto localizado; el
+        // dismiss de entorno hace el pop del stack.
+        .navigationBarBackButtonHidden(true)
         // ✅ BARRERA EMERGENTE (estilo Apple Music): el título aparece solo
         // cuando el hero ya casi salió de pantalla. Solo opacidad, sin recalculos.
         .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button {
+                    Haptics.light()
+                    dismiss()
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 17, weight: .semibold))
+                        Text(Localization.localized("design.back"))
+                            .font(.system(size: 17))
+                    }
+                    .foregroundStyle(AppTheme.accent)
+                }
+            }
             ToolbarItem(placement: .principal) {
                 Text(album.name)
                     .font(.system(size: 17, weight: .semibold))
@@ -897,8 +915,25 @@ struct ArtistDetailView: View {
         // Con esto el contenido puede llegar a y=0: la franja se la come el hero.
         .ignoresSafeArea(edges: .top)
         .navigationBarTitleDisplayMode(.inline)
+        // ✅ FIX BACK TEXT: mismo criterio que AlbumDetailView (back propio con
+        // acento y texto localizado, en vez del "Back" del sistema).
+        .navigationBarBackButtonHidden(true)
         // ✅ Barra emergente con el nombre del artista (mismo criterio que Album).
         .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button {
+                    Haptics.light()
+                    dismiss()
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 17, weight: .semibold))
+                        Text(Localization.localized("design.back"))
+                            .font(.system(size: 17))
+                    }
+                    .foregroundStyle(AppTheme.accent)
+                }
+            }
             ToolbarItem(placement: .principal) {
                 Text(artist.name)
                     .font(.system(size: 17, weight: .semibold))

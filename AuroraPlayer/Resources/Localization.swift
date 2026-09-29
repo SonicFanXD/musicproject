@@ -458,6 +458,7 @@ final class Localization: ObservableObject {
         "common.ok": [.spanish: "OK", .english: "OK"],
         // ✅ AURORA DESIGN: etiqueta VoiceOver del chevron de cierre de sheets.
         "design.close": [.spanish: "Cerrar", .english: "Close"],
+        "design.back": [.spanish: "Atrás", .english: "Back"],
 
         // Presets de EQ
         "eq.flat": [.spanish: "Plano", .english: "Flat"],

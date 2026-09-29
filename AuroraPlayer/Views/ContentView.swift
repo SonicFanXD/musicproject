@@ -371,6 +371,11 @@ struct ContentView: View {
                 .padding(.bottom, 6)
         }
         .animation(.easeInOut(duration: 0.35), value: fileAccessService.isScanning)
+        // ✅ FIX BACK ACCENT: sobreescribe el AccentColor del asset para TODO el
+        // stack: el back button de Álbum/Artista (push) toma el acento vivo y
+        // respeta el toggle "acento desde carátula" (AppTheme.accent delega en
+        // ThemeManager). También cubre alerts y sliders de este stack.
+        .tint(AppTheme.accent)
         .onChange(of: fileAccessService.isScanning) { scanning in
             withAnimation(.easeInOut(duration: 0.3)) {
                 compactIndexingVisible = scanning

@@ -267,6 +267,10 @@ struct NowPlayingView: View {
                     NavigationStack {
                         ArtistDetailView(artist: artist, audioEngine: audioEngine, fileAccessService: fileAccessService)
                     }
+                    // ✅ FIX BACK ACCENT: el detalle entra como RAÍZ de este stack,
+                    // sin back nativo, pero el tint cubre alerts/sliders/controles
+                    // que la vista presente dentro del sheet.
+                    .tint(AppTheme.accent)
                 }
             }
             .sheet(isPresented: $showAlbumDetail) {
@@ -274,6 +278,8 @@ struct NowPlayingView: View {
                     NavigationStack {
                         AlbumDetailView(album: album, audioEngine: audioEngine, fileAccessService: fileAccessService)
                     }
+                    // ✅ FIX BACK ACCENT: mismo criterio que el sheet de artista.
+                    .tint(AppTheme.accent)
                 }
             }
             .presentationDetents([.large])

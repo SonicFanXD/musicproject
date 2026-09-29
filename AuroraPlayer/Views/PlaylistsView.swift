@@ -45,7 +45,11 @@ struct PlaylistsView: View {
             }
             // ✅ Ocultar la barra: el header del sistema ocupa su sitio, no se suman.
             .toolbar(.hidden, for: .navigationBar)
+            // ✅ FIX BACK ACCENT: acento vivo para el back de PlaylistDetailView
+            // (push) y los controles de este stack, sobre el AccentColor del asset.
+            .tint(AppTheme.accent)
             .sheet(isPresented: $showCreatePlaylist) {
+
                 createPlaylistSheet
             }
         }
@@ -395,7 +399,25 @@ struct PlaylistDetailView: View {
         // (solo un menú trailing), así que depende del back NATIVO: se pide la
         // barra visible explícitamente para garantizar que aparezca.
         .toolbar(.visible, for: .navigationBar)
+        // ✅ FIX BACK TEXT: back nativo oculto (el título del padre era vacío →
+        // iOS caía al "Back" del sistema, en inglés y sin acento). Back propio
+        // con acento vivo y texto localizado; el dismiss de entorno hace el pop.
+        .navigationBarBackButtonHidden(true)
         .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button {
+                    Haptics.light()
+                    dismiss()
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 17, weight: .semibold))
+                        Text(Localization.localized("design.back"))
+                            .font(.system(size: 17))
+                    }
+                    .foregroundStyle(AppTheme.accent)
+                }
+            }
             ToolbarItem(placement: .navigationBarTrailing) {
                 Menu {
                     Button {

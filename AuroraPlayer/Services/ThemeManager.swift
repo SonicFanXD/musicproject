@@ -193,6 +193,16 @@ final class ThemeManager: ObservableObject {
             uiColor = UIColor(accent)
         }
         DispatchQueue.main.async {
+            // ✅ FIX BACK ACCENT: el AccentColor del asset NO llega a las barras
+            // UIKit que SwiftUI crea por debajo (barra de navegación y toolbar):
+            // los back buttons de las vistas apiladas caían al azul de sistema.
+            // Estos proxies dan a esas barras el acento vivo de ThemeManager
+            // (mismo uiColor que ya reciben las ventanas). Deliberadamente SIN
+            // UIBarButtonItem.appearance(): el proxy global pisaría el
+            // .foregroundStyle de items que ya llevan color propio (los
+            // "Cancelar" de los toolbars de PlaylistsView).
+            UINavigationBar.appearance().tintColor = uiColor
+            UIToolbar.appearance().tintColor = uiColor
             UIWindow.appearance().tintColor = uiColor
             for scene in UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }) {
                 for window in scene.windows {
