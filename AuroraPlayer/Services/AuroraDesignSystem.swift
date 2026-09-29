@@ -462,6 +462,16 @@ struct AuroraSectionHeader: View {
 /// 44pt, sin .toolbar) generalizado a los modales con cierre claro.
 struct AuroraSheetHeader: View {
     let title: String
+    /// ✅ AURORA DESIGN: slot IZQUIERDO opcional, con el MISMO ancho reservado
+    /// (44pt) que el chevron para que el título siga centrado en los dos casos.
+    /// DUALIDAD documentada: sin `leading` se muestra el chevron.down de cierre
+    /// (comportamiento original de los 5 sheets ya migrados); CON `leading` se
+    /// muestra ese contenido y el chevron se OCULTA, porque hay pantallas
+    /// (Registros) cuyo menú de la izquierda ya agrupa las acciones y un segundo
+    /// botón de cierre no aporta nada a 44pt de distancia. `onClose` se conserva
+    /// SIEMPRE en la API aunque el botón no se dibuje: el llamador lo sigue
+    /// necesitando para cerrar por acción ("Listo") o por gesto.
+    var leading: AnyView? = nil
     let onClose: () -> Void
     /// ✅ AURORA DESIGN: color del título (por defecto el primario del sistema).
     /// Los sheets de la app pasan `AppTheme.accent` para unificar el lenguaje
@@ -471,16 +481,25 @@ struct AuroraSheetHeader: View {
 
     var body: some View {
         HStack {
-            Button {
-                onClose()
-            } label: {
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(Color.secondary)
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
+            // ✅ Slot izquierdo: con contenido se usa tal cual; sin él, el
+            // chevron.down de cierre de siempre. El frame de 44x44 de los dos
+            // caminos es lo que mantiene el título en el eje óptico.
+            Group {
+                if let leading {
+                    AnyView(leading)
+                } else {
+                    Button {
+                        onClose()
+                    } label: {
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(Color.secondary)
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
+                    }
+                    .accessibilityLabel(Text(Localization.localized("design.close")))
+                }
             }
-            .accessibilityLabel(Text(Localization.localized("design.close")))
 
             Spacer()
 

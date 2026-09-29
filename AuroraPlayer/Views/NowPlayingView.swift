@@ -846,7 +846,7 @@ struct NowPlayingView: View {
                 }
                 .padding(.horizontal, 18).padding(.top, 16).padding(.bottom, 8)
 
-                AudioQualityDetailView(audioEngine: audioEngine, embeddedInCard: true)
+                AudioQualityDetailView(audioEngine: audioEngine)
             }
             // ✅ Panel EXPANDIDO: mejor legibilidad y espacio para todos los detalles
             // Aumentado de 480x440 a 520x500 para mejor experiencia visual.

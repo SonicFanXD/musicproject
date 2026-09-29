@@ -19,8 +19,6 @@ import AVFoundation
 struct AudioQualityDetailView: View {
     @ObservedObject var audioEngine: AudioEngine
     @ObservedObject private var localization = Localization.shared
-    var embeddedInCard: Bool = false
-    @Environment(\.dismiss) private var dismiss
 
     @State private var appearAnimation = false
     /// ✅ FASE C6: foto inmutable de TODO lo que pinta la vista.
@@ -30,13 +28,12 @@ struct AudioQualityDetailView: View {
     private var song: Song? { audioEngine.currentSong }
 
     var body: some View {
-        Group {
-            if embeddedInCard {
-                embeddedContent
-            } else {
-                fullScreenContent
-            }
-        }
+        // ✅ AURORA DESIGN: la vista queda SIEMPRE embebida (es la tarjeta modal
+        // de NowPlayingView). La rama de pantalla completa con NavigationStack +
+        // toolbar era INALCANZABLE: el único call site construye la vista
+        // embebida, así que el chrome de navegación (y el `dismiss` que solo
+        // usaba esa rama) se retiran en vez de quedarse como código muerto.
+        embeddedContent
         .onAppear {
             withAnimation(.easeOut(duration: 0.35)) { appearAnimation = true }
             refreshSnapshot(loadFileSize: true)
@@ -80,51 +77,6 @@ struct AudioQualityDetailView: View {
             .padding(.horizontal, 14).padding(.top, 10).padding(.bottom, 14)
         }
         .scrollIndicators(.hidden)
-    }
-
-    // MARK: - Cuerpo completo con chrome de navegación
-    private var fullScreenContent: some View {
-        NavigationStack {
-            ZStack {
-                // ✅ Fondo premium consistente con NowPlayingView
-                AppBackground()
-
-                ScrollView {
-                    LazyVStack(spacing: 18) {
-                        headerCard
-                        signalChainSection
-                        gainSection
-                        bufferSection
-                        fileDetailsSection
-                        outputDetailsSection
-                        audiophileInfoSection
-                        deviceSection
-                    }
-                    .padding(.horizontal, 16).padding(.top, 10).padding(.bottom, 40)
-                }
-                .scrollIndicators(.hidden)
-            }
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(.hidden, for: .navigationBar)
-            .toolbar {
-                ToolbarItem(placement: .principal) {
-                    // ✅ AURORA DESIGN: la tipografía ya era la del sistema (17 bold
-                    // rounded); el gradiente pasa al de la app (dos colores reales
-                    // con "acento desde portada" activo) en vez del manual.
-                    Text(Localization.localized("audio.quality.title"))
-                        .font(.system(size: 17, weight: .bold, design: .rounded))
-                        .foregroundStyle(AppTheme.accentGradient)
-                        .accessibilityLabel(Localization.localized("audio.quality.title"))
-                }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(Localization.localized("quality.done")) { dismiss() }
-                        .foregroundStyle(AppTheme.accent)
-                        .font(.system(size: 15, weight: .semibold))
-                        .frame(width: 44, height: 44)
-                        .contentShape(Rectangle())
-                }
-            }
-        }
     }
 
     // MARK: - Header + spec sheet del archivo (C2)

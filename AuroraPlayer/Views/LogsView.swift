@@ -36,6 +36,11 @@ struct LogsView: View {
     // ✅ Mensajes expandibles: ids de entradas con mensaje desplegado
     @State private var expandedIDs = Set<UUID>()
 
+    // ✅ AURORA DESIGN: el buscador es INLINE (como el de ContentView). Sin
+    // NavigationBar no hay dónde vivir para .searchable, así que el foco lo
+    // gestiona la vista y poder reenfocar al limpiar.
+    @FocusState private var searchFieldFocused: Bool
+
     private var filteredEntries: [InAppLogEntry] {
         var entries = AppLog.entries
 
@@ -61,6 +66,27 @@ struct LogsView: View {
                 AppBackground()
 
                 VStack(spacing: 0) {
+                    // ✅ AURORA DESIGN: el toolbar se sustituye por el header del
+                    // sistema. El menú de diagnóstico (compartir/copiar/borrar)
+                    // pasa al NUEVO slot `leading`: es la única pantalla con menú
+                    // a la izquierda, así que el chevron.down de cierre se oculta
+                    // y su hueco de 44pt lo ocupa el menú (el título no se mueve).
+                    AuroraSheetHeader(
+                        title: "Registros",
+                        leading: AnyView(diagnosticsMenu),
+                        onClose: { dismiss() },
+                        titleColor: AppTheme.accent,
+                        trailing: AnyView(doneButton)
+                    )
+
+                    // ✅ AURORA DESIGN: buscador INLINE (magnifyingglass + campo +
+                    // clear) en vez de .searchable: escribe el MISMO `searchText`,
+                    // así que `filteredEntries` (categoría, errores y texto) no
+                    // cambia ni un ápice.
+                    searchFieldInline
+                        .padding(.horizontal, 16)
+                        .padding(.top, 8)
+
                     // Stats summary
                     statsBar
 
@@ -88,60 +114,10 @@ struct LogsView: View {
                     .transition(.opacity)
                 }
             }
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(.hidden, for: .navigationBar)
-            .toolbar {
-                // Título personalizado consistente con la app
-                ToolbarItem(placement: .principal) {
-                    // ✅ AURORA DESIGN: el título pasa a la tipografía de sheet del
-                    // sistema (17 bold rounded). El acento de dos colores ya estaba.
-                    Text("Registros")
-                        .font(.system(size: 17, weight: .bold, design: .rounded))
-                        // ✅ Acento de dos colores (antes un solo color con opacidad).
-                        .foregroundStyle(AppTheme.accentGradient)
-                        .accessibilityLabel("Registros")
-                }
-
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Menu {
-                        Button {
-                            shareDiagnostics()
-                        } label: {
-                            Label("Compartir / Guardar diagnóstico", systemImage: "square.and.arrow.up")
-                        }
-
-                        Button {
-                            copyDiagnostics()
-                        } label: {
-                            Label("Copiar diagnóstico completo", systemImage: "doc.on.doc")
-                        }
-
-                        Divider()
-
-                        Button(role: .destructive) {
-                            AppLog.clearEntries()
-                        } label: {
-                            Label("Borrar registros", systemImage: "trash")
-                        }
-                    } label: {
-                        Image(systemName: "ellipsis.circle")
-                            .frame(width: 44, height: 44) // Bigger invisible touch target
-                            .contentShape(Rectangle())
-                    }
-                }
-
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(Localization.localized("actions.done")) {
-                        dismiss()
-                    }
-                    .frame(width: 44, height: 44) // Bigger invisible touch target
-                    .contentShape(Rectangle())
-                }
-            }
-            .searchable(
-                text: $searchText,
-                prompt: "Buscar en logs"
-            )
+            // ✅ AURORA DESIGN: el toolbar se sustituye por el header del sistema.
+            // La barra se OCULTA: así el header ocupa SU altura (44pt) en lugar de
+            // sumarse un segundo bloque de 44pt encima.
+            .toolbar(.hidden, for: .navigationBar)
             .sheet(item: $shareItem) { item in
                 ActivityShareSheet(items: [item.url])
             }
@@ -176,6 +152,88 @@ struct LogsView: View {
             withAnimation {
                 copiedToast = false
             }
+        }
+    }
+
+    // MARK: - Header del sistema (menú + cerrar)
+
+    /// ✅ AURORA DESIGN: el menú de diagnóstico que vivía en
+    /// `navigationBarLeading`, ahora en el slot `leading` del header. Misma
+    /// altura que el hueco del chevron para no descentrar el título.
+    private var diagnosticsMenu: some View {
+        Menu {
+            Button {
+                shareDiagnostics()
+            } label: {
+                Label("Compartir / Guardar diagnóstico", systemImage: "square.and.arrow.up")
+            }
+
+            Button {
+                copyDiagnostics()
+            } label: {
+                Label("Copiar diagnóstico completo", systemImage: "doc.on.doc")
+            }
+
+            Divider()
+
+            Button(role: .destructive) {
+                AppLog.clearEntries()
+            } label: {
+                Label("Borrar registros", systemImage: "trash")
+            }
+        } label: {
+            Image(systemName: "ellipsis.circle")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(AppTheme.accent)
+                .frame(width: 44, height: 44) // Bigger invisible touch target
+                .contentShape(Rectangle())
+        }
+    }
+
+    /// ✅ El "Listo" que vivía en `navigationBarTrailing`, ahora en el slot
+    /// `trailing` del header. Mide 44pt, lo mismo que el hueco fantasma, así que
+    /// el título sigue centrado.
+    private var doneButton: some View {
+        Button(Localization.localized("actions.done")) {
+            dismiss()
+        }
+        .foregroundStyle(AppTheme.accent)
+        .frame(width: 44, height: 44) // Bigger invisible touch target
+        .contentShape(Rectangle())
+    }
+
+    /// ✅ Buscador INLINE con look nativo (lupa + campo + clear), calcado del de
+    /// ContentView: sustituye al .searchable del NavigationStack sin pelear con
+    /// la barra (ya oculta). Escribe el mismo `searchText` de siempre.
+    private var searchFieldInline: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 15, weight: .medium))
+                .foregroundStyle(.secondary)
+            TextField("Buscar en logs", text: $searchText)
+                .textFieldStyle(.plain)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .focused($searchFieldFocused)
+            if !searchText.isEmpty {
+                Button {
+                    searchText = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+        // ✅ AURORA DESIGN: superficie flat del sistema (radio .md, borde sutil,
+        // sin sombra) — el campo vive sobre el fondo, cero blur.
+        .auroraCard(radius: AuroraRadius.md, style: .flat, withShadow: false)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            searchFieldFocused = true
         }
     }
 
