@@ -19,8 +19,14 @@ enum DetailHeroMetrics {
 
 // MARK: - Acento de las vistas de detalle (SIEMPRE de DOS colores)
 /// ✅ Regla única para Album/Artist detail:
-/// · Con "Acento desde portada" ACTIVO → color de ESTA carátula (álbum o
-///   artista) + su secundario REAL, extraído con la misma caché que el primario.
+/// ✅ G (comentario corregido): la fuente del acento NO es la portada del
+/// álbum/artista que se está mirando, es la de la CANCIÓN QUE SUENA.
+/// · Con "Acento desde portada" ACTIVO → el par que publica `ThemeManager` para
+///   la carátula de la canción actual (fuente única, el mismo par que usan chips
+///   y cabeceras del resto de la app), pasado por `readableColor`, más su
+///   secundario REAL extraído con la misma caché que el primario.
+///   Excepción: `ArtistAlbumCard`, que pinta los OTROS álbumes del artista y usa
+///   el `dominantColor` de su propia carátula.
 /// · Con el modo DESACTIVADO → acento manual con su segunda parada al 40%,
 ///   idéntico a `AppTheme.accentGradient` (consistencia con el resto de la app).
 /// ✅ Nunca `[color, color.opacity(x)]` de un solo color: siempre DOS tonos reales,

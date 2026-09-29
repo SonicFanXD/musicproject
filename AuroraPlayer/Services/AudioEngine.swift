@@ -3178,65 +3178,14 @@ class AudioEngine: NSObject, ObservableObject {
         play(song: song, from: playHistory)
     }
 
-    // ✅ Gestión de la cola "Siguiente" (reordenar, eliminar, limpiar)
-    func removeFromNextUpQueue(_ song: Song) {
-        // ✅ FIX: se elimina de las DOS fuentes (cola manual y lista completa),
-        // no solo de la ventana que pinta la UI. Si se quitaba solo de la
-        // ventana, la canción seguía estando en `upcomingQueue` y volvía a
-        // aparecer al rehacer la playlist.
-        manualQueue.removeAll { $0.id == song.id }
-        upcomingQueue.removeAll { $0.id == song.id }
-        // Reconstruir playlist interna para reflejar el cambio
-        rebuildPlaylistFromQueue()
-    }
-
-    /// El usuario reordena la ventana visible (las PRIMERAS canciones de
-    /// `upcomingQueue`). Se reemplaza ese prefijo por el orden nuevo y se
-    /// conserva intacto el resto, así reordenar 10 filas nunca borra las demás.
-    func reorderNextUpQueue(_ songs: [Song]) {
-        let editedIDs = Set(songs.map { $0.id })
-        let untouched = upcomingQueue.filter { !editedIDs.contains($0.id) }
-        upcomingQueue = songs + untouched
-        // ✅ Las canciones de la cola manual ya están dentro de `upcomingQueue`
-        // en el orden elegido: se vacía la cola manual para que
-        // computeNextIndex() no vuelva a insertarlas (el mismo tema se
-        // reproducía dos veces: una por la playlist rehecha y otra al consumir
-        // la cola manual).
-        manualQueue.removeAll()
-        rebuildPlaylistFromQueue()
-    }
-
-    func clearNextUpQueue() {
-        // Vaciar la cola es vaciarla ENTERA (también lo que no se ve en la
-        // ventana): la reproducción termina en la canción actual.
-        manualQueue.removeAll()
-        upcomingQueue.removeAll()
-        rebuildPlaylistFromQueue()
-    }
-
-    private func rebuildPlaylistFromQueue() {
-        // La playlist actual = [canción actual] + cola siguiente COMPLETA.
-        // ✅ FIX truncamiento: antes se usaba `nextUpQueue` (la ventana de 10
-        // de la UI), así que cualquier edición de la cola recortaba la
-        // reproducción a esas 10 canciones + la actual.
-        guard currentIndex >= 0, currentIndex < playbackOrder.count else { return }
-        let current = playbackOrder[currentIndex]
-        playbackOrder = [current] + upcomingQueue
-        currentIndex = 0
-        // ✅ FASE A: la cola editada pasa a ser el nuevo orden SIN mezclar
-        // (`originalOrder`), que es la fuente desde la que se reconstruye al
-        // apagar el aleatorio. Con el aleatorio activo el orden real se re-mezcla
-        // conservando la canción actual fija en el índice 0 — misma invariante
-        // que play()/toggleShuffle().
-        originalOrder = playbackOrder
-        if isShuffleEnabled, playbackOrder.count > 1 {
-            playbackOrder = [current] + originalOrder.filter { $0.id != current.id }.shuffled()
-        }
-        updatePlaybackQueue()
-        // Mantener la ventana de la UI coherente con la playlist recién rehecha
-        // (y con la cola manual ya volcada dentro de ella).
-        updateNextUpQueue()
-    }
+    // ✅ G: AQUÍ VIVÍAN las 4 funciones legacy del trío "Siguiente"
+    // (`removeFromNextUpQueue`, `reorderNextUpQueue`, `clearNextUpQueue` y su
+    // `rebuildPlaylistFromQueue`). Se borran tras verificar 0 call sites: E3
+    // dejó de usarlas al pasar QueueView a las operaciones DIRECTAS sobre la
+    // cola (removeFromQueue / moveInQueue / clearQueue) y nadie más las
+    // llamaba. Su problema de diseño era el de `rebuildPlaylistFromQueue`:
+    // rehacía el orden COMPLETO a partir de la cola, así que editar la cola
+    // reescribía el álbum en curso.
 
     private func startDisplayTimer(isBackground: Bool = false) {
         stopDisplayTimer()

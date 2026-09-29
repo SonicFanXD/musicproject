@@ -477,7 +477,8 @@ private struct LibrarySettingsSection: View, SettingsRowBuilding {
                                 .frame(width: 44, height: 44)
                                 .contentShape(Rectangle())
                         }
-                        .buttonStyle(.plain)
+                        // ✅ G: respuesta al toque del sistema (antes `.plain`, sin feedback).
+                        .buttonStyle(PressableButtonStyle(scale: AuroraPressScale.chip))
                     }
                     .padding(.horizontal, 16).padding(.vertical, 10)
                     .contentShape(Rectangle())
@@ -509,7 +510,8 @@ private struct LibrarySettingsSection: View, SettingsRowBuilding {
                                 .frame(width: 44, height: 44)
                                 .contentShape(Rectangle())
                         }
-                        .buttonStyle(.plain)
+                        // ✅ G: respuesta al toque del sistema (antes `.plain`, sin feedback).
+                        .buttonStyle(PressableButtonStyle(scale: AuroraPressScale.chip))
                     }
                     .padding(.horizontal, 16).padding(.vertical, 10)
                     .contentShape(Rectangle())

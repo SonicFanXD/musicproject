@@ -700,7 +700,8 @@ struct PlaylistDetailView: View {
                     .frame(width: 44, height: 44) // Bigger invisible touch target
                     .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            // ✅ G: respuesta al toque del sistema (antes `.plain`, sin feedback).
+            .buttonStyle(PressableButtonStyle(scale: AuroraPressScale.chip))
             .accessibilityLabel(Localization.localized("queue.remove"))
         }
         .padding(.horizontal, 14)

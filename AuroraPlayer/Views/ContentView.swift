@@ -115,16 +115,23 @@ struct ContentView: View {
                     // ✅ Transición animada entre categorías: el contenido
                     // entra con fade + slide suave, sale con fade + micro-escala.
                     // Solo transform/opacity → renderizado por GPU, 60fps estables.
+                    // ✅ G: cada rama declara su transición. Antes solo existía el
+                    // `.animation` de abajo, así que el cambio de categoría cruzaba
+                    // en duro (el comentario describía una transición que no estaba).
                     ZStack {
                         switch selectedCategory {
                         case .songs:
                             libraryScroll(id: "songs") { songsSection }
+                                .transition(categoryTransition)
                         case .albums:
                             libraryScroll(id: "albums") { albumsSection }
+                                .transition(categoryTransition)
                         case .artists:
                             libraryScroll(id: "artists") { artistsSection }
+                                .transition(categoryTransition)
                         case .playlists:
                             libraryScroll(id: "playlists") { playlistsSection }
+                                .transition(categoryTransition)
                         }
                     }
                     .animation(.spring(response: 0.32, dampingFraction: 0.88), value: selectedCategory)
@@ -467,6 +474,19 @@ struct ContentView: View {
     // de arriba siempre se ve bien y el scroll rinde igual (lazy).
     // Se conserva el inset inferior para la PlayerBar flotante (sin él, la
     // última fila quedaba oculta detrás de la barra).
+    /// ✅ G: transición compartida por las 4 categorías de la biblioteca (una
+    /// definición en vez de cuatro copias idénticas). Entra por la derecha con
+    /// fundido y una micro-escala; sale con fundido. Solo `transform`/`opacity`,
+    /// así que el cambio lo compone la GPU (nada de blur ni material nuevos).
+    private var categoryTransition: AnyTransition {
+        .asymmetric(
+            insertion: .opacity.combined(
+                with: .move(edge: .trailing).combined(with: .scale(scale: 0.98))
+            ),
+            removal: .opacity
+        )
+    }
+
     private func libraryScroll<Content: View>(
         id: String,
         @ViewBuilder content: () -> Content
@@ -1013,7 +1033,8 @@ struct ContentView: View {
                     .frame(width: 36, height: 36)
                     .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            // ✅ G: respuesta al toque del sistema (antes `.plain`, sin feedback).
+            .buttonStyle(PressableButtonStyle(scale: AuroraPressScale.chip))
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
@@ -1427,118 +1448,54 @@ struct ContentView: View {
     }
 }
 
+// ✅ G: rediseño con los tokens del sistema. Antes la vista se construía a mano
+// (círculo del logo + halo pulsante + círculo anidado + gradiente radial de fondo),
+// duplicando el lenguaje del sistema con medidas propias. Ahora consume
+// `AppBackground()` + `auroraIconBadge` + `AppTheme.accentGradient`, con UNA sola
+// sombra (soft) y sin halos. Efecto lateral bueno en A11: desaparece el
+// `repeatForever` del halo, que era el único bucle perpetuo de la pantalla.
+// Los TIEMPOS no cambian: el mínimo de 1,2 s lo sigue marcando ContentView.
 struct SplashView: View {
     @State private var logoScale: CGFloat = 0.8
     @State private var logoOpacity: Double = 0
     @State private var titleOffset: CGFloat = 20
     @State private var titleOpacity: Double = 0
-    @State private var pulseScale: CGFloat = 1.0
-    @State private var pulseOpacity: Double = 0
-    // ✅ Halo "respirable": ciclo corto (≈1,5 s con autoreverses) y amplitud
-    // mínima. Vive solo mientras el splash está en pantalla: al pasar
-    // isInitialLoad a false la vista sale del árbol y la animación se detiene
-    // con ella (no queda ningún bucle en background).
-    @State private var breathing = false
-    @Environment(\.colorScheme) private var colorScheme
     
     var body: some View {
         ZStack {
-            // ✅ Fondo sólido que respeta el esquema de color
-            (colorScheme == .dark ? Color.black : Color(UIColor.systemBackground))
-                .ignoresSafeArea()
-            
-            // ✅ Efecto de resplandor sutil (sin AngularGradient problemático)
-            RadialGradient(
-                colors: [
-                    AppTheme.accent.opacity(colorScheme == .dark ? 0.08 : 0.04),
-                    Color.clear
-                ],
-                center: .center,
-                startRadius: 50,
-                endRadius: 250
-            )
-            .ignoresSafeArea()
+            // ✅ G: el fondo del sistema (respeta claro/oscuro por sí solo).
+            AppBackground()
             
             VStack(spacing: 0) {
                 Spacer()
                 
-                // ✅ Logo con animación de escala y opacidad suave
-                ZStack {
-                    // Halo pulsante exterior
-                    Circle()
-                        .fill(
-                            RadialGradient(
-                                colors: [
-                                    AppTheme.accent.opacity(0.15),
-                                    AppTheme.accent.opacity(0.05),
-                                    Color.clear
-                                ],
-                                center: .center,
-                                startRadius: 30,
-                                endRadius: 80
-                            )
-                        )
-                        .frame(width: 160, height: 160)
-                        .scaleEffect(pulseScale * (breathing ? 1.04 : 0.97))
-                        .opacity(pulseOpacity)
-                        .animation(.easeInOut(duration: 0.75).repeatForever(autoreverses: true), value: breathing)
-                    
-                    // Círculo del logo
-                    Circle()
-                        .fill(
-                            LinearGradient(
-                                colors: [
-                                    AppTheme.accent.opacity(0.12),
-                                    AppTheme.accent.opacity(0.04)
-                                ],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                        .frame(width: 110, height: 110)
-                        .overlay {
-                            Circle()
-                                .stroke(
-                                    LinearGradient(
-                                        colors: [
-                                            AppTheme.accent.opacity(0.4),
-                                            AppTheme.accent.opacity(0.1)
-                                        ],
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
-                                    ),
-                                    lineWidth: 1.5
-                                )
-                        }
-                    
-                    // Icono principal
-                    Image(systemName: "music.note")
-                        .font(.system(size: 44, weight: .light))
-                        // ✅ Mismo acento de dos colores que el resto de la app.
-                        .foregroundStyle(AppTheme.accentGradient)
-                        .shadow(color: AppTheme.accent.opacity(0.3), radius: 8, y: 4)
-                }
-                .scaleEffect(logoScale)
-                .opacity(logoOpacity)
+                // ✅ G: logo con el badge del sistema: hero × 1,5 (88 × 1,5 = 132pt)
+                // en forma de círculo, con su gradiente interno de dos paradas del
+                // mismo tono. La sombra única va POR FUERA del badge para que
+                // sombree el conjunto (círculo + icono).
+                Image(systemName: "music.note")
+                    .auroraIconBadge(
+                        size: AuroraIconSize.hero * 1.5,
+                        color: AppTheme.accent,
+                        shape: .circle,
+                        iconSize: 44
+                    )
+                    .shadow(
+                        color: AppTheme.accent.opacity(0.3),
+                        radius: AuroraShadow.softRadius,
+                        y: AuroraShadow.softY
+                    )
+                    .scaleEffect(logoScale)
+                    .opacity(logoOpacity)
                 
                 Spacer().frame(height: 32)
                 
-                // ✅ Título con animación de slide hacia arriba
                 VStack(spacing: 12) {
                     Text("Aurora Player")
                         .font(.system(size: 28, weight: .bold, design: .rounded))
-                        .foregroundStyle(
-                            LinearGradient(
-                                colors: [
-                                    colorScheme == .dark ? .white : Color(UIColor.label),
-                                    AppTheme.accent
-                                ],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                        )
+                        // ✅ G: el gradiente de acento de dos colores del sistema.
+                        .foregroundStyle(AppTheme.accentGradient)
                     
-                    // ✅ Indicador de progreso personalizado
                     LoadingDots()
                 }
                 .opacity(titleOpacity)
@@ -1549,10 +1506,9 @@ struct SplashView: View {
         }
         .allowsHitTesting(false)
         .onAppear {
-            // ✅ Entrada con spring (antes easeOut 0.6): el logo "asienta" con un
-            // rebote sutil en lugar de frenar en seco. El retardo del título y
-            // del halo es el mismo de antes, así que la duración total del
-            // splash no cambia.
+            // ✅ Entrada con spring: el logo "asienta" con un rebote sutil en
+            // lugar de frenar en seco. El retardo del título es el mismo de
+            // antes, así que la duración total del splash no cambia.
             withAnimation(.spring(response: 0.7, dampingFraction: 0.75)) {
                 logoScale = 1.0
                 logoOpacity = 1.0
@@ -1562,14 +1518,6 @@ struct SplashView: View {
                 titleOffset = 0
                 titleOpacity = 1.0
             }
-
-            withAnimation(.spring(response: 0.7, dampingFraction: 0.75).delay(0.4)) {
-                pulseScale = 1.12
-                pulseOpacity = 1.0
-            }
-
-            // ✅ Y después respira en bucle mientras el splash siga visible.
-            breathing = true
         }
     }
 }
