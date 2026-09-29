@@ -251,6 +251,9 @@ final class Localization: ObservableObject {
         "playlists.emptySubtitle": [.spanish: "Crea tu primera lista de reproducción", .english: "Create your first playlist"],
         "playlists.emptySubtitle2": [.spanish: "Crea tu primera lista para organizar tu música", .english: "Create your first list to organize your music"],
         "playlists.createFirst": [.spanish: "Crea una lista primero", .english: "Create a playlist first"],
+        // ✅ E2: ítem del menú contextual de las filas de una lista (quitar la
+        // canción de ESTA lista sin borrarla de la biblioteca).
+        "playlists.removeSong": [.spanish: "Quitar de esta lista", .english: "Remove from Playlist"],
 
         // Indexing / Escaneo
         "indexing.updating": [.spanish: "Actualizando...", .english: "Updating..."],

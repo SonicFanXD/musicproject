@@ -715,6 +715,47 @@ struct PlaylistDetailView: View {
                     .strokeBorder(AppTheme.accent.opacity(0.25), lineWidth: 1)
             }
         }
+        // ✅ E2: menú contextual NUEVO en esta vista (no existía) con el orden
+        // estándar de las listas de canciones más el ítem propio de una lista:
+        // Reproducir ahora → Reproducir siguiente → Añadir a la cola → Me gusta
+        // → Quitar de esta lista. `songs` es la lista de ESTA playlist, el mismo
+        // contexto que el toque de la fila. El botón minus.circle de la derecha
+        // sigue haciendo lo mismo que el último ítem: no se retira ninguno.
+        .contextMenu {
+            Button {
+                Haptics.light()
+                audioEngine.play(song: song, from: songs)
+            } label: {
+                Label(Localization.localized("context.playNow"), systemImage: "play.circle.fill")
+            }
+            Button {
+                Haptics.light()
+                audioEngine.playNext(song)
+            } label: {
+                Label(Localization.localized("context.playNext"), systemImage: "text.line.first.and.arrowtriangle.forward")
+            }
+            Button {
+                Haptics.light()
+                audioEngine.addToQueue(song)
+            } label: {
+                Label(Localization.localized("actions.addToQueue"), systemImage: "text.badge.plus")
+            }
+            Button {
+                Haptics.light()
+                fileAccessService.toggleLike(song)
+            } label: {
+                Label(
+                    Localization.localized(fileAccessService.isLiked(song) ? "actions.unlike" : "actions.like"),
+                    systemImage: fileAccessService.isLiked(song) ? "heart.slash" : "heart"
+                )
+            }
+            Button {
+                Haptics.light()
+                fileAccessService.removeSongFromPlaylist(song, playlist: playlist)
+            } label: {
+                Label(Localization.localized("playlists.removeSong"), systemImage: "minus.circle")
+            }
+        }
     }
 
     private var editPlaylistSheet: some View {

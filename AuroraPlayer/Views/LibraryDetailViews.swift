@@ -218,7 +218,12 @@ struct AlbumDetailView: View {
                                 tintColor: tintColor,
                                 isLiked: fileAccessService.isLiked(song),
                                 onAddToQueue: { audioEngine.addToQueue(song) },
-                                onToggleLike: { Haptics.light(); fileAccessService.toggleLike(song) }
+                                onToggleLike: { fileAccessService.toggleLike(song) },
+                                // ✅ E2: "Reproducir ahora" usa el MISMO contexto que
+                                // el toque de la fila (álbum completo en orden de
+                                // disco), para que el menú y el tap no divergan.
+                                onPlayNow: { audioEngine.play(song: song, from: cachedSongs) },
+                                onPlayNext: { audioEngine.playNext(song) }
                             ) {
                                 audioEngine.play(song: song, from: cachedSongs)
                             }
@@ -574,7 +579,14 @@ struct AlbumDetailView: View {
                     tintColor: tintColor,
                     isLiked: fileAccessService.isLiked(song),
                     onAddToQueue: { audioEngine.addToQueue(song) },
-                    onToggleLike: { Haptics.light(); fileAccessService.toggleLike(song) }
+                    onToggleLike: { fileAccessService.toggleLike(song) },
+                    // ✅ E2: el contexto es el ÁLBUM COMPLETO (`cachedSongs`), no el
+                    // disco suelto: es el mismo array que el toque de la fila y el
+                    // que arregla el FIX multi-disco (con `songs` la repetición
+                    // volvía a empezar el mismo disco en vez de seguir con el
+                    // siguiente).
+                    onPlayNow: { audioEngine.play(song: song, from: cachedSongs) },
+                    onPlayNext: { audioEngine.playNext(song) }
                 ) {
                     audioEngine.play(song: song, from: cachedSongs)
                 }
@@ -662,6 +674,12 @@ struct AlbumSongRow: View {
     let isLiked: Bool
     let onAddToQueue: () -> Void
     let onToggleLike: () -> Void
+    // ✅ E2: acciones del menú contextual para el orden estándar (Reproducir
+    // ahora → Reproducir siguiente → Añadir a la cola → Me gusta). Se declaran
+    // ANTES de `action` porque el init miembro respeta el orden de declaración y
+    // `action` es el closure final (trailing) en los 3 call sites.
+    let onPlayNow: () -> Void
+    let onPlayNext: () -> Void
     let action: () -> Void
 
     var body: some View {
@@ -715,9 +733,26 @@ struct AlbumSongRow: View {
             }
         }
         .buttonStyle(PressableButtonStyle(scale: AuroraPressScale.row))
-        // ✅ Acciones rápidas (mantener pulsada la fila): añadir a la cola y me
-        // gusta. Menú contextual en vez de swipeActions por lo explicado arriba.
+        // ✅ Acciones rápidas (mantener pulsada la fila). Menú contextual en vez
+        // de swipeActions por lo explicado arriba.
+        // ✅ E2: orden ESTÁNDAR, idéntico en las 3 vistas de canciones
+        // (biblioteca, álbum/artista, lista): Reproducir ahora → Reproducir
+        // siguiente → Añadir a la cola → Me gusta. Cada ítem lleva su propio
+        // Haptics.light() al empezar la acción (por eso los closures del call
+        // site ya no repiten haptics: evitaría el doble golpe).
         .contextMenu {
+            Button {
+                Haptics.light()
+                onPlayNow()
+            } label: {
+                Label(Localization.localized("context.playNow"), systemImage: "play.circle.fill")
+            }
+            Button {
+                Haptics.light()
+                onPlayNext()
+            } label: {
+                Label(Localization.localized("context.playNext"), systemImage: "text.line.first.and.arrowtriangle.forward")
+            }
             Button {
                 Haptics.light()
                 onAddToQueue()
@@ -725,6 +760,7 @@ struct AlbumSongRow: View {
                 Label(Localization.localized("actions.addToQueue"), systemImage: "text.badge.plus")
             }
             Button {
+                Haptics.light()
                 onToggleLike()
             } label: {
                 Label(
@@ -891,7 +927,10 @@ struct ArtistDetailView: View {
                             tintColor: tintColor,
                             isLiked: fileAccessService.isLiked(song),
                             onAddToQueue: { audioEngine.addToQueue(song) },
-                            onToggleLike: { Haptics.light(); fileAccessService.toggleLike(song) }
+                            onToggleLike: { fileAccessService.toggleLike(song) },
+                            // ✅ E2: mismo contexto que el toque de la fila.
+                            onPlayNow: { audioEngine.play(song: song, from: cachedSongs) },
+                            onPlayNext: { audioEngine.playNext(song) }
                         ) {
                             audioEngine.play(song: song, from: cachedSongs)
                         }
@@ -1285,6 +1324,12 @@ struct ArtistSongRow: View {
     let isLiked: Bool
     let onAddToQueue: () -> Void
     let onToggleLike: () -> Void
+    // ✅ E2: acciones del menú contextual para el orden estándar (Reproducir
+    // ahora → Reproducir siguiente → Añadir a la cola → Me gusta). Se declaran
+    // ANTES de `action` porque el init miembro respeta el orden de declaración y
+    // `action` es el closure final (trailing) en los 3 call sites.
+    let onPlayNow: () -> Void
+    let onPlayNext: () -> Void
     let action: () -> Void
 
     var body: some View {
@@ -1337,9 +1382,26 @@ struct ArtistSongRow: View {
         }
         // ? Feedback de presi�n al tocar (micro-escala, animaci�n GPU)
         .buttonStyle(PressableButtonStyle(scale: AuroraPressScale.row))
-        // ✅ Acciones rápidas (mantener pulsada la fila): añadir a la cola y me
-        // gusta. Menú contextual en vez de swipeActions por lo explicado arriba.
+        // ✅ Acciones rápidas (mantener pulsada la fila). Menú contextual en vez
+        // de swipeActions por lo explicado arriba.
+        // ✅ E2: orden ESTÁNDAR, idéntico en las 3 vistas de canciones
+        // (biblioteca, álbum/artista, lista): Reproducir ahora → Reproducir
+        // siguiente → Añadir a la cola → Me gusta. Cada ítem lleva su propio
+        // Haptics.light() al empezar la acción (por eso los closures del call
+        // site ya no repiten haptics: evitaría el doble golpe).
         .contextMenu {
+            Button {
+                Haptics.light()
+                onPlayNow()
+            } label: {
+                Label(Localization.localized("context.playNow"), systemImage: "play.circle.fill")
+            }
+            Button {
+                Haptics.light()
+                onPlayNext()
+            } label: {
+                Label(Localization.localized("context.playNext"), systemImage: "text.line.first.and.arrowtriangle.forward")
+            }
             Button {
                 Haptics.light()
                 onAddToQueue()
@@ -1347,6 +1409,7 @@ struct ArtistSongRow: View {
                 Label(Localization.localized("actions.addToQueue"), systemImage: "text.badge.plus")
             }
             Button {
+                Haptics.light()
                 onToggleLike()
             } label: {
                 Label(
