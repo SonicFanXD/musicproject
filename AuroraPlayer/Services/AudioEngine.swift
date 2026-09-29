@@ -495,6 +495,14 @@ class AudioEngine: NSObject, ObservableObject {
         clock.time = chainedStart
         anchorPlaybackPosition(chainedStart)
         updateNowPlayingInfo()
+        // ✅ FIX TIMER CC (CAMBIO D): red de seguridad del gapless. La unión
+        // puede caer justo en una transición de estado del sistema; una
+        // republicación 0.3 s después garantiza que CC/bloqueo quede anclado
+        // al tema nuevo (solo si sigue siendo la canción promovida).
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+            guard let self, self.currentSong?.id == song.id else { return }
+            self.publishNowPlayingInfoImmediately()
+        }
         updateAudioQuality()
         addToHistory(song)
         updateNextUpQueue()
@@ -2043,6 +2051,16 @@ class AudioEngine: NSObject, ObservableObject {
             // ✅ FIX (restauración al retroceder): publicación inmediata, no
             // diferida — el estado de la canción nueva ya está final aquí.
             publishNowPlayingInfoImmediately()
+            // ✅ FIX TIMER CC (CAMBIO D): red de seguridad. Si iOS descartó la
+            // publicación por llegar durante una transición de estado del
+            // sistema (típico con la pantalla bloqueada), esta segunda la coge
+            // ya con el audio sonando y el cronómetro anclado de verdad.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+                guard let self,
+                      self.scheduleGeneration == currentGeneration,
+                      !self.isStopping else { return }
+                self.publishNowPlayingInfoImmediately()
+            }
             updateAudioQuality()
             addToHistory(song)
             updateNextUpQueue()
@@ -4062,6 +4080,23 @@ class AudioEngine: NSObject, ObservableObject {
         //   fija la posición; en reproducción iOS la avanza con el rate. El bug
         //   de "se queda al final" / "no sincroniza la pausa" venía de enviar un
         //   elapsed OBSOLETO, no de enviarlo en cada publicación.
+        // ✅ FIX TIMER CC (CAMBIO A): sin duración válida NO se publica
+        // cronómetro. Con `duration` 0 (metadatos sin duración, o el respaldo
+        // Dolby cuando el archivo no la trae) CUALQUIER elapsed da un restante
+        // NEGATIVO en CC/bloqueo ("-0:00", la firma del bug) porque iOS lo
+        // extrapola con el rate. Se publican solo metadatos + rate 0 (el
+        // sistema deja de extrapolar y no dibuja barra) y NO se tocan
+        // elapsed, duración ni playbackState.
+        guard duration > 0 else {
+            info[MPNowPlayingInfoPropertyPlaybackRate] = 0.0
+            info[MPNowPlayingInfoPropertyDefaultPlaybackRate] = 1.0
+            MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+            lastNowPlayingPublishTime = CACurrentMediaTime()
+            lastPublishedSongID = currentSong?.id
+            lastPublishedIsPlaying = isPlaying
+            lastPublishedDuration = duration
+            return
+        }
         info[MPNowPlayingInfoPropertyPlaybackRate] = isPlaying ? 1.0 : 0.0
         info[MPNowPlayingInfoPropertyDefaultPlaybackRate] = 1.0
         info[MPMediaItemPropertyPlaybackDuration] = duration
@@ -4077,7 +4112,13 @@ class AudioEngine: NSObject, ObservableObject {
         // anclada por detrás de la de la app y, con la FASE B, ese desfase se
         // mantenía hasta 30 s. Con el reloj de pared vivo, cada publicación
         // reancla iOS en la posición real (clamp a duration incluido).
-        let elapsedForPublish: TimeInterval = (isPlaying && !isAVPlayerActive) ? wallClockTime : currentTime
+        // ✅ FIX TIMER CC (CAMBIO A): clamp defensivo. Si iOS recibe
+        // elapsed >= duration cae a "-0:00" y se queda AHÍ hasta la siguiente
+        // publicación completa: es exactamente lo que ocurría al anclar como
+        // posición nueva el final (clampado) de la canción anterior. Se deja
+        // 0.1 s de margen para que el restante nunca sea negativo.
+        let rawElapsed: TimeInterval = (isPlaying && !isAVPlayerActive) ? wallClockTime : currentTime
+        let elapsedForPublish: TimeInterval = min(max(rawElapsed, 0), max(0, duration - 0.1))
         // ✅ Evidencia en dispositivo: solo se registra cuando la corrección es
         // perceptible (> 250 ms), que es exactamente el desfase que el usuario
         // veía entre la barra in-app y la del Centro de Control.
@@ -4085,6 +4126,38 @@ class AudioEngine: NSObject, ObservableObject {
             AppLog.info(.playback, String(format: "NowPlaying: elapsed %.2fs publicado (el tick tenía %.2fs)", elapsedForPublish, currentTime))
         }
         info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = elapsedForPublish
+
+        // ✅ FIX TIMER CC (CAMBIO B): cambio de CANCIÓN en DOS FASES. iOS usa
+        // `playbackRate = 0` como señal de "deja de extrapolar": si recibe
+        // rate 1 + elapsed 0 de golpe, sigue avanzando desde el elapsed
+        // ANTERIOR (el final de la canción vieja, ya clavado en su duración) y
+        // la barra del Centro de Control / pantalla de bloqueo aparece con el
+        // restante a "-0:00" y no se reinicia. Fase 1 = rate 0 + elapsed 0
+        // (re-ancla el cronómetro del sistema en el nuevo tema); fase 2, un
+        // turno de run loop después, = la publicación normal con rate real.
+        // El libro de contabilidad de abajo se actualiza en la fase 1 para que
+        // `publishIfNeeded` no vuelva a entrar por identidad y la fase 2 no
+        // re-dispara el ciclo.
+        if lastPublishedSongID != currentSong?.id {
+            info[MPNowPlayingInfoPropertyPlaybackRate] = 0.0
+            info[MPNowPlayingInfoPropertyDefaultPlaybackRate] = 1.0
+            info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = 0.0
+            MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+            MPNowPlayingInfoCenter.default().playbackState = .paused
+            lastNowPlayingPublishTime = CACurrentMediaTime()
+            lastPublishedSongID = currentSong?.id
+            lastPublishedIsPlaying = isPlaying
+            lastPublishedDuration = duration
+            AppLog.info(.playback, "NowPlaying: fase 1 (rate 0, elapsed 0) para '\(currentSong?.displayName ?? "-")'")
+            // ✅ Dos TURNOS distintos del run loop: la fase 1 se asigna en este
+            // turno y la fase 2 en el siguiente (0.01 s). Dos asignaciones en el
+            // MISMO turno pueden quedar coalescidas y iOS se quedaría con la de
+            // rate 0 (canción nueva clavada en pausa).
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.01) { [weak self] in
+                self?.publishNowPlayingInfo()
+            }
+            return
+        }
 
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
         // ✅ SINCRONIZACIÓN (iOS 13+): fijar también el estado explícito de
