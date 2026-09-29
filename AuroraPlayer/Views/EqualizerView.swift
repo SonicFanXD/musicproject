@@ -9,43 +9,47 @@ struct EqualizerView: View {
             ZStack {
                 AppBackground()
 
-                ScrollView {
-                    VStack(spacing: 24) {
-                        mainSwitchSection
-                        presetsSection
-                        bandsSection
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.top, 12)
-                    .padding(.bottom, 32)
-                }
-                .scrollIndicators(.hidden)
-            }
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(Color(UIColor.systemBackground).opacity(0.92), for: .navigationBar)
-            .toolbarBackground(.visible, for: .navigationBar)
-            .toolbar {
-                ToolbarItem(placement: .principal) {
-                    Text(Localization.localized("equalizer.title"))
-                        .font(.system(size: 20, weight: .bold, design: .rounded))
-                        .foregroundStyle(
-                            LinearGradient(
-                                colors: [AppTheme.accent, AppTheme.accent.opacity(0.75)],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                        )
-                        .accessibilityLabel(Localization.localized("equalizer.title"))
-                }
+                VStack(spacing: 0) {
+                    // ✅ AURORA DESIGN: header de sheet del sistema en su propia fila
+                    // (44pt, exactamente lo que medía la barra) con el título en el
+                    // acento de la app y el "Listo" en el slot trailing: el contenido
+                    // de abajo no cambia de tamaño ni de spacing.
+                    AuroraSheetHeader(
+                        title: Localization.localized("equalizer.title"),
+                        onClose: { dismiss() },
+                        titleColor: AppTheme.accent,
+                        trailing: AnyView(headerDoneButton)
+                    )
 
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(Localization.localized("actions.done")) { dismiss() }
-                        .foregroundStyle(AppTheme.accent)
-                        .frame(width: 44, height: 44)
-                        .contentShape(Rectangle())
+                    ScrollView {
+                        VStack(spacing: 24) {
+                            mainSwitchSection
+                            presetsSection
+                            bandsSection
+                        }
+                        .padding(.horizontal, 20)
+                        .padding(.top, 12)
+                        .padding(.bottom, 32)
+                    }
+                    .scrollIndicators(.hidden)
                 }
             }
+            // ✅ AURORA DESIGN: el toolbar (título + "Listo") se sustituye por el
+            // header del sistema. La barra se oculta para que el header ocupe SU
+            // altura (44pt) y no se sume un segundo bloque encima. Se va también el
+            // fondo opaco de barra que tenía esta vista.
+            .toolbar(.hidden, for: .navigationBar)
         }
+    }
+
+    /// ✅ AURORA DESIGN: el "Listo" que antes vivía en el toolbar, ahora en el slot
+    /// trailing del header. Es el MISMO botón y mide 44pt, así que el título sigue
+    /// perfectamente centrado.
+    private var headerDoneButton: some View {
+        Button(Localization.localized("actions.done")) { dismiss() }
+            .foregroundStyle(AppTheme.accent)
+            .frame(width: 44, height: 44)
+            .contentShape(Rectangle())
     }
 
     // MARK: - Main Switch Card

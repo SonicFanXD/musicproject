@@ -463,6 +463,10 @@ struct AuroraSectionHeader: View {
 struct AuroraSheetHeader: View {
     let title: String
     let onClose: () -> Void
+    /// ✅ AURORA DESIGN: color del título (por defecto el primario del sistema).
+    /// Los sheets de la app pasan `AppTheme.accent` para unificar el lenguaje
+    /// del título; el font, el padding y la altura (44pt) no cambian.
+    var titleColor: Color = .primary
     var trailing: AnyView? = nil
 
     var body: some View {
@@ -482,6 +486,7 @@ struct AuroraSheetHeader: View {
 
             Text(title)
                 .font(.system(size: 16, weight: .semibold, design: .rounded))
+                .foregroundStyle(titleColor)
                 .lineLimit(1)
 
             Spacer()

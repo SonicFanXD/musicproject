@@ -14,58 +14,54 @@ struct PlaylistsView: View {
             ZStack {
                 AppBackground()
 
-                ScrollView {
-                    VStack(spacing: 20) {
-                        headerSection
+                VStack(spacing: 0) {
+                    // ✅ AURORA DESIGN: header de sheet del sistema (primer uso en el
+                    // proyecto): fila fija de 44pt con chevron.down para cerrar, título
+                    // centrado y slot trailing, en vez del toolbar con título + borde.
+                    // Mide exactamente lo que medía la barra a la que sustituye, así
+                    // que el contenido de abajo no se mueve ni cambia su spacing.
+                    AuroraSheetHeader(
+                        title: Localization.localized("playlists.title"),
+                        onClose: { dismiss() },
+                        titleColor: AppTheme.accent,
+                        trailing: AnyView(headerCreateButton)
+                    )
 
-                        if fileAccessService.playlists.isEmpty {
-                            emptyPlaylistsState
-                        } else {
-                            playlistsGrid
+                    ScrollView {
+                        VStack(spacing: 20) {
+                            headerSection
+
+                            if fileAccessService.playlists.isEmpty {
+                                emptyPlaylistsState
+                            } else {
+                                playlistsGrid
+                            }
                         }
+                        .padding(.horizontal, 20)
+                        .padding(.top, 12)
                     }
-                    .padding(.horizontal, 20)
-                    .padding(.top, 12)
-                }
-                .scrollIndicators(.hidden)
-            }
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(.hidden, for: .navigationBar)
-            .toolbar {
-                // Título personalizado consistente con la app
-                ToolbarItem(placement: .principal) {
-                    Text(Localization.localized("playlists.title"))
-                        .font(.system(size: 18, weight: .bold, design: .rounded))
-                        .foregroundStyle(AppTheme.accentGradient)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.7)
-                        .accessibilityLabel(Localization.localized("playlists.title"))
-                }
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button {
-                        dismiss()
-                    } label: {
-                        Image(systemName: "chevron.down")
-                            .foregroundStyle(.primary)
-                            .frame(width: 44, height: 44) // Bigger invisible touch target
-                            .contentShape(Rectangle())
-                    }
-                }
-
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button {
-                        showCreatePlaylist = true
-                    } label: {
-                        Image(systemName: "plus")
-                            .foregroundStyle(AppTheme.accentGradient)
-                            .frame(width: 44, height: 44) // Bigger invisible touch target
-                            .contentShape(Rectangle())
-                    }
+                    .scrollIndicators(.hidden)
                 }
             }
+            // ✅ Ocultar la barra: el header del sistema ocupa su sitio, no se suman.
+            .toolbar(.hidden, for: .navigationBar)
             .sheet(isPresented: $showCreatePlaylist) {
                 createPlaylistSheet
             }
+        }
+    }
+
+    /// ✅ AURORA DESIGN: el "+" que antes vivía en el toolbar, ahora en el slot
+    /// trailing del header. Es el MISMO botón y mide 44pt, lo mismo que el hueco
+    /// fantasma del header, así que el título sigue perfectamente centrado.
+    private var headerCreateButton: some View {
+        Button {
+            showCreatePlaylist = true
+        } label: {
+            Image(systemName: "plus")
+                .foregroundStyle(AppTheme.accentGradient)
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
         }
     }
 
@@ -393,6 +389,12 @@ struct PlaylistDetailView: View {
         .navigationTitle(playlist.name) // Needed for back button label
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.hidden, for: .navigationBar)
+        // ✅ FIX back del detalle de playlist: el root del stack oculta la barra
+        // (el header del sistema ocupa su sitio) y en iOS 16 la visibilidad del
+        // toolbar es POR VISTA. Esta vista apilada no tiene botón de cierre propio
+        // (solo un menú trailing), así que depende del back NATIVO: se pide la
+        // barra visible explícitamente para garantizar que aparezca.
+        .toolbar(.visible, for: .navigationBar)
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 Menu {

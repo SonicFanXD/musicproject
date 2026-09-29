@@ -35,6 +35,17 @@ struct QueueView: View {
                 AppBackground()
 
                 VStack(spacing: 0) {
+                    // ✅ AURORA DESIGN: header de sheet del sistema en su propia fila,
+                    // por delante del selector de pestañas. Mide 44pt, exactamente lo
+                    // que medía la barra a la que sustituye, así que el tabSelector se
+                    // queda donde estaba y su spacing no cambia.
+                    AuroraSheetHeader(
+                        title: Localization.localized("queue.title"),
+                        onClose: { dismiss() },
+                        titleColor: AppTheme.accent,
+                        trailing: AnyView(headerTrailingButtons)
+                    )
+
                     tabSelector
 
                     Divider().background(Color.secondary.opacity(0.2))
@@ -53,39 +64,11 @@ struct QueueView: View {
                     .scrollIndicators(.hidden)
                 }
             }
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(.hidden, for: .navigationBar)
-                    .toolbar {
-                        ToolbarItem(placement: .principal) {
-                            Text(Localization.localized("queue.title"))
-                                .font(.system(size: 18, weight: .bold, design: .rounded))
-                                .foregroundStyle(AppTheme.accentGradient)
-                                .lineLimit(1).minimumScaleFactor(0.7)
-                                .accessibilityLabel(Localization.localized("queue.title"))
-                        }
-
-                        ToolbarItem(placement: .navigationBarTrailing) {
-                            HStack(spacing: 8) {
-                                if selectedTab == .nextUp && editableQueue.count > 1 {
-                                    Button {
-                                        Haptics.light()
-                                        clearQueue()
-                                    } label: {
-                                        Image(systemName: "trash")
-                                            .font(.system(size: 15, weight: .semibold))
-                                            .foregroundStyle(.red)
-                                            .frame(width: 44, height: 44)
-                                            .contentShape(Rectangle())
-                                    }
-                                }
-                                Button(Localization.localized("actions.done")) { dismiss() }
-                                    .foregroundStyle(AppTheme.accent)
-                                    .frame(width: 44, height: 44)
-                                    .contentShape(Rectangle())
-                            }
-                        }
-                    }
-                    .onAppear {
+            // ✅ AURORA DESIGN: el toolbar se sustituye por el header del sistema.
+            // La barra se oculta en vez de dejarse vacía: así el header ocupa SU
+            // altura (44pt) y no se suma un segundo bloque de 44pt encima.
+            .toolbar(.hidden, for: .navigationBar)
+            .onAppear {
                         editableQueue = audioEngine.nextUpQueue
                     }
                     .onChange(of: audioEngine.nextUpQueue) { newQueue in
@@ -94,6 +77,32 @@ struct QueueView: View {
                             editableQueue = newQueue
                         }
                     }
+        }
+    }
+
+    /// ✅ AURORA DESIGN: los botones que vivían en el toolbar pasan al slot trailing
+    /// del header del sistema con la MISMA lógica y las MISMAS acciones: la papelera
+    /// solo en "Siguiente" y con más de un elemento, y "Listo" siempre. Cuando la
+    /// papelera aparece, el trailing queda más ancho que el chevron de la izquierda
+    /// y el título se desplaza ~24pt: es el precio de no perder ningún botón.
+    private var headerTrailingButtons: some View {
+        HStack(spacing: 8) {
+            if selectedTab == .nextUp && editableQueue.count > 1 {
+                Button {
+                    Haptics.light()
+                    clearQueue()
+                } label: {
+                    Image(systemName: "trash")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(.red)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+            }
+            Button(Localization.localized("actions.done")) { dismiss() }
+                .foregroundStyle(AppTheme.accent)
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
         }
     }
 

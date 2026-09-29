@@ -108,14 +108,12 @@ struct AudioQualityDetailView: View {
             .toolbarBackground(.hidden, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .principal) {
+                    // ✅ AURORA DESIGN: la tipografía ya era la del sistema (17 bold
+                    // rounded); el gradiente pasa al de la app (dos colores reales
+                    // con "acento desde portada" activo) en vez del manual.
                     Text(Localization.localized("audio.quality.title"))
                         .font(.system(size: 17, weight: .bold, design: .rounded))
-                        .foregroundStyle(
-                            LinearGradient(
-                                colors: [AppTheme.accent, AppTheme.accent.opacity(0.7)],
-                                startPoint: .leading, endPoint: .trailing
-                            )
-                        )
+                        .foregroundStyle(AppTheme.accentGradient)
                         .accessibilityLabel(Localization.localized("audio.quality.title"))
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {

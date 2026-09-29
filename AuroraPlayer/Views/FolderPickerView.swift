@@ -23,43 +23,40 @@ struct FolderPickerView: View {
             ZStack {
                 AppBackground()
 
-                ScrollView {
-                    VStack(spacing: 20) {
-                        headerSection
+                VStack(spacing: 0) {
+                    // ✅ AURORA DESIGN: header de sheet del sistema en su propia fila
+                    // (44pt, exactamente lo que medía la barra) con el título en el
+                    // acento de la app y el "Listo" en el slot trailing: el contenido
+                    // de abajo no cambia de tamaño ni de spacing.
+                    AuroraSheetHeader(
+                        title: Localization.localized("library.title"),
+                        onClose: { dismiss() },
+                        titleColor: AppTheme.accent,
+                        trailing: AnyView(headerDoneButton)
+                    )
 
-                        actionButtons
+                    ScrollView {
+                        VStack(spacing: 20) {
+                            headerSection
 
-                        if fileAccessService.isScanning {
-                            scanningProgress
+                            actionButtons
+
+                            if fileAccessService.isScanning {
+                                scanningProgress
+                            }
+
+                            libraryContent
                         }
-
-                        libraryContent
+                        .padding(.horizontal, 18)
+                        .padding(.top, 8)
                     }
-                    .padding(.horizontal, 18)
-                    .padding(.top, 8)
-                }
-                .scrollIndicators(.hidden)
-            }
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(.hidden, for: .navigationBar)
-            .toolbar {
-                // Título personalizado consistente con la app
-                ToolbarItem(placement: .principal) {
-                    Text(Localization.localized("library.title"))
-                        .font(.system(size: 20, weight: .bold, design: .rounded))
-                        // ✅ Acento de dos colores (antes un solo color con opacidad).
-                        .foregroundStyle(AppTheme.accentGradient)
-                        .accessibilityLabel(Localization.localized("library.title"))
-                }
-
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(Localization.localized("actions.done")) {
-                        dismiss()
-                    }
-                    .frame(width: 44, height: 44) // Bigger invisible touch target
-                    .contentShape(Rectangle())
+                    .scrollIndicators(.hidden)
                 }
             }
+            // ✅ AURORA DESIGN: el toolbar (título + "Listo") se sustituye por el
+            // header del sistema. La barra se oculta para que el header ocupe SU
+            // altura (44pt) y no se sume un segundo bloque encima.
+            .toolbar(.hidden, for: .navigationBar)
             .fileImporter(
                 isPresented: $showImporter,
                 allowedContentTypes: importMode == .folders ? [.folder] : supportedAudioTypes,
@@ -76,6 +73,17 @@ struct FolderPickerView: View {
                 }
             }
         }
+    }
+
+    /// ✅ AURORA DESIGN: el "Listo" que antes vivía en el toolbar, ahora en el slot
+    /// trailing del header. Es el MISMO botón y mide 44pt, lo mismo que el hueco
+    /// fantasma del header, así que el título sigue perfectamente centrado.
+    private var headerDoneButton: some View {
+        Button(Localization.localized("actions.done")) {
+            dismiss()
+        }
+        .frame(width: 44, height: 44) // Bigger invisible touch target
+        .contentShape(Rectangle())
     }
 
     // MARK: - Header Section con animación
@@ -140,6 +148,10 @@ struct FolderPickerView: View {
 
     // MARK: - Action Buttons
 
+    /// ✅ AURORA DESIGN: las tres filas-botón pasan al feedback de presión del
+    /// sistema (0.92, `AuroraPressScale.button`) y su fondo alinea el radio a
+    /// `AuroraRadius.md` (18, +2pt desde 16) para coincidir con las listas vecinas.
+    /// Antes eran `.plain`: no respondían al tacto.
     private var actionButtons: some View {
         VStack(spacing: 12) {
             Button {
@@ -176,12 +188,12 @@ struct FolderPickerView: View {
                 .padding(.horizontal, 16)
                 .padding(.vertical, 16) // Expanded touch target
                 .background {
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    RoundedRectangle(cornerRadius: AuroraRadius.md, style: .continuous)
                         .auroraGlass()
                 }
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(PressableButtonStyle(scale: AuroraPressScale.button))
 
             Button {
                 importMode = .files
@@ -217,12 +229,12 @@ struct FolderPickerView: View {
                 .padding(.horizontal, 16)
                 .padding(.vertical, 16) // Expanded touch target
                 .background {
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    RoundedRectangle(cornerRadius: AuroraRadius.md, style: .continuous)
                         .auroraGlass()
                 }
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(PressableButtonStyle(scale: AuroraPressScale.button))
 
             Button {
                 fileAccessService.refreshAllFolders()
@@ -257,12 +269,15 @@ struct FolderPickerView: View {
                 .padding(.horizontal, 16)
                 .padding(.vertical, 16) // Expanded touch target
                 .background {
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    RoundedRectangle(cornerRadius: AuroraRadius.md, style: .continuous)
                         .auroraGlass()
                 }
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(PressableButtonStyle(scale: AuroraPressScale.button))
+            // ✅ El estilo de presión propio no lee `isEnabled`: se restaura aquí el
+            // atenuado del estado deshabilitado (el `.plain` anterior lo daba solo).
+            .opacity(fileAccessService.isScanning ? 0.5 : 1)
             .disabled(fileAccessService.isScanning)
         }
     }

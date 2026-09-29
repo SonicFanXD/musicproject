@@ -47,73 +47,85 @@ struct SettingsView: View, SettingsRowBuilding {
             ZStack {
                 AppBackground()
 
-                ScrollView {
-                    VStack(spacing: 22) {
-                        headerSection
+                VStack(spacing: 0) {
+                    // ✅ AURORA DESIGN: header de sheet del sistema en su propia fila
+                    // (44pt, exactamente lo que medía la barra) con el título en el
+                    // acento de la app y el "Listo" en el slot trailing: las secciones
+                    // de abajo no cambian de tamaño ni de spacing.
+                    AuroraSheetHeader(
+                        title: Localization.localized("settings.title"),
+                        onClose: { dismiss() },
+                        titleColor: AppTheme.accent,
+                        trailing: AnyView(SettingsDoneButton(onDone: { dismiss() }))
+                    )
 
-                        // Biblioteca (gestión embebida: sin pantalla aparte)
-                        LibrarySettingsSection(
-                            fileAccessService: fileAccessService,
-                            onAddFolder: {
-                                importMode = .folders
-                                showImporter = true
-                            },
-                            onAddFiles: {
-                                importMode = .files
-                                showImporter = true
-                            }
-                        )
+                    ScrollView {
+                        VStack(spacing: 22) {
+                            headerSection
 
-                        // Audio
-                        // ✅ Crossfade eliminado por completo (fuente de bugs
-                        // de sincronización): ya no aparece en Ajustes.
-                        AudioSettingsSection(
-                            audioEngine: audioEngine,
-                            showEqualizerSheet: $showEqualizerSheet
-                        )
+                            // Biblioteca (gestión embebida: sin pantalla aparte)
+                            LibrarySettingsSection(
+                                fileAccessService: fileAccessService,
+                                onAddFolder: {
+                                    importMode = .folders
+                                    showImporter = true
+                                },
+                                onAddFiles: {
+                                    importMode = .files
+                                    showImporter = true
+                                }
+                            )
 
-                        // Apariencia
-                        AppearanceSettingsSection(
-                            selectedThemeIndex: $selectedThemeIndex,
-                            themeDefaultsKey: themeDefaultsKey
-                        )
+                            // Audio
+                            // ✅ Crossfade eliminado por completo (fuente de bugs
+                            // de sincronización): ya no aparece en Ajustes.
+                            AudioSettingsSection(
+                                audioEngine: audioEngine,
+                                showEqualizerSheet: $showEqualizerSheet
+                            )
 
-                        // ✅ Acento de portada: control unificado para todo el entorno
-                        // (NowPlaying, álbumes, artistas, PlayerBar, tint global UIKit).
-                        // Un solo ajuste activa/desactiva la detección de colores en
-                        // TODAS las vistas simultáneamente.
-                        ArtworkAccentSettingsSection()
+                            // Apariencia
+                            AppearanceSettingsSection(
+                                selectedThemeIndex: $selectedThemeIndex,
+                                themeDefaultsKey: themeDefaultsKey
+                            )
 
-                        // Reproducción
-                        PlaybackSettingsSection(audioEngine: audioEngine)
+                            // ✅ Acento de portada: control unificado para todo el entorno
+                            // (NowPlaying, álbumes, artistas, PlayerBar, tint global UIKit).
+                            // Un solo ajuste activa/desactiva la detección de colores en
+                            // TODAS las vistas simultáneamente.
+                            ArtworkAccentSettingsSection()
 
-                        // ✅ Personalización avanzada
-                        CustomizationSettingsSection()
+                            // Reproducción
+                            PlaybackSettingsSection(audioEngine: audioEngine)
 
-                        // Rendimiento (info técnica)
-                        PerformanceSettingsSection(audioEngine: audioEngine)
+                            // ✅ Personalización avanzada
+                            CustomizationSettingsSection()
 
-                        // Estadísticas (✅ incluye canciones en proceso de indexación)
-                        StatsSettingsSection(fileAccessService: fileAccessService)
+                            // Rendimiento (info técnica)
+                            PerformanceSettingsSection(audioEngine: audioEngine)
 
-                        // Avanzado
-                        AdvancedSettingsSection(
-                            appVersion: appVersion,
-                            onShowLogs: { showLogs = true },
-                            onShowAbout: { showAbout = true },
-                            onResetSettings: { showResetSettingsAlert = true },
-                            onResetCache: { showResetCacheAlert = true }
-                        )
+                            // Estadísticas (✅ incluye canciones en proceso de indexación)
+                            StatsSettingsSection(fileAccessService: fileAccessService)
+
+                            // Avanzado
+                            AdvancedSettingsSection(
+                                appVersion: appVersion,
+                                onShowLogs: { showLogs = true },
+                                onShowAbout: { showAbout = true },
+                                onResetSettings: { showResetSettingsAlert = true },
+                                onResetCache: { showResetCacheAlert = true }
+                            )
+                        }
+                        .padding(.horizontal, 20).padding(.top, 8).padding(.bottom, 30)
                     }
-                    .padding(.horizontal, 20).padding(.top, 8).padding(.bottom, 30)
+                    .scrollIndicators(.hidden)
                 }
-                .scrollIndicators(.hidden)
             }
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(.hidden, for: .navigationBar)
-            .toolbar {
-                SettingsToolbar(onDone: { dismiss() })
-            }
+            // ✅ AURORA DESIGN: el toolbar (título + "Listo") se sustituye por el
+            // header del sistema. La barra se oculta para que el header ocupe SU
+            // altura (44pt) y no se sume un segundo bloque encima.
+            .toolbar(.hidden, for: .navigationBar)
             .sheet(isPresented: $showLogs) {
                 LogsView()
             }
@@ -909,32 +921,17 @@ private struct AdvancedSettingsSection: View, SettingsRowBuilding {
     }
 }
 
-/// Barra de navegación de Ajustes: título con degradado y botón "Listo".
-/// ⚠️ Extraída (como el resto de secciones) para que el tipo del `body` padre
-/// deje de anidar closures dentro de `.toolbar`.
-private struct SettingsToolbar: ToolbarContent {
+/// ✅ AURORA DESIGN: el botón "Listo" de Ajustes, que antes vivía en el toolbar
+/// junto al título, pasa al slot trailing del header del sistema (`AuroraSheetHeader`
+/// pinta ya el título). Es el MISMO botón y mide 44pt.
+private struct SettingsDoneButton: View {
     let onDone: () -> Void
 
-    var body: some ToolbarContent {
-        ToolbarItem(placement: .principal) {
-            Text(Localization.localized("settings.title"))
-                .font(.system(size: 20, weight: .bold, design: .rounded))
-                .foregroundStyle(
-                    LinearGradient(
-                        colors: [AppTheme.accent, AppTheme.accent.opacity(0.75)],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
-                )
-                .accessibilityLabel(Localization.localized("settings.title"))
-        }
-
-        ToolbarItem(placement: .navigationBarTrailing) {
-            Button(Localization.localized("actions.done")) { onDone() }
-                .foregroundStyle(AppTheme.accent)
-                .frame(width: 44, height: 44)
-                .contentShape(Rectangle())
-        }
+    var body: some View {
+        Button(Localization.localized("actions.done")) { onDone() }
+            .foregroundStyle(AppTheme.accent)
+            .frame(width: 44, height: 44)
+            .contentShape(Rectangle())
     }
 }
 

@@ -93,8 +93,10 @@ struct LogsView: View {
             .toolbar {
                 // Título personalizado consistente con la app
                 ToolbarItem(placement: .principal) {
+                    // ✅ AURORA DESIGN: el título pasa a la tipografía de sheet del
+                    // sistema (17 bold rounded). El acento de dos colores ya estaba.
                     Text("Registros")
-                        .font(.system(size: 20, weight: .bold, design: .rounded))
+                        .font(.system(size: 17, weight: .bold, design: .rounded))
                         // ✅ Acento de dos colores (antes un solo color con opacidad).
                         .foregroundStyle(AppTheme.accentGradient)
                         .accessibilityLabel("Registros")
