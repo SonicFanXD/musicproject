@@ -283,6 +283,10 @@ final class Localization: ObservableObject {
         "queue.emptyQueueMessage": [.spanish: "Las próximas canciones aparecerán aquí", .english: "Upcoming songs will appear here"],
         "queue.upNext": [.spanish: "A continuación", .english: "Up Next"],
         "queue.remove": [.spanish: "Eliminar", .english: "Remove"],
+        // ✅ E3: secciones y acciones de la cola manual en QueueView.
+        "queue.inQueue": [.spanish: "En cola", .english: "In Queue"],
+        "queue.clear": [.spanish: "Limpiar", .english: "Clear"],
+        "queue.removeItem": [.spanish: "Eliminar de la cola", .english: "Remove from Queue"],
         "queue.historyTitle": [.spanish: "Historial de reproducción", .english: "Playback History"],
 
         // Lyrics

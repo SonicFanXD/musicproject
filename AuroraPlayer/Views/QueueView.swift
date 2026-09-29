@@ -6,8 +6,12 @@ struct QueueView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var selectedTab: QueueTab = .nextUp
-    // ✅ Estado local editable de la cola "Siguiente" para reordenar/eliminar
-    @State private var editableQueue: [Song] = []
+    // ✅ E3: `editableQueue` ELIMINADO. Antes esta vista editaba una copia local
+    // y al aplicarla reescribía el orden COMPLETO del álbum/playlist
+    // (reorderNextUpQueue → rebuildPlaylistFromQueue): reordenar la cola del
+    // usuario le cambiaba el álbum. Ahora la cola se lee y se edita DIRECTAMENTE
+    // sobre `audioEngine.manualQueue` (moveInQueue/removeFromQueue/clearQueue) y
+    // el resto del orden solo se MUESTRA, nunca se toca.
     // ✅ B2: disparador de la animación de las barras del ecualizador. Vive en
     // @State (y no directamente en `audioEngine.isPlaying`) porque es lo que
     // hace que la animación `repeatForever` ARRANQUE al reanudar y se DESTRUYA
@@ -68,37 +72,18 @@ struct QueueView: View {
             // La barra se oculta en vez de dejarse vacía: así el header ocupa SU
             // altura (44pt) y no se suma un segundo bloque de 44pt encima.
             .toolbar(.hidden, for: .navigationBar)
-            .onAppear {
-                        editableQueue = audioEngine.nextUpQueue
-                    }
-                    .onChange(of: audioEngine.nextUpQueue) { newQueue in
-                        // Sincronizar solo si no estamos editando activamente
-                        if editableQueue.map(\.id) != newQueue.map(\.id) {
-                            editableQueue = newQueue
-                        }
-                    }
         }
     }
 
     /// ✅ AURORA DESIGN: los botones que vivían en el toolbar pasan al slot trailing
-    /// del header del sistema con la MISMA lógica y las MISMAS acciones: la papelera
-    /// solo en "Siguiente" y con más de un elemento, y "Listo" siempre. Cuando la
-    /// papelera aparece, el trailing queda más ancho que el chevron de la izquierda
-    /// y el título se desplaza ~24pt: es el precio de no perder ningún botón.
+    /// del header del sistema con sus MISMAS acciones.
+    /// ✅ E3.1: aquí vivía además una papelera (limpiar la cola). Se retira porque
+    /// duplicaba el "Limpiar" del header de la sección "En cola" y su alcance era
+    /// ambiguo (¿la cola manual?, ¿todo?). Queda solo "Listo". Efecto lateral
+    /// bueno: el trailing vuelve a medir lo mismo que el chevron de la izquierda
+    /// (44pt), así que el título ya no se desplaza ~24pt y vuelve a estar centrado.
     private var headerTrailingButtons: some View {
         HStack(spacing: 8) {
-            if selectedTab == .nextUp && editableQueue.count > 1 {
-                Button {
-                    Haptics.light()
-                    clearQueue()
-                } label: {
-                    Image(systemName: "trash")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(.red)
-                        .frame(width: 44, height: 44)
-                        .contentShape(Rectangle())
-                }
-            }
             Button(Localization.localized("actions.done")) { dismiss() }
                 .foregroundStyle(AppTheme.accent)
                 .frame(width: 44, height: 44)
@@ -191,63 +176,140 @@ struct QueueView: View {
                 .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
             }
 
-            if editableQueue.isEmpty {
-                emptyState(icon: "music.note.list", title: Localization.localized("queue.emptyQueue"), message: Localization.localized("queue.emptyQueueMessage"))
-                    .listRowSeparator(.hidden)
-                    .listRowBackground(Color.clear)
-                    .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
-            } else {
-                Text(Localization.localized("queue.upNext"))
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(.secondary)
-                    .listRowSeparator(.hidden)
-                    .listRowBackground(Color.clear)
-                    .listRowInsets(EdgeInsets(top: 12, leading: 16, bottom: 4, trailing: 16))
+            // ---- 2. "En cola": la cola MANUAL del usuario. Es la ÚNICA sección
+            // editable (arrastre, swipe, menú) y edita `audioEngine.manualQueue`
+            // directamente: nunca más el orden del álbum.
+            if !audioEngine.manualQueue.isEmpty {
+                manualQueueHeader
 
-                // ✅ FIX iOS 16: reordenar/eliminar en List (antes ScrollView).
-                // Las filas DEBEN ser hijas directas del Section para que
-                // .swipeActions/.onMove funcionen (anidadas en un VStack son inertes).
+                // ✅ FIX iOS 16: las filas DEBEN ser hijas directas del Section para
+                // que .swipeActions/.onMove funcionen (anidadas en un VStack son inertes).
                 // ✅ PERF: identidad por OFFSET (enumerated, id: \.offset) y NO por
                 // Song.id: la cola manual admite la misma canción dos veces
                 // (addToQueue no deduplica) y un ForEach con ids duplicados
                 // produce diff impredecible (filas que saltan/desaparecen) y
                 // el warning "AttributeGraph: cycle detected" en runtime.
-                // ✅ PERF: fuera el firstIndex(where:) O(n) por fila: calculaba
-                // el índice que queueSongRow(_:index:) no consume.
-                ForEach(Array(editableQueue.enumerated()), id: \.offset) { index, song in
-                    queueSongRow(song, index: index + 1)
-                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                            Button(role: .destructive) {
-                                Haptics.light()
-                                removeFromQueue(song)
-                            } label: {
-                                Label(Localization.localized("queue.remove"), systemImage: "trash")
-                            }
+                ForEach(Array(audioEngine.manualQueue.enumerated()), id: \.offset) { position, song in
+                    queueSongRow(song) {
+                        // ✅ E3: el toque reproduce LA COLA como contexto. La
+                        // llamada antigua construía [canción actual] + cola entera
+                        // y con eso reescribía el orden del álbum: el bug de diseño.
+                        audioEngine.play(song: song, from: audioEngine.manualQueue)
+                    }
+                    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                        Button(role: .destructive) {
+                            Haptics.light()
+                            audioEngine.removeFromQueue(at: position)
+                        } label: {
+                            Label(Localization.localized("queue.remove"), systemImage: "trash")
                         }
+                    }
+                    .contextMenu {
+                        Button {
+                            Haptics.light()
+                            audioEngine.play(song: song, from: audioEngine.manualQueue)
+                        } label: {
+                            Label(Localization.localized("context.playNow"), systemImage: "play.circle.fill")
+                        }
+                        Button {
+                            Haptics.light()
+                            audioEngine.playNext(song)
+                        } label: {
+                            Label(Localization.localized("context.playNext"), systemImage: "text.line.first.and.arrowtriangle.forward")
+                        }
+                        Button {
+                            Haptics.light()
+                            // Por ÍNDICE y no por id: la misma canción puede estar
+                            // dos veces en la cola.
+                            audioEngine.removeFromQueue(at: position)
+                        } label: {
+                            Label(Localization.localized("queue.removeItem"), systemImage: "trash")
+                        }
+                    }
                 }
                 .onMove { from, to in
                     Haptics.light()
-                    moveQueueItem(from: from, to: to)
+                    moveManualQueue(from: from, to: to)
                 }
+            }
+
+            // ---- 3. "A continuación": el resto del orden del álbum/playlist.
+            // SOLO LECTURA a propósito: sin swipe, sin arrastre y sin menú.
+            if !upcomingFromOrder.isEmpty {
+                Text(Localization.localized("queue.upNext"))
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+                    // ✅ E3.1: `top` era 16 (valor NUEVO). Se alinea con el inset de
+                    // header que ya usa la vista (12), para no introducir medidas.
+                    .listRowInsets(EdgeInsets(top: 12, leading: 16, bottom: 4, trailing: 16))
+
+                ForEach(Array(upcomingFromOrder.enumerated()), id: \.offset) { _, song in
+                    queueSongRow(song) {
+                        // Contexto = el orden del álbum/lista (igual que tocar una
+                        // fila del álbum). La cola manual no se pierde: el motor le
+                        // sigue dando prioridad al calcular la siguiente.
+                        audioEngine.play(song: song, from: audioEngine.playbackQueue)
+                    }
+                }
+            }
+
+            // Estado vacío: solo si no hay NADA que mostrar (ni cola ni resto).
+            if audioEngine.manualQueue.isEmpty && upcomingFromOrder.isEmpty {
+                emptyState(icon: "music.note.list", title: Localization.localized("queue.emptyQueue"), message: Localization.localized("queue.emptyQueueMessage"))
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+                    .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
             }
         }
     }
 
-    // ✅ Acciones de la cola editable
-    private func removeFromQueue(_ song: Song) {
-        guard let idx = editableQueue.firstIndex(where: { $0.id == song.id }) else { return }
-        editableQueue.remove(at: idx)
-        audioEngine.removeFromNextUpQueue(song)
+    /// ✅ E3 — "A continuación" = el resto del orden del álbum/playlist, SIN la
+    /// cola manual. El motor publica `nextUpQueue` como [cola manual] + [resto del
+    /// orden], así que se descartan las primeras `manualQueue.count` entradas.
+    /// Nota: `nextUpQueue` es la VENTANA de 10 que fija el motor (el orden interno
+    /// completo es privado) → la sección muestra como máximo 10 - cola manual.
+    private var upcomingFromOrder: [Song] {
+        let queued = min(audioEngine.manualQueue.count, audioEngine.nextUpQueue.count)
+        return Array(audioEngine.nextUpQueue.dropFirst(queued))
     }
 
-    private func moveQueueItem(from source: IndexSet, to destination: Int) {
-        editableQueue.move(fromOffsets: source, toOffset: destination)
-        audioEngine.reorderNextUpQueue(editableQueue)
+    /// Cabecera de "En cola" con su botón "Limpiar". Limpia SOLO la cola manual:
+    /// el álbum en curso no se toca (eso era lo que hacía el clearNextUpQueue viejo).
+    private var manualQueueHeader: some View {
+        HStack(spacing: 8) {
+            Text(Localization.localized("queue.inQueue"))
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(.secondary)
+
+            Spacer()
+
+            Button {
+                Haptics.light()
+                audioEngine.clearQueue()
+            } label: {
+                Text(Localization.localized("queue.clear"))
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(AppTheme.accent)
+            }
+            .buttonStyle(.plain)
+        }
+        .listRowSeparator(.hidden)
+        .listRowBackground(Color.clear)
+        .listRowInsets(EdgeInsets(top: 12, leading: 16, bottom: 4, trailing: 16))
     }
 
-    private func clearQueue() {
-        editableQueue.removeAll()
-        audioEngine.clearNextUpQueue()
+    /// ✅ E3: traduce el contrato de SwiftUI (`.onMove`: IndexSet + índice de
+    /// inserción referido a la lista SIN quitar aún el elemento) al del motor
+    /// (`remove(at:)` + `insert(at:)`, con el índice YA corregido). Sin la
+    /// corrección, arrastrar hacia abajo dejaba la fila una posición por delante.
+    /// SwiftUI entrega solo un índice por arrastre (no usamos modo edición
+    /// múltiple), así que basta con el primero.
+    private func moveManualQueue(from source: IndexSet, to destination: Int) {
+        guard let first = source.first else { return }
+        let engineDestination = destination > first ? destination - 1 : destination
+        audioEngine.moveInQueue(from: first, to: engineDestination)
     }
 
     @ViewBuilder
@@ -279,22 +341,14 @@ struct QueueView: View {
         }
     }
 
-    private func queueSongRow(_ song: Song, index: Int) -> some View {
+    /// ✅ E3: el diseño de la fila lo COMPARTEN "En cola" (editable) y
+    /// "A continuación" (solo lectura); lo que cambia es el toque, que decide la
+    /// sección que la usa. Antes el toque reconstruía la lista ([canción actual]
+    /// + cola) y con ella reescribía el orden del álbum: ese era el bug de diseño.
+    private func queueSongRow(_ song: Song, onTap: @escaping () -> Void) -> some View {
         Button {
             Haptics.light()
-            // ✅ FIX REPRODUCCIÓN: tocar una canción de "Siguiente" debe
-            // continuar con la secuencia EDITADA de la cola (eliminaciones y
-            // reordenamientos incluidos), no restaurar la playlist original
-            // completa. Antes se pasaba `playbackQueue` (la playlist entera de
-            // la sesión): las canciones que el usuario había eliminado o
-            // reordenado volvían y el orden editado se descartaba.
-            let sequence: [Song]
-            if let current = audioEngine.currentSong {
-                sequence = [current] + editableQueue
-            } else {
-                sequence = editableQueue
-            }
-            audioEngine.play(song: song, from: sequence)
+            onTap()
         } label: {
             HStack(spacing: 14) {
                 artworkMiniature(song.artwork, size: 48, corner: 12)
