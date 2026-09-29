@@ -73,6 +73,13 @@ struct LyricsView: View {
     /// resto: el primero va SIN animación (la vista "nace" ya centrada) y los
     /// scrolleos durante la reproducción sí se animan.
     @State private var hasDoneInitialScroll = false
+    /// ✅ FIX SHEET FPS (PASO 2): false hasta que el sheet termina de
+    /// presentarse (lo levanta el `.task` diferido). Se propaga DENTRO de
+    /// `renderState` (el value object de condiciones de render que ya llega
+    /// con `.equatable()` a LyricLineView y LyricInstrumentalIndicator): así
+    /// las filas notan el cambio por el diff existente, sin parámetro nuevo
+    /// ni ObservableObject compartido.
+    @State private var isSheetSettled = false
 
     /// ✅ Padding horizontal del contenido de letras: el ancho ÚTIL para el texto
     /// (y para el troceo por medición) es el ancho de la vista menos el doble.
@@ -145,9 +152,26 @@ struct LyricsView: View {
             // y sin tocar ni el layout de la lista ni el auto-scroll.
         }
         .onAppear {
+            // ✅ FIX SHEET FPS (PASO 1): el trabajo pesado de entrada NO corre
+            // aquí. Parsear y centrar en el mismo turno en que el modal
+            // arranca su animación de presentación empuja composición del
+            // fondo + layout del LazyVStack al primer frame: es el tirón
+            // visible al abrir. Ahora lo hace el `.task` de abajo, ya pasado
+            // el momento más caro de la transición.
+        }
+        // ✅ FIX SHEET FPS (PASO 1): diferido del parseo y del centrado inicial
+        // (~2-3 frames tras el onAppear). Los onChange de abajo (lyricsRevision,
+        // song?.id, activeID) mantienen el mismo comportamiento si el usuario
+        // toca algo antes de que dispare: ninguna función se pierde, solo se
+        // retrasa su PRIMERA llamada.
+        .task {
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            guard !Task.isCancelled else { return }
+            // ✅ FIX SHEET FPS (PASO 2): la transición del modal ya terminó
+            // (250 ms > 0.5 s/2 de la animación del sheet). A partir de aquí
+            // se puede pedir work por frames sin competir con ella.
+            isSheetSettled = true
             parseLyricsIfNeeded()
-            // ✅ Centrado inmediato, sin animación: la línea activa ya está en el
-            // centro en el primer frame.
             syncScrollToActiveLine()
         }
         // ✅ iOS 16 onChange clásico: scroll solo cuando cambia la línea activa
@@ -347,6 +371,11 @@ struct LyricsView: View {
     private var renderState: LyricRenderState {
         LyricRenderState(
             isSceneActive: scenePhase == .active,
+            // ✅ FIX SHEET FPS (PASO 2): mientras el sheet está presentándose
+            // (y hasta el defer del .task) NO se pide work por frames: ni
+            // karaoke ni respiración del interludio compiten con la animación
+            // de presentación. Después, valor normal.
+            isSheetSettled: isSheetSettled,
             isCaptured: captureMonitor.isCaptured
         )
     }
@@ -699,7 +728,9 @@ private struct LyricInstrumentalIndicator: View {
     /// ✅ ¿Se piden frames? Solo con reproducción Y escena en primer plano Y sin
     /// la política de captura activada. Cualquier otra combinación es UN dibujo.
     private var breathes: Bool {
-        guard isPlaying, renderState.isSceneActive else { return false }
+        // ✅ FIX SHEET FPS (PASO 2): tampoco respira durante la presentación
+        // del sheet (misma condición que el karaoke).
+        guard isPlaying, renderState.isSceneActive, renderState.isSheetSettled else { return false }
         if renderState.isCaptured, LyricCapturePolicy.dropsInstrumentalPulseWhileCaptured {
             return false
         }
@@ -1110,7 +1141,13 @@ private struct LyricLineView: View, Equatable {
     /// estado congelado una sola vez (sin gastar GPU/batería).
     @ViewBuilder
     private func activeLine(_ rows: [RenderRow]) -> some View {
-        if isPlaying, renderState.isSceneActive {
+        // ✅ FIX SHEET FPS (PASO 2): `renderState.isSheetSettled` entra en la
+        // MISMA condición que `isSceneActive`: durante la presentación del
+        // sheet (y hasta el defer del `.task`) la línea activa se dibuja
+        // CONGELADA (un solo render, el estado ya es el correcto: el reloj
+        // sigue vivo en el viewModel). Al settled, el TimelineView se rearma
+        // y el karaoke retoma en la posición real.
+        if isPlaying, renderState.isSceneActive, renderState.isSheetSettled {
             if renderState.isCaptured {
                 // ✅ Grabación de pantalla activa: el sistema captura cada frame
                 // que dibujamos, así que el karaoke baja a 30 fps. Es
@@ -1509,6 +1546,12 @@ private struct LyricRenderState: Equatable {
     /// ✅ La escena está en primer plano. Con el Centro de Control encima (o
     /// cualquier overlay del sistema) iOS pone la app en `.inactive`.
     let isSceneActive: Bool
+    /// ✅ FIX SHEET FPS (PASO 2): el sheet ha terminado de presentarse.
+    /// `false` durante la transición del modal → ninguna TimelineView pide
+    /// frames en ese window (tercer foco del tirón: no competir con la
+    /// animación de presentación). La igualdad sintetizada propaga el cambio
+    /// a las filas vía `.equatable()`.
+    let isSheetSettled: Bool
     /// ✅ Grabación de pantalla activa (`UIScreen.isCaptured`).
     let isCaptured: Bool
 
