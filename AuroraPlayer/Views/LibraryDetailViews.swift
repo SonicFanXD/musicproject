@@ -219,10 +219,9 @@ struct AlbumDetailView: View {
                                 isLiked: fileAccessService.isLiked(song),
                                 onAddToQueue: { audioEngine.addToQueue(song) },
                                 onToggleLike: { fileAccessService.toggleLike(song) },
-                                // ✅ E2: "Reproducir ahora" usa el MISMO contexto que
-                                // el toque de la fila (álbum completo en orden de
-                                // disco), para que el menú y el tap no divergan.
-                                onPlayNow: { audioEngine.play(song: song, from: cachedSongs) },
+                                // ✅ E2.3: "Reproducir ahora" reusa el `action` de la
+                                // fila, así que su contexto es el álbum completo en
+                                // orden de disco (mismo que el tap).
                                 onPlayNext: { audioEngine.playNext(song) }
                             ) {
                                 audioEngine.play(song: song, from: cachedSongs)
@@ -580,12 +579,10 @@ struct AlbumDetailView: View {
                     isLiked: fileAccessService.isLiked(song),
                     onAddToQueue: { audioEngine.addToQueue(song) },
                     onToggleLike: { fileAccessService.toggleLike(song) },
-                    // ✅ E2: el contexto es el ÁLBUM COMPLETO (`cachedSongs`), no el
-                    // disco suelto: es el mismo array que el toque de la fila y el
-                    // que arregla el FIX multi-disco (con `songs` la repetición
-                    // volvía a empezar el mismo disco en vez de seguir con el
-                    // siguiente).
-                    onPlayNow: { audioEngine.play(song: song, from: cachedSongs) },
+                    // ✅ E2.3: "Reproducir ahora" reusa el `action` de la fila, así
+                    // que su contexto es el ÁLBUM COMPLETO (`cachedSongs`), el que
+                    // arregla el FIX multi-disco (con `songs` la repetición volvía
+                    // a empezar el mismo disco en vez de seguir con el siguiente).
                     onPlayNext: { audioEngine.playNext(song) }
                 ) {
                     audioEngine.play(song: song, from: cachedSongs)
@@ -674,11 +671,12 @@ struct AlbumSongRow: View {
     let isLiked: Bool
     let onAddToQueue: () -> Void
     let onToggleLike: () -> Void
-    // ✅ E2: acciones del menú contextual para el orden estándar (Reproducir
-    // ahora → Reproducir siguiente → Añadir a la cola → Me gusta). Se declaran
-    // ANTES de `action` porque el init miembro respeta el orden de declaración y
-    // `action` es el closure final (trailing) en los 3 call sites.
-    let onPlayNow: () -> Void
+    // ✅ E2: acción del menú contextual para el orden estándar (Reproducir ahora
+    // → Reproducir siguiente → Añadir a la cola → Me gusta). Se declara ANTES de
+    // `action` porque el init miembro respeta el orden de declaración y `action`
+    // es el closure final (trailing) en los 3 call sites.
+    // ✅ E2.3: `onPlayNow` eliminado — era idéntico al `action` de la fila
+    // (play(song, from: cachedSongs)), así que el menú reusa `action()`.
     let onPlayNext: () -> Void
     let action: () -> Void
 
@@ -742,8 +740,10 @@ struct AlbumSongRow: View {
         // site ya no repiten haptics: evitaría el doble golpe).
         .contextMenu {
             Button {
+                // ✅ E2.3: reusa el `action` de la fila (mismo array y misma
+                // posición), sin parámetro duplicado.
                 Haptics.light()
-                onPlayNow()
+                action()
             } label: {
                 Label(Localization.localized("context.playNow"), systemImage: "play.circle.fill")
             }
@@ -928,8 +928,7 @@ struct ArtistDetailView: View {
                             isLiked: fileAccessService.isLiked(song),
                             onAddToQueue: { audioEngine.addToQueue(song) },
                             onToggleLike: { fileAccessService.toggleLike(song) },
-                            // ✅ E2: mismo contexto que el toque de la fila.
-                            onPlayNow: { audioEngine.play(song: song, from: cachedSongs) },
+                            // ✅ E2.3: "Reproducir ahora" reusa el `action` de la fila.
                             onPlayNext: { audioEngine.playNext(song) }
                         ) {
                             audioEngine.play(song: song, from: cachedSongs)
@@ -1324,11 +1323,12 @@ struct ArtistSongRow: View {
     let isLiked: Bool
     let onAddToQueue: () -> Void
     let onToggleLike: () -> Void
-    // ✅ E2: acciones del menú contextual para el orden estándar (Reproducir
-    // ahora → Reproducir siguiente → Añadir a la cola → Me gusta). Se declaran
-    // ANTES de `action` porque el init miembro respeta el orden de declaración y
-    // `action` es el closure final (trailing) en los 3 call sites.
-    let onPlayNow: () -> Void
+    // ✅ E2: acción del menú contextual para el orden estándar (Reproducir ahora
+    // → Reproducir siguiente → Añadir a la cola → Me gusta). Se declara ANTES de
+    // `action` porque el init miembro respeta el orden de declaración y `action`
+    // es el closure final (trailing) en los 3 call sites.
+    // ✅ E2.3: `onPlayNow` eliminado — era idéntico al `action` de la fila
+    // (play(song, from: cachedSongs)), así que el menú reusa `action()`.
     let onPlayNext: () -> Void
     let action: () -> Void
 
@@ -1391,8 +1391,10 @@ struct ArtistSongRow: View {
         // site ya no repiten haptics: evitaría el doble golpe).
         .contextMenu {
             Button {
+                // ✅ E2.3: reusa el `action` de la fila (mismo array y misma
+                // posición), sin parámetro duplicado.
                 Haptics.light()
-                onPlayNow()
+                action()
             } label: {
                 Label(Localization.localized("context.playNow"), systemImage: "play.circle.fill")
             }

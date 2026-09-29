@@ -1034,10 +1034,30 @@ struct ContentView: View {
         // current para que el card quede DEBAJO del estado accent.
         .auroraCard(radius: AuroraRadius.md, style: .flat, withShadow: false)
             .contextMenu {
+            // ✅ E2.3: menú al orden ESTÁNDAR, idéntico al de las filas de
+            // álbum/artista/lista, y fuera la duplicidad: "Reproducir" y
+            // "Reproducir ahora" llamaban exactamente a lo mismo (playSong →
+            // play(song, from: filteredSongs)), así que queda un único ítem, con
+            // el helper de siempre (él ya dispara su Haptics).
             Button {
                 playSong(song)
             } label: {
-                Label(Localization.localized("actions.play"), systemImage: "play.fill")
+                Label(Localization.localized("context.playNow"), systemImage: "play.circle.fill")
+            }
+
+            Button {
+                Haptics.light()
+                audioEngine.playNext(song)
+            } label: {
+                Label(Localization.localized("context.playNext"), systemImage: "text.line.first.and.arrowtriangle.forward")
+            }
+
+            // ✅ E2.3: "Añadir a la cola" no existía en la biblioteca.
+            Button {
+                Haptics.light()
+                audioEngine.addToQueue(song)
+            } label: {
+                Label(Localization.localized("actions.addToQueue"), systemImage: "text.badge.plus")
             }
 
             Button {
@@ -1061,26 +1081,6 @@ struct ContentView: View {
                 } label: {
                     Label(Localization.localized("context.addToPlaylist"), systemImage: "plus")
                 }
-            }
-            
-            Button {
-                // ✅ FASE E2: "Reproducir siguiente" de verdad. Antes esta acción
-                // NO encolaba la canción tocada: buscaba la siguiente de la lista
-                // visible y llamaba a play(song:from:), o sea REEMPLAZABA toda la
-                // reproducción por un tramo recortado (y de paso arrancaba esa
-                // otra canción). Ahora inserta LA CANCIÓN TOCADA al principio de
-                // la cola manual: suena justo después de la actual, por delante
-                // del resto de la cola y sin tocar lo que suena.
-                audioEngine.playNext(song)
-                Haptics.light()
-            } label: {
-                Label(Localization.localized("context.playNext"), systemImage: "text.line.first.and.arrowtriangle.forward")
-            }
-            
-            Button {
-                audioEngine.play(song: song, from: filteredSongs)
-            } label: {
-                Label(Localization.localized("context.playNow"), systemImage: "play.circle.fill")
             }
         }
     }
