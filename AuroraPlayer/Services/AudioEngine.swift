@@ -323,40 +323,6 @@ class AudioEngine: NSObject, ObservableObject {
         chainedAheadToken = 0
     }
 
-    /// ✅ FIX GAPLESS (hallazgo A-1 de la auditoría): un cambio de orden
-    /// (aleatorio/repetición) a mitad de canción invalidaba la transición YA
-    /// encolada y esa invalidación se pagaba con un HUECO audible en la
-    /// SIGUIENTE transición: `commitChainedSong()` ve el token inválido, cae al
-    /// respaldo atómico `chainGaplessPlayNext()` → `playCurrentSong()`, que hace
-    /// `engine.stop()` + reconexión del grafo + 0.1 s de arranque diferido.
-    ///
-    /// En vez de dejar el huérfano, se re-siembra el MISMO nodo con la canción
-    /// actual en la posición viva —sin tocar la sesión ni reconectar el grafo—
-    /// y se vuelve a encadenar contra el orden YA actualizado, así la siguiente
-    /// transición sigue siendo gapless (que era el objetivo de 6569d34).
-    private func rechainAheadAfterOrderChange() {
-        guard isPlaying, !isStopping, !isAVPlayerActive,
-              engine.isRunning, let file = audioFile, duration > 0 else {
-            // Sin reproducción activa no hay nada encolado que salvar: la
-            // próxima canción se programará (ya encadenada) al arrancar.
-            invalidateChainedAhead()
-            return
-        }
-        let position = wallClockTime
-        AppLog.info(.playback, String(format: "Orden cambiado en %.1fs: re-encadenando sin hueco", position))
-        scheduleGeneration += 1
-        let generation = scheduleGeneration
-        // playerNode.stop() descarta el segmento huérfano ya encolado…
-        playerNode.stop()
-        clearChainedAhead()
-        anchorPlaybackPosition(position)
-        currentTime = position
-        clock.time = position
-        // …y se reprograma la canción ACTUAL desde la posición viva. No se
-        // detiene el engine ni se reconecta el grafo: ese era el hueco.
-        scheduleFile(file, from: position, generation: generation)
-        scheduleAheadIfPossible()
-    }
 
     /// Programa por adelantado, en el mismo nodo (at: nil), la canción que
     /// sigue a la que está sonando AHORA MISMO — sin esperar a que termine.
@@ -2881,12 +2847,19 @@ class AudioEngine: NSObject, ObservableObject {
         }
         updatePlaybackQueue()
         updateNextUpQueue()
-        // ✅ FIX GAPLESS: el audio ya encolado era el de la canción "siguiente"
-        // del orden VIEJO. En vez de invalidarlo (y pagar el respaldo atómico
-        // con hueco en la siguiente transición), se re-siembra el nodo con la
-        // canción actual en su posición viva y se vuelve a encadenar contra el
-        // orden nuevo: la siguiente transición sigue siendo gapless.
-        rechainAheadAfterOrderChange()
+        // ✅ FIX POST-G (micro-corte al activar shuffle/repeat): aquí vivía
+        // rechainAheadAfterOrderChange(), que hacía playerNode.stop() + resiembra
+        // de la canción actual para re-encadenar contra el orden nuevo — y ese
+        // stop corta el buffer vivo: el micro-corte audible. El segmento ya
+        // encolado no se puede desprogramar sin parar el nodo, así que se
+        // conserva: sonará la canción elegida con el orden viejo (igual que en
+        // Apple Music) y el orden nuevo entra en el SIGUIENTE commit natural.
+        // Solo se re-ancla su índice por IDENTIDAD: el índice heredado apuntaba
+        // al orden viejo y commitChainedSong() promovería una canción equivocada
+        // (saltos o repetidos) al terminar la actual.
+        if let chained = chainedAheadSong {
+            chainedAheadIndex = playbackOrder.firstIndex(where: { $0.id == chained.id })
+        }
         // ✅ FASE B4: el aleatorio es un estado de reproducción: el Centro de
         // Control, la pantalla de bloqueo y CarPlay lo reflejan en cuanto se
         // publica el diccionario completo (antes este toggle no avisaba a iOS).
@@ -2924,11 +2897,12 @@ class AudioEngine: NSObject, ObservableObject {
         case .all: name = "repetir todo"
         case .one: name = "repetir uno"
         }
-        // ✅ FIX GAPLESS: cambiar el modo a mitad de canción dejaba desfasada la
-        // canción YA ENCOLADA (terminaría sonando la del modo anterior) y la
-        // invalidación costaba un hueco en la siguiente transición. Se re-siembra
-        // el nodo y se vuelve a encadenar contra el modo nuevo, sin hueco.
-        rechainAheadAfterOrderChange()
+        // ✅ FIX POST-G (micro-corte al activar shuffle/repeat): aquí vivía
+        // rechainAheadAfterOrderChange() (playerNode.stop() + resiembra), y ese
+        // stop cortaba el buffer vivo. El modo nuevo entra en el siguiente commit
+        // natural: la transición ya encolada suena como se programó (trade-off
+        // estilo Apple Music) y a partir de ahí manda el modo nuevo. Aquí no hace
+        // falta re-anclar índice: esta función no altera playbackOrder.
         // ✅ FASE B4: la repetición también es estado de reproducción: se publica
         // el diccionario completo para que las superficies del sistema (CC,
         // bloqueo, CarPlay) queden sincronizadas con la app.
@@ -3136,16 +3110,49 @@ class AudioEngine: NSObject, ObservableObject {
         }
 
         let song = songs[index]
-        // ✅ FASE A: la biblioteca completa es el orden SIN mezclar de la sesión
-        // restaurada. Si el aleatorio estaba activo, el orden real se reconstruye
-        // mezclado con la canción restaurada fija en el índice 0 — la misma
-        // invariante que play()/toggleShuffle(): `currentIndex` apunta SIEMPRE a
-        // la canción actual dentro de `playbackOrder`.
-        originalOrder = songs
-        if isShuffleEnabled, songs.count > 1 {
-            playbackOrder = [song] + songs.filter { $0.id != song.id }.shuffled()
+        // ✅ FIX POST-G (restore pierde la playlist): recuperar el ORDEN REAL de
+        // la sesión guardada re-mapeando los UUID de saveState() contra la
+        // biblioteca actual. Antes SIEMPRE se reconstruía con la biblioteca
+        // completa: la canción sonaba bien (songID) pero la "siguiente" pasaba a
+        // ser otra canción cualquiera, no la del álbum/playlist en curso.
+        var restoredSessionOrder: (playback: [Song], original: [Song])?
+        if let playbackIDStrings = state["playbackOrderIDs"] as? [String],
+           let originalIDStrings = state["originalOrderIDs"] as? [String] {
+            // Mismo patrón y misma garantía de IDs únicos que songsInPlaylist().
+            let byID = Dictionary(uniqueKeysWithValues: songs.map { ($0.id, $0) })
+            let restoredPlaybackOrder = playbackIDStrings.compactMap { idString in
+                UUID(uuidString: idString).flatMap { byID[$0] }
+            }
+            let restoredOriginalOrder = originalIDStrings.compactMap { idString in
+                UUID(uuidString: idString).flatMap { byID[$0] }
+            }
+            // Válido solo si AMBOS órdenes sobreviven al mapeo (biblioteca
+            // cambiada/borrada = IDs perdidos) y contienen la canción actual.
+            if !restoredPlaybackOrder.isEmpty,
+               !restoredOriginalOrder.isEmpty,
+               restoredPlaybackOrder.contains(where: { $0.id == song.id }) {
+                restoredSessionOrder = (restoredPlaybackOrder, restoredOriginalOrder)
+            } else {
+                AppLog.warning(.playback, "restoreState: playbackOrder no recuperable, usando biblioteca")
+            }
+        }
+        // Retrocompatibilidad: un state sin playbackOrderIDs (versión anterior
+        // de la app) cae al fallback de siempre, sin warning.
+        if let sessionOrder = restoredSessionOrder {
+            playbackOrder = sessionOrder.playback
+            originalOrder = sessionOrder.original
         } else {
-            playbackOrder = songs
+            // ✅ FASE A: la biblioteca completa es el orden SIN mezclar de la sesión
+            // restaurada. Si el aleatorio estaba activo, el orden real se reconstruye
+            // mezclado con la canción restaurada fija en el índice 0 — la misma
+            // invariante que play()/toggleShuffle(): `currentIndex` apunta SIEMPRE a
+            // la canción actual dentro de `playbackOrder`.
+            originalOrder = songs
+            if isShuffleEnabled, songs.count > 1 {
+                playbackOrder = [song] + songs.filter { $0.id != song.id }.shuffled()
+            } else {
+                playbackOrder = songs
+            }
         }
         self.currentIndex = playbackOrder.firstIndex(where: { $0.id == song.id }) ?? 0
         self.currentSong = song
@@ -4284,6 +4291,12 @@ class AudioEngine: NSObject, ObservableObject {
         }
         // ✅ MEJORA QUEUE: guardar cola manual para persistencia
         state["manualQueue"] = manualQueue.map { $0.id.uuidString }
+        // ✅ FIX POST-G (restore pierde la playlist): guardar el ORDEN de sesión
+        // real (álbum, playlist, búsqueda...) y el orden original de referencia.
+        // Sin esto, restoreState() reconstruía con la biblioteca completa y la
+        // "siguiente" era cualquier canción cercana en orden alfabético.
+        state["playbackOrderIDs"] = playbackOrder.map { $0.id.uuidString }
+        state["originalOrderIDs"] = originalOrder.map { $0.id.uuidString }
         UserDefaults.standard.set(state, forKey: stateDefaultsKey)
     }
 

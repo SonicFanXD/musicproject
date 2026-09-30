@@ -113,8 +113,8 @@ struct ContentView: View {
                     categoryPicker
 
                     // ✅ Transición animada entre categorías: el contenido
-                    // entra con fade + slide suave, sale con fade + micro-escala.
-                    // Solo transform/opacity → renderizado por GPU, 60fps estables.
+                    // entra con fade + micro-escala, sale con fade. Solo
+                    // transform/opacity → renderizado por GPU, 60fps estables.
                     // ✅ G: cada rama declara su transición. Antes solo existía el
                     // `.animation` de abajo, así que el cambio de categoría cruzaba
                     // en duro (el comentario describía una transición que no estaba).
@@ -362,6 +362,17 @@ struct ContentView: View {
                     }
                 }
             }
+            // ✅ FIX POST-G (PlayerBar aparece antes que el resto): la barra se
+            // ancla al NavigationStack DENTRO del ZStack. Antes colgaba de un
+            // `.safeAreaInset` del ZStack RAÍZ: el inset es hermano de los hijos
+            // del ZStack, así que se componía POR ENCIMA del Splash (su zIndex(1)
+            // no ordena contra el inset). Aquí el splash vuelve a tapar la barra
+            // mientras dura.
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                PlayerBar(audioEngine: audioEngine, fileAccessService: fileAccessService, clock: audioEngine.clock)
+                    .padding(.horizontal, 10)
+                    .padding(.bottom, 6)
+            }
 
             if isInitialLoad {
                 SplashView()
@@ -371,11 +382,6 @@ struct ContentView: View {
                     .transition(.scale(scale: 0.96).combined(with: .opacity))
                     .zIndex(1)
             }
-        }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            PlayerBar(audioEngine: audioEngine, fileAccessService: fileAccessService, clock: audioEngine.clock)
-                .padding(.horizontal, 10)
-                .padding(.bottom, 6)
         }
         .animation(.easeInOut(duration: 0.35), value: fileAccessService.isScanning)
         // ✅ FIX BACK ACCENT: sobreescribe el AccentColor del asset para TODO el
@@ -475,14 +481,16 @@ struct ContentView: View {
     // Se conserva el inset inferior para la PlayerBar flotante (sin él, la
     // última fila quedaba oculta detrás de la barra).
     /// ✅ G: transición compartida por las 4 categorías de la biblioteca (una
-    /// definición en vez de cuatro copias idénticas). Entra por la derecha con
-    /// fundido y una micro-escala; sale con fundido. Solo `transform`/`opacity`,
+    /// definición en vez de cuatro copias idénticas). Solo `transform`/`opacity`,
     /// así que el cambio lo compone la GPU (nada de blur ni material nuevos).
+    /// ✅ FIX POST-G (delay entre categorías): fuera el `.move(edge: .trailing)`.
+    /// Desplazar la lista entera (hasta ~1.000 filas del LazyVStack) por pantalla
+    /// cuesta un frame caro por paso en el A11 y se percibía como retardo. Ahora
+    /// entra con fundido + micro-escala y sale con fundido: mismo gesto visual,
+    /// solo opacidad.
     private var categoryTransition: AnyTransition {
         .asymmetric(
-            insertion: .opacity.combined(
-                with: .move(edge: .trailing).combined(with: .scale(scale: 0.98))
-            ),
+            insertion: .opacity.combined(with: .scale(scale: 0.98)),
             removal: .opacity
         )
     }
@@ -1463,8 +1471,20 @@ struct SplashView: View {
     
     var body: some View {
         ZStack {
-            // ✅ G: el fondo del sistema (respeta claro/oscuro por sí solo).
-            AppBackground()
+            // ✅ FIX POST-G (splash negro): MISMO gradiente del sistema que
+            // AppBackground(), pero SIN `.drawingGroup(opaque: true)`. La capa
+            // rasterizada opaca + la transición del splash (opacity + scale) se
+            // composita en negro sobre el A11 y tapaba logo y título. El splash
+            // es estático: no necesita el offscreen.
+            LinearGradient(
+                colors: [
+                    Color(UIColor.systemBackground),
+                    Color(UIColor.secondarySystemBackground)
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .ignoresSafeArea()
             
             VStack(spacing: 0) {
                 Spacer()
@@ -1504,6 +1524,10 @@ struct SplashView: View {
                 Spacer()
             }
         }
+        // ✅ FIX POST-G (splash negro): el splash cubre la pantalla completa; sin
+        // esto se quedaba dentro del safe area y el inset inferior le recortaba
+        // la zona de la PlayerBar.
+        .ignoresSafeArea()
         .allowsHitTesting(false)
         .onAppear {
             // ✅ Entrada con spring: el logo "asienta" con un rebote sutil en
