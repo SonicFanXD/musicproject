@@ -53,6 +53,17 @@ struct ContentView: View {
     /// la pestaña de Canciones). En cuanto Canciones vuelve a la vista, el
     /// onChange de categoría la recalcula.
     @State private var orderedSongsCacheDirty = true
+    // ✅ FIX SCROLL ÁLBUMES/ARTISTAS: mismo patrón que Canciones para las otras
+    // dos listas ordenadas. `filteredAlbums`/`filteredArtists` llamaban a
+    // `sortAlbums`/`sortArtists` (O(n log n) con `localizedStandardCompare`)
+    // en CADA evaluación del body: con el motor y el escaneo publicando
+    // cambios, scrollear pagaba ese orden una y otra vez aunque no hubiera
+    // cambiado ninguna entrada. Canciones ya tenía caché — por eso solo esas
+    // dos pestañas daban tirones.
+    @State private var orderedAlbumsCache: [Album] = []
+    @State private var orderedAlbumsCacheDirty = true
+    @State private var orderedArtistsCache: [Artist] = []
+    @State private var orderedArtistsCacheDirty = true
     @FocusState private var searchFieldFocused: Bool
     // ✅ Manejo de ciclo de vida para detectar cambios en segundo plano
     @Environment(\.scenePhase) private var scenePhase
@@ -177,10 +188,13 @@ struct ContentView: View {
                 .onChange(of: searchText) { newValue in scheduleSearch(for: newValue) }
                 .onChange(of: sortOptionRaw) { _ in invalidateOrderedSongs() }
                 .onChange(of: songSortAscending) { _ in invalidateOrderedSongs() }
-                .onChange(of: albumSortRaw) { albumSortRawStorage = $0 }
-                .onChange(of: albumSortAscending) { albumSortAscendingStorage = $0 }
-                .onChange(of: artistSortRaw) { artistSortRawStorage = $0 }
-                .onChange(of: artistSortAscending) { artistSortAscendingStorage = $0 }
+                // ✅ FIX SCROLL ÁLBUMES/ARTISTAS: el criterio de orden es una
+                // entrada de la caché de cada lista → invalidar al cambiar,
+                // igual que sortOptionRaw/songSortAscending arriba.
+                .onChange(of: albumSortRaw) { albumSortRawStorage = $0; invalidateOrderedAlbums() }
+                .onChange(of: albumSortAscending) { albumSortAscendingStorage = $0; invalidateOrderedAlbums() }
+                .onChange(of: artistSortRaw) { artistSortRawStorage = $0; invalidateOrderedArtists() }
+                .onChange(of: artistSortAscending) { artistSortAscendingStorage = $0; invalidateOrderedArtists() }
                 // ✅ FIX LAG DE TECLADO: antes había aquí un .onChange(of: searchText)
                 // que llamaba a LibrarySearchIndex.shared.update(...) en CADA tecla.
                 // update() ignora por completo `searchText` (solo sincroniza el índice
@@ -203,6 +217,10 @@ struct ContentView: View {
                     // ✅ FASE D: al volver a Canciones se recalcula el orden si
                     // quedó sucio mientras se veía otra categoría.
                     recomputeOrderedSongs()
+                    // ✅ FIX SCROLL ÁLBUMES/ARTISTAS: mismo contrato para sus
+                    // cachés — solo se recalcula la pestaña que entra a la vista.
+                    invalidateOrderedAlbums()
+                    invalidateOrderedArtists()
                 }
                 // ✅ DETECCIÓN EN SEGUNDO PLANO: cuando la app vuelve a activa,
                 // verificar si hay canciones nuevas SILENCIOSAMENTE (sin tarjeta
@@ -280,6 +298,10 @@ struct ContentView: View {
                     // `filteredSongs` ya garantiza que nunca se vea vacío, pero
                     // así el primer render tras el splash ya viene ordenado).
                     recomputeOrderedSongs()
+                    // ✅ FIX SCROLL ÁLBUMES/ARTISTAS: poblar también sus cachés
+                    // (mismo motivo: dejar de ordenar dentro del body).
+                    recomputeOrderedAlbums()
+                    recomputeOrderedArtists()
                     // ✅ FASE B2: el motor no conoce la biblioteca, así que la app
                     // le inyecta aquí el conteo de pistas/discos del álbum (para
                     // MPMediaItemPropertyAlbumTrackCount/DiscCount). El closure
@@ -1202,6 +1224,13 @@ struct ContentView: View {
         if selectedCategory == .songs, orderedSongsCacheDirty {
             recomputeOrderedSongs()
         }
+        // ✅ FIX SCROLL ÁLBUMES/ARTISTAS: mismo contrato al salir de la búsqueda.
+        if selectedCategory == .albums, orderedAlbumsCacheDirty {
+            recomputeOrderedAlbums()
+        }
+        if selectedCategory == .artists, orderedArtistsCacheDirty {
+            recomputeOrderedArtists()
+        }
     }
 
     /// ✅ FASE E: aplica una consulta (ya normalizada) y lanza el matching en
@@ -1232,6 +1261,10 @@ struct ContentView: View {
     private func libraryDidChange() {
         if appliedSearchQuery.isEmpty {
             invalidateOrderedSongs()
+            // ✅ FIX SCROLL ÁLBUMES/ARTISTAS: álbumes y artistas también derivan
+            // de `songs` — sus cachés se invalidan en el mismo punto.
+            invalidateOrderedAlbums()
+            invalidateOrderedArtists()
         } else {
             applySearch(query: appliedSearchQuery)
         }
@@ -1259,6 +1292,33 @@ struct ContentView: View {
     private func recomputeOrderedSongs() {
         orderedSongsCache = computeFilteredSongs()
         orderedSongsCacheDirty = false
+    }
+
+    /// ✅ FIX SCROLL ÁLBUMES/ARTISTAS: mismo par invalidar/recalcular que
+    /// Canciones. El invalidante solo ordena si la pestaña está a la vista;
+    /// con otra categoría abierta queda sucio y se recalcula al volver.
+    private func invalidateOrderedAlbums() {
+        orderedAlbumsCacheDirty = true
+        if selectedCategory == .albums {
+            recomputeOrderedAlbums()
+        }
+    }
+
+    private func recomputeOrderedAlbums() {
+        orderedAlbumsCache = sortAlbums(fileAccessService.albums)
+        orderedAlbumsCacheDirty = false
+    }
+
+    private func invalidateOrderedArtists() {
+        orderedArtistsCacheDirty = true
+        if selectedCategory == .artists {
+            recomputeOrderedArtists()
+        }
+    }
+
+    private func recomputeOrderedArtists() {
+        orderedArtistsCache = sortArtists(fileAccessService.artists)
+        orderedArtistsCacheDirty = false
     }
 
     /// Cálculo PURO del orden COMPLETO de canciones (el que antes vivía en el
@@ -1313,7 +1373,14 @@ struct ContentView: View {
         // ✅ FASE E: la consulta APLICADA (no el texto en vuelo del campo).
         let query = appliedSearchQuery
         // ✅ FIX "no busca bien": ver comentario equivalente en filteredSongs.
-        guard !query.isEmpty else { return sortAlbums(albums) }
+        guard !query.isEmpty else {
+            // ✅ FIX SCROLL ÁLBUMES/ARTISTAS: mismo contrato que `filteredSongs`
+            // — la lista ordenada sale de la caché, no del cuerpo del render.
+            if orderedAlbumsCacheDirty || orderedAlbumsCache.isEmpty {
+                return sortAlbums(albums)
+            }
+            return orderedAlbumsCache
+        }
         return LibrarySearchIndex.shared.searchAlbums(albums, query: query)
     }
 
@@ -1361,7 +1428,14 @@ struct ContentView: View {
         // ✅ FASE E: la consulta APLICADA (no el texto en vuelo del campo).
         let query = appliedSearchQuery
         // ✅ FIX "no busca bien": ver comentario equivalente en filteredSongs.
-        guard !query.isEmpty else { return sortArtists(artists) }
+        guard !query.isEmpty else {
+            // ✅ FIX SCROLL ÁLBUMES/ARTISTAS: mismo contrato que `filteredSongs`
+            // — la lista ordenada sale de la caché, no del cuerpo del render.
+            if orderedArtistsCacheDirty || orderedArtistsCache.isEmpty {
+                return sortArtists(artists)
+            }
+            return orderedArtistsCache
+        }
         return LibrarySearchIndex.shared.searchArtists(artists, query: query)
     }
 
@@ -1464,10 +1538,16 @@ struct ContentView: View {
 // `repeatForever` del halo, que era el único bucle perpetuo de la pantalla.
 // Los TIEMPOS no cambian: el mínimo de 1,2 s lo sigue marcando ContentView.
 struct SplashView: View {
-    @State private var logoScale: CGFloat = 0.8
-    @State private var logoOpacity: Double = 0
-    @State private var titleOffset: CGFloat = 20
-    @State private var titleOpacity: Double = 0
+    // ✅ FIX SPLASH: el contenido ya no depende de ningún @State para verse.
+    // Antes logo y título nacían invisibles (opacity 0, scale 0,8 y offset 20)
+    // y solo un `.onAppear` los llevaba a 1. Si ese onAppear no llegaba a
+    // pintar (primer frame ocupado con la indexación), el splash se quedaba
+    // con el fondo solo — y en modo oscuro systemBackground y
+    // secondarySystemBackground son negros: pantalla negra vacía. Ahora el
+    // PRIMER frame ya pinta logo, título y loader: sin estado inicial
+    // invisible no hay animación que pueda fallar. El spring de entrada se
+    // retira junto a los @State; los TIEMPOS del splash los sigue marcando
+    // ContentView (mínimo 1,2 s).
     
     var body: some View {
         ZStack {
@@ -1505,8 +1585,6 @@ struct SplashView: View {
                         radius: AuroraShadow.softRadius,
                         y: AuroraShadow.softY
                     )
-                    .scaleEffect(logoScale)
-                    .opacity(logoOpacity)
                 
                 Spacer().frame(height: 32)
                 
@@ -1518,8 +1596,6 @@ struct SplashView: View {
                     
                     LoadingDots()
                 }
-                .opacity(titleOpacity)
-                .offset(y: titleOffset)
                 
                 Spacer()
             }
@@ -1529,20 +1605,6 @@ struct SplashView: View {
         // la zona de la PlayerBar.
         .ignoresSafeArea()
         .allowsHitTesting(false)
-        .onAppear {
-            // ✅ Entrada con spring: el logo "asienta" con un rebote sutil en
-            // lugar de frenar en seco. El retardo del título es el mismo de
-            // antes, así que la duración total del splash no cambia.
-            withAnimation(.spring(response: 0.7, dampingFraction: 0.75)) {
-                logoScale = 1.0
-                logoOpacity = 1.0
-            }
-
-            withAnimation(.spring(response: 0.7, dampingFraction: 0.75).delay(0.25)) {
-                titleOffset = 0
-                titleOpacity = 1.0
-            }
-        }
     }
 }
 
@@ -1743,14 +1805,29 @@ func localizedAlbumCount(_ count: Int) -> String {
     return "\(count) \(unit)"
 }
 
+/// ✅ FIX SCROLL ÁLBUMES/ARTISTAS: miniatura de fila para álbum/artista por la
+/// MISMA ruta que la fila de canción (`Song.rowThumbnail`: ImageIO decodifica
+/// el JPEG ya al tamaño pedido y lo cachea por hash+px). La selección de
+/// portada es idéntica a `Album.artwork`/`Artist.artwork` (primera canción con
+/// arte); sin hash (instalación vieja con bytes inline) cae al camino completo.
+private func artworkRowThumbnail(_ songs: [Song], maxPixel: Int = 104) -> UIImage? {
+    songs.first(where: { $0.artworkData != nil || $0.artworkHash != nil })?
+        .rowThumbnail(maxPixel: maxPixel)
+}
+
 private func albumListRow(_ album: Album) -> some View {
     HStack(spacing: 14) {
         Group {
-            if let artwork = album.artwork {
-                // ✅ ANTI-JETSAM: la fila muestra 52pt pero decodificaba los 768px
-                // completos (≈2.4MB) por fila durante el scroll. Miniatura de
-                // 104px (52pt @2x) cacheada, igual que la fila de canciones.
-                Image(uiImage: AppTheme.thumbnail(from: artwork, size: CGSize(width: 104, height: 104)))
+            if let artwork = artworkRowThumbnail(album.songs) {
+                // ✅ FIX SCROLL ÁLBUMES/ARTISTAS: la fila ya NO pide la carátula
+                // completa (`album.artwork` + `AppTheme.thumbnail`). Esa ruta
+                // decodificaba el JPEG de 768px (≈2,4 MB) y llenaba
+                // `Song.artworkCache` (countLimit 120 ⇒ ~85 portadas antes de
+                // expulsar): con más álbumes que entradas, el scroll volvía a
+                // decodificar entero cada pocas filas (10-40 ms en el A11).
+                // Ahora: ImageIO una pasada a 104px (52pt @2x), cacheada por
+                // hash+px — la misma ruta de la fila de canción.
+                Image(uiImage: artwork)
                     .resizable().interpolation(.high).scaledToFill()
                     .frame(width: 52, height: 52)
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
@@ -1789,9 +1866,10 @@ private func albumListRow(_ album: Album) -> some View {
 private func artistListRow(_ artist: Artist) -> some View {
     HStack(spacing: 14) {
         Group {
-            if let artwork = artist.artwork {
-                // ✅ ANTI-JETSAM: mismo caso que la fila de álbumes (52pt @2x).
-                Image(uiImage: AppTheme.thumbnail(from: artwork, size: CGSize(width: 104, height: 104)))
+            if let artwork = artworkRowThumbnail(artist.songs) {
+                // ✅ FIX SCROLL ÁLBUMES/ARTISTAS: mismo caso que la fila de
+                // álbumes (52pt @2x) por la ruta de `rowThumbnail`.
+                Image(uiImage: artwork)
                     .resizable().interpolation(.high).scaledToFill()
                     .frame(width: 52, height: 52)
                     .clipShape(Circle())
