@@ -1549,6 +1549,13 @@ struct SplashView: View {
     
     var body: some View {
         ZStack {
+            // ✅ FIX SPLASH TRANSPARENTE: base OPACA del color del sistema como
+            // primera capa. El stop central del gradiente (accent al 8%) es 92%
+            // translúcido y dejaba ver la app detrás; ahora compone sobre esta
+            // base y el splash tapa toda la pantalla sin perder el diseño.
+            Color(UIColor.systemBackground)
+                .ignoresSafeArea()
+            
             // ✅ SPLASH REDISEÑO: fondo con identidad Aurora — el gradiente del
             // sistema toma un baño de acento al 8% en la franja central.
             // SIN `.drawingGroup` (causó el compositado en negro del POST-G).
@@ -1605,6 +1612,11 @@ struct SplashView: View {
                 Spacer()
             }
         }
+        // ✅ FIX SPLASH TRANSPARENTE: anclamos el ZStack exterior a pantalla
+        // completa (cinturón y tirantes). El `.ignoresSafeArea()` de abajo YA
+        // estaba desde el POST-G; si la app se ve detrás, no es por el marco:
+        // es el stop central del gradiente (accent al 8% = 92% translúcido).
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         // ✅ FIX POST-G (splash negro): el splash cubre la pantalla completa; sin
         // esto se quedaba dentro del safe area y el inset inferior le recortaba
         // la zona de la PlayerBar.
