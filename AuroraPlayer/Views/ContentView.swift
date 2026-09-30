@@ -1538,65 +1538,70 @@ struct ContentView: View {
 // `repeatForever` del halo, que era el único bucle perpetuo de la pantalla.
 // Los TIEMPOS no cambian: el mínimo de 1,2 s lo sigue marcando ContentView.
 struct SplashView: View {
-    // ✅ FIX SPLASH: el contenido ya no depende de ningún @State para verse.
-    // Antes logo y título nacían invisibles (opacity 0, scale 0,8 y offset 20)
-    // y solo un `.onAppear` los llevaba a 1. Si ese onAppear no llegaba a
-    // pintar (primer frame ocupado con la indexación), el splash se quedaba
-    // con el fondo solo — y en modo oscuro systemBackground y
-    // secondarySystemBackground son negros: pantalla negra vacía. Ahora el
-    // PRIMER frame ya pinta logo, título y loader: sin estado inicial
-    // invisible no hay animación que pueda fallar. El spring de entrada se
-    // retira junto a los @State; los TIEMPOS del splash los sigue marcando
-    // ContentView (mínimo 1,2 s).
+    // ✅ FIX SPLASH: el contenido EMPIEZA VISIBLE (opacity 1 por defecto, nada
+    // depende del `.onAppear`). El `@State appearAnimation` solo mueve escala
+    // (0,94 → 1,0) y offset (+6 → 0) con un spring corto: si ese onAppear no
+    // llegara a dispararse, el splash se pinta igual — completo y estático.
+    // PROHIBIDO volver a opacity condicionada a @State en 0: fue la causa del
+    // cuadro negro (logo/título nacían invisibles y solo el onAppear los
+    // llevaba a 1). Los TIEMPOS del splash los marca ContentView (mínimo 1,2 s).
+    @State private var appearAnimation = false
     
     var body: some View {
         ZStack {
-            // ✅ FIX POST-G (splash negro): MISMO gradiente del sistema que
-            // AppBackground(), pero SIN `.drawingGroup(opaque: true)`. La capa
-            // rasterizada opaca + la transición del splash (opacity + scale) se
-            // composita en negro sobre el A11 y tapaba logo y título. El splash
-            // es estático: no necesita el offscreen.
+            // ✅ SPLASH REDISEÑO: fondo con identidad Aurora — el gradiente del
+            // sistema toma un baño de acento al 8% en la franja central.
+            // SIN `.drawingGroup` (causó el compositado en negro del POST-G).
             LinearGradient(
                 colors: [
                     Color(UIColor.systemBackground),
-                    Color(UIColor.secondarySystemBackground)
+                    AppTheme.accent.opacity(0.08),
+                    Color(UIColor.systemBackground)
                 ],
                 startPoint: .top,
                 endPoint: .bottom
             )
             .ignoresSafeArea()
             
-            VStack(spacing: 0) {
+            VStack(spacing: 28) {
                 Spacer()
                 
-                // ✅ G: logo con el badge del sistema: hero × 1,5 (88 × 1,5 = 132pt)
-                // en forma de círculo, con su gradiente interno de dos paradas del
-                // mismo tono. La sombra única va POR FUERA del badge para que
-                // sombree el conjunto (círculo + icono).
+                // ✅ SPLASH REDISEÑO: logo hero × 1,5 (132pt), icono 48. Doble
+                // sombra (halo de acento + micro-sombra neutra) para dar
+                // profundidad. El spring de entrada SOLO anima la escala:
+                // el primer frame se pinta al 0,94, nunca invisible.
                 Image(systemName: "music.note")
                     .auroraIconBadge(
                         size: AuroraIconSize.hero * 1.5,
                         color: AppTheme.accent,
                         shape: .circle,
-                        iconSize: 44
+                        iconSize: 48
                     )
-                    .shadow(
-                        color: AppTheme.accent.opacity(0.3),
-                        radius: AuroraShadow.softRadius,
-                        y: AuroraShadow.softY
-                    )
+                    .shadow(color: AppTheme.accent.opacity(0.25), radius: 24, x: 0, y: 12)
+                    .shadow(color: .black.opacity(0.08), radius: 4, x: 0, y: 1)
+                    .scaleEffect(appearAnimation ? 1.0 : 0.94)
                 
-                Spacer().frame(height: 32)
-                
-                VStack(spacing: 12) {
+                // ✅ SPLASH REDISEÑO: título 32 + tagline "Hi-Fi Player" en
+                // versalitas con tracking. El spring SOLO anima el offset:
+                // el primer frame baja 6pt, nunca invisible.
+                VStack(spacing: 8) {
                     Text("Aurora Player")
-                        .font(.system(size: 28, weight: .bold, design: .rounded))
-                        // ✅ G: el gradiente de acento de dos colores del sistema.
+                        .font(.system(size: 32, weight: .bold, design: .rounded))
                         .foregroundStyle(AppTheme.accentGradient)
                     
-                    LoadingDots()
+                    Text("Hi-Fi Player")
+                        .font(.system(size: 14, weight: .medium, design: .rounded))
+                        .foregroundStyle(.secondary)
+                        .tracking(2)
+                        .textCase(.uppercase)
                 }
+                .offset(y: appearAnimation ? 0 : 6)
                 
+                Spacer().frame(height: 12)
+                
+                LoadingDots()
+                
+                Spacer()
                 Spacer()
             }
         }
@@ -1605,6 +1610,13 @@ struct SplashView: View {
         // la zona de la PlayerBar.
         .ignoresSafeArea()
         .allowsHitTesting(false)
+        .onAppear {
+            // ✅ SPLASH REDISEÑO: spring sutil y único (sin repeatForever ni
+            // halos). Decorativo: solo escala y offset, nunca opacity.
+            withAnimation(.spring(response: 0.65, dampingFraction: 0.8)) {
+                appearAnimation = true
+            }
+        }
     }
 }
 
