@@ -228,6 +228,10 @@ class AudioEngine: NSObject, ObservableObject {
     /// puntos de anclaje pasan por AQUÍ, así el medidor nunca compara con una
     /// referencia de un tramo de reproducción distinto.
     private func anchorPlaybackPosition(_ pos: TimeInterval) {
+        // ⏳ INSTRUMENTACIÓN CLOCK (retirar tras diagnóstico): cada re-anclaje
+        // reposiciona la extrapolación de la barra; comparar la nueva posición
+        // con el ancla PREVIO delata qué camino la mueve y cuánto salta.
+        AppLog.info(.playback, String(format: "[CLOCK] anchor: pos=%.2f (antes=%.2f) wallClock=%.3f", pos, posAnchor, CACurrentMediaTime()))
         posAnchor = duration > 0 ? min(max(pos, 0), duration) : max(pos, 0)
         wallAnchor = CACurrentMediaTime()
         clockDriftReference = nil
@@ -407,9 +411,17 @@ class AudioEngine: NSObject, ObservableObject {
     /// watchdog (red de seguridad) — el chequeo de token asegura que solo
     /// uno de los dos surta efecto.
     private func segmentDidFinish(token: Int, expectedGeneration: Int) {
+        // ⏳ INSTRUMENTACIÓN CLOCK (retirar tras diagnóstico): cada invocación
+        // (callback real o watchdog) con el veredicto del guard; el rechazo
+        // silencioso es hoy invisible y puede esconder callbacks perdidos
+        // o duplicados.
+        AppLog.info(.playback, String(format: "[CLOCK] segmentDidFinish: token=%d active=%d gen=%d expected=%d isPlaying=%@ isStopping=%@", token, activeSegmentToken, scheduleGeneration, expectedGeneration, isPlaying ? "true" : "false", isStopping ? "true" : "false"))
         guard scheduleGeneration == expectedGeneration,
               token != 0, activeSegmentToken == token,
               isPlaying, !isStopping else { return }
+        // ⏳ INSTRUMENTACIÓN CLOCK (retirar tras diagnóstico): segmento aceptado
+        // → arranca la transición (promoción gapless o reinicio atómico).
+        AppLog.info(.playback, "[CLOCK] segmentDidFinish ACEPTADO: commitChainedSong →")
         activeSegmentToken = 0
         AppLog.info(.playback, "Canción terminada: '\(currentSong?.displayName ?? "—")' (\(String(format: "%.1f", duration))s, repeat: \(repeatMode.rawValue))")
         commitChainedSong()
@@ -420,6 +432,9 @@ class AudioEngine: NSObject, ObservableObject {
     /// que sigue. Si no había nada encadenado (formato distinto o fin de
     /// playlist), recurre al reinicio atómico como respaldo.
     private func commitChainedSong() {
+        // ⏳ INSTRUMENTACIÓN CLOCK (retirar tras diagnóstico): estado al entrar;
+        // chained* vacíos = camino del reinicio atómico (hueco audible).
+        AppLog.info(.playback, String(format: "[CLOCK] commitChainedSong: chainedIndex=%@ chainedToken=%d chainedAheadSong='%@' wallClock=%.2f duration=%.2f", chainedAheadIndex.map(String.init) ?? "nil", chainedAheadToken, String(describing: chainedAheadSong?.displayName), wallClockTimeUnclamped, duration))
         guard let index = chainedAheadIndex,
               let song = chainedAheadSong,
               let file = chainedAheadFile,
@@ -460,6 +475,9 @@ class AudioEngine: NSObject, ObservableObject {
         currentTime = chainedStart
         clock.time = chainedStart
         anchorPlaybackPosition(chainedStart)
+        // ⏳ INSTRUMENTACIÓN CLOCK (retirar tras diagnóstico): posición de salida
+        // del gapless; un chainedStart grande = callback tardío (BT/AirPlay).
+        AppLog.info(.playback, String(format: "[CLOCK] commitChainedSong OK: nuevaPos=%.2f joinLatenessMs=%.0f", chainedStart, joinLatenessMs))
         updateNowPlayingInfo()
         // ✅ FIX TIMER CC (CAMBIO D): red de seguridad del gapless. La unión
         // puede caer justo en una transición de estado del sistema; una
@@ -705,6 +723,10 @@ class AudioEngine: NSObject, ObservableObject {
         setupEqualizer()
         observeRouteChanges()
         observeInterruptions()
+        // ✅ FIX CRASH PAUSA PROLONGADA: sin este observer, un reinicio de
+        // mediaserverd con la app suspendida dejaba un grafo muerto que
+        // resume() reutilizaba tal cual.
+        observeMediaServicesReset()
         observeSystemMonoAudio()
         // ✅ FIX detección inicial: forzar actualización de ruta al iniciar
         // para detectar dispositivos conectados al arrancar la app
@@ -816,6 +838,9 @@ class AudioEngine: NSObject, ObservableObject {
     }
 
     @objc private func handleAppDidEnterBackground() {
+        // ⏳ INSTRUMENTACIÓN CLOCK (retirar tras diagnóstico): snapshot del reloj
+        // al entrar en segundo plano (iOS puede matar el engine aquí).
+        AppLog.info(.playback, String(format: "[CLOCK] background: currentTime=%.2f posAnchor=%.2f wallAnchor=%.3f isPlaying=%@", currentTime, posAnchor, wallAnchor, isPlaying ? "true" : "false"))
         // ✅ Persistencia del audio: si estamos reproduciendo, mantener la
         // sesión de audio activa y pedir tiempo en segundo plano para que
         // el engine no se suspenda. Esto mejora la reproducción continua
@@ -871,6 +896,10 @@ class AudioEngine: NSObject, ObservableObject {
     }
 
     @objc private func handleAppWillEnterForeground() {
+        // ⏳ INSTRUMENTACIÓN CLOCK (retirar tras diagnóstico): snapshot al volver;
+        // si posAnchor + (wall − wallAnchor) ≠ currentTime, el reloj avanzó en
+        // segundo plano cuando no debía.
+        AppLog.info(.playback, String(format: "[CLOCK] foreground: currentTime=%.2f posAnchor=%.2f wallAnchor=%.3f isPlaying=%@", currentTime, posAnchor, wallAnchor, isPlaying ? "true" : "false"))
         // ✅ Volver a frecuencia normal del timer al regresar a primer plano
         if isPlaying {
             // ✅ FIX: sincronizar el reloj ANTES de reiniciar el timer para evitar
@@ -906,6 +935,9 @@ class AudioEngine: NSObject, ObservableObject {
         let current = wallClockTime
         currentTime = current
         clock.time = current
+        // ⏳ INSTRUMENTACIÓN CLOCK (retirar tras diagnóstico): qué publicó el
+        // reloj de pared al resincronizar (foreground, cambios de timer).
+        AppLog.info(.playback, String(format: "[CLOCK] syncCurrentTimeFromRenderThread: wallClock=%.2f", current))
     }
 
     // MARK: - Recuperación robusta del engine (fix de crashes en segundo plano)
@@ -957,6 +989,11 @@ class AudioEngine: NSObject, ObservableObject {
             try engine.start()
         } catch {
             AppLog.error(.playback, error, context: "startEngineSafely: primer intento, reintentando")
+            // ✅ FIX CRASH REINTENTO: recargar el formato ANTES del segundo
+            // start(): la ruta pudo estabilizarse entre intentos, y arrancar
+            // con la conexión vieja era la receta del silencio tras cambio
+            // de ruta.
+            reconnectPlayerNode(format: makeHardwareFormat())
             try engine.start()
         }
 
@@ -970,6 +1007,25 @@ class AudioEngine: NSObject, ObservableObject {
     // ✅ iOS detiene/reconfigura el engine ante cambios de ruta o del sistema.
     // Sin este observador, el engine quedaba muerto y la siguiente reproducción
     // fallaba (o crasheaba). Lo reiniciamos proactivamente.
+    // ✅ FIX CRASH PAUSA PROLONGADA: si mediaserverd se reinicia con la app
+    // suspendida (pausa nocturna, presión de memoria), la sesión se invalida
+    // y el grafo queda muerto: reutilizar sus nodos puede tirar de
+    // excepciones de CoreAudio. Apple exige reactivar la sesión y
+    // reconstruir el render aquí.
+    private func observeMediaServicesReset() {
+        NotificationCenter.default.addObserver(
+            forName: AVAudioSession.mediaServicesWereResetNotification,
+            object: nil, queue: .main
+        ) { [weak self] _ in
+            guard let self, self.currentSong != nil else { return }
+            AppLog.warning(.playback, "Media services reiniciado: reconstruyendo el grafo")
+            self.playerNode.stop()
+            // try?: si el sistema aún no acepta reactivar la sesión, el
+            // arranque lo reintentará resume()/playCurrentSong().
+            try? self.startEngineSafely()
+        }
+    }
+
     private func observeEngineConfigurationChanges() {
         NotificationCenter.default.addObserver(
             forName: .AVAudioEngineConfigurationChange,
@@ -1359,9 +1415,16 @@ class AudioEngine: NSObject, ObservableObject {
         var format = format
         if format.sampleRate <= 1 || format.channelCount <= 0 || format.channelCount > 64 {
             let sessionRate = AVAudioSession.sharedInstance().sampleRate
-            AppLog.warning(.playback, String(format: "Formato de conexión inválido (%.0f Hz · %d canales): usando fallback de sesión a %.0f Hz · 2 canales", format.sampleRate, format.channelCount, sessionRate))
-            format = AVAudioFormat(standardFormatWithSampleRate: sessionRate, channels: 2)
-                ?? format
+            // ✅ FIX CRASH FORMATO: el `?? format` anterior reintroducía el
+            // formato inválido cuando ni el hardware ni la sesión dan tasa
+            // válida (ruta en transición): engine.connect dispara entonces la
+            // NSException IsFormatSampleRateAndChannelCountValid, no capturable
+            // con do/catch. 44100/2 es válido siempre; el grafo se reconecta
+            // al formato real en el siguiente arranque.
+            let safeRate = sessionRate > 1 ? sessionRate : 44_100.0
+            AppLog.warning(.playback, String(format: "Formato de conexión inválido (%.0f Hz · %d canales): usando fallback seguro a %.0f Hz · 2 canales", format.sampleRate, format.channelCount, safeRate))
+            format = AVAudioFormat(standardFormatWithSampleRate: safeRate, channels: 2)
+                ?? AVAudioFormat(standardFormatWithSampleRate: 44_100.0, channels: 2)!
         }
         if engine.isRunning {
             engine.stop()
@@ -1987,6 +2050,10 @@ class AudioEngine: NSObject, ObservableObject {
                 // audio arranca aqui (tras el delay), no cuando se lanzo el
                 // schedule. Sin esto el reloj de pared iria 0.15s adelantado
                 // durante toda la cancion (o desincronizado al reanudar).
+                // ⏳ INSTRUMENTACIÓN CLOCK (retirar tras diagnóstico): este
+                // re-anclaje define el origen del reloj de pared de TODA la
+                // canción; un startTime equivocado desplaza la barra entera.
+                AppLog.info(.playback, String(format: "[CLOCK] playCurrentSong: startTime=%.2f, anchor antes de play()", startTime))
                 self.anchorPlaybackPosition(startTime)
                 self.playerNode.play()
                 // ✅ FIX (restauración al retroceder): publicar JUSTO cuando el
@@ -2117,8 +2184,12 @@ class AudioEngine: NSObject, ObservableObject {
             return AVAudioFormat(standardFormatWithSampleRate: rate, channels: 2)
                 ?? hardwareOutputFormat()
         }
+        // ✅ FIX CRASH FORMATO: si la sesión tampoco da tasa válida, el
+        // `?? hardwareOutputFormat()` devolvía el formato inválido en crudo
+        // (0 Hz / 0 ch) y alimentaba engine.connect con basura. 44100/2
+        // garantizado nunca es basura.
         return AVAudioFormat(standardFormatWithSampleRate: session.sampleRate, channels: 2)
-            ?? hardwareOutputFormat()
+            ?? AVAudioFormat(standardFormatWithSampleRate: 44_100.0, channels: 2)!
     }
 
     /// ✅ ACTIVACIÓN CONDICIONAL: solo hay conversión cuando la tasa del
@@ -2254,10 +2325,16 @@ class AudioEngine: NSObject, ObservableObject {
         // Independiente del timeline del nodo (que queda congelado a medias
         // tras engine.pause() y era la fuente del doble conteo al reanudar).
         if isAVPlayerActive, let current = avPlayer?.currentTime().seconds, current.isFinite, current >= 0 {
+            // ⏳ INSTRUMENTACIÓN CLOCK (retirar tras diagnóstico): pausa por
+            // AVPlayer; el reloj de pared queda congelado en la posición previa.
+            AppLog.info(.playback, String(format: "[CLOCK] pause AVPlayer: pos=%.2f posAnchor_before=%.2f", current, posAnchor))
             currentTime = current
             posAnchor = current
         } else {
             let current = wallClockTime
+            // ⏳ INSTRUMENTACIÓN CLOCK (retirar tras diagnóstico): congelar la
+            // extrapolación como nueva ancla en la pausa (ruta del motor).
+            AppLog.info(.playback, String(format: "[CLOCK] pause: pos=%.2f posAnchor_before=%.2f", current, posAnchor))
             currentTime = current
             posAnchor = current
             wallAnchor = CACurrentMediaTime()
@@ -2322,6 +2399,9 @@ class AudioEngine: NSObject, ObservableObject {
         // Anclar la posición EXACTA antes de marcar pausa (wallClockTime
         // extrapola solo mientras isPlaying sea true).
         let current = wallClockTime
+        // ⏳ INSTRUMENTACIÓN CLOCK (retirar tras diagnóstico): último ancla antes
+        // de suspender por pérdida de ruta; su pos y la del resume() deben coincidir.
+        AppLog.info(.playback, String(format: "[CLOCK] suspendForRouteLoss: pos=%.2f posAnchor_before=%.2f", current, posAnchor))
         currentTime = current
         posAnchor = current
         wallAnchor = CACurrentMediaTime()
@@ -2417,6 +2497,9 @@ class AudioEngine: NSObject, ObservableObject {
                 // playerNode.pause() (a diferencia de .stop()) NO descarta la
                 // cola: si ya había una canción encadenada por adelantado,
                 // sigue intacta y no hace falta re-programarla.
+                // ⏳ INSTRUMENTACIÓN CLOCK (retirar tras diagnóstico): ancla y
+                // reloj en el instante exacto del play() en la ruta rápida.
+                AppLog.info(.playback, String(format: "[CLOCK] resume: currentTime=%.2f posAnchor=%.2f wallAnchor=%.3f", currentTime, posAnchor, wallAnchor))
                 anchorPlaybackPosition(currentTime)
                 clock.time = currentTime
                 playerNode.play()
@@ -2783,6 +2866,9 @@ class AudioEngine: NSObject, ObservableObject {
         scheduleGeneration += 1
         let generation = scheduleGeneration
         
+        // ⏳ INSTRUMENTACIÓN CLOCK (retirar tras diagnóstico): posición pedida vs.
+        // la que el reloj de pared reportaba justo antes del seek.
+        AppLog.info(.playback, String(format: "[CLOCK] seek: target=%.2f currentTime_before=%.2f", time, wallClockTime))
         AppLog.info(.playback, String(format: "Seek a %.1fs en '%@' (isPlaying: %@)", time, currentSong?.displayName ?? "—", isPlaying ? "sí" : "no"))
         playerNode.stop()
         // playerNode.stop() descarta cualquier canción pre-encadenada por
@@ -3362,6 +3448,10 @@ class AudioEngine: NSObject, ObservableObject {
         if abs(drift) > 0.15,
            CACurrentMediaTime() - clockDriftLastCorrectionTime > 5 {
             clockDriftLastCorrectionTime = CACurrentMediaTime()
+            // ⏳ INSTRUMENTACIÓN CLOCK (retirar tras diagnóstico): la corrección
+            // sustituye la extrapolación del HOST por la posición audible del
+            // NODO: aquí se ve el salto exacto que percibe la UI.
+            AppLog.info(.playback, String(format: "[CLOCK] drift corregido: drift=%.0fms posAnchor_before=%.2f posAnchor_after=%.2f audible=%.2f", drift * 1000, posAnchor, audible, audible))
             posAnchor = audible
             wallAnchor = CACurrentMediaTime()
             clockDriftReference = nil
@@ -3397,6 +3487,9 @@ class AudioEngine: NSObject, ObservableObject {
         // ahora cubre también repeat-one; el margen amplio evita que compita
         // con el callback real en el caso normal.
         if elapsed >= duration + watchdogMargin {
+            // ⏳ INSTRUMENTACIÓN CLOCK (retirar tras diagnóstico): si dispara con
+            // audio aún sonando (BT), aquí está el "salto al final".
+            AppLog.info(.playback, String(format: "[CLOCK] WATCHDOG dispara: elapsed=%.2f duration=%.2f margin=%.2f", elapsed, duration, watchdogMargin))
             AppLog.warning(.playback, String(format: "Watchdog: '%@' en %.1f/%.1fs sin transición, forzando", currentSong?.displayName ?? "—", elapsed, duration))
             segmentDidFinish(token: activeSegmentToken, expectedGeneration: scheduleGeneration)
         }
@@ -3446,6 +3539,10 @@ class AudioEngine: NSObject, ObservableObject {
         // reanudación tras un cambio de ruta pasan por aquí; antes el respaldo
         // empezaba siempre en 0 y una canción Dolby reanudaba desde el principio.
         let start = max(0, position)
+        // ⏳ INSTRUMENTACIÓN CLOCK (retirar tras diagnóstico): ancla del respaldo
+        // AVPlayer (Dolby/fallo del motor); mientras esté activo, currentTime
+        // viene del observer de AVPlayer, no del reloj de pared.
+        AppLog.info(.playback, String(format: "[CLOCK] startFallbackPlayback: pos=%.2f posAnchor_before=%.2f", start, posAnchor))
         currentTime = start
         duration = song.duration > 0 ? song.duration : 0
         posAnchor = start
