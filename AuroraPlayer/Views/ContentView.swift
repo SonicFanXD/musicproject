@@ -395,14 +395,24 @@ struct ContentView: View {
                     .padding(.horizontal, 10)
                     .padding(.bottom, 6)
             }
-
+        }
+        // ✅ FIX ORDEN SPLASH: el splash sale del ZStack raíz y pasa a ser un
+        // `.overlay` del ZStack COMPLETO. Como hermano del NavigationStack, ni
+        // su posición (último hijo) ni el `.zIndex(1)` ganaban el orden de
+        // composición: el contenido de la pila (chips, buscador, biblioteca) se
+        // pintaba POR ENCIMA del badge y del título. El `.overlay` compone su
+        // contenido DESPUÉS del ZStack entero, así que tapa siempre header,
+        // buscador, chips, listas y la PlayerBar (que cuelga del
+        // `.safeAreaInset` del NavigationStack, DENTRO del ZStack). El
+        // `.zIndex(1)` se elimina: en el overlay el splash es hijo único, no
+        // ordena contra nadie.
+        .overlay {
             if isInitialLoad {
                 SplashView()
                     // ✅ Salida premium: la escala mínima acompaña al fundido (la
                     // duración la marca el withAnimation del llamador, que no se
                     // toca para no alterar la duración total del splash).
                     .transition(.scale(scale: 0.96).combined(with: .opacity))
-                    .zIndex(1)
             }
         }
         .animation(.easeInOut(duration: 0.35), value: fileAccessService.isScanning)
@@ -1530,13 +1540,16 @@ struct ContentView: View {
     }
 }
 
-// ✅ G: rediseño con los tokens del sistema. Antes la vista se construía a mano
-// (círculo del logo + halo pulsante + círculo anidado + gradiente radial de fondo),
-// duplicando el lenguaje del sistema con medidas propias. Ahora consume
-// `AppBackground()` + `auroraIconBadge` + `AppTheme.accentGradient`, con UNA sola
-// sombra (soft) y sin halos. Efecto lateral bueno en A11: desaparece el
-// `repeatForever` del halo, que era el único bucle perpetuo de la pantalla.
-// Los TIEMPOS no cambian: el mínimo de 1,2 s lo sigue marcando ContentView.
+// ✅ G: rediseño con los tokens del sistema (`auroraIconBadge` +
+// `AppTheme.accentGradient`), sin halos ni medidas propias.
+// ✅ SPLASH v3 (VARIANTE C — AURORA DIAGONAL): el fondo pasa del gradiente
+// vertical estático (acento al 8%) a un gradiente diagonal de 5 paradas
+// (base → acento 15% → 28% → 15% → base) que GIRA lentamente, sensación de
+// aurora boreal. La rotación es un `rotationEffect` sobre una capa cuadrada:
+// transform del compositor, no re-evalúa el body ni toca el motor de audio.
+// UNA sola animación `repeatForever`. Sin halos, sin loader extra, sin
+// `.drawingGroup`. Los TIEMPOS no cambian: el mínimo de 1,2 s lo marca
+// ContentView.
 struct SplashView: View {
     // ✅ FIX SPLASH: el contenido EMPIEZA VISIBLE (opacity 1 por defecto, nada
     // depende del `.onAppear`). El `@State appearAnimation` solo mueve escala
@@ -1546,36 +1559,61 @@ struct SplashView: View {
     // cuadro negro (logo/título nacían invisibles y solo el onAppear los
     // llevaba a 1). Los TIEMPOS del splash los marca ContentView (mínimo 1,2 s).
     @State private var appearAnimation = false
+
+    // ✅ SPLASH v3: giro del gradiente en grados (0 → 360 en 8 s = 45°/s, bucle
+    // continuo). NO se animan el `startPoint`/`endPoint` del LinearGradient:
+    // SwiftUI interpola esos `UnitPoint` por CUERDA (la franja se aplasta y se
+    // desplaza, no gira) y un ciclo 0 → 360 acaba en los MISMOS puntos que
+    // empezó, así que no movería nada. Se anima el ángulo de la capa, que sí
+    // interpola de verdad y solo cuesta un transform.
+    @State private var gradientAngle: Double = 0
     
     var body: some View {
         ZStack {
             // ✅ FIX SPLASH TRANSPARENTE: base OPACA del color del sistema como
-            // primera capa. El stop central del gradiente (accent al 8%) es 92%
-            // translúcido y dejaba ver la app detrás; ahora compone sobre esta
-            // base y el splash tapa toda la pantalla sin perder el diseño.
+            // PRIMER hijo del ZStack (regla dura). El gradiente de acento es
+            // translúcido por definición; sin esta base el splash deja ver la
+            // app detrás. No mover ni reordenar.
             Color(UIColor.systemBackground)
                 .ignoresSafeArea()
             
-            // ✅ SPLASH REDISEÑO: fondo con identidad Aurora — el gradiente del
-            // sistema toma un baño de acento al 8% en la franja central.
-            // SIN `.drawingGroup` (causó el compositado en negro del POST-G).
-            LinearGradient(
-                colors: [
-                    Color(UIColor.systemBackground),
-                    AppTheme.accent.opacity(0.08),
-                    Color(UIColor.systemBackground)
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
+            // ✅ SPLASH v3: aurora diagonal rotatoria. El gradiente se dibuja en
+            // un CUADRADO de lado = diagonal de la pantalla (el diámetro de su
+            // círculo circunscrito), así CUALQUIER rotación lo deja tapando la
+            // pantalla entera: con la capa del tamaño de la pantalla, al girar
+            // asomarían las cuatro esquinas y el borde de la capa se vería como
+            // un tinte de acento cortado en seco. SIN `.drawingGroup` (causó el
+            // compositado en negro del POST-G).
+            GeometryReader { geo in
+                let side = sqrt(geo.size.width * geo.size.width
+                                + geo.size.height * geo.size.height)
+                LinearGradient(
+                    colors: [
+                        Color(UIColor.systemBackground),
+                        AppTheme.accent.opacity(0.15),
+                        AppTheme.accent.opacity(0.28),
+                        AppTheme.accent.opacity(0.15),
+                        Color(UIColor.systemBackground)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                .frame(width: side, height: side)
+                .rotationEffect(.degrees(gradientAngle))
+                // `rotationEffect` no cambia el layout: este frame devuelve el
+                // cuadrado al tamaño de la pantalla y lo centra (si no, quedaría
+                // anclado arriba a la izquierda y la franja saldría descentrada).
+                .frame(width: geo.size.width, height: geo.size.height)
+            }
             .ignoresSafeArea()
+            .opacity(0.9)
             
-            VStack(spacing: 28) {
+            VStack(spacing: 26) {
                 Spacer()
                 
-                // ✅ SPLASH REDISEÑO: logo hero × 1,5 (132pt), icono 48. Doble
-                // sombra (halo de acento + micro-sombra neutra) para dar
-                // profundidad. El spring de entrada SOLO anima la escala:
+                // ✅ SPLASH v3: logo hero × 1,5 (132pt), icono 48 y UNA sola
+                // sombra (regla del sistema: dos sombras = dos pasadas offscreen
+                // por frame en A11). El spring de entrada SOLO anima la escala:
                 // el primer frame se pinta al 0,94, nunca invisible.
                 Image(systemName: "music.note")
                     .auroraIconBadge(
@@ -1584,27 +1622,28 @@ struct SplashView: View {
                         shape: .circle,
                         iconSize: 48
                     )
-                    .shadow(color: AppTheme.accent.opacity(0.25), radius: 24, x: 0, y: 12)
-                    .shadow(color: .black.opacity(0.08), radius: 4, x: 0, y: 1)
+                    .shadow(color: AppTheme.accent.opacity(0.35), radius: 28, x: 0, y: 14)
                     .scaleEffect(appearAnimation ? 1.0 : 0.94)
                 
-                // ✅ SPLASH REDISEÑO: título 32 + tagline "Hi-Fi Player" en
-                // versalitas con tracking. El spring SOLO anima el offset:
-                // el primer frame baja 6pt, nunca invisible.
-                VStack(spacing: 8) {
-                    Text("Aurora Player")
-                        .font(.system(size: 32, weight: .bold, design: .rounded))
+                // ✅ SPLASH v3: marca en dos líneas — AURORA con el gradiente del
+                // sistema (44 + tracking 8) y PLAYER en secundario (14 + tracking
+                // 14) para que la segunda línea acompañe el ancho de la primera.
+                // El spring SOLO anima el offset: el primer frame baja 6pt,
+                // nunca invisible.
+                VStack(spacing: 6) {
+                    Text("AURORA")
+                        .font(.system(size: 44, weight: .bold, design: .rounded))
+                        .tracking(8)
                         .foregroundStyle(AppTheme.accentGradient)
                     
-                    Text("Hi-Fi Player")
+                    Text("PLAYER")
                         .font(.system(size: 14, weight: .medium, design: .rounded))
+                        .tracking(14)
                         .foregroundStyle(.secondary)
-                        .tracking(2)
-                        .textCase(.uppercase)
                 }
                 .offset(y: appearAnimation ? 0 : 6)
                 
-                Spacer().frame(height: 12)
+                Spacer().frame(height: 16)
                 
                 LoadingDots()
                 
@@ -1614,8 +1653,8 @@ struct SplashView: View {
         }
         // ✅ FIX SPLASH TRANSPARENTE: anclamos el ZStack exterior a pantalla
         // completa (cinturón y tirantes). El `.ignoresSafeArea()` de abajo YA
-        // estaba desde el POST-G; si la app se ve detrás, no es por el marco:
-        // es el stop central del gradiente (accent al 8% = 92% translúcido).
+        // estaba desde el POST-G y la base opaca sigue siendo el primer hijo:
+        // si la app se ve detrás, no es por el marco.
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         // ✅ FIX POST-G (splash negro): el splash cubre la pantalla completa; sin
         // esto se quedaba dentro del safe area y el inset inferior le recortaba
@@ -1623,10 +1662,16 @@ struct SplashView: View {
         .ignoresSafeArea()
         .allowsHitTesting(false)
         .onAppear {
-            // ✅ SPLASH REDISEÑO: spring sutil y único (sin repeatForever ni
-            // halos). Decorativo: solo escala y offset, nunca opacity.
+            // ✅ SPLASH v3: dos animaciones y UN solo `repeatForever` (el giro).
+            // El spring es de entrada y termina; el giro es continuo, lineal y
+            // en una sola dirección (0 → 360 engancha sin costura; con
+            // `autoreverses` la franja invertiría el sentido cada 8 s y el
+            // ciclo visual se partiría en dos). Decorativo: nunca toca opacity.
             withAnimation(.spring(response: 0.65, dampingFraction: 0.8)) {
                 appearAnimation = true
+            }
+            withAnimation(.linear(duration: 8.0).repeatForever(autoreverses: false)) {
+                gradientAngle = 360
             }
         }
     }
