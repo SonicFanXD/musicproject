@@ -312,18 +312,43 @@ struct AlbumDetailView: View {
         }
     }
 
+    // ✅ REDISEÑO D1: metadatos del álbum en UNA línea de texto plano (la misma
+    // información que las píldoras: canciones · duración · año), sin cápsulas.
+    private var albumMetadataLine: String {
+        var parts = [localizedSongCount(songs.count)]
+        if totalDuration > 60 { parts.append(formatLongDuration(totalDuration)) }
+        if let releaseDate = album.releaseDate { parts.append(formatYear(releaseDate)) }
+        return parts.joined(separator: " · ")
+    }
+
+    // ✅ REDISEÑO D1: calidad mayoritaria en texto ("24-bit · 44.1 kHz" o
+    // "44.1 kHz"); nil si ninguna canción reporta tasa (la píldora antigua
+    // tampoco aparecía en ese caso).
+    private var albumQualityText: String? {
+        guard let q = cachedQuality else { return nil }
+        let khzText = AlbumDetailView.khzLabel(q.khz)
+        return q.bits > 0 ? "\(q.bits)-bit · \(khzText)" : khzText
+    }
+
     private var heroSection: some View {
-        VStack(spacing: 14) {
-            // ? Artwork con animaci�n de entrada y brillo sutil
-            // ? 60fps: sombra �NICA consolidada (la doble sombra = 2 pasadas
+        // ✅ REDISEÑO D1 (HERO EDITORIAL): bloque alineado a la IZQUIERDA con la
+        // carátula mandando en la jerarquía y los datos en texto plano. Fuera las
+        // píldoras de vidrio (`AuroraInfoChip`) y fuera las TRES
+        // animaciones de entrada con `opacity(appearAnimation)`: el contenido
+        // NACE VISIBLE y solo anima escala/offset (mismo patrón que arreglamos en
+        // el splash). Intactos: acento de dos colores, blur precalculado,
+        // drawingGroup, mask y parallax del fondo.
+        VStack(alignment: .leading, spacing: AuroraSpacing.lg) {
+            // ✅ REDISEÑO D1: carátula 200 → 240, alineada a la izquierda.
+            // ✅ 60fps: sombra ÚNICA consolidada (la doble sombra = 2 pasadas
             // de offscreen rendering por frame en A11; visualmente equivalente).
             Group {
                 if let artwork = album.artwork {
-                    // ✅ ANTI-JETSAM: 200pt de display → miniatura de 400px
+                    // ✅ ANTI-JETSAM: 240pt de display → miniatura de 480px
                     // cacheada en vez de decodificar la carátula completa.
-                    Image(uiImage: AppTheme.thumbnail(from: artwork, size: CGSize(width: 400, height: 400)))
+                    Image(uiImage: AppTheme.thumbnail(from: artwork, size: CGSize(width: 480, height: 480)))
                         .resizable().interpolation(.high).scaledToFill()
-                        .frame(width: 200, height: 200)
+                        .frame(width: 240, height: 240)
                         .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
                         .overlay {
                             RoundedRectangle(cornerRadius: 24, style: .continuous)
@@ -345,74 +370,72 @@ struct AlbumDetailView: View {
                                     startPoint: .topLeading, endPoint: .bottomTrailing
                                 )
                             )
-                            .frame(width: 200, height: 200)
+                            .frame(width: 240, height: 240)
                         Image(systemName: "square.stack")
-                            .font(.system(size: 54, weight: .light))
+                            .font(.system(size: 64, weight: .light))
                             .foregroundStyle(.secondary.opacity(0.7))
                     }
                     .shadow(color: .black.opacity(0.25), radius: 14, x: 0, y: 8)
                 }
             }
             .padding(.top, 8)
-            .scaleEffect(appearAnimation ? 1.0 : 0.9)
-            .opacity(appearAnimation ? 1.0 : 0)
+            // ✅ REDISEÑO D1: SIN `opacity(appearAnimation)`. La carátula nace
+            // VISIBLE y solo anima la escala (el patrón de opacity 0 fue la causa
+            // del cuadro negro del splash).
+            .scaleEffect(appearAnimation ? 1.0 : 0.96)
             .animation(.spring(response: 0.5, dampingFraction: 0.8), value: appearAnimation)
 
-            // ? Info del �lbum con mejor jerarqu�a visual
-            VStack(spacing: 6) {
+            // ✅ REDISEÑO D1: bloque editorial — título 30 heavy, artista y DOS
+            // líneas de datos: metadatos (canciones · duración · año) y estado
+            // vivo (calidad · bit-perfect). TODA la información de las píldoras se
+            // conserva; solo cambia de formato. Sin opacidad: solo offset.
+            VStack(alignment: .leading, spacing: AuroraSpacing.sm) {
                 Text(album.name)
-                    .font(.system(size: 24, weight: .bold, design: .rounded))
-                    .multilineTextAlignment(.center)
+                    .font(.system(size: 30, weight: .heavy, design: .rounded))
+                    .multilineTextAlignment(.leading)
                     .foregroundStyle(.primary)
                     .lineLimit(2)
                 Text(album.artist)
                     .font(.system(size: 15, weight: .medium))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
-            }
-            .padding(.horizontal, 24)
-            .offset(y: appearAnimation ? 0 : 10)
-            .opacity(appearAnimation ? 1.0 : 0)
-            .animation(.easeOut(duration: 0.5).delay(0.1), value: appearAnimation)
-
-            // ? Estad�sticas con dise�o mejorado
-            FlowLayout(horizontalSpacing: 10, verticalSpacing: 8) {
-                statPill(icon: "music.note", text: localizedSongCount(songs.count))
-                if totalDuration > 60 {
-                    statPill(icon: "clock", text: formatLongDuration(totalDuration))
-                }
-                if let releaseDate = album.releaseDate {
-                    statPill(icon: "calendar", text: formatYear(releaseDate))
-                }
-                // ✅ CALIDAD MAYORITARIA (bits · kHz): si el álbum mezcla
-                // canciones con distinto sample rate, se muestra el de la
-                // mayoría — p. ej. "24-bit · 44.1 kHz" o "44.1 kHz".
-                if let q = cachedQuality {
-                    // ✅ Helper compartido: mismo "44.1 kHz" en todos lados.
-                    let khzText = AlbumDetailView.khzLabel(q.khz)
-                    let text = q.bits > 0 ? "\(q.bits)-bit · \(khzText)" : khzText
-                    statPill(icon: "waveform", text: text)
-                }
-                // ✅ BIT-PERFECT REAL (no una promesa del formato del archivo):
-                // aparece solo si lo que suena es una canción DE ESTE álbum y la
-                // salida está en bit-perfect ahora mismo (misma tasa que el
-                // archivo, sin EQ/mono/protección y por cable).
-                if isAlbumBitPerfect {
-                    statPill(icon: "checkmark.seal.fill", text: "Bit-perfect", highlighted: true)
+                Text(albumMetadataLine)
+                    .font(.system(size: 13, weight: .medium).monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                // ✅ REDISEÑO D1: el bit-perfect REAL (solo si lo que suena es una
+                // canción DE ESTE álbum y la salida está en bit-perfect ahora
+                // mismo) va en el acento, como antes; si no aplica, esa parte
+                // simplemente no aparece.
+                if albumQualityText != nil || isAlbumBitPerfect {
+                    HStack(spacing: 0) {
+                        if let quality = albumQualityText {
+                            Text(quality).foregroundStyle(.secondary)
+                        }
+                        if isAlbumBitPerfect {
+                            if albumQualityText != nil {
+                                Text(" · ").foregroundStyle(.secondary)
+                            }
+                            Text("✓ Bit-perfect").foregroundStyle(AppTheme.accent)
+                        }
+                    }
+                    .font(.system(size: 13, weight: .semibold).monospacedDigit())
+                    .lineLimit(1)
                 }
             }
-            .frame(maxWidth: .infinity)
-            .padding(.horizontal, 20)
-            .offset(y: appearAnimation ? 0 : 10)
-            .opacity(appearAnimation ? 1.0 : 0)
-            .animation(.easeOut(duration: 0.5).delay(0.15), value: appearAnimation)
+            .offset(y: appearAnimation ? 0 : 8)
+            .animation(.easeOut(duration: 0.5), value: appearAnimation)
         }
         // ✅ FIX FRANJA SUPERIOR: el contenido del hero vuelve a su sitio (el
         // ScrollView ya no aporta el inset, lo aporta aquí) y el fondo —que cuelga
         // de ESTE frame con alignment .top— crece esos mismos puntos hacia
         // arriba, hasta el borde de la pantalla. El contenido no se mueve.
+        // ✅ REDISEÑO D1: margen horizontal 20 (el mismo de las filas) para todo
+        // el hero; el fondo (blur + parallax) cuelga del frame SIN este padding,
+        // así que sigue sangrando a pantalla completa.
+        .padding(.horizontal, 20)
         .padding(.top, DetailHeroMetrics.topSafeInset)
-        .frame(maxWidth: .infinity).padding(.bottom, 4)
+        .frame(maxWidth: .infinity, alignment: .leading).padding(.bottom, 4)
         .background(alignment: .top) {
             GeometryReader { geometry in
                 Group {
@@ -526,7 +549,12 @@ struct AlbumDetailView: View {
                 // que el primario, con jerarquía secundaria (relleno suave +
                 // borde de acento en vez del sólido). Antes era un círculo de
                 // 56pt que quedaba desalineado respecto a la cápsula de 46pt.
-                .frame(maxWidth: .infinity).frame(height: 48)
+                // ✅ REDISEÑO D1: Shuffle deja de ser flexible (se queda con su
+                // ancho intrínseco, ~105pt) y Play se lleva TODO el resto: el
+                // primario manda en el par (~70/30 en iPhone 8 Plus, más a favor
+                // de Play que el 65/35 pedido). Sin GeometryReader de por medio:
+                // no puede romper el layout ni desbordar en pantallas estrechas.
+                .frame(height: 48)
                 // ✅ Se MANTIENE el material de vidrio (identidad de la app) y el
                 // acento va como velo encima; antes eran dos círculos apilados
                 // (material + color), ahora una sola cápsula con el mismo vidrio.
@@ -536,8 +564,8 @@ struct AlbumDetailView: View {
                 // .frame(height: 48) el botón quedaría en ~43pt (rompe el
                 // emparejamiento con Play) y aplicado después en 72pt; está
                 // pensado para botones de tamaño intrínseco, no para este par
-                // 50/50 de altura fija. Además el velo de aquí es el gradiente
-                // de dos colores de la vista, no un acento plano al 12%.
+                // de altura fija y anchos distintos. Además el velo de aquí es el
+                // gradiente de dos colores de la vista, no un acento plano al 12%.
                 // ✅ FIX REDUCIR TRANSPARENCIA: el vidrio del fondo SÍ usa la
                 // superficie del sistema (antes `.ultraThinMaterial` a pelo, que
                 // ignoraba el ajuste y no reaccionaba): con el ajuste activo cae
@@ -561,8 +589,9 @@ struct AlbumDetailView: View {
     private func discSection(disc: Int, songs: [Song]) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             // ✅ AURORA DESIGN: la cápsula "Disco N" es un chip informacional del
-            // sistema (mismo caso que `statPill`), no un HStack + vidrio a mano:
-            // el padding simétrico y el vidrio reactivo viven dentro del chip.
+            // sistema (mismo caso que las píldoras del hero), no un HStack con
+            // vidrio a mano: el padding simétrico y el vidrio reactivo viven
+            // dentro del chip.
             // Deltas visuales al migrar: el texto baja de 15 a 13 semibold
             // (contrato de chips) y el icono de 13 a 12, y ambos pasan a UN solo
             // color, así que el icono pierde el tinte de acento al 0.9 que tenía
@@ -597,14 +626,11 @@ struct AlbumDetailView: View {
         }
     }
 
-    private func statPill(icon: String, text: String, highlighted: Bool = false) -> some View {
-        // ✅ AURORA DESIGN: la píldora de datos es el chip informacional del
-        // sistema. Este wrapper conserva el mapeo de ESTA vista (dato normal =
-        // `.secondary`; dato destacado = acento de la vista), así no cambian las
-        // llamadas. `fixedSize`, `lineLimit(1)`, la tipografía de chip y el
-        // vidrio reactivo a "Reducir transparencia" viven dentro del chip.
-        AuroraInfoChip(icon: icon, text: text, color: highlighted ? tintColor : Color.secondary)
-    }
+    // ✅ REDISEÑO D1: aquí vivía el wrapper `statPill` (icono + texto en cápsula
+    // de vidrio). El hero editorial lo sustituye por texto plano; `AuroraInfoChip`
+    // sigue vivo para el chip "Disco N" (y PlaylistsView conserva su wrapper).
+    // ✅ CIERRE D1: el layout que repartía esas píldoras se retiró del archivo al
+    // quedarse sin consumidores (ya no lo usa ninguna vista).
 
     // ✅ Formatea kHz UNA sola vez y sin duplicar: 44100 → "44.1 kHz",
     // 48000 → "48 kHz", 96000 → "96 kHz". El `Int(.../1000)` anterior
@@ -1011,8 +1037,26 @@ struct ArtistDetailView: View {
         }
     }
 
+    // ✅ REDISEÑO D1: metadatos del artista en UNA línea de texto plano (lo mismo
+    // que las 3 píldoras: canciones · álbumes · duración), sin cápsulas.
+    private var artistMetadataLine: String {
+        var parts = ["\(songs.count) \(Localization.localized("songs"))"]
+        if !albums.isEmpty {
+            parts.append("\(albums.count) \(Localization.localized("details.albumsStat"))")
+        }
+        if totalDuration > 60 { parts.append(formatLongDuration(totalDuration)) }
+        return parts.joined(separator: " · ")
+    }
+
     private var artistHeroSection: some View {
-        VStack(spacing: 22) {
+        // ✅ REDISEÑO D1 (HERO EDITORIAL): mismo tratamiento que AlbumDetailView —
+        // avatar protagonista alineado a la IZQUIERDA y datos en texto plano.
+        // Fuera las 3 píldoras de vidrio del hero y fuera las DOS
+        // animaciones de entrada con `opacity(appearAnimation)`: el contenido
+        // NACE VISIBLE y solo anima escala/offset (el patrón de opacity 0 fue la
+        // causa del cuadro negro del splash). Intactos: acento de dos colores,
+        // blur precalculado, drawingGroup, mask y parallax del fondo.
+        VStack(alignment: .leading, spacing: AuroraSpacing.lg) {
             // ? Avatar del artista con animaci�n y efectos mejorados
             Group {
                 if let artwork = artist.artwork {
@@ -1049,41 +1093,41 @@ struct ArtistDetailView: View {
                     .shadow(color: tintColor.opacity(0.25), radius: 18, x: 0, y: 10)
                 }
             }
-            .padding(.top, 20)
-            .scaleEffect(appearAnimation ? 1.0 : 0.85)
-            .opacity(appearAnimation ? 1.0 : 0)
+            .padding(.top, 8)
+            // ✅ REDISEÑO D1: SIN `opacity(appearAnimation)`. El avatar nace
+            // VISIBLE y solo anima la escala (antes: 0.85 → 1.0 + fundido).
+            .scaleEffect(appearAnimation ? 1.0 : 0.94)
             .animation(.spring(response: 0.5, dampingFraction: 0.8), value: appearAnimation)
 
             // ? Info del artista con mejor jerarqu�a visual
-            VStack(spacing: 10) {
+            // ✅ REDISEÑO D1: bloque editorial — nombre 30 heavy y metadatos en UNA
+            // línea de texto plano (canciones · álbumes · duración). TODA la
+            // información de las 3 píldoras se conserva; solo cambia de formato.
+            // Sin opacidad: solo offset.
+            VStack(alignment: .leading, spacing: AuroraSpacing.sm) {
                 Text(artist.name)
-                    .font(.system(size: 30, weight: .bold, design: .rounded))
-                    .multilineTextAlignment(.center)
+                    .font(.system(size: 30, weight: .heavy, design: .rounded))
+                    .multilineTextAlignment(.leading)
                     .foregroundStyle(.primary)
                     .lineLimit(2)
-                FlowLayout(horizontalSpacing: 10, verticalSpacing: 8) {
-                    statPill(icon: "music.note", text: "\(songs.count) \(Localization.localized("songs"))")
-                    if !albums.isEmpty {
-                        statPill(icon: "square.stack", text: "\(albums.count) \(Localization.localized("details.albumsStat"))")
-                    }
-                    if totalDuration > 60 {
-                        statPill(icon: "clock", text: formatLongDuration(totalDuration))
-                    }
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.horizontal, 20)
+                Text(artistMetadataLine)
+                    .font(.system(size: 13, weight: .medium).monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
-            .padding(.horizontal, 24)
-            .offset(y: appearAnimation ? 0 : 10)
-            .opacity(appearAnimation ? 1.0 : 0)
-            .animation(.easeOut(duration: 0.5).delay(0.1), value: appearAnimation)
+            .offset(y: appearAnimation ? 0 : 8)
+            .animation(.easeOut(duration: 0.5), value: appearAnimation)
         }
         // ✅ FIX FRANJA SUPERIOR: el contenido del hero vuelve a su sitio (el
         // ScrollView ya no aporta el inset, lo aporta aquí) y el fondo —que cuelga
         // de ESTE frame con alignment .top— crece esos mismos puntos hacia
         // arriba, hasta el borde de la pantalla. El contenido no se mueve.
+        // ✅ REDISEÑO D1: margen horizontal 20 (el mismo de las filas) para todo
+        // el hero; el fondo (blur + parallax) cuelga del frame SIN este padding,
+        // así que sigue sangrando a pantalla completa.
+        .padding(.horizontal, 20)
         .padding(.top, DetailHeroMetrics.topSafeInset)
-        .frame(maxWidth: .infinity).padding(.bottom, 4)
+        .frame(maxWidth: .infinity, alignment: .leading).padding(.bottom, 4)
         .background(alignment: .top) {
             GeometryReader { geometry in
                 Group {
@@ -1178,7 +1222,12 @@ struct ArtistDetailView: View {
                 // que el primario, con jerarquía secundaria (relleno suave +
                 // borde de acento en vez del sólido). Antes era un círculo de
                 // 56pt que quedaba desalineado respecto a la cápsula de 46pt.
-                .frame(maxWidth: .infinity).frame(height: 48)
+                // ✅ REDISEÑO D1: Shuffle deja de ser flexible (se queda con su
+                // ancho intrínseco, ~105pt) y Play se lleva TODO el resto: el
+                // primario manda en el par (~70/30 en iPhone 8 Plus, más a favor
+                // de Play que el 65/35 pedido). Sin GeometryReader de por medio:
+                // no puede romper el layout ni desbordar en pantallas estrechas.
+                .frame(height: 48)
                 // ✅ Se MANTIENE el material de vidrio (identidad de la app) y el
                 // acento va como velo encima; antes eran dos círculos apilados
                 // (material + color), ahora una sola cápsula con el mismo vidrio.
@@ -1188,8 +1237,8 @@ struct ArtistDetailView: View {
                 // .frame(height: 48) el botón quedaría en ~43pt (rompe el
                 // emparejamiento con Play) y aplicado después en 72pt; está
                 // pensado para botones de tamaño intrínseco, no para este par
-                // 50/50 de altura fija. Además el velo de aquí es el gradiente
-                // de dos colores de la vista, no un acento plano al 12%.
+                // de altura fija y anchos distintos. Además el velo de aquí es el
+                // gradiente de dos colores de la vista, no un acento plano al 12%.
                 // ✅ FIX REDUCIR TRANSPARENCIA: el vidrio del fondo SÍ usa la
                 // superficie del sistema (antes `.ultraThinMaterial` a pelo, que
                 // ignoraba el ajuste y no reaccionaba): con el ajuste activo cae
@@ -1210,14 +1259,10 @@ struct ArtistDetailView: View {
         .padding(.horizontal, 4)
     }
 
-    private func statPill(icon: String, text: String, highlighted: Bool = false) -> some View {
-        // ✅ AURORA DESIGN: la píldora de datos es el chip informacional del
-        // sistema. Este wrapper conserva el mapeo de ESTA vista (dato normal =
-        // `.secondary`; dato destacado = acento de la vista), así no cambian las
-        // llamadas. `fixedSize`, `lineLimit(1)`, la tipografía de chip y el
-        // vidrio reactivo a "Reducir transparencia" viven dentro del chip.
-        AuroraInfoChip(icon: icon, text: text, color: highlighted ? tintColor : Color.secondary)
-    }
+    // ✅ REDISEÑO D1: aquí vivía el wrapper `statPill` del hero del artista (icono
+    // + texto en cápsula de vidrio). El hero editorial lo sustituye por texto
+    // plano; `AuroraInfoChip` sigue vivo para el chip "Disco N" (y PlaylistsView
+    // conserva su propio wrapper, que no es de este archivo).
 
     private func formatLongDuration(_ seconds: TimeInterval) -> String {
         let minutes = Int(seconds) / 60
@@ -1446,49 +1491,5 @@ extension UIImage {
         guard let output = filter?.outputImage,
               let cg = Self.blurContext.createCGImage(output.clampedToExtent(), from: ciImage.extent.insetBy(dx: -radius, dy: -radius)) else { return self }
         return UIImage(cgImage: cg, scale: scale, orientation: imageOrientation)
-    }
-}
-
-// MARK: - FlowLayout (iOS 16+): acomoda vistas en filas y pasa a la siguiente
-// cuando no caben — las píldoras de info se mantienen ENTERAS (nada de texto
-// partido con guiones), se adaptan a español/inglés y a pantallas estrechas.
-struct FlowLayout: Layout {
-    var horizontalSpacing: CGFloat = 10
-    var verticalSpacing: CGFloat = 8
-
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        let maxWidth = proposal.width ?? .infinity
-        var x: CGFloat = 0, y: CGFloat = 0, rowHeight: CGFloat = 0
-        for subview in subviews {
-            let size = subview.sizeThatFits(.unspecified)
-            if x > 0, x + size.width > maxWidth {
-                x = 0
-                y += rowHeight + verticalSpacing
-                rowHeight = 0
-            }
-            x += size.width + horizontalSpacing
-            rowHeight = max(rowHeight, size.height)
-        }
-        return CGSize(width: maxWidth == .infinity ? max(x - horizontalSpacing, 0) : maxWidth, height: y + rowHeight)
-    }
-
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        var x = bounds.minX
-        var y = bounds.minY
-        var rowHeight: CGFloat = 0
-        for subview in subviews {
-            let size = subview.sizeThatFits(.unspecified)
-            if x + size.width > bounds.maxX, x > bounds.minX {
-                x = bounds.minX
-                y += rowHeight + verticalSpacing
-                rowHeight = 0
-            }
-            subview.place(
-                at: CGPoint(x: x, y: y),
-                proposal: ProposedViewSize(size)
-            )
-            x += size.width + horizontalSpacing
-            rowHeight = max(rowHeight, size.height)
-        }
     }
 }

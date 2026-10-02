@@ -426,8 +426,7 @@ struct AuroraInfoChip: View {
         .padding(.horizontal, AuroraSpacing.md)
         .padding(.vertical, 6)
         // ✅ fixedSize: el chip NUNCA se parte ni se corta con guiones — mantiene
-        // su tamaño intrínseco y el FlowLayout lo acomoda entero en la fila
-        // siguiente si no cabe.
+        // su tamaño intrínseco y baja entero a la fila siguiente cuando no cabe.
         .fixedSize()
         .nativeGlassCapsule()
     }
