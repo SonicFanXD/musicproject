@@ -979,29 +979,36 @@ class AudioEngine: NSObject, ObservableObject {
     private func startEngineSafely() throws {
         let session = AVAudioSession.sharedInstance()
 
-        // 1. Reactivar la sesión si está inactiva
-        if !session.isOtherAudioPlaying {
-            do {
-                try session.setActive(true, options: [])
-            } catch {
-                AppLog.error(.playback, error, context: "startEngineSafely: reactivar sesión")
-            }
+        // 1. Reactivar la sesión.
+        // ✅ FIX isActive: AVAudioSession NO expone ninguna forma directa de
+        // consultar si la sesión está activa (el intento anterior rompía el CI).
+        // La única prueba fiable de que hay ruta viva es setActive(true) SIN
+        // error + tasa real concedida, así que se intenta SIEMPRE y el throw pasa
+        // a ser motivo de aborto (antes el fallo solo se logueaba y el flujo
+        // seguía con la sesión en el aire).
+        var activationError: Error?
+        do {
+            try session.setActive(true, options: [])
+        } catch {
+            activationError = error
+            AppLog.error(.playback, error, context: "startEngineSafely: reactivar sesión")
         }
 
-        // ✅ FIX CRASH SUSPENSION: tras minutos suspendido la sesión puede seguir
-        // inactiva o con la ruta a medio negociar (0 Hz) — el paso 1 ya intentó
-        // setActive, así que sin tasa real el sistema no la ha concedido. Se
-        // comprueba AQUÍ, antes de reenganchar el nodo: si hace falta se espera
-        // hasta 50 ms (pasos de 10, 0 en el caso normal) a que haya tasa válida,
-        // y si sigue a 0 se aborta con log claro en vez de arrancar a ciegas
-        // sobre una sesión muerta (reconnectPlayerNode + engine.start() sobre
-        // ese estado era el camino del crash al volver de una suspensión larga).
-        for _ in 0..<5 {
-            if session.isActive, session.sampleRate > 1 { break }
-            Thread.sleep(forTimeInterval: 0.01)
+        // ✅ FIX CRASH SUSPENSION: tras minutos suspendido la ruta puede quedar a
+        // medio negociar (0 Hz). Se comprueba AQUÍ, antes de reenganchar el nodo:
+        // si hace falta se espera hasta 50 ms (pasos de 10, 0 en el caso normal)
+        // a que haya tasa válida, y si sigue a 0 se aborta con log claro en vez
+        // de arrancar a ciegas sobre una sesión muerta (reconnectPlayerNode +
+        // engine.start() sobre ese estado era el camino del crash al volver de
+        // una suspensión larga).
+        if activationError == nil {
+            for _ in 0..<5 {
+                if session.sampleRate > 1 { break }
+                Thread.sleep(forTimeInterval: 0.01)
+            }
         }
-        guard session.isActive, session.sampleRate > 1 else {
-            AppLog.error(.playback, String(format: "[BT CRASH] startEngineSafely: sesión sin ruta válida tras 50 ms (isActive=%@, %.0f Hz): abortado antes de reenganchar el nodo", session.isActive ? "true" : "false", session.sampleRate))
+        guard activationError == nil, session.sampleRate > 1 else {
+            AppLog.error(.playback, String(format: "[BT CRASH] startEngineSafely: sesión sin ruta válida tras 50 ms (activación=%@, %.0f Hz): abortado antes de reenganchar el nodo", activationError == nil ? "ok" : "falló", session.sampleRate))
             throw NSError(domain: "AuroraAudioEngine", code: -2,
                           userInfo: [NSLocalizedDescriptionKey: "Sesión de audio sin ruta válida (posible suspensión larga)"])
         }
