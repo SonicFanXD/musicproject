@@ -5,6 +5,7 @@
         <deployment identifier="iOS"/>
         <plugIn identifier="com.apple.InterfaceBuilder.IBCocoaTouchPlugin" version="23506"/>
         <capability name="Safe area layout guides" minToolsVersion="9.0"/>
+        <capability name="System colors in document resources" minToolsVersion="11.0"/>
         <capability name="documents saved in the Xcode 8 format" minToolsVersion="8.0"/>
     </dependencies>
     <scenes>
@@ -16,19 +17,27 @@
                         <rect key="frame" x="0.0" y="0.0" width="393" height="852"/>
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
                         <subviews>
-                            <!-- ✅ FIX LAUNCHSCREEN: el imageView apuntaba a image="AppIcon" (PNG 1024x1024 aplanado sobre negro) y el sistema lo dibujaba a 100x100 como un icono suelto sobre el fondo. Se sustituye por un label estático: fondo negro + nombre de la app centrado. Un launch screen no ejecuta código ni carga assets propios: cero dependencia del AppIcon. -->
-                            <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="Aurora Player" textAlignment="center" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="XfC-7d-8gK">
-                                <rect key="frame" x="126.66666666666666" y="411.66666666666663" width="139.66666666666666" height="28.666666666666668"/>
-                                <fontDescription key="fontDescription" type="system" weight="semibold" pointSize="24"/>
-                                <color key="textColor" red="0.55" green="0.35" blue="0.85" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
+                            <!-- ✅ REDISEÑO A: marca tipográfica en dos labels del SISTEMA (sin imágenes y sin acento dinámico: el launch no ejecuta código). Fondo systemBackgroundColor, el MISMO que el splash, para que el handoff no cambie de color en claro ni en oscuro. La constante -25 de la constraint de AURORA centra el par AURORA/PLAYER en la MISMA posición que el splash: bloque = AURORA 68 (≈81) + 12 + PLAYER 12 (≈14) + 12 + firma (8+4) ≈ 131 ⇒ (131 − 81)/2 ≈ 25. El launch no puede dibujar la firma ni usar SF Rounded (no hay design en storyboard): son las dos únicas diferencias con el splash. -->
+                            <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="AURORA" textAlignment="center" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="Aur-01-wMk">
+                                <rect key="frame" x="46.5" y="361.5" width="300" height="81"/>
+                                <fontDescription key="fontDescription" type="system" weight="heavy" pointSize="68"/>
+                                <color key="textColor" systemColor="labelColor"/>
+                                <nil key="highlightedColor"/>
+                            </label>
+                            <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="PLAYER" textAlignment="center" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="Plr-02-sUb">
+                                <rect key="frame" x="174" y="454.5" width="45" height="15"/>
+                                <fontDescription key="fontDescription" type="system" weight="semibold" pointSize="12"/>
+                                <color key="textColor" systemColor="secondaryLabelColor"/>
                                 <nil key="highlightedColor"/>
                             </label>
                         </subviews>
                         <viewLayoutGuide key="safeArea" id="Bcu-3y-fUS"/>
-                        <color key="backgroundColor" red="0.0" green="0.0" blue="0.0" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
+                        <color key="backgroundColor" systemColor="systemBackgroundColor"/>
                         <constraints>
-                            <constraint firstItem="XfC-7d-8gK" firstAttribute="centerX" secondItem="Ze5-6b-2t3" secondAttribute="centerX" id="7bN-8K-jyZ"/>
-                            <constraint firstItem="XfC-7d-8gK" firstAttribute="centerY" secondItem="Ze5-6b-2t3" secondAttribute="centerY" id="hQc-9L-2aN"/>
+                            <constraint firstItem="Aur-01-wMk" firstAttribute="centerX" secondItem="Ze5-6b-2t3" secondAttribute="centerX" id="aCx-01-wMk"/>
+                            <constraint firstItem="Aur-01-wMk" firstAttribute="centerY" secondItem="Ze5-6b-2t3" secondAttribute="centerY" constant="-25" id="aCy-02-wMk"/>
+                            <constraint firstItem="Plr-02-sUb" firstAttribute="centerX" secondItem="Ze5-6b-2t3" secondAttribute="centerX" id="pCx-03-sUb"/>
+                            <constraint firstItem="Plr-02-sUb" firstAttribute="top" secondItem="Aur-01-wMk" secondAttribute="bottom" constant="12" id="pTp-04-sUb"/>
                         </constraints>
                     </view>
                 </viewController>
@@ -37,4 +46,15 @@
             <point key="canvasLocation" x="52" y="375"/>
         </scene>
     </scenes>
+    <resources>
+        <systemColor name="labelColor">
+            <color red="0.0" green="0.0" blue="0.0" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
+        </systemColor>
+        <systemColor name="secondaryLabelColor">
+            <color red="0.23529411764705882" green="0.23529411764705882" blue="0.2627450980392157" alpha="0.6" colorSpace="custom" customColorSpace="sRGB"/>
+        </systemColor>
+        <systemColor name="systemBackgroundColor">
+            <color white="1" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
+        </systemColor>
+    </resources>
 </document>

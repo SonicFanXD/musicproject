@@ -1544,115 +1544,87 @@ struct ContentView: View {
     }
 }
 
-// ✅ G: rediseño con los tokens del sistema (`auroraIconBadge` +
-// `AppTheme.accentGradient`), sin halos ni medidas propias.
-// ✅ SPLASH v3 (VARIANTE C — AURORA DIAGONAL): el fondo pasa del gradiente
-// vertical estático (acento al 8%) a un gradiente diagonal de 5 paradas
-// (base → acento 15% → 28% → 15% → base) que GIRA lentamente, sensación de
-// aurora boreal. La rotación es un `rotationEffect` sobre una capa cuadrada:
-// transform del compositor, no re-evalúa el body ni toca el motor de audio.
-// UNA sola animación `repeatForever`. Sin halos, sin loader extra, sin
-// `.drawingGroup`. Los TIEMPOS no cambian: el mínimo de 1,2 s lo marca
-// ContentView.
+// ✅ REDISEÑO A (MARCA TIPOGRÁFICA): fuera el gradiente-aurora giratorio, el
+// badge hero con sombra y el spring de entrada. La identidad pasa a ser 100 %
+// tipográfica (AURORA + PLAYER) con una firma de acento, sobre la base opaca
+// del sistema. El motivo de fondo: el LaunchScreen NO ejecuta código y no
+// puede pintar gradientes ni badges — sí fondo del sistema y labels. Con esta
+// composición launch y splash son la MISMA pieza (mismo fondo, mismo wordmark
+// y misma posición) y el handoff deja de ser un corte.
+// Reglas duras intactas: base opaca como PRIMER hijo, TODO nace visible (la
+// única @State es el latido y su valor inicial pinta la firma a opacity 1: si
+// el onAppear no llegara, se ve igual) y UNA sola animación continua propia
+// (el latido; LoadingDots es un componente existente y ya venía pulsando).
+// Los TIEMPOS no cambian: el mínimo de 1,2 s lo marca ContentView.
 struct SplashView: View {
-    // ✅ FIX SPLASH: el contenido EMPIEZA VISIBLE (opacity 1 por defecto, nada
-    // depende del `.onAppear`). El `@State appearAnimation` solo mueve escala
-    // (0,94 → 1,0) y offset (+6 → 0) con un spring corto: si ese onAppear no
-    // llegara a dispararse, el splash se pinta igual — completo y estático.
-    // PROHIBIDO volver a opacity condicionada a @State en 0: fue la causa del
-    // cuadro negro (logo/título nacían invisibles y solo el onAppear los
-    // llevaba a 1). Los TIEMPOS del splash los marca ContentView (mínimo 1,2 s).
-    @State private var appearAnimation = false
-
-    // ✅ SPLASH v3: giro del gradiente en grados (0 → 360 en 8 s = 45°/s, bucle
-    // continuo). NO se animan el `startPoint`/`endPoint` del LinearGradient:
-    // SwiftUI interpola esos `UnitPoint` por CUERDA (la franja se aplasta y se
-    // desplaza, no gira) y un ciclo 0 → 360 acaba en los MISMOS puntos que
-    // empezó, así que no movería nada. Se anima el ángulo de la capa, que sí
-    // interpola de verdad y solo cuesta un transform.
-    @State private var gradientAngle: Double = 0
+    // ✅ FIX SPLASH (VIGENTE): el contenido EMPIEZA VISIBLE — la firma nace a
+    // opacity 1 y nada depende del `.onAppear` para pintarse. PROHIBIDO volver
+    // a opacity condicionada a @State en 0 (fue la causa del cuadro negro).
+    // ✅ REDISEÑO A: única animación propia del splash, el latido lento de la
+    // firma de acento (1,0 ↔ 0,4 en 2,5 s, ida y vuelta). Valor inicial =
+    // visible: si el onAppear no llegara a dispararse, la firma se ve igual.
+    @State private var accentPulse = false
     
     var body: some View {
         ZStack {
             // ✅ FIX SPLASH TRANSPARENTE: base OPACA del color del sistema como
-            // PRIMER hijo del ZStack (regla dura). El gradiente de acento es
-            // translúcido por definición; sin esta base el splash deja ver la
+            // PRIMER hijo del ZStack (regla dura). Los tintes de acento son
+            // translúcidos por definición; sin esta base el splash deja ver la
             // app detrás. No mover ni reordenar.
+            // ✅ REDISEÑO A: es la MISMA base que el LaunchScreen
+            // (`systemBackgroundColor`), así que el handoff no cambia de fondo
+            // ni en claro ni en oscuro.
             Color(UIColor.systemBackground)
                 .ignoresSafeArea()
             
-            // ✅ SPLASH v3: aurora diagonal rotatoria. El gradiente se dibuja en
-            // un CUADRADO de lado = diagonal de la pantalla (el diámetro de su
-            // círculo circunscrito), así CUALQUIER rotación lo deja tapando la
-            // pantalla entera: con la capa del tamaño de la pantalla, al girar
-            // asomarían las cuatro esquinas y el borde de la capa se vería como
-            // un tinte de acento cortado en seco. SIN `.drawingGroup` (causó el
-            // compositado en negro del POST-G).
-            GeometryReader { geo in
-                let side = sqrt(geo.size.width * geo.size.width
-                                + geo.size.height * geo.size.height)
-                LinearGradient(
-                    colors: [
-                        Color(UIColor.systemBackground),
-                        AppTheme.accent.opacity(0.15),
-                        AppTheme.accent.opacity(0.28),
-                        AppTheme.accent.opacity(0.15),
-                        Color(UIColor.systemBackground)
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-                .frame(width: side, height: side)
-                .rotationEffect(.degrees(gradientAngle))
-                // `rotationEffect` no cambia el layout: este frame devuelve el
-                // cuadrado al tamaño de la pantalla y lo centra (si no, quedaría
-                // anclado arriba a la izquierda y la franja saldría descentrada).
-                .frame(width: geo.size.width, height: geo.size.height)
-            }
-            .ignoresSafeArea()
-            .opacity(0.9)
-            
-            VStack(spacing: 26) {
+            VStack(spacing: 0) {
                 Spacer()
                 
-                // ✅ SPLASH v3: logo hero × 1,5 (132pt), icono 48 y UNA sola
-                // sombra (regla del sistema: dos sombras = dos pasadas offscreen
-                // por frame en A11). El spring de entrada SOLO anima la escala:
-                // el primer frame se pinta al 0,94, nunca invisible.
-                Image(systemName: "music.note")
-                    .auroraIconBadge(
-                        size: AuroraIconSize.hero * 1.5,
-                        color: AppTheme.accent,
-                        shape: .circle,
-                        iconSize: 48
-                    )
-                    .shadow(color: AppTheme.accent.opacity(0.35), radius: 28, x: 0, y: 14)
-                    .scaleEffect(appearAnimation ? 1.0 : 0.94)
-                
-                // ✅ SPLASH v3: marca en dos líneas — AURORA con el gradiente del
-                // sistema (44 + tracking 8) y PLAYER en secundario (14 + tracking
-                // 14) para que la segunda línea acompañe el ancho de la primera.
-                // El spring SOLO anima el offset: el primer frame baja 6pt,
-                // nunca invisible.
-                VStack(spacing: 6) {
+                // ✅ REDISEÑO A: bloque de marca CENTRADO EXACTO — los dos
+                // Spacers flexibles lo parten igual, así que su posición coincide
+                // con la del LaunchScreen (que lo espeja con labels del sistema).
+                // El halo es un RadialGradient ESTÁTICO del acento al 7 % (capa
+                // fija: no se anima ni pasa por offscreen) como fondo del bloque;
+                // sustituye al gradiente diagonal giratorio sin coste por frame.
+                VStack(spacing: AuroraSpacing.md) {
                     Text("AURORA")
-                        .font(.system(size: 44, weight: .bold, design: .rounded))
-                        .tracking(8)
+                        .font(.system(size: 68, weight: .heavy, design: .rounded))
+                        .tracking(9)
                         .foregroundStyle(AppTheme.accentGradient)
                     
                     Text("PLAYER")
-                        .font(.system(size: 14, weight: .medium, design: .rounded))
-                        .tracking(14)
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        .tracking(5)
                         .foregroundStyle(.secondary)
+                    
+                    // ✅ REDISEÑO A: firma de acento — barra de 32×4 (la
+                    // alternativa era un punto de 6pt). ÚNICA animación propia
+                    // del splash: latido lento 1,0 ↔ 0,4. Nace a opacity 1.
+                    Capsule()
+                        .fill(AppTheme.accent)
+                        .frame(width: 32, height: 4)
+                        .padding(.top, AuroraSpacing.sm)
+                        .opacity(accentPulse ? 0.4 : 1.0)
                 }
-                .offset(y: appearAnimation ? 0 : 6)
+                .background(
+                    RadialGradient(
+                        colors: [AppTheme.accent.opacity(0.07), .clear],
+                        center: .center,
+                        startRadius: 0,
+                        endRadius: 260
+                    )
+                    .frame(width: 560, height: 560)
+                )
                 
-                Spacer().frame(height: 16)
-                
+                Spacer()
+            }
+            // ✅ REDISEÑO A: el loader baja AL PIE y en `overlay` para que NO
+            // participe del centrado (como hijo del VStack, el bloque de marca
+            // quedaría por encima del centro y se rompería la continuidad con el
+            // launch). Espaciado con tokens, no medidas propias.
+            .overlay(alignment: .bottom) {
                 LoadingDots()
-                
-                Spacer()
-                Spacer()
+                    .padding(.bottom, AuroraSpacing.xxl + AuroraSpacing.xl)
             }
         }
         // ✅ FIX SPLASH TRANSPARENTE: anclamos el ZStack exterior a pantalla
@@ -1666,16 +1638,11 @@ struct SplashView: View {
         .ignoresSafeArea()
         .allowsHitTesting(false)
         .onAppear {
-            // ✅ SPLASH v3: dos animaciones y UN solo `repeatForever` (el giro).
-            // El spring es de entrada y termina; el giro es continuo, lineal y
-            // en una sola dirección (0 → 360 engancha sin costura; con
-            // `autoreverses` la franja invertiría el sentido cada 8 s y el
-            // ciclo visual se partiría en dos). Decorativo: nunca toca opacity.
-            withAnimation(.spring(response: 0.65, dampingFraction: 0.8)) {
-                appearAnimation = true
-            }
-            withAnimation(.linear(duration: 8.0).repeatForever(autoreverses: false)) {
-                gradientAngle = 360
+            // ✅ REDISEÑO A: el latido arranca ENTERO (1,0) y solo baja a 0,4 y
+            // vuelve: es decorativo, nunca oculta la firma. Una sola animación
+            // continua; el resto de la pantalla queda estático.
+            withAnimation(.easeInOut(duration: 2.5).repeatForever(autoreverses: true)) {
+                accentPulse = true
             }
         }
     }
