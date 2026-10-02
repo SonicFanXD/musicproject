@@ -822,6 +822,19 @@ class AudioEngine: NSObject, ObservableObject {
     // UIBackgroundModes = audio (ya configurada en Info.plist) y a que la
     // sesión de audio se mantiene activa mientras hay reproducción activa.
 
+    // ✅ FIX CRASH SUSPENSION: instante de entrada en segundo plano (reloj
+    // monótono) y bandera de reconstrucción total del grafo. El timestamp se
+    // registra SIEMPRE — también en pausa, que es justo el escenario del crash
+    // — y se limpia al volver a primer plano.
+    private var backgroundedAt: TimeInterval?
+    private var needsFullEngineReset = false
+    // ✅ FIX CRASH INTERRUPCION: "el grafo quedó muerto por un evento EXTERNO"
+    // (interrupción, media services reset, cambio de ruta/configuración, vuelta
+    // de background). Es DISTINTO de un engine.pause() nuestro: pause() deja
+    // isRunning == false con el grafo intacto y el nodo conservando su cola, y
+    // eso NO debe pagar una reconstrucción completa en cada pausa/reanudación.
+    private var engineDiedExternally = false
+
     private func setupBackgroundLifecycleObservers() {
         NotificationCenter.default.addObserver(
             self,
@@ -845,6 +858,14 @@ class AudioEngine: NSObject, ObservableObject {
         // sesión de audio activa y pedir tiempo en segundo plano para que
         // el engine no se suspenda. Esto mejora la reproducción continua
         // sin saltos ni cortes al cambiar de app o bloquear la pantalla.
+        // ✅ FIX CRASH SUSPENSION: anotar el instante de entrada en segundo
+        // plano ANTES del guard de reproducción — el escenario del crash es
+        // background EN PAUSA (isPlaying == false), que sale por ese guard sin
+        // registrar nada.
+        backgroundedAt = CACurrentMediaTime()
+        // ✅ OPT BG: sin UI de letras no hay línea activa que recalcular ni
+        // despertador de boundary que rearmar en cada tick del reloj.
+        Task { @MainActor in lyricsViewModel.setSceneActive(false) }
         guard isPlaying else {
             // ✅ Si no se reproduce, liberar el engine para ahorrar batería:
             // detener el engine (no la sesión) reduce consumo de CPU/RAM.
@@ -868,21 +889,19 @@ class AudioEngine: NSObject, ObservableObject {
         // ✅ Mantener el engine corriendo (no pausar) para que la reproducción
         // continúe de forma fluida al volver a primer plano. iOS permite audio
         // en background gracias a UIBackgroundModes = audio.
-        if !engine.isRunning, isPlaying, let file = audioFile {
-            do {
-                try startEngineSafely()
-                let position = min(max(currentTime, 0), duration)
-                scheduleGeneration += 1
-                // ✅ FIX GAPLESS: el engine se detuvo (iOS lo mató en segundo
-                // plano) → cualquier segmento pre-encadenado murió con él. Sin
-                // limpiar el rastreo y volver a encadenar, la PRIMERA transición
-                // tras volver sonaba por el respaldo atómico (hueco).
-                clearChainedAhead()
-                anchorPlaybackPosition(position)
-                scheduleFile(file, from: position)
-                scheduleAheadIfPossible()
-            } catch {
-                AppLog.error(.playback, error, context: "background: reiniciar engine")
+        if !engine.isRunning, isPlaying, audioFile != nil {
+            // ✅ FIX CRASH INTERRUPCION: este bloque SOLO entra con el engine ya
+            // detenido (guard de arriba) — reconectar el grafo con
+            // startEngineSafely()/reconnectPlayerNode sobre un grafo muerto es
+            // el crash real (AVAE_RaiseException, no capturable con do/catch).
+            // Mismo gate que resume(): reconstruir entero y reprogramar la
+            // pista desde la posición actual. Sin `return`: saltarse
+            // startDisplayTimer() de abajo congelaría barra y letras.
+            if let song = currentSong {
+                performFullEngineReset()
+                playCurrentSong(resumingAt: min(max(currentTime, 0), max(song.duration - 0.05, 0)))
+            } else {
+                AppLog.info(.playback, "engine muerto sin canción: ignorado")
             }
         }
 
@@ -892,7 +911,7 @@ class AudioEngine: NSObject, ObservableObject {
         // completamente porque el sistema de lyrics depende de clock.time
         // que se actualiza vía este timer. Si se detiene, las lyrics dejan
         // de sincronizarse al volver a primer plano.
-        startDisplayTimer(isBackground: true)
+        startDisplayTimer()
     }
 
     @objc private func handleAppWillEnterForeground() {
@@ -900,31 +919,43 @@ class AudioEngine: NSObject, ObservableObject {
         // si posAnchor + (wall − wallAnchor) ≠ currentTime, el reloj avanzó en
         // segundo plano cuando no debía.
         AppLog.info(.playback, String(format: "[CLOCK] foreground: currentTime=%.2f posAnchor=%.2f wallAnchor=%.3f isPlaying=%@", currentTime, posAnchor, wallAnchor, isPlaying ? "true" : "false"))
+        // ✅ FIX CRASH SUSPENSION: en segundo plano y en pausa, iOS desactiva
+        // la sesión de audio y suspende el proceso; tras unos minutos (umbral
+        // conservador: 30 s) el grafo, el archivo
+        // programado y la sesión ya no son de fiar. Se marca reconstrucción
+        // completa para que el próximo play no reutilice ese estado.
+        if let backgroundedAt = backgroundedAt {
+            let backgroundDuration = CACurrentMediaTime() - backgroundedAt
+            if backgroundDuration > 30 {
+                needsFullEngineReset = true
+                AppLog.info(.playback, String(format: "[BT CRASH] vuelta tras %.1f s en segundo plano: reset completo programado", backgroundDuration))
+            }
+            self.backgroundedAt = nil
+        }
+        // ✅ OPT BG: al volver, las letras se re-anclan al tiempo real del motor
+        // (en segundo plano el tick solo mantenía el ancla de interpolación).
+        Task { @MainActor in lyricsViewModel.setSceneActive(true) }
         // ✅ Volver a frecuencia normal del timer al regresar a primer plano
         if isPlaying {
             // ✅ FIX: sincronizar el reloj ANTES de reiniciar el timer para evitar
             // que la barra se adelante al volver de segundo plano.
             syncCurrentTimeFromRenderThread()
-            startDisplayTimer(isBackground: false)
+            startDisplayTimer()
             updateNowPlayingInfo()
         }
 
         // ✅ Si se pausó en segundo plano, asegurar que el engine siga listo
-        if !engine.isRunning, isPlaying, let file = audioFile {
-            do {
-                try startEngineSafely()
-                let position = min(max(currentTime, 0), duration)
-                scheduleGeneration += 1
-                // ✅ FIX GAPLESS: mismo caso que en segundo plano — al rearrancar
-                // el engine muere cualquier segmento pre-encadenado; hay que
-                // limpiar el rastreo y volver a encadenar la siguiente pista o
-                // la próxima transición paga el respaldo atómico (hueco).
-                clearChainedAhead()
-                anchorPlaybackPosition(position)
-                scheduleFile(file, from: position)
-                scheduleAheadIfPossible()
-            } catch {
-                AppLog.error(.playback, error, context: "foreground: reiniciar engine")
+        if !engine.isRunning, isPlaying, audioFile != nil {
+            // ✅ FIX CRASH INTERRUPCION: mismo caso que en background — el guard
+            // de arriba ya garantiza engine detenido, así que reconectar el
+            // grafo aquí era el crash (AVAE_RaiseException, no capturable).
+            // Mismo gate que resume(): reconstruir entero y reprogramar la
+            // pista desde la posición actual.
+            if let song = currentSong {
+                performFullEngineReset()
+                playCurrentSong(resumingAt: min(max(currentTime, 0), max(song.duration - 0.05, 0)))
+            } else {
+                AppLog.info(.playback, "engine muerto sin canción: ignorado")
             }
         }
     }
@@ -955,6 +986,24 @@ class AudioEngine: NSObject, ObservableObject {
             } catch {
                 AppLog.error(.playback, error, context: "startEngineSafely: reactivar sesión")
             }
+        }
+
+        // ✅ FIX CRASH SUSPENSION: tras minutos suspendido la sesión puede seguir
+        // inactiva o con la ruta a medio negociar (0 Hz) — el paso 1 ya intentó
+        // setActive, así que sin tasa real el sistema no la ha concedido. Se
+        // comprueba AQUÍ, antes de reenganchar el nodo: si hace falta se espera
+        // hasta 50 ms (pasos de 10, 0 en el caso normal) a que haya tasa válida,
+        // y si sigue a 0 se aborta con log claro en vez de arrancar a ciegas
+        // sobre una sesión muerta (reconnectPlayerNode + engine.start() sobre
+        // ese estado era el camino del crash al volver de una suspensión larga).
+        for _ in 0..<5 {
+            if session.isActive, session.sampleRate > 1 { break }
+            Thread.sleep(forTimeInterval: 0.01)
+        }
+        guard session.isActive, session.sampleRate > 1 else {
+            AppLog.error(.playback, String(format: "[BT CRASH] startEngineSafely: sesión sin ruta válida tras 50 ms (isActive=%@, %.0f Hz): abortado antes de reenganchar el nodo", session.isActive ? "true" : "false", session.sampleRate))
+            throw NSError(domain: "AuroraAudioEngine", code: -2,
+                          userInfo: [NSLocalizedDescriptionKey: "Sesión de audio sin ruta válida (posible suspensión larga)"])
         }
 
         // ✅ FIX CRASH AL REANUDAR TRAS CAMBIO DE RUTA: consultar el formato
@@ -1004,6 +1053,35 @@ class AudioEngine: NSObject, ObservableObject {
         }
     }
 
+    /// ✅ FIX CRASH SUSPENSION: tira TODO el grafo (nodo + engine + encadenado
+    /// por adelantado) y olvida el archivo y el formato conectado. No reactiva
+    /// la sesión (eso lo hace startEngineSafely con la ruta ya estabilizada) ni
+    /// programa nada: la reconstrucción completa la hace
+    /// playCurrentSong(resumingAt:), que reabre el archivo, reengancha el nodo
+    /// al hardware vigente y arranca en la posición pedida.
+    private func performFullEngineReset() {
+        // ⚠️ Los completion handlers encolados mueren con el nodo: subir la
+        // generación evita que un callback rezagado (token/generación antiguos)
+        // ejecute la transición de fin de segmento sobre un grafo ya tirado.
+        // Es el mismo patrón que usan playCurrentSong() y suspendForRouteLoss().
+        scheduleGeneration += 1
+        playerNode.stop()
+        engine.stop()
+        clearChainedAhead()
+        audioFile = nil
+        connectedFormatKey = nil
+        // ✅ FIX CRASH SUSPENSION: tirar también la precarga. Su AVAudioFile se
+        // abrió ANTES de la suspensión; si playCurrentSong usa ese handle
+        // cacheado, el archivo NO se reabre. Limpiándola, la rama audioFile ==
+        // nil abre de disco con makePlaybackFile (handle fresco).
+        clearPreloadedNext()
+        // ✅ FIX CRASH INTERRUPCION: con el grafo ya tirado no queda nada "muerto"
+        // pendiente de reconstruir (resume() también limpia las banderas ANTES de
+        // llamar aquí; esto cubre a los demás llamadores).
+        engineDiedExternally = false
+        AppLog.info(.playback, "[BT CRASH] full engine reset ejecutado")
+    }
+
     // ✅ iOS detiene/reconfigura el engine ante cambios de ruta o del sistema.
     // Sin este observador, el engine quedaba muerto y la siguiente reproducción
     // fallaba (o crasheaba). Lo reiniciamos proactivamente.
@@ -1019,10 +1097,30 @@ class AudioEngine: NSObject, ObservableObject {
         ) { [weak self] _ in
             guard let self, self.currentSong != nil else { return }
             AppLog.warning(.playback, "Media services reiniciado: reconstruyendo el grafo")
-            self.playerNode.stop()
-            // try?: si el sistema aún no acepta reactivar la sesión, el
-            // arranque lo reintentará resume()/playCurrentSong().
-            try? self.startEngineSafely()
+            // ✅ FIX CRASH INTERRUPCION: todos los nodos/programaciones anteriores
+            // murieron con el servicio → muerte EXTERNA marcada.
+            self.engineDiedExternally = true
+            // ✅ FIX CRASH INTERRUPCION: el reset mata el grafo SIEMPRE — aquí
+            // engine.isRunning puede mentir (true sobre un grafo muerto), por
+            // eso el gate es isPlaying y no isRunning (a diferencia de
+            // background/foreground, donde el guard ya garantiza motor
+            // detenido). Reconectar los nodos viejos (startEngineSafely →
+            // reconnectPlayerNode → engine.connect) era el crash
+            // AVAE_RaiseException, no capturable. Se reconstruye entero y se
+            // reprograma la pista desde la posición actual; antes NO se
+            // reprogramaba nada y la app se quedaba en silencio con
+            // isPlaying=true. En pausa (o con AVPlayer/Dolby activo) no se
+            // arranca nada: flags para que resume() reconstruya al reanudar.
+            if self.isPlaying, !self.isAVPlayerActive, let song = self.currentSong {
+                self.performFullEngineReset()
+                self.playCurrentSong(resumingAt: min(max(self.currentTime, 0), max(song.duration - 0.05, 0)))
+            } else if !self.isAVPlayerActive {
+                // ✅ FIX CRASH INTERRUPCION: en pausa el grafo también está
+                // muerto, pero no hay que arrancar nada ahora; needsFullEngineReset
+                // garantiza que resume() reconstruya aunque isRunning mienta
+                // con true (el gate de resume() exige !isRunning).
+                self.needsFullEngineReset = true
+            }
         }
     }
 
@@ -1035,6 +1133,10 @@ class AudioEngine: NSObject, ObservableObject {
             guard let self = self else { return }
             // ✅ 3.0.1 DIAGNÓSTICO: formato de E/S ANTES de reconfigurar. Es la
             // prueba de qué tasa/canales había negociado el hardware.
+            // ✅ FIX CRASH INTERRUPCION: un cambio de configuración del engine
+            // invalida la cola del nodo y puede dejar el grafo a medio morir →
+            // muerte EXTERNA marcada (el próximo arranque reconstruye entero).
+            self.engineDiedExternally = true
             let ioBefore = self.engine.outputNode.outputFormat(forBus: 0)
             AppLog.info(.playback, String(format: "Configuración del engine cambió; reconfigurando (E/S antes: %.0f Hz · %d canales)", ioBefore.sampleRate, ioBefore.channelCount))
             // ⚠️ Cualquier cambio de configuración (no solo cuando el engine
@@ -1062,6 +1164,12 @@ class AudioEngine: NSObject, ObservableObject {
                 self.playerNode.stop()
                 do {
                     try self.startEngineSafely()
+                    // ✅ FIX FLAG MUERTO RESIDUAL: la reconexión ligera terminó
+                    // sin error → no queda nada muerto pendiente. Sin esto, el
+                    // siguiente pause→resume disparaba un reset completo
+                    // (~150 ms + reapertura) sin motivo. Si startEngineSafely
+                    // lanza, el catch deja el flag true y resume() reconstruye.
+                    self.engineDiedExternally = false
                     // ✅ 3.0.1 DIAGNÓSTICO: y el formato DESPUÉS, para ver si la
                     // reconfiguración cambió la tasa de salida.
                     let ioAfter = self.engine.outputNode.outputFormat(forBus: 0)
@@ -2442,56 +2550,72 @@ class AudioEngine: NSObject, ObservableObject {
             return
         }
         lastResumeCallTime = now
+        // ✅ FIX CRASH SUSPENSION: si la app estuvo en segundo plano en pausa
+        // más de 30 s, iOS ya desactivó la sesión y el grafo quedó
+        // inconsistente; reutilizarlo (playerNode.play() /
+        // engine.start() sobre él) era el crash. Con canción cargada se tira
+        // TODO y se rehace por la ruta completa de playCurrentSong — sesión,
+        // reconexión, apertura del archivo y reseek —, la misma que usa el
+        // usuario al elegir una canción: no depende de ningún estado previo.
+        // ⚠️ Solo aplica a la ruta del AVAudioEngine: en el respaldo (Dolby),
+        // AVPlayer gestiona sus propios recursos y reanudar con avPlayer.play()
+        // es exacto — reconstruir ahí reiniciaría el reproductor y re-seekearía
+        // sin motivo (con un hueco audible) para tirar un grafo que no se usa.
+        if needsFullEngineReset, !isAVPlayerActive, let song = currentSong {
+            needsFullEngineReset = false
+            performFullEngineReset()
+            let position = min(max(currentTime, 0), max(song.duration - 0.05, 0))
+            playCurrentSong(resumingAt: position)
+            return
+        }
+        // ✅ FIX CRASH INTERRUPCION: si el engine NO corre, el grafo está muerto
+        // SIN IMPORTAR CUÁNDO se mató (suspensión en background, interrupción que
+        // termina con la app aún en background, media services reset). El flag
+        // needsFullEngineReset solo cubre la vuelta a primer plano, así que con la
+        // interrupción terminando en background quedaba en false y resume()
+        // tomaba el camino rápido sobre un grafo muerto. Aquí se tira TODO y se
+        // reconstruye por la ruta completa de playCurrentSong (sesión,
+        // reconexión, apertura y reseek), que no depende de ningún estado previo.
+        // ⚠️ engine.isRunning == false NO basta como señal: pause() llama a
+        // engine.pause() y deja isRunning == false con el grafo INTACTO (docs de
+        // AVAudioEngine). Por eso el reset exige además una bandera de muerte
+        // EXTERNA; sin ella el motor estaba solo pausado por nosotros y se
+        // reanuda sin reconectar (abajo), que es lo que evita el delay de
+        // ~150 ms y la reapertura de archivo en cada pausa/play normal.
+        if !engine.isRunning, !isAVPlayerActive, let song = currentSong,
+           (needsFullEngineReset || engineDiedExternally) {
+            needsFullEngineReset = false
+            engineDiedExternally = false
+            AppLog.info(.playback, "[BT CRASH] engine muerto al reanudar: reset completo")
+            performFullEngineReset()
+            let position = min(max(currentTime, 0), max(song.duration - 0.05, 0))
+            playCurrentSong(resumingAt: position)
+            return
+        }
+
         if isAVPlayerActive {
             avPlayer?.play()
         } else {
-            // ✅ FIX: si la app estuvo en segundo plano sin reproducir, iOS puede
-            // haber detenido el engine. Reanudar a ciegas fallaba en silencio (o
-            // crasheaba). Reactivar sesión + engine antes de hacer play.
-            if !engine.isRunning {
+            // ✅ FIX CRASH INTERRUPCION: con el engine parado por una muerte
+            // EXTERNA ya se salió por el reset completo de arriba. Lo que queda
+            // aquí es el motor pausado POR NOSOTROS (pause() → engine.pause()) o
+            // un grafo muerto sin bandera: el primero se reanuda con start() SIN
+            // reconectar nada (el grafo sigue intacto y playerNode.pause() conserva
+            // su cola); el segundo se detecta porque start() falla.
+            // Reconectar en este punto ERA el crash: startEngineSafely →
+            // reconnectPlayerNode → engine.connect lanza AVAE_RaiseException
+            // (NSException NO capturable con do/catch) → SIGABRT.
+            var engineReady = engine.isRunning
+            if !engineReady {
                 do {
-                    scheduleGeneration += 1
-                    // ⚠️ Ver nota en observeEngineConfigurationChanges(): sin
-                    // vaciar la cola explícitamente, scheduleFile (at: nil)
-                    // podía encolar detrás de restos de audio viejo.
-                    playerNode.stop()
-                    // El engine se detuvo por completo: cualquier canción
-                    // pre-encadenada por adelantado se perdió con él.
-                    clearChainedAhead()
-                    if let song = currentSong, audioFile == nil {
-                        // ✅ FIX "Reproducir al iniciar" / CC play tras abrir la
-                        // app: tras el restore SOLO hay metadatos, el archivo de
-                        // audio aún NO está cargado (audioFile == nil) — la rama
-                        // antigua nunca programaba nada y quedaba "reproduciendo"
-                        // en silencio. playCurrentSong(resumingAt:) hace la carga
-                        // COMPLETA (sesión, mono, reconexión, fallback) y arranca
-                        // desde la posición guardada.
-                        playCurrentSong(resumingAt: min(max(currentTime, 0), max(song.duration - 0.05, 0)))
-                    } else if let file = audioFile {
-                        // ✅ CRÍTICO - ESTABILIDAD: verificar que el archivo existe antes
-                        // de intentar reactivar el engine. Si el archivo fue borrado o
-                        // movido mientras la app estaba en segundo plano, esto previene
-                        // un crash al intentar reconectar el grafo con un archivo inválido.
-                        guard FileManager.default.fileExists(atPath: file.url.path) else {
-                            AppLog.warning(.playback, "resume(): archivo ya no existe en disco: \(file.url.lastPathComponent)")
-                            self.stop()
-                            return
-                        }
-                        try startEngineSafely()
-                        let position = min(max(currentTime, 0), duration)
-                        anchorPlaybackPosition(position)
-                        scheduleFile(file, from: position, generation: scheduleGeneration)
-                    } else {
-                        // Sin canción restaurada (app recién instalada o el
-                        // usuario nunca reprodujo): nada que reanudar — salir
-                        // sin dejar el estado "reproduciendo" fantasma.
-                        AppLog.info(.playback, "resume() sin canción cargada: ignorado")
-                        return
-                    }
+                    try engine.start()
+                    engineReady = true
+                    AppLog.info(.playback, "Resume: start() del engine pausado (sin reconectar el grafo)")
                 } catch {
-                    AppLog.error(.playback, error, context: "resume: reactivar engine")
+                    AppLog.error(.playback, error, context: "resume: start() del engine pausado")
                 }
-            } else {
+            }
+            if engineReady {
                 // ✅ RELOJ DE PARED: re-anclar la extrapolación en la posición
                 // pausada; la UI y el lock screen arrancan exactos desde aquí.
                 // playerNode.pause() (a diferencia de .stop()) NO descarta la
@@ -2503,6 +2627,23 @@ class AudioEngine: NSObject, ObservableObject {
                 anchorPlaybackPosition(currentTime)
                 clock.time = currentTime
                 playerNode.play()
+            } else {
+                // ✅ FIX CRASH INTERRUPCION: start() falló = el grafo NO estaba
+                // sano aunque no tuviéramos bandera (muerte externa sin aviso, p.
+                // ej. una suspensión corta). Se reconstruye COMPLETO por la misma
+                // ruta del reset de arriba: aquí NUNCA se llama a la reconexión
+                // suelta, que es la que lanza la excepción no capturable.
+                if let song = currentSong {
+                    performFullEngineReset()
+                    let position = min(max(currentTime, 0), max(song.duration - 0.05, 0))
+                    playCurrentSong(resumingAt: position)
+                } else {
+                    // Sin canción que reanudar (stop() deja un AVAudioFile
+                    // residual): se sale EN PAUSA sin tocar el grafo. Devolver el
+                    // estado real es preferible a dejar isPlaying=true sin audio.
+                    AppLog.info(.playback, "resume() con engine detenido y sin canción: ignorado")
+                }
+                return
             }
         }
         AppLog.info(.playback, String(format: "Resume desde %.1fs — '%@' (engine running: %@, fallback: %@)", currentTime, currentSong?.displayName ?? "—", engine.isRunning ? "sí" : "no", isUsingFallback ? "sí" : "no"))
@@ -3280,17 +3421,41 @@ class AudioEngine: NSObject, ObservableObject {
     // rehacía el orden COMPLETO a partir de la cola, así que editar la cola
     // reescribía el álbum en curso.
 
-    private func startDisplayTimer(isBackground: Bool = false) {
+    private func startDisplayTimer() {
         stopDisplayTimer()
         var tickCount = 0
+        // ✅ OPT BG: la cadencia se decide por el ESTADO REAL de la app, no por lo
+        // que recuerde el llamador. `playCurrentSong()`, `resume()` y el respaldo
+        // (Dolby) rearman este timer en cada cambio de pista SIN contexto: en
+        // segundo plano rearmaban la cadencia de PRIMER PLANO (0.4s, con
+        // publicación de Now Playing cada 0.8s, medida de drift y watchdog en
+        // cada tick) y la mantenían el resto de la sesión — el calor con la
+        // pantalla bloqueada o usando otra app salía de ahí.
         // ✅ OPTIMIZACIÓN DE BATERÍA: en primer plano 0.4s es suficiente para
         // una UI fluida (la barra de progreso responde rápido al seek/pause),
-        // y en segundo plano subimos a 3.0s para reducir drásticamente el
-        // consumo de CPU cuando la pantalla está bloqueada o en otra app.
-        // iOS interpola el progreso del lock screen/CC con el rate, así que
-        // un update cada 3s es imperceptible visualmente pero ahorra CPU/RAM.
-        let interval: TimeInterval = isBackground ? 3.0 : 0.4
-        let nowPlayingRefreshTicks = isBackground ? 1 : 2
+        // y en segundo plano 6.0s: la UI no se ve e iOS extrapola el progreso
+        // del lock screen/CC con el rate, así que el timer solo existe para
+        // los watchdogs, la persistencia de posición y una publicación de
+        // seguridad al minuto.
+        let isBackground = UIApplication.shared.applicationState == .background
+        // ✅ OPT BG: throttling térmico (ligero): con el teléfono caliente
+        // (.serious/.critical) el timer de segundo plano se estira a 15s. En
+        // primer plano NO se toca: este mismo timer alimenta la barra de
+        // progreso de la app y saltaría a tirones de 15s.
+        let thermal = ProcessInfo.processInfo.thermalState
+        let thermallyThrottled = (thermal == .serious || thermal == .critical)
+        let interval: TimeInterval = isBackground ? (thermallyThrottled ? 15.0 : 6.0) : 0.4
+        // ✅ OPT BG: en segundo plano se publica una vez por minuto (10 ticks)
+        // en vez de en cada tick. iOS extrapola con playbackRate y los cambios
+        // reales (canción/estado/seek/cola) publican con force:true al instante;
+        // esta cadencia queda solo como red de seguridad por si el sistema
+        // descartó una publicación durante una transición de bloqueo.
+        let nowPlayingRefreshTicks = isBackground ? 10 : 2
+        // ✅ OPT BG: evidencia en dispositivo (barata: solo al REARMAR el timer,
+        // no por tick). Con el bug, en segundo plano se veía 0.4s tras cada
+        // cambio de pista; ahora debe verse 6.0s (o 15.0s con el teléfono
+        // caliente) durante toda la sesión en background.
+        AppLog.info(.playback, String(format: "[OPT BG] timer: %.1f s (%@%@)", interval, isBackground ? "background" : "foreground", thermallyThrottled ? ", térmico" : ""))
         // ✅ SINCRONIZACIÓN: el timer se añade al run loop en modo .common. Con el
         // modo por defecto (.default) NO dispara mientras el usuario hace scroll o
         // arrastra un control (el run loop está en .tracking), así que la barra de
@@ -3346,13 +3511,17 @@ class AudioEngine: NSObject, ObservableObject {
                 self.updateNowPlayingInfo(force: false)
             }
             // ✅ PERSISTENCIA DE POSICIÓN EN VIVO: guardar cada ~15s mientras
-            // suena (37 ticks × 0.4s fg / 5 × 3.0s bg). Así un cierre forzado
-            // (kill sin willResignActive) restaura la posición más reciente,
-            // no la del último cambio de canción.
+            // suena (37 ticks × 0.4s fg / 3 × 6.0s bg = 18s). Así un cierre
+            // forzado (kill sin willResignActive) restaura la posición más
+            // reciente, no la del último cambio de canción.
+            // ✅ OPT BG: en segundo plano se persiste SOLO la posición (ver
+            // saveState(positionOnly:)): ni el orden de reproducción ni la cola
+            // cambian por estar sonando, y re-serializarlos cada 18s era CPU e
+            // I/O gratis (900+ UUID × 3 arrays por escritura).
             self.persistTickCounter += 1
-            if self.persistTickCounter >= (isBackground ? 5 : 37) {
+            if self.persistTickCounter >= (isBackground ? 3 : 37) {
                 self.persistTickCounter = 0
-                self.saveState()
+                self.saveState(positionOnly: true)
             }
         }
         RunLoop.main.add(timer, forMode: .common)
@@ -3870,6 +4039,10 @@ class AudioEngine: NSObject, ObservableObject {
             // de un .newDeviceAvailable anterior queda invalidado.
             self.routeChangeGeneration &+= 1
             let gen = self.routeChangeGeneration
+            // ✅ FIX CRASH INTERRUPCION: un cambio de ruta reconstruye/reconecta el
+            // grafo (o lo suspende por pérdida de ruta, que descarta la cola) →
+            // muerte EXTERNA marcada.
+            self.engineDiedExternally = true
 
             let reasonRaw = notification.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt ?? 0
             let reason = AVAudioSession.RouteChangeReason(rawValue: reasonRaw)
@@ -3923,6 +4096,11 @@ class AudioEngine: NSObject, ObservableObject {
                         self.clearChainedAhead()
                         do {
                             try self.startEngineSafely()
+                            // ✅ FIX FLAG MUERTO RESIDUAL: reconexión ligera sin
+                            // error → grafo vivo y reprogramado; el flag solo
+                            // queda true si el start lanza (lo deja el catch) y
+                            // entonces resume() reconstruye entero.
+                            self.engineDiedExternally = false
                             // ✅ 3.0.1 BIT-PERFECT: el dispositivo nuevo puede haber
                             // negociado otra tasa; se recupera la nativa del archivo
                             // antes de reprogramar (solo en ruta cableada, y solo si
@@ -4029,6 +4207,11 @@ class AudioEngine: NSObject, ObservableObject {
                   let info = notification.userInfo,
                   let typeVal = info[AVAudioSessionInterruptionTypeKey] as? UInt,
                   let type = AVAudioSession.InterruptionType(rawValue: typeVal) else { return }
+            // ✅ FIX CRASH INTERRUPCION: una interrupción tumba el grafo de Core
+            // Audio aunque no estemos reproduciendo (iOS libera el motor). Queda
+            // marcado como muerte EXTERNA para que el próximo arranque reconstruya
+            // en vez de reconectar sobre un grafo inconsistente.
+            self.engineDiedExternally = true
             if type == .began {
                 AppLog.info(.playback, "Interrupción: BEGIN (\(self.isPlaying ? "reproduciendo → pausa" : "no estaba reproduciendo"))")
             }
@@ -4373,12 +4556,19 @@ class AudioEngine: NSObject, ObservableObject {
         }
     }
 
-    private func saveState() {
-        var state: [String: Any] = [
-            "isPlaying": isPlaying,
-            "currentTime": currentTime,
-            "currentIndex": currentIndex
-        ]
+    private func saveState(positionOnly: Bool = false) {
+        // ✅ OPT BG: la persistencia periódica del timer solo refresca la
+        // POSICIÓN. Se PARTE del diccionario ya guardado (UserDefaults lo tiene
+        // en memoria) para no borrar el resto del estado: re-serializar en cada
+        // tick el orden completo de reproducción (900+ UUID) y la cola manual
+        // era puro gasto, porque esos campos solo cambian con acciones del
+        // usuario, que ya llaman a saveState() completo.
+        var state = positionOnly
+            ? (UserDefaults.standard.dictionary(forKey: stateDefaultsKey) ?? [:])
+            : [String: Any]()
+        state["isPlaying"] = isPlaying
+        state["currentTime"] = currentTime
+        state["currentIndex"] = currentIndex
         // ✅ FIX: guardar la IDENTIDAD de la canción (UUID). restoreState()
         // la usa para rescatar la canción EXACTA aunque la biblioteca cambie
         // de orden entre sesiones (antes solo currentIndex → canción errónea).
@@ -4386,14 +4576,16 @@ class AudioEngine: NSObject, ObservableObject {
             state["songID"] = song.id.uuidString
             state["songDuration"] = song.duration
         }
-        // ✅ MEJORA QUEUE: guardar cola manual para persistencia
-        state["manualQueue"] = manualQueue.map { $0.id.uuidString }
-        // ✅ FIX POST-G (restore pierde la playlist): guardar el ORDEN de sesión
-        // real (álbum, playlist, búsqueda...) y el orden original de referencia.
-        // Sin esto, restoreState() reconstruía con la biblioteca completa y la
-        // "siguiente" era cualquier canción cercana en orden alfabético.
-        state["playbackOrderIDs"] = playbackOrder.map { $0.id.uuidString }
-        state["originalOrderIDs"] = originalOrder.map { $0.id.uuidString }
+        if !positionOnly {
+            // ✅ MEJORA QUEUE: guardar cola manual para persistencia
+            state["manualQueue"] = manualQueue.map { $0.id.uuidString }
+            // ✅ FIX POST-G (restore pierde la playlist): guardar el ORDEN de sesión
+            // real (álbum, playlist, búsqueda...) y el orden original de referencia.
+            // Sin esto, restoreState() reconstruía con la biblioteca completa y la
+            // "siguiente" era cualquier canción cercana en orden alfabético.
+            state["playbackOrderIDs"] = playbackOrder.map { $0.id.uuidString }
+            state["originalOrderIDs"] = originalOrder.map { $0.id.uuidString }
+        }
         UserDefaults.standard.set(state, forKey: stateDefaultsKey)
     }
 

@@ -46,6 +46,22 @@ final class ThemeManager: ObservableObject {
 
     // ✅ La caché de colores vive en AppTheme.artworkColorCache (compartida)
 
+    // ✅ OPT BG: estado de segundo plano y acento pendiente. Con la app en
+    // background no hay UI que repintar: la extracción (decode de la carátula +
+    // clustering + tint global de UIKit) se POSPONE y se aplica UNA vez al
+    // volver a primer plano, no una vez por cada cambio de pista en background.
+    private var isAppInBackground = false
+    private var accentRefreshPending = false
+
+    /// ✅ OPT BG: ContentView avisa aquí del scenePhase. Al volver a primer
+    /// plano se resuelve el ÚLTIMO cambio pendiente, si lo hubo.
+    func setAppInBackground(_ background: Bool) {
+        isAppInBackground = background
+        guard !background, accentRefreshPending else { return }
+        accentRefreshPending = false
+        resolveArtworkAccent(from: latestSongForAccent)
+    }
+
     /// Extrae el color dominante de la portada en segundo plano y lo publica.
     /// Llamado por AudioEngine cada vez que cambia la canción actual.
     func updateArtworkAccent(from song: Song?) {
@@ -53,6 +69,12 @@ final class ThemeManager: ObservableObject {
         // el color al instante si se activa el toggle desde Settings.
         if let song { latestSongForAccent = song }
         guard accentFromArtwork else { return }
+        // ✅ OPT BG: en segundo plano se difiere: se resuelve al volver a primer
+        // plano con la última canción guardada (una sola pasada).
+        if isAppInBackground {
+            accentRefreshPending = true
+            return
+        }
         resolveArtworkAccent(from: latestSongForAccent)
     }
 

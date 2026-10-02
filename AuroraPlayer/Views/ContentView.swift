@@ -229,6 +229,10 @@ struct ContentView: View {
                 // incluida la primera apertura → era la causa de que al abrir
                 // la app arrancara "a indexar todo" con la animación compacta.
                 .onChange(of: scenePhase) { newPhase in
+                    // ✅ OPT BG: el acento desde carátula (decode + clustering del
+                    // artwork + tint global de UIKit) no se ejecuta con la app en
+                    // segundo plano: se pospone y se aplica al volver.
+                    ThemeManager.shared.setAppInBackground(newPhase == .background)
                     if newPhase == .active {
                         AppLog.info(.lifecycle, "App volvió a activo, detección silenciosa de canciones nuevas...")
                         fileAccessService.backgroundScanForNewSongs()

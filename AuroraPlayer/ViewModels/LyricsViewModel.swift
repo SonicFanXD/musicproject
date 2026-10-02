@@ -217,6 +217,22 @@ final class LyricsViewModel: ObservableObject {
     @MainActor
     func stopMonitoring() {}
 
+    // ✅ OPT BG: estado real de la app (lo avisa AudioEngine desde sus
+    // observadores de ciclo de vida). En segundo plano no hay letras visibles:
+    // el tick del reloj solo mantiene el ancla de interpolación y se salta el
+    // trabajo (búsqueda de línea activa, estado de gaps y despertador de
+    // boundary), que con la pantalla bloqueada es CPU sin nada que repintar.
+    private var isSceneActive = true
+
+    /// ✅ OPT BG: al volver a primer plano se re-ancla con la posición REAL del
+    /// motor, porque durante el segundo plano el tick no recalculó nada.
+    @MainActor
+    func setSceneActive(_ active: Bool) {
+        isSceneActive = active
+        guard active else { return }
+        syncToCurrentTime()
+    }
+
     /// Recalcula la línea activa inmediatamente después de un seek
     @MainActor
     func handleSeek() {
@@ -332,6 +348,10 @@ final class LyricsViewModel: ObservableObject {
     private func receiveClockTime(_ time: TimeInterval) {
         clockTime = time
         clockUpdateDate = CACurrentMediaTime()
+        // ✅ OPT BG: el ancla se mantiene SIEMPRE (es O(1) y deja la
+        // interpolación lista para el primer frame al volver); el trabajo de
+        // letras se salta mientras la app está en segundo plano.
+        guard isSceneActive else { return }
         refreshActiveLine()
         updateInstrumentalGapState()
     }
