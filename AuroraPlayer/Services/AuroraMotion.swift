@@ -5,8 +5,98 @@ import SwiftUI
 // implementada con APIs nativas de SwiftUI (iOS 16, sin dependencias).
 // ══════════════════════════════════════════════════════════════════════════
 
+// MARK: - Top-level structs (accessible from entire app)
+
+// MARK: - Press feedback (escala + opacidad con física M3E)
+
+// ✅ Feedback de presión elástico. Es el MISMO `PressableButtonStyle` que ya
+// usaba toda la app (30+ call sites) con dos mejoras, sin romper ninguno:
+//  1. La curva pasa a `AuroraMotion.quick` (antes era un spring a mano con
+//     otro apretón: ahora TODO lo pulsable de la app comparte la misma
+//     física, que es lo que hace que una app se sienta "de un sitio").
+//  2. Nuevo parámetro opcional `pressedOpacity`: M3E apaga levemente la
+//     superficie al presionar, lo que hace la pulsación legible sobre la
+//     portada sin añadir ni un render pass (opacidad = capa del sistema).
+// Sin haptics aquí dentro a propósito: los botones ya disparan `Haptics` en
+// sus acciones; duplicarlo haría doble Taptic en cada toque.
+struct PressableButtonStyle: ButtonStyle {
+    let scale: CGFloat
+    var pressedOpacity: Double = 1.0
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? scale : 1.0)
+            .opacity(configuration.isPressed ? pressedOpacity : 1.0)
+            .animation(AuroraMotion.quick, value: configuration.isPressed)
+    }
+}
+
+// MARK: - Emphasized typography (M3E type scale)
+
+// ✅ Tokens de tipografía enfática Material 3 Expressive.
+// Cada rol define tamaño (pt), peso y tracking para iOS 16 en hardware limitado.
+// Estos valores están calibrados al vocabulario oficial de M3E y no deben
+// modificarse sin consultar las guías de diseño de Google.
+struct M3ETypography {
+    // Título grande enfatizado: usado para el título de la canción en NowPlaying
+    // y encabezados principales de sección.
+    static let titleLargeEmphasized: Font = .system(size: 22, weight: .medium, design: .rounded)
+
+    // Título pequeño enfatizado: usado para títulos de categoría en ContentView
+    // y otros encabezados de sección medianos.
+    static let headlineSmallEmphasized: Font = .system(size: 24, weight: .medium, design: .rounded)
+
+    // Etiqueta grande enfatizada: usado para texto de información secundaria,
+    // como artista/álbum en NowPlaying y datos de pista.
+    static let labelLargeEmphasized: Font = .system(size: 14, weight: .medium, design: .rounded)
+
+    // Subtítulo de pista: usado para información de calidad y route display.
+    static let trackSubtitle: Font = .system(size: 10, weight: .regular)
+        .monospacedDigit()
+
+    // Texto de tiempo (formato mm:ss): siempre monospaced para alineación perfecta.
+    static let timeDisplay: Font = .system(size: 20, weight: .medium)
+        .monospacedDigit()
+}
+
+// MARK: - Morphing shape (M3E: formas que se transforman)
+
+// ✅ Forma para CHIPS seleccionables que interpola SOLO el radio: rectángulo
+// redondeado ↔ cápsula. El chip conserva todo su ancho (`rect`), así que el
+// morph no mueve el layout ni cambia el tamaño del texto.
+// Por qué `animatableData` y no `matchedGeometryEffect`: este último obliga a
+// compartir un `Namespace` y re-instancia la jerarquía, lo que en un
+// `ScrollView` horizontal produce el típico cross-fade entre el chip antiguo
+// y el nuevo (y en el A11 añade trabajo por frame). Aquí cada chip interpola
+// SU propia forma: cero coordinación global, cero vistas extra.
+struct AuroraMorphChipShape: Shape, InsettableShape {
+    /// Radio objetivo. Se acota a `min(ancho, alto) / 2`: pidiendo el alto/2 el
+    /// chip se vuelve cápsula perfecta; con cualquier valor menor, esquinas M3E.
+    var cornerRadius: CGFloat
+    var insetAmount: CGFloat = 0
+
+    var animatableData: CGFloat {
+        get { cornerRadius }
+        set { cornerRadius = newValue }
+    }
+
+    func path(in rect: CGRect) -> Path {
+        let box = rect.insetBy(dx: insetAmount, dy: insetAmount)
+        let radius = min(cornerRadius, min(box.width, box.height) / 2)
+        return Path(roundedRect: box, cornerRadius: max(0, radius), style: .continuous)
+    }
+
+    func inset(by amount: CGFloat) -> AuroraMorphChipShape {
+        var copy = self
+        copy.insetAmount += amount
+        return copy
+    }
+}
+
+// ══════════════════════════════════════════════════════════════════════════
 // MARK: - AuroraMotion: contenedor principal de tokens M3E
-// Todas las propiedades estáticas y estructuras deben vivir dentro de este enum.
+// Solo variables estáticas (resortes) y shapes internas.
+// ══════════════════════════════════════════════════════════════════════════
 
 enum AuroraMotion {
 
@@ -36,7 +126,11 @@ enum AuroraMotion {
 // Activación de línea de letra (karaoke). Misma calibración que el .spring(0.4, 0.75).
     static let lyricLine = Animation.interpolatingSpring(mass: 1, stiffness: 200, damping: 0.75, initialVelocity: 0)
 
-// ✅ Respiración de los estados vacíos: spring CRÍTICAMENTE amortiguado (damping 1.0 = sin overshoot).
+// ✅ Respiración de los estados vacíos: spring CRÍTICAMENTE amortiguado
+// (damping 1.0 = sin overshoot) en bucle. No es un `easeInOut` porque el
+// contrato de movimiento de la app son resortes; con damping 1.0 el spring
+// entra y sale sin rebote, así que se lee como respiración y no como pulso.
+// El bucle lo arranca `AuroraEmptyState` SOLO con la app en primer plano.
     static let breathing = Animation.interpolatingSpring(mass: 1, stiffness: 50, damping: 1.0, initialVelocity: 0).repeatForever(autoreverses: true)
 
 // MARK: - Morphing shape (M3E: formas que se transforman)
@@ -49,10 +143,7 @@ enum AuroraMotion {
 
         var animatableData: AnimatablePair<CGFloat, CGFloat> {
             get { AnimatablePair(cornerRadiusRatio, widthRatio) }
-            set {
-                cornerRadiusRatio = newValue.first
-                widthRatio = newValue.second
-            }
+            newValue { cornerRadiusRatio = newValue.first; widthRatio = newValue.second }
         }
 
         func path(in rect: CGRect) -> Path {
@@ -60,31 +151,6 @@ enum AuroraMotion {
             let width = side * widthRatio
             let radius = min(width, side) * cornerRadiusRatio
             return Path(roundedRect: CGRect(x: rect.midX - width / 2, y: rect.minY, width: width, height: side), cornerRadius: radius, style: .continuous)
-        }
-    }
-
-// MARK: - Morphing de chips (solo radio)
-
-// Forma para CHIPS seleccionables que interpola SOLO el radio.
-    struct AuroraMorphChipShape: Shape, InsettableShape {
-        var cornerRadius: CGFloat
-        var insetAmount: CGFloat = 0
-
-        var animatableData: CGFloat {
-            get { cornerRadius }
-            set { cornerRadius = newValue }
-        }
-
-        func path(in rect: CGRect) -> Path {
-            let box = rect.insetBy(dx: insetAmount, dy: insetAmount)
-            let radius = min(cornerRadius, min(box.width, box.height) / 2)
-            return Path(roundedRect: box, cornerRadius: max(0, radius), style: .continuous)
-        }
-
-        func inset(by amount: CGFloat) -> AuroraMorphChipShape {
-            var copy = self
-            copy.insetAmount += amount
-            return copy
         }
     }
 
@@ -102,38 +168,5 @@ enum AuroraMotion {
         func path(in rect: CGRect) -> Path {
             return Path(roundedRect: rect, cornerRadius: cornerRadius, style: .continuous)
         }
-    }
-
-// MARK: - Press feedback
-
-    struct PressableButtonStyle: ButtonStyle {
-        let scale: CGFloat
-        var pressedOpacity: Double = 1.0
-
-        func makeBody(configuration: Configuration) -> some View {
-            configuration.label
-                .scaleEffect(configuration.isPressed ? scale : 1.0)
-                .opacity(configuration.isPressed ? pressedOpacity : 1.0)
-                .animation(AuroraMotion.quick, value: configuration.isPressed)
-        }
-    }
-
-// MARK: - Emphasized typography
-
-    struct M3ETypography {
-        // Título grande enfatizado: título de canción en NowPlaying y encabezados.
-        static let titleLargeEmphasized: Font = .system(size: 22, weight: .medium, design: .rounded)
-
-        // Título pequeño enfatizado: títulos de categoría en ContentView.
-        static let headlineSmallEmphasized: Font = .system(size: 24, weight: .medium, design: .rounded)
-
-        // Etiqueta grande enfatizada: información secundaria (artista/álbum).
-        static let labelLargeEmphasized: Font = .system(size: 14, weight: .medium, design: .rounded)
-
-        // Subtítulo de pista.
-        static let trackSubtitle: Font = .system(size: 10, weight: .regular).monospacedDigit()
-
-        // Texto de tiempo (mm:ss).
-        static let timeDisplay: Font = .system(size: 20, weight: .medium).monospacedDigit()
     }
 }
