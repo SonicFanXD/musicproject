@@ -92,22 +92,22 @@ struct AuroraWavyProgress: View {
                     context.strokeColor = LinearGradient(colors: colors, startPoint: .leading, endPoint: .trailing)
                     context.lineWidth = 16
                 }
-                .frame(width: max(CGFloat(1), 1), height: 16)
-
-                // Thumb de arrastre (sobrepuesta, no afecta el dibujo de la onda)
+                .frame(width: max(CGFloat(1), 1), height: 16)// Thumb de arrastre (sobrepuesta, no afecta el dibujo de la onda)
                 if showsThumb {
-                    Circle()
-                        .fill(thumbColor)
-                        .frame(width: thumbSize, height: thumbSize)
-                        .overlay {
-                            Circle().strokeBorder(Color.black.opacity(0.12), lineWidth: 0.5)
-                        }
-                        .shadow(color: .black.opacity(isScrubbing ? 0.28 : 0.16),
+                    Group {
+                        Circle()
+                            .fill(thumbColor)
+                            .frame(width: thumbSize, height: thumbSize)
+                            .overlay {
+                                Circle().strokeBorder(Color.black.opacity(0.12), lineWidth: 0.5)
+                            }
+                            .shadow(color: .black.opacity(isScrubbing ? 0.28 : 0.16),
                                 radius: isScrubbing ? 5 : 3, x: 0, y: 2)
-                        .scaleEffect(isScrubbing ? 1.38 : 1)
-                        .animation(AuroraMotion.emphasized, value: isScrubbing)
-                        .position(x: max(0, min(CGFloat(1), CGFloat(progress)) * max(CGFloat(1), 300)),
-                                  y: 8)
+                            .scaleEffect(isScrubbing ? 1.38 : 1)
+                            .animation(AuroraMotion.emphasized, value: isScrubbing)
+                            .position(x: max(0, min(CGFloat(1), CGFloat(progress)) * max(CGFloat(1), 300)),
+                                      y: 8)
+                    }
                 }
             }
         }

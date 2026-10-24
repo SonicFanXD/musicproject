@@ -31,6 +31,31 @@ struct PressableButtonStyle: ButtonStyle {
     }
 }
 
+// MARK: - Morphing shape (M3E: formas que se transforman)
+
+// ✅ Forma animable que interpola entre círculo, squircle y píldora corta.
+// El morph se resuelve interpolando SU PROPIO `animatableData` (radio + ancho).
+// Se mantiene a nivel global para estar disponible en toda la app (NowPlaying, PlayerBar, etc.).
+struct AuroraMorphShape: Shape, Animatable {
+    var cornerRadiusRatio: CGFloat
+    var widthRatio: CGFloat
+
+    var animatableData: AnimatablePair<CGFloat, CGFloat> {
+        get { AnimatablePair(cornerRadiusRatio, widthRatio) }
+        newValue {
+            cornerRadiusRatio = newValue.first
+            widthRatio = newValue.second
+        }
+    }
+
+    func path(in rect: CGRect) -> Path {
+        let side = min(rect.width, rect.height)
+        let width = side * widthRatio
+        let radius = min(width, side) * cornerRadiusRatio
+        return Path(roundedRect: CGRect(x: rect.midX - width / 2, y: rect.minY, width: width, height: side), cornerRadius: radius, style: .continuous)
+    }
+}
+
 // MARK: - Emphasized typography (M3E type scale)
 
 // ✅ Tokens de tipografía enfática Material 3 Expressive.
