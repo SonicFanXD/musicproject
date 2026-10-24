@@ -136,5 +136,4 @@ struct AuroraWavyProgress_Previews: PreviewProvider {
         .padding(32)
         .background(Color(UIColor.systemBackground))
     }
-}
 #endif
