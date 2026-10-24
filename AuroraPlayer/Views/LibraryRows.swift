@@ -148,21 +148,16 @@ struct LibrarySongRow: View, Equatable {
             }
             .buttonStyle(PressableButtonStyle(scale: AuroraPressScale.chip))
         }
-        .padding(.horizontal, 14)
+        // ✅ GOLPE FINAL: fila PLANA de Android, no una tarjeta gris.
+        .padding(.horizontal, 16)
         .padding(.vertical, 12)
-        .background {
-            if isCurrent {
-                // Estado current: velo accent + borde accent (radio .md = 18).
-                RoundedRectangle(cornerRadius: AuroraRadius.md, style: .continuous)
-                    .fill(AppTheme.accentGradient(opacity: 0.08))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: AuroraRadius.md, style: .continuous)
-                            .strokeBorder(AppTheme.accent.opacity(0.2), lineWidth: 0.5)
-                    )
-            }
+        .background(isCurrent ? AppTheme.accent.opacity(0.07) : Color.clear)
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(M3EColor.outlineVariant.opacity(0.35))
+                .frame(height: 0.5)
+                .padding(.leading, 78)
         }
-        // ✅ AURORA DESIGN: superficie flat del sistema (cero blur por fila).
-        .auroraCard(radius: AuroraRadius.md, style: .flat, withShadow: false)
         .contextMenu {
             Button {
                 onPlay()
@@ -280,9 +275,16 @@ struct AlbumRow: View, Equatable {
             Spacer()
             // ✅ Sin flecha manual: NavigationLink ya dibuja su chevron.
         }
-        .padding(.horizontal, 14)
+        // ✅ Fila plana: padding Android + separador sutil, sin card.
+        .padding(.horizontal, 16)
         .padding(.vertical, 12)
-        .auroraCard(radius: AuroraRadius.md, style: .flat, withShadow: false)
+        .background(Color.clear)
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(M3EColor.outlineVariant.opacity(0.35))
+                .frame(height: 0.5)
+                .padding(.leading, 82)
+        }
     }
 
     @ViewBuilder
@@ -335,9 +337,16 @@ struct ArtistRow: View, Equatable {
 
             Spacer()
         }
-        .padding(.horizontal, 14)
+        // ✅ Fila plana: padding Android + separador sutil, sin card.
+        .padding(.horizontal, 16)
         .padding(.vertical, 12)
-        .auroraCard(radius: AuroraRadius.md, style: .flat, withShadow: false)
+        .background(Color.clear)
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(M3EColor.outlineVariant.opacity(0.35))
+                .frame(height: 0.5)
+                .padding(.leading, 82)
+        }
     }
 
     @ViewBuilder

@@ -20,9 +20,6 @@ struct PlayerBar: View {
     // PlayerScrubBar, la única que necesita el tiempo. Así cada tick (0.4 s)
     // no re-renderiza los botones y el primer toque nunca se pierde.
     var clock: PlaybackClock
-    // La portada de la barra y la de NowPlaying comparten namespace para que
-    // el hero viaje entre ambas geometrías.
-    var heroNamespace: Namespace.ID
     var onOpenNowPlaying: () -> Void
 
     @ObservedObject private var localization = Localization.shared
@@ -243,8 +240,9 @@ struct PlayerBar: View {
                 .onTapGesture { openNowPlaying() }
             }
         }
-        // Hero: la MISMA portada de NowPlaying lleva el id compartido.
-        .matchedGeometryEffect(id: "nowPlaying.artwork", in: heroNamespace)
+        // ✅ Sin `matchedGeometryEffect`: la portada no viaja entre vistas.
+        // En el 8 Plus el hero arrastraba la miniatura por encima de los
+        // controles durante la transición; NowPlaying entra con su propio fundido.
     }
 
     private func openNowPlaying() {

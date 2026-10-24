@@ -26,7 +26,6 @@ struct ContentView: View {
     // con la barra, así que `matchedGeometryEffect` no podría animar el viaje
     // de 48 → 340 pt; el overlay sí.
     @State private var showNowPlaying = false
-    @Namespace private var nowPlayingNamespace
     // ✅ REMAKE: los detalles ya no se empujan con NavigationLink dentro de un
     // NavigationStack. Se presentan como pantallas completas M3E.
     @State private var selectedAlbum: Album?
@@ -389,18 +388,18 @@ struct ContentView: View {
                         .transition(.opacity)
                     }
                 }
-            // ✅ FIX POST-G (PlayerBar aparece antes que el resto): la barra se
-            // ancla al contenido DENTRO del ZStack. Antes colgaba de un
-            // `.safeAreaInset` del ZStack RAÍZ: el inset es hermano de los hijos
-            // del ZStack, así que se componía POR ENCIMA del Splash (su zIndex(1)
-            // no ordena contra el inset). Aquí el splash vuelve a tapar la barra
-            // mientras dura.
-            .safeAreaInset(edge: .bottom, spacing: 0) {
+        }
+        // ✅ GOLPE FINAL: la PlayerBar se ancla al contenedor RAÍZ con
+        // `safeAreaInset`. Así el ScrollView recibe el inset real y la barra no
+        // se superpone a la última fila. Cuando NowPlaying está abierto no se
+        // inserta: esa pantalla ocupa el alto completo y no debe reservar sitio
+        // para una barra que ya no se ve.
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if !showNowPlaying, audioEngine.currentSong != nil {
                 PlayerBar(
                     audioEngine: audioEngine,
                     fileAccessService: fileAccessService,
                     clock: audioEngine.clock,
-                    heroNamespace: nowPlayingNamespace,
                     onOpenNowPlaying: openNowPlaying
                 )
                 .padding(.horizontal, 14)
@@ -426,17 +425,16 @@ struct ContentView: View {
                     .transition(.scale(scale: 0.96).combined(with: .opacity))
             }
         }
-        // ✅ REMAKE: NowPlaying a pantalla completa como overlay del ZStack
-        // raíz. La portada viaja desde la PlayerBar con `matchedGeometryEffect`
-        // (hero) y el resto de la vista entra con un fundido corto. Cerrar
-        // devuelve la portada a la barra con el mismo spring.
+        // ✅ GOLPE FINAL: NowPlaying es una pantalla completa sin hero de
+        // geometría compartida. El `matchedGeometryEffect` se rompía y
+        // arrastraba la portada por encima de los controles en el 8 Plus; ahora
+        // entra con un fundido corto y su propio layout estricto.
         .overlay {
             if showNowPlaying {
                 NowPlayingView(
                     audioEngine: audioEngine,
                     fileAccessService: fileAccessService,
                     clock: audioEngine.clock,
-                    heroNamespace: nowPlayingNamespace,
                     onClose: closeNowPlaying
                 )
                 .zIndex(20)
@@ -560,9 +558,11 @@ struct ContentView: View {
                 content()
             }
             .id(id)
-            // ✅ Espacio al pie para la PlayerBar flotante (96pt solo con
-            // canción activa; 24pt de respiro base sin canción).
-            .padding(.bottom, audioEngine.currentSong != nil ? 96 : 24)
+            // ✅ El inset de la PlayerBar lo aporta el `safeAreaInset` del
+            // contenedor raíz; aquí solo queda un respiro de 16 pt. Antes se
+            // sumaban 96 pt A MANO y el inset automático: la lista terminaba
+            // con un hueco enorme y la barra seguía tapando la última fila.
+            .padding(.bottom, 16)
         }
         .id(id)
         .scrollIndicators(.hidden)
@@ -702,8 +702,6 @@ struct ContentView: View {
                     .padding(.top, 8)
                 ForEach(currentFilteredSongs) { song in
                     librarySongRow(song)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
                 }
             }
         } else if currentFilteredSongs.isEmpty {
@@ -739,8 +737,6 @@ struct ContentView: View {
                 .padding(.top, 8)
             ForEach(currentFilteredSongs) { song in
                 librarySongRow(song)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
             }
         }
     }
@@ -945,8 +941,6 @@ struct ContentView: View {
                 }
                 // ✅ M3E: rebote elástico al tocar la fila.
                 .buttonStyle(PressableButtonStyle(scale: AuroraPressScale.row, pressedOpacity: 0.7))
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
             }
         }
     }
@@ -992,8 +986,6 @@ struct ContentView: View {
                 }
                 // ✅ M3E: mismo press feedback que la fila de álbumes.
                 .buttonStyle(PressableButtonStyle(scale: AuroraPressScale.row, pressedOpacity: 0.7))
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
             }
         }
     }

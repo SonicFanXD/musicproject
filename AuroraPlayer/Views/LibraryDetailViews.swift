@@ -258,7 +258,7 @@ struct AlbumDetailView: View {
                 .padding(.horizontal, 20).padding(.top, 20)
                 // ? FIX: padding inferior amplio para que la �ltima canci�n
                 // no quede oculta detr�s del PlayerBar flotante.
-                .padding(.bottom, 130)
+                .padding(.bottom, 24)
             }
         }
         .coordinateSpace(name: "detailScroll")
@@ -734,25 +734,15 @@ struct AlbumSongRow: View, Equatable {
                 Text(formatDuration(song.duration))
                     .font(M3ETypography.labelMedium).foregroundStyle(.tertiary)
             }
-            .padding(.horizontal, 16).padding(.vertical, 14)
-            // ✅ AURORA DESIGN: fila = superficie flat del sistema (radio .md en
-            // vez de 20, borde sutil, sin sombra; 60fps: cero blur por fila).
-            // El estado current conserva su velo accent y se aplica DESPUÉS del
-            // card, para que la superficie del sistema quede DEBAJO del acento
-            // (mismo orden aprobado en la biblioteca, FASE B1).
-            .background {
-                if isCurrent {
-                    RoundedRectangle(cornerRadius: AuroraRadius.md, style: .continuous)
-                        .fill(tintColor.opacity(0.12))
-                }
-            }
+            // ✅ GOLPE FINAL: fila plana Android, sin card ni borde redondeado.
+            .padding(.horizontal, 16).padding(.vertical, 12)
+            .background(isCurrent ? tintColor.opacity(0.10) : Color.clear)
             .contentShape(Rectangle())
-            .auroraCard(radius: AuroraRadius.md, style: .flat, withShadow: false)
-            .overlay {
-                if isCurrent {
-                    RoundedRectangle(cornerRadius: AuroraRadius.md, style: .continuous)
-                        .strokeBorder(tintColor.opacity(0.3), lineWidth: 1)
-                }
+            .overlay(alignment: .bottom) {
+                Rectangle()
+                    .fill(M3EColor.outlineVariant.opacity(0.35))
+                    .frame(height: 0.5)
+                    .padding(.leading, 56)
             }
         }
         .buttonStyle(PressableButtonStyle(scale: AuroraPressScale.row))
@@ -957,7 +947,7 @@ struct ArtistDetailView: View {
                 }
                 .padding(.horizontal, 20).padding(.top, 28)
                 // ? FIX: padding inferior amplio para el PlayerBar flotante
-                .padding(.bottom, 130)
+                .padding(.bottom, 24)
             }
         }
         .coordinateSpace(name: "detailScroll")
@@ -1363,25 +1353,15 @@ struct ArtistSongRow: View, Equatable {
                 Text(formatDuration(song.duration))
                     .font(M3ETypography.labelMedium).foregroundStyle(.tertiary)
             }
-            .padding(.horizontal, 16).padding(.vertical, 14)
-            // ✅ AURORA DESIGN: fila = superficie flat del sistema (radio .md en
-            // vez de 20, borde sutil, sin sombra; 60fps: cero blur por fila).
-            // El estado current conserva su velo accent y se aplica DESPUÉS del
-            // card, para que la superficie del sistema quede DEBAJO del acento
-            // (mismo orden aprobado en la biblioteca, FASE B1).
-            .background {
-                if isCurrent {
-                    RoundedRectangle(cornerRadius: AuroraRadius.md, style: .continuous)
-                        .fill(tintColor.opacity(0.12))
-                }
-            }
+            // ✅ GOLPE FINAL: fila plana Android, sin card ni borde redondeado.
+            .padding(.horizontal, 16).padding(.vertical, 12)
+            .background(isCurrent ? tintColor.opacity(0.10) : Color.clear)
             .contentShape(Rectangle())
-            .auroraCard(radius: AuroraRadius.md, style: .flat, withShadow: false)
-            .overlay {
-                if isCurrent {
-                    RoundedRectangle(cornerRadius: AuroraRadius.md, style: .continuous)
-                        .strokeBorder(tintColor.opacity(0.3), lineWidth: 1)
-                }
+            .overlay(alignment: .bottom) {
+                Rectangle()
+                    .fill(M3EColor.outlineVariant.opacity(0.35))
+                    .frame(height: 0.5)
+                    .padding(.leading, 56)
             }
         }
         // ? Feedback de presi�n al tocar (micro-escala, animaci�n GPU)

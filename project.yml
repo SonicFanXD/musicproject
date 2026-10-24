@@ -23,6 +23,11 @@ targets:
       - path: AuroraPlayer
       - path: AuroraPlayerApp.swift
       - path: Assets.xcassets   # ✅ Así, sin guión extra
+      # ✅ Roboto: fuera del árbol de fuentes para que XcodeGen la copie
+      # SIEMPRE como recurso (un .ttf incluido a través de `AuroraPlayer`
+      # podía quedarse fuera del bundle y la app caía a la fuente del sistema).
+      - path: Fonts
+        buildPhase: resources
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.aurora.player
