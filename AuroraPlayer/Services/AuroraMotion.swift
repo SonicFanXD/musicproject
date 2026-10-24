@@ -143,7 +143,10 @@ enum AuroraMotion {
 
         var animatableData: AnimatablePair<CGFloat, CGFloat> {
             get { AnimatablePair(cornerRadiusRatio, widthRatio) }
-            newValue { cornerRadiusRatio = newValue.first; widthRatio = newValue.second }
+            set {
+                cornerRadiusRatio = newValue.first
+                widthRatio = newValue.second
+            }
         }
 
         func path(in rect: CGRect) -> Path {
