@@ -835,12 +835,14 @@ class AudioEngine: NSObject, ObservableObject {
     // residual de la extrapolación de iOS y sigue siendo 2,5× más barato que el
     // refresco de 0.8 s que existía antes de la FASE B.
     private let nowPlayingRefreshInterval: TimeInterval = 2
-    // ✅ REGLA DE ORO (fase 2): tolerancia de la republicación PERIÓDICA.
+    // ✅ BUG 3 (drift de Now Playing): tolerancia de la republicación PERIÓDICA.
     // iOS extrapola el elapsed con `playbackRate`; solo se re-ancla cuando la
     // extrapolación del sistema se aleja de nuestro reloj de pared más allá de
-    // este umbral (corrección con motivo documentado en el log, NUNCA un tick
-    // silencioso). 0.75 s > cualquier ruido de un tick de timer (0.4/6 s).
-    private let nowPlayingDriftTolerance: TimeInterval = 0.75
+    // este umbral. 0.75 s publicaba cada 2-3 s con desfases de 0.3-1 s (el log
+    // `elapsed 0.72s publicado`): ruido normal de la extrapolación, no una
+    // desincronización real. 2.0 s deja extrapolar a iOS y solo corrige los
+    // saltos de verdad (25/53 s); por debajo, silencio total.
+    private let nowPlayingDriftTolerance: TimeInterval = 2.0
     // ✅ REGLA DE ORO: último elapsed/rate PUBLICADOS. Permiten calcular en
     // publishIfNeeded qué habría calculado iOS por su cuenta y saltarnos el
     // envío cuando coincida con el nuestro (cero churn en CC/bloqueo).
@@ -869,6 +871,14 @@ class AudioEngine: NSObject, ObservableObject {
     // — y se limpia al volver a primer plano.
     private var backgroundedAt: TimeInterval?
     private var needsFullEngineReset = false
+    // ✅ BUG 2: posición exacta congelada al entrar en segundo plano. El reloj
+    // de pared NO puede seguir extrapolando mientras el transporte está
+    // detenido (era el salto de 18 s del log: background 18.72 → foreground
+    // 36.97 con posAnchor=0). Se consume al reconstruir en primer plano.
+    private var backgroundResumePosition: TimeInterval?
+    // ✅ BUG 4: intentos de recuperación tras un abort de decoder SFB. Máximo
+    // uno por pista; si vuelve a fallar, se degrada a AVPlayer sin bucles.
+    private var sfbRecoveryAttempts = 0
     // ✅ FIX CRASH INTERRUPCION: "el grafo quedó muerto por un evento EXTERNO"
     // (interrupción, media services reset, cambio de ruta/configuración, vuelta
     // de background). Es DISTINTO de un engine.pause() nuestro: pause() deja
@@ -895,6 +905,13 @@ class AudioEngine: NSObject, ObservableObject {
         // ⏳ INSTRUMENTACIÓN CLOCK (retirar tras diagnóstico): snapshot del reloj
         // al entrar en segundo plano (iOS puede matar el engine aquí).
         AppLog.info(.playback, String(format: "[CLOCK] background: currentTime=%.2f posAnchor=%.2f wallAnchor=%.3f isPlaying=%@", currentTime, posAnchor, wallAnchor, isPlaying ? "true" : "false"))
+        // ✅ BUG 2: capturar la posición REAL antes de tocar el transporte.
+        // `max` protege la pausa: `wallClockTime` devuelve posAnchor (que puede
+        // estar a 0) mientras `currentTime` conserva la posición congelada.
+        let positionAtBackground = max(currentTime, wallClockTime)
+        backgroundResumePosition = duration > 0
+            ? min(max(positionAtBackground, 0), duration)
+            : max(positionAtBackground, 0)
         // ✅ Persistencia del audio: si estamos reproduciendo, mantener la
         // sesión de audio activa y pedir tiempo en segundo plano para que
         // el engine no se suspenda. Esto mejora la reproducción continua
@@ -911,6 +928,10 @@ class AudioEngine: NSObject, ObservableObject {
             // ✅ Si no se reproduce, liberar el engine para ahorrar batería:
             // detener el engine (no la sesión) reduce consumo de CPU/RAM.
             stopDisplayTimer()  // 🛡 Red de seguridad: sin timer, cero CPU en background.
+            // ✅ BUG 2: congelar el reloj en la posición real ANTES de parar el
+            // transporte. Antes posAnchor podía quedar en 0 y el wallAnchor
+            // viejo seguía contando: al volver, currentTime saltaba 18 s.
+            freezePlaybackClock(at: backgroundResumePosition ?? currentTime)
             if usesSFBCore {
                 // ✅ SFB: en pausa, SFB mantiene su engine corriendo (render de
                 // silencio). En SEGUNDO PLANO eso es CPU inútil: se detiene el
@@ -979,6 +1000,11 @@ class AudioEngine: NSObject, ObservableObject {
             }
             self.backgroundedAt = nil
         }
+        // ✅ BUG 2: posición congelada al entrar en segundo plano. Solo se usa
+        // para reconstruir el grafo si el engine murió; si el audio siguió
+        // sonando, el reloj de pared ya es correcto y no se toca.
+        let resumePosition = backgroundResumePosition
+        backgroundResumePosition = nil
         // ✅ OPT BG: al volver, las letras se re-anclan al tiempo real del motor
         // (en segundo plano el tick solo mantenía el ancla de interpolación).
         Task { @MainActor in lyricsViewModel.setSceneActive(true) }
@@ -997,10 +1023,17 @@ class AudioEngine: NSObject, ObservableObject {
             // de arriba ya garantiza engine detenido, así que reconectar el
             // grafo aquí era el crash (AVAE_RaiseException, no capturable).
             // Mismo gate que resume(): reconstruir entero y reprogramar la
-            // pista desde la posición actual.
+            // pista desde la posición congelada al entrar en segundo plano
+            // (BUG 2): `currentTime` pudo quedar desfasado si el transporte
+            // estuvo detenido con el reloj extrapolando.
             if let song = currentSong {
+                // `max`: si el audio seguía sonando, el reloj de pared ya está
+                // por delante de la posición de entrada en background; nunca se
+                // rebobina al punto de partida. Si estaba congelado, ambos
+                // valores coinciden (BUG 2).
+                let start = max(resumePosition ?? 0, currentTime)
                 performFullEngineReset()
-                playCurrentSong(resumingAt: min(max(currentTime, 0), max(song.duration - 0.05, 0)))
+                playCurrentSong(resumingAt: min(max(start, 0), max(song.duration - 0.05, 0)))
             } else {
                 AppLog.info(.playback, "engine muerto sin canción: ignorado")
             }
@@ -1016,6 +1049,19 @@ class AudioEngine: NSObject, ObservableObject {
         // ⏳ INSTRUMENTACIÓN CLOCK (retirar tras diagnóstico): qué publicó el
         // reloj de pared al resincronizar (foreground, cambios de timer).
         AppLog.info(.playback, String(format: "[CLOCK] syncCurrentTimeFromRenderThread: wallClock=%.2f", current))
+    }
+
+    /// ✅ BUG 2: fija el reloj en una posición y CONGELA la extrapolación.
+    /// Se usa al parar el transporte en segundo plano: `posAnchor` conserva la
+    /// posición real (no 0) y `wallAnchor` se rearma para que el tiempo
+    /// transcurrido en background no se sume al volver.
+    private func freezePlaybackClock(at position: TimeInterval) {
+        let clamped = duration > 0 ? min(max(position, 0), duration) : max(position, 0)
+        currentTime = clamped
+        clock.time = clamped
+        posAnchor = clamped
+        wallAnchor = CACurrentMediaTime()
+        clockDriftReference = nil
     }
 
     // MARK: - Recuperación robusta del engine (fix de crashes en segundo plano)
@@ -2399,10 +2445,33 @@ class AudioEngine: NSObject, ObservableObject {
         sfbBackend.onError = { [weak self] error in
             guard let self, !self.isAVPlayerActive, let song = self.currentSong else { return }
             AppLog.error(.playback, error, context: "SFB: error asíncrono de reproducción")
+
+            // ✅ BUG 4: un abort del decoder (típico -10868 en el primer
+            // arranque de un 96 kHz) es recuperable UNA vez. Se reinicia el
+            // motor completo y se reconstruye la pista en la posición exacta;
+            // si vuelve a fallar, se degrada a AVPlayer sin bucles.
+            if self.sfbBackend.decoderNeedsRecovery,
+               self.sfbRecoveryAttempts < 1,
+               self.isPlaying {
+                self.sfbRecoveryAttempts += 1
+                let position = self.currentTime
+                AppLog.warning(.playback, String(format:
+                    "SFB: abort de decoder recuperable — reset + reintento único desde %.1fs", position))
+                self.scheduleGeneration += 1
+                self.stopDisplayTimer()
+                self.sfbBackend.reset()
+                self.sfbBackend.rebuildGraph()
+                self.playCurrentSong(resumingAt: position)
+                return
+            }
+
             // ⛔️ ANTES del respaldo: parar el transporte de SFB para que no
             // siga emitiendo (o reintentando) mientras AVPlayer toma el relevo.
+            // `reset()` (no `stop()`) deja el grafo limpio para la próxima
+            // pista: el fallo de decoder no puede envenenar el siguiente play.
+            self.sfbRecoveryAttempts = 0
             self.scheduleGeneration += 1
-            self.sfbBackend.stop()
+            self.sfbBackend.reset()
             self.clearChainedAhead()
             self.handlePlaybackFailure(song: song)
         }
@@ -2653,21 +2722,10 @@ class AudioEngine: NSObject, ObservableObject {
                 mixerNode.outputVolume = 0
             }
 
-            do {
-                try sfbBackend.play(song.url, startingAt: startTime)
-            } catch {
-                // ✅ FIX -10868 (PASO 1c): un ÚNICO reintento sobre un motor SFB
-                // limpio. Un motor con formato/decode estado inconsistente
-                // (típico al saltar de 44.1 a 96 kHz) rechaza el arranque; tras
-                // `reset()` + reinstalar el grafo + reafirmar la sesión, el
-                // reintento vuelve a sonar con SFB y conserva el gapless, en vez
-                // de degradar toda la sesión a AVPlayer por un fallo transitorio.
-                AppLog.warning(.playback, "SFB no arrancó '\(song.displayName)' (\(error.localizedDescription)): reinicio del motor y reintento")
-                sfbBackend.reset()
-                sfbBackend.rebuildGraph()
-                _ = try prepareSessionForTrack(fileRate: fileRate)
-                try sfbBackend.play(song.url, startingAt: startTime)
-            }
+            // ✅ BUG 4: el ÚNICO reintento (reset de motor incluido) vive en
+            // `SFBPlaybackBackend.play`; aquí ya no se repite una tercera vez.
+            // Si esta llamada lanza, el catch exterior degrada a AVPlayer.
+            try sfbBackend.play(song.url, startingAt: startTime)
 
             currentSong = song
             currentFileURL = song.url
@@ -2845,7 +2903,13 @@ class AudioEngine: NSObject, ObservableObject {
     /// posición exacta con el gapless re-armado.
     private func sfbStopTransportForIdle() {
         guard currentSong != nil else { return }
-        AppLog.info(.playback, "SFB: transporte detenido en segundo plano (pausa) — cero CPU en background; se reprograma al reanudar")
+        // ✅ BUG 2: conservar la posición real (posAnchor) ANTES de detener el
+        // transporte. Antes el ancla podía quedar en 0 y, al reanudar, el reloj
+        // extrapolaba desde el wallAnchor viejo (salto de 18 s del log).
+        let preserved = duration > 0 ? min(max(currentTime, 0), duration) : max(currentTime, 0)
+        backgroundResumePosition = preserved
+        freezePlaybackClock(at: preserved)
+        AppLog.info(.playback, String(format: "SFB: transporte detenido en segundo plano (pausa) en %.2fs — cero CPU en background; se reprograma al reanudar", preserved))
         sfbBackend.stop()
         clearChainedAhead()
     }
@@ -2914,6 +2978,9 @@ class AudioEngine: NSObject, ObservableObject {
     /// re-armado de la siguiente. Siempre en el hilo principal.
     private func sfbHandleTrackChange(url: URL, startOffset: TimeInterval, probe: SFBTrackProbe?, gapless: Bool) {
         guard isPlaying, !isStopping, !isAVPlayerActive else { return }
+        // ✅ BUG 4: el audio de una pista ha arrancado de verdad → el contador
+        // de recuperaciones vuelve a cero (el límite es por pista, no global).
+        sfbRecoveryAttempts = 0
 
         let resolved: Int
         let wasArmed: Bool
@@ -4491,7 +4558,11 @@ class AudioEngine: NSObject, ObservableObject {
         // transporte AQUÍ (red de seguridad): nunca puede quedar SFB emitiendo
         // mientras AVPlayer toma el mando (doble audio).
         if usesSFBCore {
-            sfbBackend.stop()
+            // ✅ BUG 4: reset completo (no solo stop) tras un fallo de decoder.
+            // Así la próxima pista (que vuelve a intentar SFB) arranca con el
+            // grafo limpio y `scheduleAheadIfPossible()` re-arma el
+            // `enqueueNext()` de la siguiente — sin heredar el estado roto.
+            sfbBackend.reset()
             clearChainedAhead()
         }
         if playerNode.isPlaying {

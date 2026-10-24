@@ -128,6 +128,18 @@ final class SFBPlaybackBackend: NSObject {
     private var seekToken = 0
     private var pendingRestoreSeek: TimeInterval?
 
+    /// Formato del último archivo que SFB decodificó con éxito. Si la siguiente
+    /// pista cambia de tasa o de canales (44.1 → 96 kHz), el motor se resetea
+    /// ANTES de abrir el decoder nuevo: reutilizar el grafo con el formato
+    /// anterior es la vía directa a `kAudioUnitErr_FormatNotSupported` (-10868).
+    private var lastDecodedFormat: (sampleRate: Double, channels: Int)?
+
+    /// El decoder abortó de forma asíncrona (`decodingAborted`). El motor queda
+    /// en un estado inconsistente: el próximo `play` fuerza un reset completo
+    /// aunque el formato coincida. AudioEngine lo consulta para decidir si el
+    /// error es recuperable con un reintento limpio antes de degradar a AVPlayer.
+    private(set) var decoderNeedsRecovery = false
+
     /// (url, hostTime de mach) del último `renderingWillStart` — para medir el
     /// offset real de arranque de la pista en `nowPlayingChanged`.
     private var lastRenderStart: (url: URL, hostTime: UInt64)?
@@ -175,14 +187,72 @@ final class SFBPlaybackBackend: NSObject {
         if !player.isStopped {
             player.stop()
         }
-        // ✅ Validación REAL del archivo con la ruta de decodificación
-        // estándar de iOS: Float32 NO intercalado. Si esto falla, el error
-        // llega como `throw` (capturable por AudioEngine → fallback AVPlayer)
-        // en vez de estallar dentro del render de SFB, donde no hay catch.
-        _ = try validateDecodableFormat(url)
+
+        // ✅ BUG 1 (-10868): validación con la MISMA ruta de decodificación que
+        // usará el motor (`Float32` NO intercalado). Se ejecuta SIEMPRE antes
+        // de `player.play`: los contenedores que no se abren así se rechazan
+        // con un error capturable en vez de estallar dentro del render de SFB
+        // (donde no hay `catch`). La tasa del `processingFormat` es la del
+        // archivo (96 kHz incluida); el SRC lo hace el grafo del motor hasta la
+        // tasa que la sesión concedió (48 kHz en Lightning).
+        let validated: AVAudioFormat
+        do {
+            validated = try validateDecodableFormat(url)
+        } catch {
+            // ✅ BUG 1: el primer intento puede fallar por un estado de
+            // decoder/sesión inconsistente (no por el archivo). Se limpia el
+            // motor y se REVALIDA una vez; si vuelve a fallar, el error sale
+            // para que AudioEngine haga el fallback.
+            AppLog.warning(.playback,
+                "SFB: validación de formato falló (\(error.localizedDescription)); reset + reintento único")
+            player.reset()
+            installGraph()
+            lastDecodedFormat = nil
+            decoderNeedsRecovery = false
+            validated = try validateDecodableFormat(url)
+        }
+
+        // ✅ BUG 1/4: reset preventivo cuando el motor viene de otra tasa o de
+        // un decoder abortado. Antes se reutilizaba el grafo con el formato
+        // anterior y el PRIMER arranque fallaba; el reintento ya funcionaba.
+        let needsReset: Bool
+        if decoderNeedsRecovery {
+            needsReset = true
+        } else if let last = lastDecodedFormat {
+            needsReset = abs(last.sampleRate - validated.sampleRate) > 1
+                || last.channels != Int(validated.channelCount)
+        } else {
+            needsReset = false
+        }
+        if needsReset {
+            AppLog.info(.playback, String(format:
+                "SFB: reset preventivo del motor antes de '%@' (%.0f Hz · %d canales)",
+                url.lastPathComponent, validated.sampleRate, validated.channelCount))
+            player.reset()
+            installGraph()
+            decoderNeedsRecovery = false
+        }
+
         // Llena la caché de metadatos y fija la referencia para gapless.
         activeTrackProbe = probe(url)
-        try player.play(url)
+
+        do {
+            try player.play(url)
+        } catch {
+            // ✅ BUG 4: un ÚNICO reintento sobre un motor COMPLETAMENTE limpio.
+            // Se hace aquí (y no en AudioEngine) para que el grafo y el decoder
+            // se reconstruyan en el mismo objeto que los abrió. Si el segundo
+            // intento también falla, el error sale y AudioEngine degrada a
+            // AVPlayer sin repetir el arranque una tercera vez.
+            AppLog.warning(.playback, "SFB: play falló (\(error.localizedDescription)); reset + reintento único")
+            player.reset()
+            installGraph()
+            try player.play(url)
+        }
+
+        lastDecodedFormat = (validated.sampleRate, Int(validated.channelCount))
+        decoderNeedsRecovery = false
+
         if start > 0.05 {
             pendingRestoreSeek = start
             attemptRestoreSeek(token: token, attempt: 0)
@@ -245,6 +315,11 @@ final class SFBPlaybackBackend: NSObject {
         seekToken += 1
         pendingRestoreSeek = nil
         lastRenderStart = nil
+        // ✅ BUG 1/4: tras un reset el motor no conserva formato ni decoder;
+        // el próximo play abre con un grafo limpio (o vuelve a resetear si
+        // detecta un cambio de tasa/canales).
+        lastDecodedFormat = nil
+        decoderNeedsRecovery = false
         player.reset()
     }
 
@@ -421,7 +496,12 @@ extension SFBPlaybackBackend: AudioPlayer.Delegate {
 
     func audioPlayer(_ audioPlayer: AudioPlayer, decodingAborted decoder: PCMDecoding, error: Error, framesRendered: AVAudioFramePosition) {
         AppLog.error(.playback, error, context: "SFB: decodingAborted (\(decoder.inputSource.url?.lastPathComponent ?? "?"), \(framesRendered) frames)")
+        // ✅ BUG 4: marcar el motor como inconsistente en MAIN, en el mismo
+        // turno que el callback. El próximo `play` hará reset completo antes de
+        // abrir el decoder; AudioEngine puede intentar una recuperación única
+        // antes de degradar a AVPlayer.
         DispatchQueue.main.async { [weak self] in
+            self?.decoderNeedsRecovery = true
             self?.onError?(error)
         }
     }
