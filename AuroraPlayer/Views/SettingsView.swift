@@ -977,21 +977,25 @@ extension SettingsRowBuilding {
                             .strokeBorder(color.opacity(0.1), lineWidth: 0.5)
                     }
 
+                // ✅ FASE 4: título de sección con el rol enfático de M3E
+                // (title-large, 22/medium). `minimumScaleFactor` + lineLimit
+                // protegen las traducciones largas sin cambiar la jerarquía.
                 Text(title)
-                    .font(.system(size: 18, weight: .semibold))
+                    .font(M3ETypography.titleLargeEmphasized)
                     .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
             }
             .padding(.horizontal, 4)
 
-            VStack(spacing: 0) {
-                content()
-            }
-            .background {
-                // ✅ Color opaco del sistema (look Settings nativo de iOS):
-                // sin blur, cero re-muestreo al hacer scroll = scroll fluido
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .fill(Color(UIColor.secondarySystemGroupedBackground))
-                    .shadow(color: .black.opacity(0.06), radius: 8, x: 0, y: 4)
+            // ✅ FASE 3 (M3E): card del catálogo — superficie sólida, radio
+            // 24, elevación TONAL (borde 1 pt al 10 % del acento de la
+            // sección) y CERO sombra/blur. Settings tiene 10+ secciones
+            // apiladas: las sombras se acumulaban en cada pasada de scroll.
+            M3ECard(cornerRadius: 24, padding: 0, tint: color) {
+                VStack(spacing: 0) {
+                    content()
+                }
             }
         }
     }

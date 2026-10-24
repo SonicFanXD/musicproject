@@ -27,11 +27,27 @@ struct FolderPickerView: View {
                     // (44pt, exactamente lo que medía la barra) con el título en el
                     // acento de la app y el "Listo" en el slot trailing: el contenido
                     // de abajo no cambia de tamaño ni de spacing.
-                    AuroraSheetHeader(
+                    // ✅ FASE 3: barra de navegación M3E (fondo sólido, título
+                    // en la escala enfática, slots leading/trailing). Sustituye
+                    // al header ad-hoc; conserva chevron de cierre y "Listo".
+                    M3ENavigationBar(
                         title: Localization.localized("library.title"),
-                        onClose: { dismiss() },
-                        titleColor: AppTheme.accent,
-                        trailing: AnyView(headerDoneButton)
+                        showsDivider: false,
+                        leading: {
+                            Button {
+                                dismiss()
+                            } label: {
+                                Image(systemName: "chevron.down")
+                                    .font(.system(size: 16, weight: .semibold))
+                                    .foregroundStyle(Color.secondary)
+                                    .frame(width: 44, height: 44)
+                                    .contentShape(Rectangle())
+                            }
+                            .accessibilityLabel(Text(Localization.localized("design.close")))
+                        },
+                        trailing: {
+                            headerDoneButton
+                        }
                     )
 
                     ScrollView {
@@ -101,7 +117,7 @@ struct FolderPickerView: View {
                 // (`auroraGlass()`): mismo Shape y mismo tamaño, pero reactivo a
                 // "Reducir transparencia".
                 Circle()
-                    .auroraGlass()
+                    .fill(Color(UIColor.secondarySystemBackground))
                     .frame(width: 76, height: 76)
                     .overlay {
                         Circle()
@@ -188,8 +204,15 @@ struct FolderPickerView: View {
                 .padding(.horizontal, 16)
                 .padding(.vertical, 16) // Expanded touch target
                 .background {
-                    RoundedRectangle(cornerRadius: AuroraRadius.md, style: .continuous)
-                        .auroraGlass()
+                    // ✅ FASE 3 (M3E): fila-acción como card sólida con borde
+                    // tonal. Fuera el vidrio: cero muestreo de material por
+                    // fila (el sheet tiene 3 y debajo hay una lista larga).
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .fill(Color(UIColor.secondarySystemBackground))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                                .strokeBorder(AppTheme.accent.opacity(0.10), lineWidth: 1)
+                        )
                 }
                 .contentShape(Rectangle())
             }
@@ -229,8 +252,15 @@ struct FolderPickerView: View {
                 .padding(.horizontal, 16)
                 .padding(.vertical, 16) // Expanded touch target
                 .background {
-                    RoundedRectangle(cornerRadius: AuroraRadius.md, style: .continuous)
-                        .auroraGlass()
+                    // ✅ FASE 3 (M3E): fila-acción como card sólida con borde
+                    // tonal. Fuera el vidrio: cero muestreo de material por
+                    // fila (el sheet tiene 3 y debajo hay una lista larga).
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .fill(Color(UIColor.secondarySystemBackground))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                                .strokeBorder(AppTheme.accent.opacity(0.10), lineWidth: 1)
+                        )
                 }
                 .contentShape(Rectangle())
             }
@@ -269,8 +299,15 @@ struct FolderPickerView: View {
                 .padding(.horizontal, 16)
                 .padding(.vertical, 16) // Expanded touch target
                 .background {
-                    RoundedRectangle(cornerRadius: AuroraRadius.md, style: .continuous)
-                        .auroraGlass()
+                    // ✅ FASE 3 (M3E): fila-acción como card sólida con borde
+                    // tonal. Fuera el vidrio: cero muestreo de material por
+                    // fila (el sheet tiene 3 y debajo hay una lista larga).
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .fill(Color(UIColor.secondarySystemBackground))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                                .strokeBorder(AppTheme.accent.opacity(0.10), lineWidth: 1)
+                        )
                 }
                 .contentShape(Rectangle())
             }

@@ -485,26 +485,22 @@ struct ContentView: View {
         VStack(spacing: 18) {
             ContentUnavailableLibraryView(icon: icon, title: title, message: message)
             if fileAccessService.folders.isEmpty && fileAccessService.files.isEmpty {
-                Button {
-                    Haptics.light()
-                    showFolderPicker = true
-                } label: {
+                // ✅ FASE 3: acción principal con `M3EFilledButton` (relleno
+                // sólido, píldora, press spring). Mismo tamaño y misma acción.
+                M3EFilledButton(
+                    horizontalPadding: 24,
+                    verticalPadding: 14,
+                    action: {
+                        Haptics.light()
+                        showFolderPicker = true
+                    }
+                ) {
                     HStack(spacing: 8) {
                         Image(systemName: "plus.circle.fill")
                             .font(.system(size: 15, weight: .semibold))
                         Text(Localization.localized("actions.addFolder"))
-                            .font(.system(size: 15, weight: .semibold, design: .rounded))
                     }
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 24)
-                    .padding(.vertical, 14)
-                    .background {
-                        Capsule().fill(AppTheme.accentGradient)
-                    }
-                    .shadow(color: AppTheme.accent.opacity(0.35), radius: 10, x: 0, y: 5)
                 }
-                // ✅ AURORA DESIGN: escala de presión unificada del sistema.
-                .buttonStyle(PressableButtonStyle(scale: AuroraPressScale.button))
             }
         }
     }
@@ -576,45 +572,19 @@ struct ContentView: View {
             HStack(spacing: 10) {
                 ForEach(LibraryCategory.allCases, id: \.self) { category in
                     let isSelected = selectedCategory == category
-                    Button {
-                        Haptics.selection()
-                        selectedCategoryRaw = category.rawValue
-                    } label: {
-                        HStack(spacing: 7) {
-                            Image(systemName: categoryIcon(for: category))
-                                .font(.system(size: 13, weight: .semibold))
-                            Text(category.title)
-                                // ✅ M3E label-large enfatizado: 14pt medium, tracking 0.1
-                                .font(M3ETypography.labelLargeEmphasized)
-                                .tracking(0.1)
+                    // ✅ FASE 3: chip del catálogo M3E (relleno tonal al
+                    // seleccionar, texto en acento, morph de forma y spring
+                    // finito). Antes era un botón ad-hoc con gradiente y texto
+                    // blanco: funcional, pero fuera del vocabulario M3E.
+                    M3EFilterChip(
+                        title: category.title,
+                        icon: categoryIcon(for: category),
+                        isSelected: isSelected,
+                        action: {
+                            Haptics.selection()
+                            selectedCategoryRaw = category.rawValue
                         }
-                        .foregroundStyle(isSelected ? .white : .secondary)
-                        .padding(.horizontal, 18)
-                        .padding(.vertical, 12)
-                        .background {
-                            // ✅ Contenedor SÓLIDO (SurfaceContainer) con dos capas:
-                            // base del sistema + acento que se funde al seleccionar.
-                            ZStack {
-                                AuroraMorphChipShape(cornerRadius: isSelected ? 20 : 14)
-                                    .fill(Color(UIColor.secondarySystemBackground))
-                                AuroraMorphChipShape(cornerRadius: isSelected ? 20 : 14)
-                                    .fill(AppTheme.accentGradient)
-                                    .opacity(isSelected ? 1 : 0)
-                                AuroraMorphChipShape(cornerRadius: isSelected ? 20 : 14)
-                                    .fill(LinearGradient(colors: [.white.opacity(0.18), .clear],
-                                                         startPoint: .top, endPoint: .bottom))
-                                    .opacity(isSelected ? 1 : 0)
-                            }
-                            .overlay {
-                                AuroraMorphChipShape(cornerRadius: isSelected ? 20 : 14)
-                                    .strokeBorder(Color.secondary.opacity(isSelected ? 0 : 0.12), lineWidth: 0.5)
-                            }
-                        }
-                    }
-                    .buttonStyle(PressableButtonStyle(scale: AuroraPressScale.chip))
-                    // ✅ M3E: morph con el spring expresivo (rebote de goma).
-                    .animation(AuroraMotion.emphasized, value: isSelected)
-                    .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+                    )
                 }
             }
             .padding(.horizontal, 16)

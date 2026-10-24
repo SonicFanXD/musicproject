@@ -219,7 +219,10 @@ private struct AuroraCardModifier: ViewModifier {
     private func surfaceBackground(_ effective: AuroraSurface) -> some View {
         switch effective {
         case .glass:
-            Rectangle().fill(.ultraThinMaterial)
+            // ✅ FASE 3 (M3E): cero materiales. La antigua superficie de vidrio
+            // cae a SurfaceContainer sólido; el enum se conserva para no tocar
+            // los call sites (hoy ninguno pide `.glass`, pero la API sigue).
+            Rectangle().fill(Color(UIColor.secondarySystemBackground))
         case .flat:
             Rectangle().fill(Color(UIColor.secondarySystemBackground).opacity(0.6))
         case .opaque:

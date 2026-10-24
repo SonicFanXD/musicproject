@@ -24,23 +24,18 @@ extension View {
     }
 }
 
-// ✅ AURORA DESIGN: superficie de vidrio del sistema, reactiva a "Reducir
-// transparencia": activo → superficie OPACA del sistema (menos blur, más
-// rendimiento en el A11), inactivo → .ultraThinMaterial, como hasta ahora.
-// Es la ÚNICA implementación del vidrio y la consumen los 3 modificadores de
-// arriba y `auroraGlass()` (para un Shape suelto: círculos, cápsulas…).
+// ✅ FASE 3 (M3E): cero `.ultraThinMaterial`. La superficie es SIEMPRE el
+// color sólido SurfaceContainer del sistema. Se conserva el nombre del
+// modificador (y su firma) para no tocar los call sites existentes, pero ya
+// no hay muestreo de material ni pase offscreen por frame: en el A11 el
+// vidrio se pagaba en cada scroll de las listas que quedaban debajo.
+// "Reducir transparencia" deja de ser necesario para esta superficie: ya es
+// opaca en ambos estados.
 private struct NativeGlassSurface<S: Shape>: View {
-    @AppStorage("com.aurora.reduceTransparency") private var reduceTransparency = false
     let shape: S
 
     var body: some View {
-        Group {
-            if reduceTransparency {
-                shape.fill(Color(UIColor.secondarySystemBackground))
-            } else {
-                shape.fill(.ultraThinMaterial)
-            }
-        }
+        shape.fill(Color(UIColor.secondarySystemBackground))
     }
 }
 

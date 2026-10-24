@@ -183,12 +183,14 @@ struct QueueView: View {
                     }
                     .padding(12)
                     .background {
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .fill(AppTheme.accentGradient(opacity: 0.1))
-                    }
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .strokeBorder(AppTheme.accent.opacity(0.25), lineWidth: 1)
+                        // ✅ FASE 3 (M3E): card tonal sólida, radio 20 y borde
+                        // tonal (sin sombra ni material).
+                        RoundedRectangle(cornerRadius: 20, style: .continuous)
+                            .fill(Color(UIColor.secondarySystemBackground))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                                    .strokeBorder(AppTheme.accent.opacity(0.18), lineWidth: 1)
+                            )
                     }
                 }
                 .listRowSeparator(.hidden)
@@ -567,14 +569,6 @@ struct QueueView: View {
             minHeight: 6,
             maxHeight: 14,
             height: 14
-        )
-    }
-
-    private var equalizerBarGradient: LinearGradient {
-        LinearGradient(
-            colors: [AppTheme.accent, AppTheme.accent.opacity(0.5)],
-            startPoint: .top,
-            endPoint: .bottom
         )
     }
 
