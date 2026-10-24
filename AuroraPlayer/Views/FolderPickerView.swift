@@ -124,7 +124,8 @@ struct FolderPickerView: View {
 
             VStack(spacing: 8) {
                 Text(Localization.localized("library.title"))
-                    .font(.system(size: 24, weight: .bold, design: .rounded))
+                    .font(.system(size: 26, weight: .heavy, design: .rounded))
+                    .tracking(-0.4)
                     .foregroundStyle(.primary)
 
                 Text(Localization.localized("library.subtitle"))
@@ -142,7 +143,7 @@ struct FolderPickerView: View {
         // radio 24 original → .xl (28, +4pt) por jerarquía del sistema (card
         // destacada/hero) y sombra 0.06/12/5 ≈ AuroraShadow.soft (0.06/10/4).
         // Borde SÍ: no tenía y el sistema lo pone en sus glass cards.
-        .auroraCard(radius: AuroraRadius.xl, style: .glass, withBorder: true, withShadow: true)
+        .auroraCard(radius: AuroraRadius.xl, style: .flat, withBorder: true, withShadow: true)
         .animation(.easeOut(duration: 0.5).delay(0.1), value: appearAnimation)
     }
 
@@ -301,7 +302,7 @@ struct FolderPickerView: View {
             // ✅ AURORA DESIGN: card "Escaneando" → card del sistema, radio .md
             // (18, +2pt desde 16 por consistencia con las listas vecinas) y sin
             // sombra (no tenía).
-            .auroraCard(radius: AuroraRadius.md, style: .glass, withBorder: true, withShadow: false)
+            .auroraCard(radius: AuroraRadius.md, style: .flat, withBorder: true, withShadow: false)
         }
     }
 
@@ -368,7 +369,7 @@ struct FolderPickerView: View {
                     // de dentro son full-bleed con radio 14, así que el clipShape
                     // del card les redondea las esquinas extremas a 18 y el borde
                     // pasa a ir por encima de su filo.
-                    .auroraCard(radius: AuroraRadius.md, style: .glass, withBorder: true, withShadow: false)
+                    .auroraCard(radius: AuroraRadius.md, style: .flat, withBorder: true, withShadow: false)
                 }
             }
 
@@ -432,7 +433,7 @@ struct FolderPickerView: View {
                     // de dentro son full-bleed con radio 14, así que el clipShape
                     // del card les redondea las esquinas extremas a 18 y el borde
                     // pasa a ir por encima de su filo.
-                    .auroraCard(radius: AuroraRadius.md, style: .glass, withBorder: true, withShadow: false)
+                    .auroraCard(radius: AuroraRadius.md, style: .flat, withBorder: true, withShadow: false)
                 }
             }
 
@@ -465,7 +466,7 @@ struct FolderPickerView: View {
                 .padding(.vertical, 30)
                 // ✅ AURORA DESIGN: estado vacío → card del sistema, radio .md
                 // exacto (18) y sin sombra (no tenía).
-                .auroraCard(radius: AuroraRadius.md, style: .glass, withBorder: true, withShadow: false)
+                .auroraCard(radius: AuroraRadius.md, style: .flat, withBorder: true, withShadow: false)
             }
         }
     }

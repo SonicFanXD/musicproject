@@ -197,7 +197,9 @@ struct SettingsView: View, SettingsRowBuilding {
 
             VStack(spacing: 6) {
                 Text(Localization.localized("settings.title"))
-                    .font(.system(size: 26, weight: .bold, design: .rounded))
+                    // ✅ M3E: headline-large (30/heavy).
+                    .font(.system(size: 30, weight: .heavy, design: .rounded))
+                    .tracking(-0.6)
                     .foregroundStyle(.primary)
 
                 Text(Localization.localized("settings.subtitle"))

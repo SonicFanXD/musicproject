@@ -153,10 +153,9 @@ struct PlayerBar: View {
                                 .foregroundStyle(fileAccessService.isLiked(song) ? .red : .secondary)
                                 .frame(width: 38, height: 38)
                                 .background {
-                                    // ✅ AURORA DESIGN: primer uso del vidrio del sistema
-                                    // en esta vista (`auroraGlass()`): mismo Shape y tamaño,
-                                    // reactivo a "Reducir transparencia".
-                                    Circle().auroraGlass()
+                                    // ✅ M3E: contenedor SÓLIDO (el glyph ya es
+                                    // `.primary`/`.red`), mismo Shape y tamaño.
+                                    Circle().fill(Color(UIColor.secondarySystemBackground))
                                         .frame(width: 38, height: 38)
                                 }
                                 .contentShape(Circle())
@@ -175,7 +174,7 @@ struct PlayerBar: View {
                                     .foregroundStyle(.primary)
                                     .frame(width: 42, height: 42)
                                     .background {
-                                        Circle().auroraGlass()
+                                        Circle().fill(Color(UIColor.secondarySystemBackground))
                                     }
                                     .contentShape(Circle())
                                     .scaleEffect(playButtonScale)
@@ -257,7 +256,7 @@ struct PlayerBar: View {
                                     .foregroundStyle(.primary)
                                     .frame(width: 42, height: 42)
                                     .background {
-                                        Circle().auroraGlass()
+                                        Circle().fill(Color(UIColor.secondarySystemBackground))
                                     }
                                     .contentShape(Circle())
                             }
@@ -290,7 +289,10 @@ struct PlayerBar: View {
                 // `auroraCard` añade clipShape (radio 34): verificado que ningún
                 // contenido cae en las esquinas recortadas (el artwork empieza en
                 // 14/12pt y la barra de progreso queda a 18pt de los bordes).
-                .auroraCard(radius: AuroraRadius.xxl, style: .glass, withBorder: false, withShadow: true)
+                // ✅ M3E: la barra es un CONTENEDOR SÓLIDO (SurfaceContainer), no
+                // vidrio. Sin `.ultraThinMaterial` no hay pase offscreen por frame
+                // sobre la lista que se desplaza debajo.
+                .auroraCard(radius: AuroraRadius.xxl, style: .opaque, withBorder: false, withShadow: true)
                 .overlay {
                     // Borde sutil superior para profundidad
                     RoundedRectangle(cornerRadius: AuroraRadius.xxl, style: .continuous)

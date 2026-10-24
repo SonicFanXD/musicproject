@@ -319,7 +319,9 @@ struct LogsView: View {
         .padding(.vertical, 10)
         // ✅ AURORA DESIGN: stat card → card del sistema, radio .sm exacto (14) y
         // sin sombra (no tenía). Vidrio reactivo a "Reducir transparencia".
-        .auroraCard(radius: AuroraRadius.sm, style: .glass, withBorder: true, withShadow: false)
+        // ✅ M3E: superficie SÓLIDA (SurfaceContainer). El vidrio sobre una lista
+        // de registros obliga a un pase offscreen por frame en el A11.
+        .auroraCard(radius: AuroraRadius.sm, style: .flat, withBorder: true, withShadow: false)
     }
 
     // MARK: - Category Filter
@@ -382,8 +384,9 @@ struct LogsView: View {
                 // el material, con una transición suave de 0,22 s.
                 .background {
                     ZStack {
-                        // ✅ AURORA DESIGN: vidrio del sistema (reactivo a "Reducir transparencia").
-                        Capsule().auroraGlass()
+                        // ✅ M3E: base SÓLIDA del chip (SurfaceContainer). El acento
+                        // seleccionado se funde encima, igual que en la Biblioteca.
+                        Capsule().fill(Color(UIColor.secondarySystemBackground))
 
                         Capsule()
                             .fill(textSafeAccentGradient())

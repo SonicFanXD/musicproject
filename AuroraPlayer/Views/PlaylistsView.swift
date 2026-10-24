@@ -92,7 +92,9 @@ struct PlaylistsView: View {
             }
 
             Text(Localization.localized("playlists.yourPlaylists"))
-                .font(.system(size: 26, weight: .bold, design: .rounded))
+                // ✅ M3E: mismo headline-large que la Biblioteca (30/heavy).
+                .font(.system(size: 30, weight: .heavy, design: .rounded))
+                .tracking(-0.6)
 
             Text(Localization.localized("playlists.subtitle"))
                 .font(.system(size: 16))
@@ -521,7 +523,8 @@ struct PlaylistDetailView: View {
             // Playlist info
             VStack(spacing: 6) {
                 Text(playlist.name)
-                    .font(.system(size: 24, weight: .bold))
+                    .font(.system(size: 26, weight: .heavy))
+                    .tracking(-0.4)
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.primary)
                     .lineLimit(2)
@@ -644,7 +647,9 @@ struct PlaylistDetailView: View {
         .foregroundStyle(.secondary)
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
-        .nativeGlassCapsule()
+        // ✅ M3E: píldora de estadística sólida (sin material sobre la cabecera
+        // con carátula desenfocada).
+        .background(Capsule().fill(Color(UIColor.secondarySystemBackground)))
     }
 
     private func formatLongDuration(_ seconds: TimeInterval) -> String {

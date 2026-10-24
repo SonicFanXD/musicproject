@@ -33,8 +33,8 @@ enum AuroraRadius {
     static let xs: CGFloat = 10    // icon badges pequeños, chips compactos
     static let sm: CGFloat = 14    // filas compactas, sub-cards
     static let md: CGFloat = 18    // filas estándar, chips grandes
-    static let lg: CGFloat = 22    // cards estándar, contenedores
-    static let xl: CGFloat = 28    // headers premium, cards destacadas
+    static let lg: CGFloat = 24    // cards estándar (M3E 24), contenedores
+    static let xl: CGFloat = 32    // headers premium / sheets (M3E 32)
     static let xxl: CGFloat = 34   // containers full-screen (NowPlaying, PlayerBar)
 }
 
@@ -349,28 +349,21 @@ private struct AuroraPrimaryActionModifier: ViewModifier {
 
 private struct AuroraSecondaryActionModifier: ViewModifier {
     let accent: Color
-    @AppStorage("com.aurora.reduceTransparency") private var reduceTransparency = false
 
     func body(content: Content) -> some View {
         content
-            // ✅ AURORA DESIGN: acción secundaria = vidrio + velo de acento +
-            // borde de acento (el patrón de los botones de acción de los
-            // detalles). Con "Reducir transparencia" cae a superficie opaca
-            // del sistema, conservando velo y borde.
+            // ✅ M3E: botón tonal (filled tonal button). Antes era vidrio +
+            // velo; ahora es una superficie SÓLIDA del sistema con el velo de
+            // acento encima. Misma geometría y mismo contraste, sin muestreo
+            // de material en la cabecera de los detalles.
             .font(.system(size: 16, weight: .semibold, design: .rounded))
             .foregroundStyle(accent)
             .padding(.horizontal, AuroraSpacing.xl)
             .padding(.vertical, AuroraSpacing.md)
             .background(
-                Group {
-                    if reduceTransparency {
-                        Capsule().fill(Color(UIColor.secondarySystemBackground))
-                    } else {
-                        Capsule()
-                            .fill(.ultraThinMaterial)
-                            .overlay(Capsule().fill(accent.opacity(0.12)))
-                    }
-                }
+                Capsule()
+                    .fill(Color(UIColor.secondarySystemBackground))
+                    .overlay(Capsule().fill(accent.opacity(0.12)))
             )
             .overlay(
                 Capsule().strokeBorder(accent.opacity(0.35), lineWidth: 1)

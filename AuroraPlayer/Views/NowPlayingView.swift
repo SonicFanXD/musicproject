@@ -934,12 +934,12 @@ struct NowPlayingView: View {
             // Aumentado de 480x440 a 520x500 para mejor experiencia visual.
             .frame(maxWidth: 520, maxHeight: 500)
             .background {
-                // Cristal ultraThinMaterial: el arte borroso del fondo se ve
-                // a través del panel, con borde luminoso y profundidad.
-                RoundedRectangle(cornerRadius: 32, style: .continuous)
-                    .fill(reduceTransparency
-                          ? AnyShapeStyle(Color(UIColor.systemBackground))
-                          : AnyShapeStyle(.ultraThinMaterial))
+                // ✅ M3E: panel de superficie SÓLIDA (SurfaceContainer). El
+                // material obligaba a muestrear el arte desenfocado del fondo
+                // en cada frame del panel; un color del sistema con el mismo
+                // radio y borde da la misma jerarquía sin coste de composición.
+                RoundedRectangle(cornerRadius: AuroraRadius.xl, style: .continuous)
+                    .fill(Color(UIColor.secondarySystemBackground))
                     // ✅ Una sola sombra (la doble costaba render en A11)
                     .shadow(color: .black.opacity(0.35), radius: 24, x: 0, y: 12)
             }

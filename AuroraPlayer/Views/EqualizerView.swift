@@ -140,7 +140,9 @@ struct EqualizerView: View {
             // ✅ AURORA DESIGN: panel de bandas → card del sistema. Radio .lg (22,
             // +2pt desde el 20 original: el token más cercano) y sin sombra (no
             // tenía). Vidrio reactivo a "Reducir transparencia".
-            .auroraCard(radius: AuroraRadius.lg, style: .glass, withBorder: true, withShadow: false)
+            // ✅ M3E: contenedor sólido para la lista de bandas (cero material
+            // sobre 10 sliders que se redibujan al arrastrar).
+            .auroraCard(radius: AuroraRadius.lg, style: .flat, withBorder: true, withShadow: false)
         }
     }
 

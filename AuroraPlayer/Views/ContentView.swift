@@ -375,11 +375,11 @@ struct ContentView: View {
                             .padding(.horizontal, 18)
                             .padding(.vertical, 10)
                             .background {
-                                // ✅ AURORA DESIGN: primer uso del vidrio del sistema en
-                                // esta vista (`auroraGlass()`): mismo Shape y tamaño, pero
-                                // reactivo a "Reducir transparencia".
+                                // ✅ M3E: cápsula SÓLIDA (SurfaceContainer) sobre la
+                                // lista. Mismo tamaño y misma sombra; sin muestreo de
+                                // material encima de las filas que se desplazan.
                                 Capsule()
-                                    .auroraGlass()
+                                    .fill(Color(UIColor.secondarySystemBackground))
                                     .shadow(color: .black.opacity(0.1), radius: 8, y: 4)
                             }
                             .padding(.bottom, 80)

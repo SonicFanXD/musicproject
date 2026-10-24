@@ -624,11 +624,11 @@ private struct LyricsArtworkBackground: View, Equatable {
     /// pide el efecto esmerilado.
     @ViewBuilder
     private var glassLayer: some View {
-        if reduceTransparency {
-            Color(UIColor.secondarySystemBackground)
-        } else {
-            Rectangle().fill(.ultraThinMaterial)
-        }
+        // ✅ M3E (cero materiales): capa SÓLIDA translúcida sobre la carátula ya
+        // desenfocada. El material añadía un segundo muestreo de blur por frame
+        // justo debajo de las letras animadas; un color con alfa deja pasar la
+        // portada y conserva la lectura, con coste de composición plano.
+        Color(UIColor.systemBackground).opacity(reduceTransparency ? 1 : 0.88)
     }
 
     /// 3️⃣ Tinte del acento ACTUAL (`AppTheme.accent` respeta "acento desde
