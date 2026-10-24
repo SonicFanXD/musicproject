@@ -31,28 +31,37 @@ import SwiftUI
 
 enum AuroraMotion {
 
-    /// M3E "fast/transient": toques y feedback de presión.
-    static let quick = Animation.spring(response: 0.22, dampingFraction: 0.72)
+    /// M3E "spatialDefault": movimiento con rebote suave (stiffness 380, damping 0.8).
+    static let spatialDefault = Animation.interpolatingSpring(mass: 1, stiffness: 380, damping: 0.8, initialVelocity: 0)
 
-    /// M3E "medium/standard": transiciones de estado de UI.
-    static let normal = Animation.spring(response: 0.40, dampingFraction: 0.82)
+    /// M3E "spatialFast": rebote más notable, para toques (stiffness 800, damping 0.6).
+    static let spatialFast = Animation.interpolatingSpring(mass: 1, stiffness: 800, damping: 0.6, initialVelocity: 0)
+
+    /// M3E "effectsDefault": cambios de opacidad/color sin rebote (stiffness 1600, damping 1.0).
+    static let effectsDefault = Animation.interpolatingSpring(mass: 1, stiffness: 1600, damping: 1.0, initialVelocity: 0)
+
+    /// M3E "quick": toques y feedback de presión.
+    static let quick = Animation.interpolatingSpring(mass: 1, stiffness: 400, damping: 0.7, initialVelocity: 0)
+
+    /// M3E "normal": transiciones de estado de UI.
+    static let normal = Animation.interpolatingSpring(mass: 1, stiffness: 200, damping: 0.82, initialVelocity: 0)
 
     /// M3E "emphasized": el momento expresivo (morph play/pausa).
-    static let emphasized = Animation.spring(response: 0.50, dampingFraction: 0.68)
+    static let emphasized = Animation.interpolatingSpring(mass: 1, stiffness: 450, damping: 0.68, initialVelocity: 0)
 
-    /// M3E "slow/duration long": modales y hojas que se asientan.
-    static let slow = Animation.spring(response: 0.58, dampingFraction: 0.88)
+    /// M3E "slow": modales y hojas que se asientan.
+    static let slow = Animation.interpolatingSpring(mass: 1, stiffness: 120, damping: 0.88, initialVelocity: 0)
 
     /// Activación de línea de letra (karaoke). Misma calibración que el
     /// `.spring(0.4, 0.75)` con el que LyricsView ya estaba afinado.
-    static let lyricLine = Animation.spring(response: 0.40, dampingFraction: 0.75)
+    static let lyricLine = Animation.interpolatingSpring(mass: 1, stiffness: 200, damping: 0.75, initialVelocity: 0)
 
     /// ✅ Respiración de los estados vacíos: spring CRÍTICAMENTE amortiguado
     /// (damping 1.0 = sin overshoot) en bucle. No es un `easeInOut` porque el
     /// contrato de movimiento de la app son resortes; con damping 1.0 el spring
     /// entra y sale sin rebote, así que se lee como respiración y no como pulso.
     /// El bucle lo arranca `AuroraEmptyState` SOLO con la app en primer plano.
-    static let breathing = Animation.spring(response: 1.8, dampingFraction: 1.0).repeatForever(autoreverses: true)
+    static let breathing = Animation.interpolatingSpring(mass: 1, stiffness: 50, damping: 1.0, initialVelocity: 0).repeatForever(autoreverses: true)
 }
 
 // MARK: - Morphing shape (M3E: formas que se transforman, no que se swapn)
@@ -161,6 +170,117 @@ struct AuroraMorphPill: Shape {
                          width: width, height: rect.height)
         return Path(roundedRect: box, cornerRadius: radius, style: .continuous)
     }
+}
+
+// MARK: - Squircle Shape (superelipse M3E)
+
+/// ✅ Shape de superelipse (squircle) para contenedores M3E.
+/// Usa la fórmula de superelipse `|x/rx|^n + |y/ry|^n = 1` con n=4 para un
+/// aspecto clásico de squircle. Dibuja el path punto por punto para asegurar
+/// precisión en todos los dispositivos, incluido el A11.
+struct M3ESquircleShape: Shape {
+    /// Parámetro de excentricidad. `4` = squircle clásico M3E; valores mayores
+    /// hacen las esquinas más pronunciadas, menores las hacen más redondeadas.
+    var exponent: CGFloat = 4
+
+    /// Radio en proporción al lado menor. `0.5` = círculo perfecto; valores
+    /// menores hacen esquinas más pronunciadas.
+    var cornerRatio: CGFloat = 0.5
+
+    var animatableData: CGFloat {
+        get { exponent }
+        set { exponent = newValue }
+    }
+
+    func path(in rect: CGRect) -> Path {
+        let width = rect.width
+        let height = rect.height
+        let centerX = rect.midX
+        let centerY = rect.midY
+        let rx = min(width, height) / 2
+        let ry = rx
+
+        let n = exponent
+        let stepCount = 64
+        var path = Path()
+
+        // Calcular el punto inicial en el lado derecho medio
+        let startAngle = -CGFloat.pi / 2
+        let startX = centerX + rx * pow(abs(cos(startAngle)), 2 / n) * sign(cos(startAngle))
+        let startY = centerY + ry * pow(abs(sin(startAngle)), 2 / n) * sign(sin(startAngle))
+        path.move(to: CGPoint(x: startX, y: startY))
+
+        // Dibujar los 4 cuartos en sentido antihorario
+        for quarter in 0..<4 {
+            let start = quarter * CGFloat.pi / 2
+            let end = (quarter + 1) * CGFloat.pi / 2
+            let subSteps = 16
+            for i in 0...subSteps {
+                let t = start + (end - start) * CGFloat(i) / CGFloat(subSteps)
+                let x = centerX + rx * pow(abs(cos(t)), 2 / n) * cos(t).sign
+                let y = centerY + ry * pow(abs(sin(t)), 2 / n) * sin(t).sign
+                path.addLine(to: CGPoint(x: x, y: y))
+            }
+        }
+
+        return path
+    }
+}
+
+// MARK: - Press feedback (escala + opacidad con física M3E)
+
+/// ✅ Feedback de presión elástico. Es el MISMO `PressableButtonStyle` que ya
+/// usaba toda la app (30+ call sites) con dos mejoras, sin romper ninguno:
+///  1. La curva pasa a `AuroraMotion.quick` (antes era un spring a mano con
+///     otro apretón: ahora TODO lo pulsable de la app comparte la misma
+///     física, que es lo que hace que una app se sienta "de un sitio").
+///  2. Nuevo parámetro opcional `pressedOpacity`: M3E apaga levemente la
+///     superficie al presionar, lo que hace la pulsación legible sobre la
+///     portada sin añadir ni un render pass (opacidad = capa del sistema).
+/// Sin haptics aquí dentro a propósito: los botones ya disparan `Haptics` en
+/// sus acciones; duplicarlo haría doble Taptic en cada toque.
+struct PressableButtonStyle: ButtonStyle {
+    let scale: CGFloat
+    /// Opacidad al presionar. 1.0 (por defecto) = solo escala, como antes.
+    var pressedOpacity: Double = 1.0
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? scale : 1.0)
+            .opacity(configuration.isPressed ? pressedOpacity : 1.0)
+            .animation(AuroraMotion.quick, value: configuration.isPressed)
+    }
+}
+
+// MARK: - Emphasized typography (M3E type scale)
+
+/// ✅ Tokens de tipografía enfática Material 3 Expressive.
+/// Cada rol define tamaño (pt), peso y tracking para iOS 16 en hardware limitado.
+/// Estos valores están calibrados al vocabulario oficial de M3E y no deben
+/// modificarse sin consultar las guías de diseño de Google.
+struct M3ETypography {
+    /// Título grande enfatizado: usado para el título de la canción en NowPlaying
+    /// y encabezados principales de sección.
+    static let titleLargeEmphasized: Font = .system(size: 22, weight: .medium, design: .rounded)
+        .tracking(0)
+
+    /// Título pequeño enfatizado: usado para títulos de categoría en ContentView
+    /// y otros encabezados de sección medianos.
+    static let headlineSmallEmphasized: Font = .system(size: 24, weight: .medium, design: .rounded)
+        .tracking(0)
+
+    /// Etiqueta grande enfatizada: usado para texto de información secundaria,
+    /// como artista/álbum en NowPlaying y datos de pista.
+    static let labelLargeEmphasized: Font = .system(size: 14, weight: .medium, design: .rounded)
+        .tracking(0.1)
+
+    /// Subtítulo de pista: usado para información de calidad y route display.
+    static let trackSubtitle: Font = .system(size: 10, weight: .regular)
+        .monospacedDigit()
+
+    /// Texto de tiempo (formato mm:ss): siempre monospaced para alineación perfecta.
+    static let timeDisplay: Font = .system(size: 20, weight: .medium)
+        .monospacedDigit()
 }
 
 // MARK: - Press feedback (escala + opacidad con física M3E)

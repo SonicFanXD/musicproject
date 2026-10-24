@@ -107,12 +107,12 @@ struct PlayerBar: View {
                         HStack(spacing: 10) {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(song.title)
-                                    .font(.system(size: 14, weight: .semibold, design: .rounded))
+                                    .font(M3ETypography.titleLargeEmphasized)
                                     .foregroundStyle(.primary)
                                     .lineLimit(1)
 
                                 Text(song.artist.isEmpty ? Localization.localized("details.unknownArtist") : song.artist)
-                                    .font(.system(size: 12))
+                                    .font(M3ETypography.labelLargeEmphasized)
                                     .foregroundStyle(.secondary)
                                     .lineLimit(1)
                             }

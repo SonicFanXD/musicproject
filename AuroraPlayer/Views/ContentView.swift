@@ -584,8 +584,9 @@ struct ContentView: View {
                             Image(systemName: categoryIcon(for: category))
                                 .font(.system(size: 13, weight: .semibold))
                             Text(category.title)
-                                // ✅ M3E label-large: 15 semibold (antes 14).
-                                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                                // ✅ M3E label-large enfatizado: 14pt medium, tracking 0.1
+                                .font(M3ETypography.labelLargeEmphasized)
+                                .tracking(0.1)
                         }
                         .foregroundStyle(isSelected ? .white : .secondary)
                         .padding(.horizontal, 18)
@@ -626,11 +627,9 @@ struct ContentView: View {
     // sin división visual contra el AppBackground ni el buscador.
     private var headerView: some View {
         HStack {
-            // ✅ M3E (Bloque 2): headline-large. El wordmark sube a 30/heavy (antes
-            // 26/bold) con tracking negativo: es el foco tipográfico de la pantalla.
+            // ✅ M3E (Bloque 2): headline-small enfatizado. Wordmark a 24/medium con tracking 0.
             Text(Localization.localized("app.name"))
-                .font(.system(size: 30, weight: .heavy, design: .rounded))
-                .tracking(-0.6)
+                .font(M3ETypography.headlineSmallEmphasized)
                 .foregroundStyle(AppTheme.accentGradient)
                 .accessibilityLabel(Localization.localized("app.name"))
             Spacer()

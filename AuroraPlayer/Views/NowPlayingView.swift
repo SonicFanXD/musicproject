@@ -215,15 +215,7 @@ struct NowPlayingView: View {
 
                     Spacer(minLength: isCompactScreen ? 8 : 14)
 
-                    ProgressScrubView(
-                        audioEngine: audioEngine,
-                        clock: clock,
-                        extractedColor: extractedColor,
-                        extractedSecondaryColor: extractedSecondaryColor,
-                        extractedUIColor: extractedUIColor,
-                        playIconColor: playIconColor,
-                        isCompactScreen: isCompactScreen
-                    )
+                    AuroraWavyProgress(progress: audioEngine.currentTime / max(audioEngine.duration, 1), isPlaying: audioEngine.isPlaying, isScrubbing: false, thickness: isCompactScreen ? 3 : 4, amplitude: 1.8, waveLength: isCompactScreen ? 18 : 24, colors: [extractedColor, extractedColor.opacity(0.45)], trackColor: Color.secondary.opacity(0.18), showsThumb: true, thumbColor: .white, thumbSize: 12, showsStopIndicator: true)
 
                     Spacer(minLength: isCompactScreen ? 10 : 18)
 
