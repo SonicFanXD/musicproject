@@ -42,7 +42,7 @@ struct AuroraMorphShape: Shape, Animatable {
 
     var animatableData: AnimatablePair<CGFloat, CGFloat> {
         get { AnimatablePair(cornerRadiusRatio, widthRatio) }
-        newValue {
+        set {
             cornerRadiusRatio = newValue.first
             widthRatio = newValue.second
         }
