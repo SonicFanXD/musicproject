@@ -429,9 +429,7 @@ private struct PlayerScrubBar: View {
                 progress: progress,
                 isPlaying: audioEngine.isPlaying,
                 isScrubbing: isScrubbing,
-                thickness: compactPlayerBar ? 3 : 4,
-                amplitude: 1.2,
-                waveLength: 22,
+                onScrub: { newProgress in }                waveLength: 22,
                 colors: [accentPair.primary.opacity(0.85), accentPair.secondary],
                 thumbSize: 14,
                 showsStopIndicator: false
