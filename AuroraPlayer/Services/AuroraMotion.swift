@@ -11,7 +11,7 @@ import SwiftUI
 
 // ✅ Feedback de presión elástico. Es el MISMO `PressableButtonStyle` que ya
 // usaba toda la app (30+ call sites) con dos mejoras, sin romper ninguno:
-//  1. La curva pasa a `AuroraMotion.quick` (antes era un spring a mano con
+//  1. La curva pasa a `AuroraMotion.spatialFast` (antes era un spring a mano con
 //     otro apretón: ahora TODO lo pulsable de la app comparte la misma
 //     física, que es lo que hace que una app se sienta "de un sitio").
 //  2. Nuevo parámetro opcional `pressedOpacity`: M3E apaga levemente la
@@ -27,7 +27,7 @@ struct PressableButtonStyle: ButtonStyle {
         configuration.label
             .scaleEffect(configuration.isPressed ? scale : 1.0)
             .opacity(configuration.isPressed ? pressedOpacity : 1.0)
-            .animation(AuroraMotion.quick, value: configuration.isPressed)
+            .animation(AuroraMotion.spatialFast, value: configuration.isPressed)
     }
 }
 
@@ -65,15 +65,17 @@ struct AuroraMorphShape: Shape, Animatable {
 struct M3ETypography {
     // Título grande enfatizado: usado para el título de la canción en NowPlaying
     // y encabezados principales de sección.
-    static let titleLargeEmphasized: Font = .system(size: 22, weight: .medium, design: .rounded)
+    // ✅ FASE 2: peso "emphasized" = un paso por encima del baseline M3
+    // (medium 500) → semibold 600. El tamaño y la altura de línea no cambian.
+    static let titleLargeEmphasized: Font = .system(size: 22, weight: .semibold, design: .rounded)
 
     // Título pequeño enfatizado: usado para títulos de categoría en ContentView
     // y otros encabezados de sección medianos.
-    static let headlineSmallEmphasized: Font = .system(size: 24, weight: .medium, design: .rounded)
+    static let headlineSmallEmphasized: Font = .system(size: 24, weight: .semibold, design: .rounded)
 
     // Etiqueta grande enfatizada: usado para texto de información secundaria,
     // como artista/álbum en NowPlaying y datos de pista.
-    static let labelLargeEmphasized: Font = .system(size: 14, weight: .medium, design: .rounded)
+    static let labelLargeEmphasized: Font = .system(size: 14, weight: .semibold, design: .rounded)
 
     // Subtítulo de pista: usado para información de calidad y route display.
     static let trackSubtitle: Font = .system(size: 10, weight: .regular)
@@ -125,36 +127,52 @@ struct AuroraMorphChipShape: Shape, InsettableShape {
 
 enum AuroraMotion {
 
-    // MARK: - Motion tokens (interpolatingSpring por defecto)
+    // MARK: - Tokens oficiales M3E (SOLO estos tres)
 
-// M3E "spatialDefault": movimiento con rebote suave (stiffness 380, damping 0.8).
-    static let spatialDefault = Animation.interpolatingSpring(mass: 1, stiffness: 380, damping: 0.8, initialVelocity: 0)
+    // ✅ FASE 2: se eliminan quick / normal / emphasized / slow / lyricLine.
+    // Cualquier animación de la app es uno de estos tres tokens:
+    //  · spatialDefault → posición, tamaño y forma (rebote suave).
+    //  · spatialFast    → toques rápidos (rebote más notable).
+    //  · effectsDefault → opacidad y color (sin rebote).
+    // Los pulsos continuos NO son tokens: los genera `TimelineView` con la
+    // fecha de cada frame (ver `AuroraEqualizerBars`), nunca `repeatForever`.
 
-// M3E "spatialFast": rebote más notable, para toques (stiffness 800, damping 0.6).
-    static let spatialFast = Animation.interpolatingSpring(mass: 1, stiffness: 800, damping: 0.6, initialVelocity: 0)
+    // ✅ FASE 1 (bucle de animaciones) — ESTA ERA LA CAUSA REAL DEL "BUCLE":
+    // `Animation.interpolatingSpring(mass:stiffness:damping:)` espera el
+    // COEFICIENTE de amortiguación (N·s/m), NO la razón de amortiguación.
+    // Pasarle 0.8 (la razón que especifica M3E) con stiffness 380 deja el
+    // sistema prácticamente sin freno: oscila durante decenas de segundos y
+    // cada transición de vista parece no terminar nunca. El coeficiente
+    // correcto es c = 2 · ζ · √(k · m). Convertimos la razón oficial de M3E
+    // al coeficiente que SwiftUI necesita, sin cambiar el comportamiento
+    // percibido (ζ 0.8 = rebote suave; ζ 1.0 = sin overshoot).
+    private static func m3eSpring(stiffness: Double, dampingRatio: Double) -> Animation {
+        let dampingCoefficient = 2 * dampingRatio * stiffness.squareRoot()
+        return .interpolatingSpring(
+            mass: 1,
+            stiffness: stiffness,
+            damping: dampingCoefficient,
+            initialVelocity: 0
+        )
+    }
 
-// M3E "effectsDefault": cambios de opacidad/color sin rebote (stiffness 1600, damping 1.0).
-    static let effectsDefault = Animation.interpolatingSpring(mass: 1, stiffness: 1600, damping: 1.0, initialVelocity: 0)
+    /// ζ = 0.8 → rebote suave y acotado (~0.6 s). Posición, tamaño y forma.
+    static let spatialDefault = m3eSpring(stiffness: 380, dampingRatio: 0.8)
 
-// M3E "quick": toques y feedback de presión.
-    static let quick = Animation.interpolatingSpring(mass: 1, stiffness: 400, damping: 0.7, initialVelocity: 0)
+    /// ζ = 0.6 → rebote más notable, para toques. Nunca llega a "vibrar".
+    static let spatialFast = m3eSpring(stiffness: 800, dampingRatio: 0.6)
 
-// M3E "normal": transiciones de estado de UI.
-    static let normal = Animation.interpolatingSpring(mass: 1, stiffness: 200, damping: 0.82, initialVelocity: 0)
+    /// ζ = 1.0 → críticamente amortiguado: opacidad y color, sin overshoot.
+    static let effectsDefault = m3eSpring(stiffness: 1600, dampingRatio: 1.0)
 
-// M3E "emphasized": el momento expresivo (morph play/pausa).
-    static let emphasized = Animation.interpolatingSpring(mass: 1, stiffness: 450, damping: 0.68, initialVelocity: 0)
-
-// M3E "slow": modales y hojas que se asientan.
-    static let slow = Animation.interpolatingSpring(mass: 1, stiffness: 120, damping: 0.88, initialVelocity: 0)
-
-// Activación de línea de letra (karaoke). Misma calibración que el .spring(0.4, 0.75).
-    static let lyricLine = Animation.interpolatingSpring(mass: 1, stiffness: 200, damping: 0.75, initialVelocity: 0)
-
-    // ✅ FASE 1 (bucle infinito): el token `breathing` con `repeatForever` se
-    // elimina. Las respiraciones/pulsos continuos se calculan con la FECHA de
-    // `TimelineView` (ver `AuroraEqualizerBars` y los modificadores de cada
-    // vista): SwiftUI no reencola ninguna transacción en cada re-render.
+    // ⚠️ Compatibilidad TEMPORAL con el commit de Fase 1: las vistas aún
+    // referencian estos nombres. Se eliminan en el commit de Fase 2, cuando
+    // todos los call sites ya usan los tres tokens de arriba.
+    static let quick = spatialFast
+    static let normal = spatialDefault
+    static let emphasized = spatialDefault
+    static let slow = spatialDefault
+    static let lyricLine = spatialDefault
 }
 
 // ══════════════════════════════════════════════════════════════════════════

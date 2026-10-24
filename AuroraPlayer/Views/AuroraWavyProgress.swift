@@ -3,18 +3,21 @@ import SwiftUI
 // ══════════════════════════════════════════════════════════════════════════
 // AURORA WAVY PROGRESS — barra ondulada M3E.
 //
-// Implementación mínima y a prueba de fallos:
-//  · La PISTA se dibuja SIEMPRE (aunque progress == 0), así la barra nunca
-//    puede desaparecer.
-//  · La onda activa es un `Path` sinusoidal real:
+// Implementación mínima y a prueba de fallos (FASE 1):
+//  · La PISTA es una `Capsule` de SwiftUI, fuera del Canvas. Aunque el Canvas
+//    no llegase a dibujar, la barra sigue visible: es imposible que
+//    "desaparezca" porque ya no depende de un dibujo imperativo.
+//  · La ONDA activa es un `Path` sinusoidal real:
 //        y = midY + sin(x * frequency + phase) * amplitude
-//    con la fase tomada de `TimelineView(.animation)`.
-//  · El thumb se posiciona con `width * progress` del `GeometryReader`; nunca
+//    con la fase tomada de `TimelineView(.animation)`. El Path se construye en
+//    cada frame solo hasta `width * progress` (coste lineal al progreso, no al
+//    ancho total).
+//  · El thumb se posiciona con `width * progress` del GeometryReader; NUNCA
 //    con `UIScreen.main.bounds`.
-//  · Sin `repeatForever`: al pausar, `TimelineView` se pausa y la onda se
-//    dibuja plana (amplitud 0) sobre la parte activa.
+//  · Cero `repeatForever`: al pausar, el TimelineView se pausa y la amplitud
+//    pasa a 0 (la onda queda como una línea plana sobre la parte activa).
 //  · El gesto de arrastre vive en PlayerBar / NowPlayingView (el componente
-//    solo dibuja).
+//    solo dibuja); así no compite con el gesto de la vista anfitriona.
 // ══════════════════════════════════════════════════════════════════════════
 
 struct AuroraWavyProgress: View {
@@ -37,40 +40,43 @@ struct AuroraWavyProgress: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
 
+    /// Nunca NaN ni fuera de 0...1: un progreso inválido no puede romper el
+    /// `Path` (SwiftUI deja de dibujar un Canvas con coordenadas NaN).
     private var clampedProgress: CGFloat {
-        CGFloat(min(max(progress, 0), 1))
+        let value = progress.isFinite ? CGFloat(progress) : 0
+        return min(max(value, 0), 1)
     }
 
     private var isAnimating: Bool {
         isPlaying && !reduceMotion && scenePhase == .active
     }
 
+    private var gradientColors: [Color] {
+        colors.count >= 2 ? colors : [AppTheme.accent, AppTheme.accent]
+    }
+
     var body: some View {
         GeometryReader { geo in
             let size = geo.size
-            let midY = size.height / 2
             let activeWidth = size.width * clampedProgress
+            let midY = size.height / 2
 
             ZStack(alignment: .leading) {
+                // 1) Pista completa (siempre visible, sin Canvas).
+                Capsule(style: .continuous)
+                    .fill(trackColor)
+                    .frame(height: thickness)
+
+                // 2) Onda activa, dibujada solo hasta el progreso actual.
                 TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: !isAnimating)) { timeline in
                     Canvas { context, canvasSize in
-                        guard canvasSize.width > 0, canvasSize.height > 0 else { return }
+                        guard activeWidth > 0.5,
+                              canvasSize.width > 0,
+                              canvasSize.height > 0 else { return }
+
                         let mid = canvasSize.height / 2
-
-                        // 1) Pista completa (gris). SIEMPRE visible.
-                        var track = Path()
-                        track.move(to: CGPoint(x: 0, y: mid))
-                        track.addLine(to: CGPoint(x: canvasSize.width, y: mid))
-                        context.stroke(
-                            track,
-                            with: .color(trackColor),
-                            style: StrokeStyle(lineWidth: thickness, lineCap: .round)
-                        )
-
-                        // 2) Parte activa: onda mientras suena, línea plana en pausa.
-                        guard activeWidth > 0.5 else { return }
-
                         let seconds = timeline.date.timeIntervalSinceReferenceDate
+                        // Se acota para no perder precisión con la fecha absoluta.
                         let phase = CGFloat(seconds.truncatingRemainder(dividingBy: 1_000)) * 4
                         let amp: CGFloat = isAnimating ? amplitude : 0
                         let frequency = 2 * CGFloat.pi / max(waveLength, 1)
@@ -90,21 +96,20 @@ struct AuroraWavyProgress: View {
                         context.stroke(
                             wave,
                             with: .linearGradient(
-                                Gradient(colors: colors),
+                                Gradient(colors: gradientColors),
                                 startPoint: CGPoint(x: 0, y: 0),
                                 endPoint: CGPoint(x: max(activeWidth, 1), y: 0)
                             ),
                             style: StrokeStyle(lineWidth: thickness, lineCap: .round, lineJoin: .round)
                         )
                     }
-                    .frame(width: size.width, height: size.height)
                 }
                 .frame(width: size.width, height: size.height)
 
                 // 3) Thumb: posición real con el ancho del GeometryReader.
                 if showsThumb, size.width > 0 {
                     Circle()
-                        .fill(colors.first ?? AppTheme.accent)
+                        .fill(gradientColors.first ?? AppTheme.accent)
                         .overlay(
                             Circle().strokeBorder(Color.white.opacity(0.9), lineWidth: 2)
                         )
@@ -121,6 +126,9 @@ struct AuroraWavyProgress: View {
             }
             .frame(width: size.width, height: size.height)
         }
+        // Altura mínima: un `GeometryReader` suelto no tiene altura intrínseca
+        // y podía colapsar a 0 en un VStack. Los call sites fijan 16/18 pt.
+        .frame(maxWidth: .infinity, minHeight: 16)
     }
 }
 
