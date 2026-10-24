@@ -14,39 +14,30 @@ struct AuroraWavyLine {
     var waveLength: CGFloat
     var phase: CGFloat = 0
 
-    // Dibujar la línea usando Path de SwiftUI (GPU-accelerated)
-    static func draw(in context: inout GraphicsContext, size: CGSize, amplitude: CGFloat,
+    // Dibujar la línea usando Path de SwiftUI y context.stroke()
+    static func draw(in context: GraphicsContext, size: CGSize, amplitude: CGFloat,
                      waveLength: CGFloat, phase: CGFloat) {
         let span = max(size.width, 1)
-        let midY = size.height / 2
+        let midY = size.height / 2.0
         let lambda = max(waveLength, 1)
         let k = (2 * CGFloat.pi) / lambda
         let steps = max(8, Int(span / 3))
         let dx = span / CGFloat(steps)
 
-        // Limpiar contexto
-        context.fill = .clear
-
-        // Configurar stroke
-        context.strokeColor = .black
-        context.lineWidth = 1
-
-        if steps < 2 { return }
+        // Crear el Path de la onda
+        var path = Path()
 
         // Mover al punto inicial
-        let x0 = 0
-        let y0 = midY + amplitude * sin(k * x0 + phase)
-        context.move(to: CGPoint(x: x0, y: y0))
+        path.move(to: CGPoint(x: 0, y: midY))
 
-        // Dibujar la sinusoide mediante lineas directas (Path de SwiftUI)
-        var path = Path()
+        // Dibujar la sinusoide mediante addLine en el Path
         for step in 1...steps {
             let x = CGFloat(step) * dx
             let y = midY + amplitude * sin(k * x + phase)
             path.addLine(to: CGPoint(x: x, y: y))
         }
 
-        // Añadir path al contexto
+        // Dibujar el path en el contexto con el gradiente
         context.stroke(path, with: .color(.black), lineWidth: 1)
     }
 }
