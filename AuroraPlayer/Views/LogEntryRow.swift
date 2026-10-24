@@ -72,7 +72,7 @@ struct LogEntryRow: View, Equatable {
                     .contentShape(Rectangle())
                     .onTapGesture {
                         Haptics.light()
-                        withAnimation(AuroraMotion.quick) {
+                        withAnimation(AuroraMotion.spatialFast) {
                             onToggleExpanded()
                         }
                     }

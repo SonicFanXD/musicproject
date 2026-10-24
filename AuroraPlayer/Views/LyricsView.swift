@@ -1097,11 +1097,11 @@ private struct LyricLineView: View, Equatable {
 
     /// ✅ Spring del cambio de línea (activación de la capa brillante y pop de
     /// escala). El wipe a 60 fps NO lo usa: el TimelineView interpola por frame.
-    /// ✅ M3E: la curva vive centralizada en AuroraMotion.lyricLine (mismos
+    /// ✅ M3E: la curva vive centralizada en AuroraMotion.spatialDefault (mismos
     /// valores 0.4/0.75 con los que la vista ya estaba calibrada en dispositivo;
     /// solo cambia el domicilio, para poder retocarla en un solo sitio).
     private var lineActivation: Animation {
-        AuroraMotion.lyricLine
+        AuroraMotion.spatialDefault
     }
 
     /// ✅ Filas REALES de la línea (cacheado por texto+fuente+ancho): las lógicas

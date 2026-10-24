@@ -133,7 +133,7 @@ struct PlayerBar: View {
                                     .opacity(audioEngine.isPlaying ? 1 : 0)
                                     // ✅ M3E: toda transición de estado de la app
                                     // usa los springs del sistema (no easings lineales).
-                                    .animation(AuroraMotion.quick, value: audioEngine.isPlaying)
+                                    .animation(AuroraMotion.spatialFast, value: audioEngine.isPlaying)
                             }
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -212,7 +212,7 @@ struct PlayerBar: View {
                                         widthRatio: audioEngine.isPlaying ? 1.06 : 1.0
                                     )
                                         .fill(textSafeAccentGradient())
-                                        .animation(AuroraMotion.emphasized, value: audioEngine.isPlaying)
+                                        .animation(AuroraMotion.spatialDefault, value: audioEngine.isPlaying)
 
                                     // ✅ FASE 1 (bucle infinito): el halo ya NO usa
                                     // `repeatForever`. La fase se calcula con la fecha de
@@ -318,7 +318,7 @@ struct PlayerBar: View {
     /// se mantiene (era la calibración ya validada en dispositivo).
     private func animatePlayButton() {
         playButtonScale = 0.88
-        withAnimation(AuroraMotion.emphasized) {
+        withAnimation(AuroraMotion.spatialDefault) {
             playButtonScale = 1.0
         }
     }
@@ -348,7 +348,7 @@ struct PlayerBar: View {
                                 .opacity(audioEngine.isPlaying ? 1.0 : 0.0),
                             lineWidth: 2
                         )
-                        .animation(AuroraMotion.quick, value: audioEngine.isPlaying)
+                        .animation(AuroraMotion.spatialFast, value: audioEngine.isPlaying)
                 )
                 .contentShape(Rectangle())
                 .onTapGesture {
@@ -366,7 +366,7 @@ struct PlayerBar: View {
                 Image(systemName: audioEngine.isPlaying ? "waveform" : "music.note")
                     .font(.system(size: 20, weight: .medium))
                     .foregroundStyle(artworkDominantColor)
-                    .animation(AuroraMotion.quick, value: audioEngine.isPlaying)
+                    .animation(AuroraMotion.spatialFast, value: audioEngine.isPlaying)
             }
             .contentShape(Rectangle())
             .onTapGesture {
@@ -480,5 +480,5 @@ private struct PlayerScrubBar: View {
 
 // MARK: - ButtonStyle con feedback de presión
 // ✅ M3E: `PressableButtonStyle` vive ahora en AuroraMotion.swift, con la
-// curva unificada (AuroraMotion.quick) y el nuevo parámetro opcional
+// curva unificada (AuroraMotion.spatialFast) y el nuevo parámetro opcional
 // `pressedOpacity`. La firma no cambió: los 30+ call sites siguen igual.

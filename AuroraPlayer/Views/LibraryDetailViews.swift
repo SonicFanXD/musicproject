@@ -127,7 +127,7 @@ private func detailTitleReveal(for progress: CGFloat) -> CGFloat {
 /// Antes el título recibía una opacidad CONTINUA calculada del scroll, y una
 /// opacidad reasignada en cada tick no se puede animar: el sistema la aplicaba
 /// de golpe y el cruce se sentía abrupto. Con un estado booleano, SwiftUI
-/// anima el CAMBIO con `AuroraMotion.normal` (spring) y solo cuando cruza.
+/// anima el CAMBIO con `AuroraMotion.spatialDefault` (spring) y solo cuando cruza.
 private func detailShowsInlineTitle(for progress: CGFloat) -> Bool {
     detailTitleReveal(for: progress) > 0.35
 }
@@ -304,7 +304,7 @@ struct AlbumDetailView: View {
                     // umbral, no en cada tick de scroll.
                     .opacity(showsInlineTitle ? 1 : 0)
                     .scaleEffect(showsInlineTitle ? 1 : 0.94)
-                    .animation(AuroraMotion.normal, value: showsInlineTitle)
+                    .animation(AuroraMotion.spatialDefault, value: showsInlineTitle)
             }
         }
         // ? Sin banda gris: el hero inmersivo fluye bajo la barra de navegaci�n
@@ -320,7 +320,7 @@ struct AlbumDetailView: View {
                 cachedQuality = Self.computeMajorityQuality(cachedSongs)
             }
             // ? Animaci�n de entrada suave
-            withAnimation(AuroraMotion.normal) {
+            withAnimation(AuroraMotion.spatialDefault) {
                 appearAnimation = true
             }
             // ? OPT: precalcular el blur del hero UNA vez en background
@@ -380,7 +380,7 @@ struct AlbumDetailView: View {
             .padding(.horizontal, 24)
             .offset(y: appearAnimation ? 0 : 10)
             .opacity(appearAnimation ? 1.0 : 0)
-            .animation(AuroraMotion.normal.delay(0.06), value: appearAnimation)
+            .animation(AuroraMotion.spatialDefault.delay(0.06), value: appearAnimation)
 
             // ? Estad�sticas con dise�o mejorado
             FlowLayout(horizontalSpacing: 10, verticalSpacing: 8) {
@@ -412,7 +412,7 @@ struct AlbumDetailView: View {
             .padding(.horizontal, 20)
             .offset(y: appearAnimation ? 0 : 10)
             .opacity(appearAnimation ? 1.0 : 0)
-            .animation(AuroraMotion.normal.delay(0.12), value: appearAnimation)
+            .animation(AuroraMotion.spatialDefault.delay(0.12), value: appearAnimation)
         }
         // ✅ FIX FRANJA SUPERIOR: el contenido del hero vuelve a su sitio (el
         // ScrollView ya no aporta el inset, lo aporta aquí) y el fondo —que cuelga
@@ -1017,7 +1017,7 @@ struct ArtistDetailView: View {
                     // umbral, no en cada tick de scroll.
                     .opacity(showsInlineTitle ? 1 : 0)
                     .scaleEffect(showsInlineTitle ? 1 : 0.94)
-                    .animation(AuroraMotion.normal, value: showsInlineTitle)
+                    .animation(AuroraMotion.spatialDefault, value: showsInlineTitle)
             }
         }
         // ? Sin banda gris (coherente con AlbumDetailView)
@@ -1029,7 +1029,7 @@ struct ArtistDetailView: View {
                 cachedSongs = artist.songs
                 cachedTotalDuration = cachedSongs.reduce(0) { $0 + $1.duration }
             }
-            withAnimation(AuroraMotion.normal) {
+            withAnimation(AuroraMotion.spatialDefault) {
                 appearAnimation = true
             }
             // ? OPT: precalcular el blur del hero UNA vez en background
@@ -1087,7 +1087,7 @@ struct ArtistDetailView: View {
             .padding(.horizontal, 24)
             .offset(y: appearAnimation ? 0 : 10)
             .opacity(appearAnimation ? 1.0 : 0)
-            .animation(AuroraMotion.normal.delay(0.06), value: appearAnimation)
+            .animation(AuroraMotion.spatialDefault.delay(0.06), value: appearAnimation)
         }
         // ✅ FIX FRANJA SUPERIOR: el contenido del hero vuelve a su sitio (el
         // ScrollView ya no aporta el inset, lo aporta aquí) y el fondo —que cuelga

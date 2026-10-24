@@ -69,7 +69,7 @@ struct AuroraM3TextField: View {
                 Image(systemName: icon)
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(isEditing ? resolvedAccent : Color.secondary)
-                    .animation(AuroraMotion.quick, value: isEditing)
+                    .animation(AuroraMotion.spatialFast, value: isEditing)
             }
 
             field
@@ -91,8 +91,8 @@ struct AuroraM3TextField: View {
         }
         .contentShape(Capsule())
         .onTapGesture { requestFocus() }
-        .animation(AuroraMotion.quick, value: isEditing)
-        .animation(AuroraMotion.quick, value: text.isEmpty)
+        .animation(AuroraMotion.spatialFast, value: isEditing)
+        .animation(AuroraMotion.spatialFast, value: text.isEmpty)
         .opacity(isEnabled ? 1 : 0.5)
         .accessibilityElement(children: .contain)
     }

@@ -396,7 +396,7 @@ struct LogsView: View {
                 }
                 // ✅ M3E: el fundido de selección usa el spring rápido (antes
                 // `.easeInOut` lineal, la única curva que quedaba en la vista).
-                .animation(AuroraMotion.quick, value: isSelected)
+                .animation(AuroraMotion.spatialFast, value: isSelected)
         }
         // ✅ M3E: feedback al tocar el chip (antes solo escala, sin apagado).
         .buttonStyle(PressableButtonStyle(scale: AuroraPressScale.chip, pressedOpacity: 0.7))

@@ -1177,7 +1177,7 @@ extension SettingsRowBuilding {
                         // cambiar su spring); lo que se puede animar —y se anima— es
                         // la transición de estado visible de la fila.
                         .contentTransition(.opacity)
-                        .animation(AuroraMotion.quick, value: subtitle)
+                        .animation(AuroraMotion.spatialFast, value: subtitle)
                 }
 
                 Spacer()

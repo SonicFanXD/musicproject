@@ -46,10 +46,28 @@ struct M3ECard<Content: View>: View {
                     .fill(surface)
             )
             .overlay(
+                // ✅ FASE 2: borde tonal al 12 % (M3E elevation tonal), 1 px,
+                // sin sombra.
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .strokeBorder(tint.opacity(showsBorder ? 0.10 : 0), lineWidth: 1)
+                    .strokeBorder(tint.opacity(showsBorder ? 0.12 : 0), lineWidth: 1)
             )
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+    }
+}
+
+// MARK: - Squish de presión (M3E)
+
+/// ✅ FASE 2: al pulsar, la forma se deforma (ancho +4 %, alto -6 %) con
+/// `spatialFast`; al mantener, vuelve con el mismo spring. Es el "squish" de
+/// M3E sin `repeatForever` y sin cambiar el layout (transform GPU).
+struct M3ESquishButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(
+                x: configuration.isPressed ? 1.04 : 1.0,
+                y: configuration.isPressed ? 0.94 : 1.0
+            )
+            .animation(AuroraMotion.spatialFast, value: configuration.isPressed)
     }
 }
 
@@ -90,7 +108,7 @@ struct M3EFilledButton<Label: View>: View {
                 .background(Capsule(style: .continuous).fill(tint))
                 .contentShape(Capsule(style: .continuous))
         }
-        .buttonStyle(PressableButtonStyle(scale: 0.94, pressedOpacity: 0.9))
+        .buttonStyle(M3ESquishButtonStyle())
     }
 }
 
@@ -128,7 +146,7 @@ struct M3ETonalButton<Label: View>: View {
                 .background(Capsule(style: .continuous).fill(tint.opacity(0.15)))
                 .contentShape(Capsule(style: .continuous))
         }
-        .buttonStyle(PressableButtonStyle(scale: 0.96, pressedOpacity: 0.9))
+        .buttonStyle(M3ESquishButtonStyle())
     }
 }
 
@@ -158,8 +176,10 @@ struct M3EFilterChip: View {
         self.action = action
     }
 
+    // ✅ FASE 2: radio 14 (reposo) → 20 (seleccionado), interpolado por
+    // `animatableData` con `spatialDefault`.
     private var shapeRadius: CGFloat {
-        isSelected ? 18 : 12
+        isSelected ? 20 : 14
     }
 
     var body: some View {
@@ -174,12 +194,14 @@ struct M3EFilterChip: View {
                     .lineLimit(1)
             }
             .foregroundStyle(isSelected ? tint : Color.secondary)
+            // ✅ FASE 2: el COLOR es un efecto (sin rebote) → effectsDefault.
+            .animation(AuroraMotion.effectsDefault, value: isSelected)
             .padding(.horizontal, 16)
             .frame(height: 36)
             .background(
                 AuroraMorphChipShape(cornerRadius: shapeRadius)
                     .fill(isSelected ? tint.opacity(0.15) : Color(UIColor.secondarySystemBackground))
-                    .animation(AuroraMotion.spatialFast, value: isSelected)
+                    .animation(AuroraMotion.spatialDefault, value: isSelected)
             )
             .overlay(
                 AuroraMorphChipShape(cornerRadius: shapeRadius)
@@ -187,7 +209,7 @@ struct M3EFilterChip: View {
                         isSelected ? tint.opacity(0.5) : Color.clear,
                         lineWidth: 1
                     )
-                    .animation(AuroraMotion.spatialFast, value: isSelected)
+                    .animation(AuroraMotion.spatialDefault, value: isSelected)
             )
             .contentShape(Capsule(style: .continuous))
         }

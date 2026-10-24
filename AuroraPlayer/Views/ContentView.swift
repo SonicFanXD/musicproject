@@ -428,7 +428,7 @@ struct ContentView: View {
         // ThemeManager). También cubre alerts y sliders de este stack.
         .tint(AppTheme.accent)
         .onChange(of: fileAccessService.isScanning) { scanning in
-            withAnimation(AuroraMotion.normal) {
+            withAnimation(AuroraMotion.spatialDefault) {
                 compactIndexingVisible = scanning
             }
             // ✅ INDEXACIÓN: sincronizar tarjeta grande / indicador compacto.
@@ -467,7 +467,7 @@ struct ContentView: View {
             // a la compacta). Solo se apaga al FINALIZAR el escaneo.
             if !scanning {
                 firstIndexingDone = true
-                withAnimation(AuroraMotion.slow) { firstTimeIndexing = false }
+                withAnimation(AuroraMotion.spatialDefault) { firstTimeIndexing = false }
             }
             return
         }
@@ -478,7 +478,7 @@ struct ContentView: View {
             && fileAccessService.songs.isEmpty
             && fileAccessService.pendingSongsCount == 0
         if isFirstScanOfInstall {
-            withAnimation(AuroraMotion.slow) { firstTimeIndexing = true }
+            withAnimation(AuroraMotion.spatialDefault) { firstTimeIndexing = true }
         }
     }
 
@@ -759,7 +759,7 @@ struct ContentView: View {
                                 )
                             )
                             .frame(width: geo.size.width * indexingProgress)
-                            .animation(AuroraMotion.quick, value: indexingProgress)
+                            .animation(AuroraMotion.spatialFast, value: indexingProgress)
                             .shadow(color: AppTheme.accent.opacity(0.3), radius: 4, y: 0)
                     }
                 }
@@ -812,7 +812,7 @@ struct ContentView: View {
                             )
                         )
                         .frame(width: max(0, geo.size.width * indexingProgress))
-                        .animation(AuroraMotion.quick, value: indexingProgress)
+                        .animation(AuroraMotion.spatialFast, value: indexingProgress)
                 }
             }
             .frame(width: 70, height: 5)
@@ -1360,7 +1360,7 @@ struct ContentView: View {
 // el onAppear no llegara, se ve igual) y UNA sola animación continua propia
 // (el latido; LoadingDots es un componente existente y ya venía pulsando).
 // ✅ M3E (Tanda 4): la entrada del wordmark es un "pop" elástico de escala
-// con `AuroraMotion.emphasized` (overshoot de goma, 0.88 → 1.0). Sigue siendo
+// con `AuroraMotion.spatialDefault` (overshoot de goma, 0.88 → 1.0). Sigue siendo
 // la única transacción finita del splash además del latido.
 // Los TIEMPOS no cambian: el mínimo de 1,2 s lo marca ContentView.
 struct SplashView: View {
@@ -1372,7 +1372,7 @@ struct SplashView: View {
     // ✅ M3E (Tanda 4): driver del "pop" elástico de entrada del logotipo.
     // Nace en false → el bloque se pinta al 88 % de escala (VISIBLE, nunca
     // opaco a 0: la regla dura del splash se mantiene) y al dispararse el
-    // onAppear sube a 1.0 con `AuroraMotion.emphasized` (damping 0.68), que es
+    // onAppear sube a 1.0 con `AuroraMotion.spatialDefault` (damping 0.68), que es
     // el rebote de goma característico de M3E. Solo escala: transformación GPU,
     // cero blurs ni capas nuevas.
     @State private var logoPopped = false
@@ -1461,7 +1461,7 @@ struct SplashView: View {
             // ✅ M3E: "pop" de entrada con el spring expresivo de AuroraMotion
             // (respuesta 0.50, damping 0.68). Es una transacción finita con
             // overshoot visible; el bloque nunca parpadea ni se oculta.
-            withAnimation(AuroraMotion.emphasized) {
+            withAnimation(AuroraMotion.spatialDefault) {
                 logoPopped = true
             }
         }

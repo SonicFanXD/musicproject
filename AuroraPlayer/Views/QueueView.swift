@@ -109,7 +109,7 @@ struct QueueView: View {
         HStack(spacing: 6) {
             ForEach(QueueTab.allCases, id: \.self) { tab in
                 Button {
-                    withAnimation(AuroraMotion.quick) {
+                    withAnimation(AuroraMotion.spatialFast) {
                         selectedTab = tab
                     }
                 } label: {
@@ -387,7 +387,7 @@ struct QueueView: View {
             // el mismo ciclo.
             Button {
                 Haptics.light()
-                withAnimation(AuroraMotion.quick) {
+                withAnimation(AuroraMotion.spatialFast) {
                     editMode = editMode == .active ? .inactive : .active
                 }
             } label: {

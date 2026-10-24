@@ -66,7 +66,7 @@ struct DetailHeroArtwork: View, Equatable {
             // para todo el hero = el bloque se siente como una pieza.
             .scaleEffect(isVisible ? 1 : (kind == .album ? 0.9 : 0.85))
             .opacity(isVisible ? 1 : 0)
-            .animation(AuroraMotion.normal, value: isVisible)
+            .animation(AuroraMotion.spatialDefault, value: isVisible)
     }
 
     // MARK: - Contenido

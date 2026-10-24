@@ -250,7 +250,7 @@ struct NowPlayingView: View {
                     hasLoggedAppear = true
                     AppLog.info(.interface, "NowPlaying abierto: '\(audioEngine.currentSong?.displayName ?? "—")'")
                 }
-                withAnimation(AuroraMotion.normal) {
+                withAnimation(AuroraMotion.spatialDefault) {
                     artworkScale = 1.0
                 }
                 audioEngine.isKeepScreenOnEnabled = keepScreenOn
@@ -285,11 +285,11 @@ struct NowPlayingView: View {
                     infoOpacity = 0
                 }
                 DispatchQueue.main.async {
-                    withAnimation(AuroraMotion.normal) {
+                    withAnimation(AuroraMotion.spatialDefault) {
                         artworkScale = 1.0
                         artworkOpacity = 1.0
                     }
-                    withAnimation(AuroraMotion.normal.delay(0.04)) {
+                    withAnimation(AuroraMotion.spatialDefault.delay(0.04)) {
                         infoOffset = 0
                         infoOpacity = 1
                     }
@@ -346,7 +346,7 @@ struct NowPlayingView: View {
                         .transition(.opacity.combined(with: .scale(scale: 0.92)))
                 }
             }
-            .animation(AuroraMotion.slow, value: showQualityDetail)
+            .animation(AuroraMotion.spatialDefault, value: showQualityDetail)
     }
 
     // MARK: - Header (fila fija: no depende de la altura del contenido)
@@ -391,27 +391,23 @@ struct NowPlayingView: View {
     // MARK: - Background (respeta "Reducir transparencia")
     private var backgroundView: some View {
         Group {
-            if let artwork = audioEngine.currentSong?.artwork, !reduceTransparency {
-                GeometryReader { geometry in
-                    ZStack {
-                        // ✅ FIX barra negra: scaledToFill + clipped para cubrir
-                        // TODA la pantalla (scaledToFit dejaba franjas en pantallas
-                        // altas/anchas por encima y debajo de la imagen cuadrada).
-                        Image(uiImage: artwork)
-                            .resizable()
-                            .interpolation(.medium)
-                            .scaledToFill()
-                            .frame(width: geometry.size.width + 60, height: geometry.size.height + 60)
-                            .clipped()
-                            .blur(radius: 25)
-                            .opacity(0.45)
-
-                        extractedColor.opacity(0.12)
-                    }
-                }
+            if audioEngine.currentSong?.artwork != nil, !reduceTransparency {
+                // ✅ FASE 2 (M3E): fondo SÓLIDO tonal derivado del color de la
+                // carátula. Antes se desenfocaba la portada a pantalla completa
+                // (`.blur(radius: 25)` + `drawingGroup`): en el A11 eso se paga
+                // en cada frame porque la capa se recompone al animar el resto
+                // del contenido. M3E pide superficies planas, no vidrio.
+                LinearGradient(
+                    colors: [
+                        extractedColor.opacity(0.55),
+                        extractedColor.opacity(0.18),
+                        Color(UIColor.systemBackground)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
                 .ignoresSafeArea()
                 .allowsHitTesting(false)
-                .drawingGroup(opaque: false)
             } else {
                 LinearGradient(
                     colors: [
@@ -471,9 +467,10 @@ struct NowPlayingView: View {
 
     /// ✅ Fuente del título de `songInfoView`.
     private var songTitleFont: Font {
-        // ✅ M3E headline: +4 pt y peso heavy (antes bold). El título es el
-        // foco tipográfico de la pantalla; el resto pierde peso a su lado.
-        .system(size: isCompactScreen ? 24 : 28, weight: .heavy, design: .rounded)
+        // ✅ FASE 2 (M3E): rol `titleLargeEmphasized` (22/semibold). El peso
+        // "emphasized" de M3E es UN paso sobre el baseline (medium → semibold),
+        // no `heavy`: el título sigue siendo el foco sin romper la escala.
+        M3ETypography.titleLargeEmphasized
     }
 
     /// ✅ Fuentes del chip de calidad (línea de calidad y línea de ruta).
@@ -507,7 +504,9 @@ struct NowPlayingView: View {
                 .lineLimit(2)
 
             Text(audioEngine.currentSong?.displaySubtitle ?? "—")
-                .font(.system(size: isCompactScreen ? 15 : 17, weight: .medium))
+                // ✅ FASE 2 (M3E): labelLargeEmphasized (14/semibold), el rol
+                // de información secundaria (artista/álbum).
+                .font(M3ETypography.labelLargeEmphasized)
                 .foregroundStyle(AppTheme.contrastingText(on: extractedUIColor).opacity(0.75))
                 .lineLimit(1)
                 .padding(.horizontal, 20)
@@ -569,7 +568,7 @@ struct NowPlayingView: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(PressableButtonStyle(scale: AuroraPressScale.chip, pressedOpacity: 0.6))
-            .animation(AuroraMotion.quick, value: isCurrentLiked)
+            .animation(AuroraMotion.spatialFast, value: isCurrentLiked)
             .accessibilityLabel(Localization.localized("actions.like"))
         }
         .padding(.horizontal, 6)
@@ -606,7 +605,7 @@ struct NowPlayingView: View {
             // y el cambio de estado era casi invisible sobre la portada). El
             // .animation(value:) colorea el icono AL INSTANTE al conmutar.
             .buttonStyle(PressableButtonStyle(scale: AuroraPressScale.chip, pressedOpacity: 0.6))
-            .animation(AuroraMotion.quick, value: audioEngine.isShuffleEnabled)
+            .animation(AuroraMotion.spatialFast, value: audioEngine.isShuffleEnabled)
 
             // Previous
             Button {
@@ -655,7 +654,7 @@ struct NowPlayingView: View {
                     .frame(width: isCompactScreen ? 62 : 72, height: isCompactScreen ? 62 : 72)
                     // damping 0.68: es el rebote elástico "emphasized" de M3E,
                     // el que se siente como goma al cambiar de estado.
-                    .animation(AuroraMotion.emphasized, value: audioEngine.isPlaying)
+                    .animation(AuroraMotion.spatialDefault, value: audioEngine.isPlaying)
                     // ✅ El icono sigue cambiando instantáneamente (sin .id() ni
                     // transición de reemplazo — recreaba la vista entera y se
                     // sentía lento en A11); el morph del fondo lleva toda la
@@ -713,7 +712,7 @@ struct NowPlayingView: View {
             // ✅ Mismo tratamiento que shuffle: feedback de presión visible y
             // animación inmediata del icono (repeat → repeat.1 → off) al tocar.
             .buttonStyle(PressableButtonStyle(scale: AuroraPressScale.chip, pressedOpacity: 0.6))
-            .animation(AuroraMotion.quick, value: audioEngine.repeatMode)
+            .animation(AuroraMotion.spatialFast, value: audioEngine.repeatMode)
         }
         .frame(maxWidth: .infinity)
         .fixedSize()
@@ -740,7 +739,7 @@ struct NowPlayingView: View {
                         .frame(width: audioEngine.isEQEnabled ? capsuleWidth : capsuleHeight, height: capsuleHeight)
                         // ✅ M3E: la cápsula se EXPANDE desde el círculo del icono al
                         // activarse (morph de ancho, sin mover el frame exterior).
-                        .animation(AuroraMotion.emphasized, value: audioEngine.isEQEnabled)
+                        .animation(AuroraMotion.spatialDefault, value: audioEngine.isEQEnabled)
 
                     Image(systemName: "slider.horizontal.3")
                         .font(.system(size: iconSize, weight: audioEngine.isEQEnabled ? .bold : .semibold))
@@ -764,7 +763,7 @@ struct NowPlayingView: View {
                               ? AnyShapeStyle(accentGradient(primaryOpacity: 0.25, secondaryOpacity: 0.25))
                               : AnyShapeStyle(Color.clear))
                         .frame(width: audioEngine.currentSong?.lyrics.isEmpty == false ? capsuleWidth : capsuleHeight, height: capsuleHeight)
-                        .animation(AuroraMotion.emphasized, value: audioEngine.currentSong?.lyrics.isEmpty == false)
+                        .animation(AuroraMotion.spatialDefault, value: audioEngine.currentSong?.lyrics.isEmpty == false)
 
                     Image(systemName: audioEngine.currentSong?.lyrics.isEmpty == false ? "quote.bubble.fill" : "quote.bubble")
                         .font(.system(size: iconSize, weight: audioEngine.currentSong?.lyrics.isEmpty == false ? .bold : .semibold))
@@ -788,7 +787,7 @@ struct NowPlayingView: View {
                               ? AnyShapeStyle(Color.clear)
                               : AnyShapeStyle(accentGradient(primaryOpacity: 0.25, secondaryOpacity: 0.25)))
                         .frame(width: audioEngine.nextUpQueue.isEmpty ? capsuleHeight : capsuleWidth, height: capsuleHeight)
-                        .animation(AuroraMotion.emphasized, value: audioEngine.nextUpQueue.isEmpty)
+                        .animation(AuroraMotion.spatialDefault, value: audioEngine.nextUpQueue.isEmpty)
 
                     Image(systemName: "list.bullet")
                         .font(.system(size: iconSize, weight: .semibold))
@@ -812,7 +811,7 @@ struct NowPlayingView: View {
                           ? AnyShapeStyle(accentGradient(primaryOpacity: 0.25, secondaryOpacity: 0.25))
                           : AnyShapeStyle(Color.clear))
                     .frame(width: audioEngine.outputPortType == AVAudioSession.Port.airPlay.rawValue ? capsuleWidth : capsuleHeight, height: capsuleHeight)
-                    .animation(AuroraMotion.emphasized, value: audioEngine.outputPortType == AVAudioSession.Port.airPlay.rawValue)
+                    .animation(AuroraMotion.spatialDefault, value: audioEngine.outputPortType == AVAudioSession.Port.airPlay.rawValue)
 
                 Image(systemName: "airplayaudio")
                     .font(.system(size: iconSize, weight: audioEngine.outputPortType == AVAudioSession.Port.airPlay.rawValue ? .bold : .semibold))
@@ -892,7 +891,7 @@ struct NowPlayingView: View {
             Color.black.opacity(0.22)
                 .ignoresSafeArea()
                 .onTapGesture {
-                    withAnimation(AuroraMotion.quick) {
+                    withAnimation(AuroraMotion.spatialFast) {
                         showQualityDetail = false
                     }
                 }
@@ -912,7 +911,7 @@ struct NowPlayingView: View {
 
                     Button {
                         Haptics.light()
-                        withAnimation(AuroraMotion.quick) {
+                        withAnimation(AuroraMotion.spatialFast) {
                             showQualityDetail = false
                         }
                     } label: {
@@ -966,7 +965,7 @@ struct NowPlayingView: View {
             .scaleEffect(showQualityDetail ? 1.0 : 0.94)
             .opacity(showQualityDetail ? 1.0 : 0)
         }
-        .animation(AuroraMotion.slow, value: showQualityDetail)
+        .animation(AuroraMotion.spatialDefault, value: showQualityDetail)
     }
 
     // MARK: - Helpers
@@ -1081,7 +1080,8 @@ private struct ProgressScrubView: View {
                     .font(.system(size: isCompactScreen ? 13 : 14, weight: isScrubbing ? .heavy : .semibold))
                     .foregroundStyle(isScrubbing ? playIconColor : AppTheme.contrastingText(on: extractedUIColor).opacity(0.75))
                     .monospacedDigit()
-                    .animation(.easeInOut(duration: 0.15), value: isScrubbing)
+                    // ✅ M3E: color/peso = efecto → effectsDefault (sin rebote).
+                    .animation(AuroraMotion.effectsDefault, value: isScrubbing)
 
                 Spacer()
 

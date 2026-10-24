@@ -164,15 +164,6 @@ enum AuroraMotion {
 
     /// ζ = 1.0 → críticamente amortiguado: opacidad y color, sin overshoot.
     static let effectsDefault = m3eSpring(stiffness: 1600, dampingRatio: 1.0)
-
-    // ⚠️ Compatibilidad TEMPORAL con el commit de Fase 1: las vistas aún
-    // referencian estos nombres. Se eliminan en el commit de Fase 2, cuando
-    // todos los call sites ya usan los tres tokens de arriba.
-    static let quick = spatialFast
-    static let normal = spatialDefault
-    static let emphasized = spatialDefault
-    static let slow = spatialDefault
-    static let lyricLine = spatialDefault
 }
 
 // ══════════════════════════════════════════════════════════════════════════

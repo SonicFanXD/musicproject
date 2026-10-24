@@ -21,7 +21,7 @@ import UIKit
 //  · Durante el arrastre se usa la TRASLACIÓN del dedo (`translation.width`)
 //    sobre el ancho útil de la pista: las coordenadas del gesto dentro del
 //    thumb no son las del slider, así que `location` no sirve aquí.
-//  · El thumb escala con `AuroraMotion.emphasized` (el spring con rebote de
+//  · El thumb escala con `AuroraMotion.spatialDefault` (el spring con rebote de
 //    M3E, damping 0.68) mientras se arrastra y suelta un haptic al soltar.
 //    `PressableButtonStyle` no aplica: no hay `Button` que pulsar; esta es la
 //    misma física (escala + spring) aplicada al estado de arrastre.
@@ -167,7 +167,7 @@ struct AuroraM3Slider: View {
                         radius: isDragging ? 6 : 4, x: 0, y: 2)
                 // ✅ M3E: respuesta elástica al agarrar el thumb.
                 .scaleEffect(isDragging ? 1.18 : 1)
-                .animation(AuroraMotion.emphasized, value: isDragging)
+                .animation(AuroraMotion.spatialDefault, value: isDragging)
         }
         // Área táctil de 44 pt (mínimo de accesibilidad), sin agrandar el dibujo.
         .frame(width: 44, height: 44)
