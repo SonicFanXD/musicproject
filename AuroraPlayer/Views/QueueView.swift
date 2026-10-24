@@ -54,11 +54,19 @@ struct QueueView: View {
                     // por delante del selector de pestañas. Mide 44pt, exactamente lo
                     // que medía la barra a la que sustituye, así que el tabSelector se
                     // queda donde estaba y su spacing no cambia.
-                    AuroraSheetHeader(
+                    M3ENavigationBar(
                         title: Localization.localized("queue.title"),
-                        onClose: { dismiss() },
-                        titleColor: AppTheme.accent,
-                        trailing: AnyView(headerTrailingButtons)
+                        leading: {
+                            Button { dismiss() } label: {
+                                Image(systemName: "chevron.down")
+                                    .font(.system(size: 16, weight: .semibold))
+                                    .foregroundStyle(.secondary)
+                                    .frame(width: 44, height: 44)
+                                    .contentShape(Rectangle())
+                            }
+                            .accessibilityLabel(Localization.localized("design.close"))
+                        },
+                        trailing: { headerTrailingButtons }
                     )
 
                     tabSelector
@@ -119,13 +127,15 @@ struct QueueView: View {
                         Text(tab.localizedTitle)
                             .font(.system(size: 14, weight: selectedTab == tab ? .semibold : .medium, design: .rounded))
                     }
-                    .foregroundStyle(selectedTab == tab ? .white : .secondary)
+                    // ✅ FASE 2/3: segmento seleccionado tonal (texto en el
+                    // acento), no píldora de gradiente con texto blanco.
+                    .foregroundStyle(selectedTab == tab ? AppTheme.accent : Color.secondary)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 12)
                     .background {
                         if selectedTab == tab {
-                            Capsule().fill(AppTheme.accentGradient)
-                                .shadow(color: AppTheme.accent.opacity(0.3), radius: 6, x: 0, y: 3)
+                            Capsule().fill(AppTheme.accent.opacity(0.2))
+                                .overlay(Capsule().strokeBorder(AppTheme.accent.opacity(0.3), lineWidth: 1))
                                 // ✅ M3E MORPH: la misma cápsula viaja entre
                                 // pestañas con `matchedGeometryEffect` (una sola
                                 // geometría animada). Antes eran dos cápsulas
@@ -477,10 +487,10 @@ struct QueueView: View {
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(song.title)
-                        .font(.system(size: 16, weight: .semibold, design: .rounded))
+                        .font(M3ETypography.titleMediumEmphasized)
                         .foregroundStyle(.primary).lineLimit(1)
                     Text(song.displaySubtitle)
-                        .font(.system(size: 13)).foregroundStyle(.secondary).lineLimit(1)
+                        .font(M3ETypography.labelLargeEmphasized).foregroundStyle(.secondary).lineLimit(1)
                 }
 
                 Spacer()
@@ -491,7 +501,9 @@ struct QueueView: View {
             }
             .padding(.horizontal, 14).padding(.vertical, 12)
             .background {
-                RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Color(UIColor.secondarySystemBackground).opacity(0.6))
+                // ✅ FASE 3 (remake): card tonal M3E (base sólida + acento 8 %
+                // + borde 1.5 pt), en vez del gris translúcido del sistema.
+                M3ETonalSurface(cornerRadius: 18)
             }
             .contentShape(Rectangle())
         }
@@ -532,10 +544,10 @@ struct QueueView: View {
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(song.title)
-                        .font(.system(size: 16, weight: .semibold, design: .rounded))
+                        .font(M3ETypography.titleMediumEmphasized)
                         .foregroundStyle(.primary).lineLimit(1)
                     Text(song.displaySubtitle)
-                        .font(.system(size: 13)).foregroundStyle(.secondary).lineLimit(1)
+                        .font(M3ETypography.labelLargeEmphasized).foregroundStyle(.secondary).lineLimit(1)
                 }
 
                 Spacer()
@@ -546,7 +558,9 @@ struct QueueView: View {
             }
             .padding(.horizontal, 14).padding(.vertical, 12)
             .background {
-                RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Color(UIColor.secondarySystemBackground).opacity(0.6))
+                // ✅ FASE 3 (remake): card tonal M3E (base sólida + acento 8 %
+                // + borde 1.5 pt), en vez del gris translúcido del sistema.
+                M3ETonalSurface(cornerRadius: 18)
             }
             .contentShape(Rectangle())
         }

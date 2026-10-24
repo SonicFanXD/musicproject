@@ -195,24 +195,22 @@ private struct AuroraCardModifier: ViewModifier {
             .background(surfaceBackground(effectiveStyle))
             .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
             .overlay(
+                // ✅ FASE 2/3 (remake M3E): elevación TONAL, no sombra. El borde
+                // de 1.5 pt con el acento al 20 % es lo que hace que una card se
+                // lea como Material y no como una tarjeta de iOS.
                 withBorder
                     ? RoundedRectangle(cornerRadius: radius, style: .continuous)
-                        .strokeBorder(
-                            LinearGradient(
-                                colors: [Color.white.opacity(0.12), Color.clear],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            ),
-                            lineWidth: 1
-                        )
+                        .strokeBorder(AppTheme.accent.opacity(0.2), lineWidth: 1.5)
                     : nil
             )
-            .shadow(
-                color: withShadow ? AuroraShadow.softColor : .clear,
-                radius: withShadow ? AuroraShadow.softRadius : 0,
-                x: 0,
-                y: withShadow ? AuroraShadow.softY : 0
-            )
+    }
+
+    /// ✅ Superficie M3E compartida: base OPACA del sistema + velo de acento.
+    private var tonalSurface: some View {
+        ZStack {
+            Rectangle().fill(Color(UIColor.secondarySystemBackground))
+            Rectangle().fill(AppTheme.accent.opacity(0.08))
+        }
     }
 
     @ViewBuilder
@@ -220,13 +218,16 @@ private struct AuroraCardModifier: ViewModifier {
         switch effective {
         case .glass:
             // ✅ FASE 3 (M3E): cero materiales. La antigua superficie de vidrio
-            // cae a SurfaceContainer sólido; el enum se conserva para no tocar
+            // cae a SurfaceContainer tonal; el enum se conserva para no tocar
             // los call sites (hoy ninguno pide `.glass`, pero la API sigue).
-            Rectangle().fill(Color(UIColor.secondarySystemBackground))
+            tonalSurface
         case .flat:
-            Rectangle().fill(Color(UIColor.secondarySystemBackground).opacity(0.6))
+            // ✅ FASE 3 (remake): antes era el gris del sistema al 60 % (dejaba
+            // ver el fondo y delataba el look iOS). Ahora es base sólida + velo
+            // tonal del acento al 8 %.
+            tonalSurface
         case .opaque:
-            Rectangle().fill(Color(UIColor.secondarySystemBackground))
+            tonalSurface
         }
     }
 }

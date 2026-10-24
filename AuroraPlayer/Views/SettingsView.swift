@@ -52,11 +52,24 @@ struct SettingsView: View, SettingsRowBuilding {
                     // (44pt, exactamente lo que medía la barra) con el título en el
                     // acento de la app y el "Listo" en el slot trailing: las secciones
                     // de abajo no cambian de tamaño ni de spacing.
-                    AuroraSheetHeader(
+                    // ✅ FASE 3 (remake): barra de navegación M3E (título
+                    // alineado a la izquierda con la escala enfática, chevron
+                    // tonal a la izquierda y acciones en el slot trailing).
+                    M3ENavigationBar(
                         title: Localization.localized("settings.title"),
-                        onClose: { dismiss() },
-                        titleColor: AppTheme.accent,
-                        trailing: AnyView(SettingsDoneButton(onDone: { dismiss() }))
+                        leading: {
+                            Button { dismiss() } label: {
+                                Image(systemName: "chevron.down")
+                                    .font(.system(size: 16, weight: .semibold))
+                                    .foregroundStyle(.secondary)
+                                    .frame(width: 44, height: 44)
+                                    .contentShape(Rectangle())
+                            }
+                            .accessibilityLabel(Localization.localized("design.close"))
+                        },
+                        trailing: {
+                            SettingsDoneButton(onDone: { dismiss() })
+                        }
                     )
 
                     ScrollView {
@@ -462,11 +475,11 @@ private struct LibrarySettingsSection: View, SettingsRowBuilding {
                         iconView(icon: "folder.fill", color: .blue)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(folder.displayName)
-                                .font(.system(size: 15, weight: .medium))
+                                .font(M3ETypography.titleMediumEmphasized)
                                 .foregroundStyle(.primary)
                                 .lineLimit(1)
                             Text(Localization.localized("settings.folderAdded"))
-                                .font(.system(size: 12))
+                                .font(M3ETypography.bodyMedium)
                                 .foregroundStyle(.secondary)
                         }
                         Spacer()
@@ -495,11 +508,11 @@ private struct LibrarySettingsSection: View, SettingsRowBuilding {
                         iconView(icon: "music.note", color: .purple)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(file.displayName)
-                                .font(.system(size: 15, weight: .medium))
+                                .font(M3ETypography.titleMediumEmphasized)
                                 .foregroundStyle(.primary)
                                 .lineLimit(1)
                             Text(Localization.localized("settings.fileAdded"))
-                                .font(.system(size: 12))
+                                .font(M3ETypography.bodyMedium)
                                 .foregroundStyle(.secondary)
                         }
                         Spacer()
@@ -527,7 +540,7 @@ private struct LibrarySettingsSection: View, SettingsRowBuilding {
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(.primary)
                     Text(Localization.localized("settings.emptyLibrarySubtitle"))
-                        .font(.system(size: 12))
+                        .font(M3ETypography.bodyMedium)
                         .foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity)
@@ -1012,11 +1025,11 @@ extension SettingsRowBuilding {
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
-                        .font(.system(size: 15, weight: .medium))
+                        .font(M3ETypography.titleMediumEmphasized)
                         .foregroundStyle(.primary)
 
                     Text(subtitle)
-                        .font(.system(size: 12))
+                        .font(M3ETypography.bodyMedium)
                         .foregroundStyle(.secondary)
                 }
 
@@ -1046,11 +1059,11 @@ extension SettingsRowBuilding {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .font(.system(size: 15, weight: .medium))
+                    .font(M3ETypography.titleMediumEmphasized)
                     .foregroundStyle(.primary)
 
                 Text(subtitle)
-                    .font(.system(size: 12))
+                    .font(M3ETypography.bodyMedium)
                     .foregroundStyle(.secondary)
             }
 
@@ -1073,7 +1086,7 @@ extension SettingsRowBuilding {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text(title)
-                    .font(.system(size: 15, weight: .medium))
+                    .font(M3ETypography.titleMediumEmphasized)
                     .foregroundStyle(.primary)
 
                 Spacer()
@@ -1101,7 +1114,7 @@ extension SettingsRowBuilding {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .font(.system(size: 15, weight: .medium))
+                    .font(M3ETypography.titleMediumEmphasized)
                     .foregroundStyle(.primary)
 
                 Text(value)
@@ -1165,11 +1178,11 @@ extension SettingsRowBuilding {
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
-                        .font(.system(size: 15, weight: .medium))
+                        .font(M3ETypography.titleMediumEmphasized)
                         .foregroundStyle(.primary)
 
                     Text(subtitle)
-                        .font(.system(size: 12))
+                        .font(M3ETypography.bodyMedium)
                         .foregroundStyle(.secondary)
                         // ✅ M3E (Prioridad 4): al elegir otra opción, el subtítulo
                         // no cambia de golpe: hace un crossfade corto. El menú

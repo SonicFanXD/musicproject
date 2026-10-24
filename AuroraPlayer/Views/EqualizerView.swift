@@ -14,11 +14,19 @@ struct EqualizerView: View {
                     // (44pt, exactamente lo que medía la barra) con el título en el
                     // acento de la app y el "Listo" en el slot trailing: el contenido
                     // de abajo no cambia de tamaño ni de spacing.
-                    AuroraSheetHeader(
+                    M3ENavigationBar(
                         title: Localization.localized("equalizer.title"),
-                        onClose: { dismiss() },
-                        titleColor: AppTheme.accent,
-                        trailing: AnyView(headerDoneButton)
+                        leading: {
+                            Button { dismiss() } label: {
+                                Image(systemName: "chevron.down")
+                                    .font(.system(size: 16, weight: .semibold))
+                                    .foregroundStyle(.secondary)
+                                    .frame(width: 44, height: 44)
+                                    .contentShape(Rectangle())
+                            }
+                            .accessibilityLabel(Localization.localized("design.close"))
+                        },
+                        trailing: { headerDoneButton }
                     )
 
                     ScrollView {

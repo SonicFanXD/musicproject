@@ -145,9 +145,9 @@ struct ContentView: View {
                                 .transition(categoryTransition)
                         }
                     }
-                    // ✅ FASE 1: transición de vista FINITA (nunca en bucle).
-                    // Misma curva solicitada para cambios de pestaña/sheet.
-                    .animation(.spring(response: 0.4, dampingFraction: 0.8), value: selectedCategory)
+                    // ✅ FASE 1/2: transición FINITA con el token oficial de
+                    // M3E (antes un spring ad-hoc con otra física).
+                    .animation(AuroraMotion.spatialDefault, value: selectedCategory)
                     .refreshable {
                         fileAccessService.refreshAllFolders()
                         try? await Task.sleep(nanoseconds: 600_000_000)

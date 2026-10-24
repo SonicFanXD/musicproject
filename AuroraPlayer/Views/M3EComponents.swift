@@ -10,9 +10,38 @@ import SwiftUI
 //   se usa `repeatForever` en ningún sitio.
 // ══════════════════════════════════════════════════════════════════════════
 
+// MARK: - Superficie tonal
+
+/// ✅ FASE 2 (remake): superficie M3E real. Base SÓLIDA del sistema + velo
+/// tonal del acento al 8 % + borde de 1.5 pt al 20 %. No es translúcida: el
+/// velo se compone sobre la base opaca, así el contenido que scrollea por
+/// debajo no se transparenta (lo que delataba el "look iOS").
+struct M3ETonalSurface: View {
+    var cornerRadius: CGFloat = 24
+    var tint: Color = AppTheme.accent
+    var base: Color = Color(UIColor.secondarySystemBackground)
+    var showsBorder: Bool = true
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            .fill(base)
+            .overlay(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .fill(tint.opacity(0.08))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .strokeBorder(
+                        tint.opacity(showsBorder ? 0.2 : 0),
+                        lineWidth: showsBorder ? 1.5 : 0
+                    )
+            )
+    }
+}
+
 // MARK: - Card
 
-/// Contenedor base M3E: superficie sólida, radio grande y borde tonal.
+/// Contenedor base M3E: superficie teñida, radio grande y borde tonal.
 struct M3ECard<Content: View>: View {
     private let cornerRadius: CGFloat
     private let padding: CGFloat
@@ -42,14 +71,13 @@ struct M3ECard<Content: View>: View {
             .padding(padding)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .fill(surface)
-            )
-            .overlay(
-                // ✅ FASE 2: borde tonal al 12 % (M3E elevation tonal), 1 px,
-                // sin sombra.
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .strokeBorder(tint.opacity(showsBorder ? 0.12 : 0), lineWidth: 1)
+                // ✅ FASE 2: base sólida + velo tonal al 8 % + borde al 20 %.
+                M3ETonalSurface(
+                    cornerRadius: cornerRadius,
+                    tint: tint,
+                    base: surface,
+                    showsBorder: showsBorder
+                )
             )
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
     }
@@ -200,7 +228,7 @@ struct M3EFilterChip: View {
             .frame(height: 36)
             .background(
                 AuroraMorphChipShape(cornerRadius: shapeRadius)
-                    .fill(isSelected ? tint.opacity(0.15) : Color(UIColor.secondarySystemBackground))
+                    .fill(isSelected ? tint.opacity(0.2) : Color(UIColor.secondarySystemBackground))
                     .animation(AuroraMotion.spatialDefault, value: isSelected)
             )
             .overlay(
@@ -252,6 +280,7 @@ struct M3ENavigationBar<Leading: View, Trailing: View>: View {
                     .font(M3ETypography.headlineSmallEmphasized)
                     .foregroundStyle(.primary)
                     .lineLimit(1)
+                    .minimumScaleFactor(0.7)
 
                 if let subtitle = subtitle {
                     Text(subtitle)

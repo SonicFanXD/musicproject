@@ -174,12 +174,19 @@ struct PlayerBar: View {
                                     .foregroundStyle(.primary)
                                     .frame(width: 42, height: 42)
                                     .background {
-                                        Circle().fill(Color(UIColor.secondarySystemBackground))
+                                        // ✅ M3E tonal: el contenedor del transporte
+                                        // se tiñe con el acento al 15 % (no un gris
+                                        // neutro con look iOS).
+                                        Circle()
+                                            .fill(AppTheme.accent.opacity(0.15))
+                                            .overlay(
+                                                Circle().strokeBorder(AppTheme.accent.opacity(0.2), lineWidth: 1)
+                                            )
                                     }
                                     .contentShape(Circle())
                                     .scaleEffect(playButtonScale)
                             }
-                            .buttonStyle(PressableButtonStyle(scale: 0.85))
+                            .buttonStyle(M3ESquishButtonStyle())
                             .accessibilityLabel(Localization.localized("accessibility.previousSong"))
 
                             // ✅ Play/Pause con animación de escala y halo
@@ -253,11 +260,18 @@ struct PlayerBar: View {
                                     .foregroundStyle(.primary)
                                     .frame(width: 42, height: 42)
                                     .background {
-                                        Circle().fill(Color(UIColor.secondarySystemBackground))
+                                        // ✅ M3E tonal: el contenedor del transporte
+                                        // se tiñe con el acento al 15 % (no un gris
+                                        // neutro con look iOS).
+                                        Circle()
+                                            .fill(AppTheme.accent.opacity(0.15))
+                                            .overlay(
+                                                Circle().strokeBorder(AppTheme.accent.opacity(0.2), lineWidth: 1)
+                                            )
                                     }
                                     .contentShape(Circle())
                             }
-                            .buttonStyle(PressableButtonStyle(scale: 0.85))
+                            .buttonStyle(M3ESquishButtonStyle())
                             .opacity(audioEngine.hasNextTrack ? 1 : 0.4)
                             .disabled(!audioEngine.hasNextTrack)
                             .accessibilityLabel(Localization.localized("accessibility.nextSong"))
@@ -289,18 +303,15 @@ struct PlayerBar: View {
                 // ✅ M3E: la barra es un CONTENEDOR SÓLIDO (SurfaceContainer), no
                 // vidrio. Sin `.ultraThinMaterial` no hay pase offscreen por frame
                 // sobre la lista que se desplaza debajo.
-                .auroraCard(radius: AuroraRadius.xxl, style: .opaque, withBorder: false, withShadow: true)
-                .overlay {
-                    // Borde sutil superior para profundidad
-                    RoundedRectangle(cornerRadius: AuroraRadius.xxl, style: .continuous)
-                        .strokeBorder(
-                            LinearGradient(
-                                colors: [.white.opacity(0.15), .white.opacity(0.03), .clear],
-                                startPoint: .topLeading, endPoint: .bottomTrailing
-                            ),
-                            lineWidth: 1
-                        )
-                }
+                // ✅ FASE 2/3 (remake): superficie tonal M3E —base sólida +
+                // acento al 8 % + borde al 20 %— sin sombra, material ni blur.
+                .background(
+                    M3ETonalSurface(
+                        cornerRadius: AuroraRadius.xxl,
+                        tint: theme.accent
+                    )
+                )
+                .clipShape(RoundedRectangle(cornerRadius: AuroraRadius.xxl, style: .continuous))
                 // ✅ Presentación original: sheet que sube desde abajo, con la
                 // transición nativa del sistema y cierre deslizando hacia abajo.
                 .sheet(isPresented: $showingNowPlaying) {
@@ -416,45 +427,26 @@ private struct PlayerScrubBar: View {
     }
 
     var body: some View {
-        GeometryReader { geometry in
-            // ✅ M3E (Bloque 2): la barra lineal se sustituye por la ONDA de
-            // `AuroraWavyProgress`. Se conserva intacto todo lo demás: preview
-            // local a 60fps durante el arrastre, seek único al soltar y el
-            // toque (sin arrastre) que abre NowPlaying. El componente solo
-            // dibuja (onda = transformación GPU; thumb con spring).
-            AuroraWavyProgress(
-                progress: progress,
-                isPlaying: audioEngine.isPlaying,
-                isScrubbing: isScrubbing,
-                onScrub: { newProgress in
-                    scrubPreviewProgress = newProgress
-                }
-            )
-            .frame(height: 16)
-            .contentShape(Rectangle())
-            .onTapGesture {
-                onOpenNowPlaying()
-            }
-            .gesture(
-                DragGesture(minimumDistance: 0)
-                    .onChanged { value in
-                        guard audioEngine.duration > 0, geometry.size.width > 0 else { return }
-                        // ✅ Inicializar scrub con progreso actual (evita salto a 0)
-                        if !isScrubbing {
-                            startScrubbing()
-                        }
-                        // ✅ Preview local a 60fps (sin toques al engine durante el arrastre)
-                        scrubPreviewProgress = max(0, min(1, value.location.x / geometry.size.width))
-                    }
-                    .onEnded { value in
-                        guard audioEngine.duration > 0, geometry.size.width > 0 else { return }
-                        // ✅ Seek real UNA sola vez al soltar
-                        let percentage = max(0, min(1, value.location.x / geometry.size.width))
-                        scrubPreviewProgress = percentage
-                        endScrubbing()
-                    }
-            )
-        }
+        // ✅ FASE 1 (remake): el gesto vive DENTRO de `AuroraWavyProgress`.
+        // La vista anfitriona solo recibe el preview (`onScrub`), el seek
+        // único al soltar (`onScrubEnd`) y el toque sin arrastre (`onTap`).
+        // Así no hay dos DragGesture compitiendo por el mismo toque.
+        AuroraWavyProgress(
+            progress: progress,
+            isPlaying: audioEngine.isPlaying,
+            isScrubbing: isScrubbing,
+            onScrub: { newProgress in
+                guard audioEngine.duration > 0 else { return }
+                if !isScrubbing { startScrubbing() }
+                scrubPreviewProgress = newProgress
+            },
+            onScrubEnd: { newProgress in
+                guard audioEngine.duration > 0 else { return }
+                scrubPreviewProgress = newProgress
+                endScrubbing()
+            },
+            onTap: { onOpenNowPlaying() }
+        )
         // ✅ Mismo alto total que antes (16 + 8 pt de margen inferior): la barra no
         // cambia de sitio ni empuja la PlayerBar al entrar el nuevo componente.
         .frame(height: 16)

@@ -20,11 +20,19 @@ struct PlaylistsView: View {
                     // centrado y slot trailing, en vez del toolbar con título + borde.
                     // Mide exactamente lo que medía la barra a la que sustituye, así
                     // que el contenido de abajo no se mueve ni cambia su spacing.
-                    AuroraSheetHeader(
+                    M3ENavigationBar(
                         title: Localization.localized("playlists.title"),
-                        onClose: { dismiss() },
-                        titleColor: AppTheme.accent,
-                        trailing: AnyView(headerCreateButton)
+                        leading: {
+                            Button { dismiss() } label: {
+                                Image(systemName: "chevron.down")
+                                    .font(.system(size: 16, weight: .semibold))
+                                    .foregroundStyle(.secondary)
+                                    .frame(width: 44, height: 44)
+                                    .contentShape(Rectangle())
+                            }
+                            .accessibilityLabel(Localization.localized("design.close"))
+                        },
+                        trailing: { headerCreateButton }
                     )
 
                     ScrollView {

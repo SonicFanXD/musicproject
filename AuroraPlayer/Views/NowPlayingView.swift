@@ -220,11 +220,18 @@ struct NowPlayingView: View {
                     // no tiene altura intrínseca (podía colapsar o comerse el
                     // espacio de los Spacers). Misma altura que la barra
                     // interactiva de PlayerBar/ProgressScrubView.
+                    // ✅ FASE 1 (remake): esta barra del layout compacto ya
+                    // busca de verdad (antes era un `onScrub` vacío).
                     AuroraWavyProgress(
                         progress: audioEngine.currentTime / max(audioEngine.duration, 1),
                         isPlaying: audioEngine.isPlaying,
-                        isScrubbing: false
-                    ) { newProgress in }
+                        isScrubbing: false,
+                        onScrub: { _ in },
+                        onScrubEnd: { newProgress in
+                            guard audioEngine.duration > 0 else { return }
+                            audioEngine.seek(to: audioEngine.duration * newProgress)
+                        }
+                    )
                     .frame(height: 18)
 
                     Spacer(minLength: isCompactScreen ? 10 : 18)
@@ -391,21 +398,31 @@ struct NowPlayingView: View {
     // MARK: - Background (respeta "Reducir transparencia")
     private var backgroundView: some View {
         Group {
-            if audioEngine.currentSong?.artwork != nil, !reduceTransparency {
-                // ✅ FASE 2 (M3E): fondo SÓLIDO tonal derivado del color de la
-                // carátula. Antes se desenfocaba la portada a pantalla completa
-                // (`.blur(radius: 25)` + `drawingGroup`): en el A11 eso se paga
-                // en cada frame porque la capa se recompone al animar el resto
-                // del contenido. M3E pide superficies planas, no vidrio.
-                LinearGradient(
-                    colors: [
-                        extractedColor.opacity(0.55),
-                        extractedColor.opacity(0.18),
-                        Color(UIColor.systemBackground)
-                    ],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
+            if let artwork = audioEngine.currentSong?.artwork, !reduceTransparency {
+                // ✅ FASE 1 (remake): vuelve el fondo de portada desenfocado que
+                // pide la referencia. La imagen queda recortada a la pantalla y
+                // OPACA (clipped + opaque) y encima lleva el velo tonal del color
+                // extraído: la portada es atmósfera, no un cristal interactivo.
+                GeometryReader { geo in
+                    Image(uiImage: artwork)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: geo.size.width, height: geo.size.height)
+                        .clipped()
+                        .blur(radius: 40, opaque: true)
+                        .opacity(0.6)
+                        .overlay(
+                            LinearGradient(
+                                colors: [
+                                    extractedColor.opacity(0.55),
+                                    extractedColor.opacity(0.28),
+                                    Color(UIColor.systemBackground).opacity(0.92)
+                                ],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
+                }
                 .ignoresSafeArea()
                 .allowsHitTesting(false)
             } else {
@@ -621,10 +638,8 @@ struct NowPlayingView: View {
                 .frame(width: isCompactScreen ? 56 : 64, height: isCompactScreen ? 56 : 64)
                 .contentShape(Rectangle())
             }
-            // ✅ M3E: antes .plain (sin reacción visual al tocar sobre la
-            // portada). Rebote elástico + apagado sutil: la respuesta táctil
-            // es el 50% de la sensación "M3E".
-            .buttonStyle(PressableButtonStyle(scale: AuroraPressScale.circle, pressedOpacity: 0.7))
+            // ✅ FASE 1 (remake): squish M3E (deformación corta con spatialFast).
+            .buttonStyle(M3ESquishButtonStyle())
 
             // Play/Pause (icono con contraste)
             Button {
@@ -685,8 +700,8 @@ struct NowPlayingView: View {
                 .frame(width: isCompactScreen ? 56 : 64, height: isCompactScreen ? 56 : 64)
                 .contentShape(Rectangle())
             }
-            // ✅ M3E: mismo tratamiento que "anterior" (rebote + apagado).
-            .buttonStyle(PressableButtonStyle(scale: AuroraPressScale.circle, pressedOpacity: 0.7))
+            // ✅ FASE 1 (remake): mismo squish que "anterior".
+            .buttonStyle(M3ESquishButtonStyle())
             .opacity(audioEngine.hasNextTrack ? 1 : 0.4)
             .disabled(!audioEngine.hasNextTrack)
 
@@ -749,7 +764,7 @@ struct NowPlayingView: View {
                 .contentShape(Rectangle())
             }
             // ✅ M3E: rebote elástico al pulsar (antes `.plain`, sin respuesta).
-            .buttonStyle(PressableButtonStyle(scale: AuroraPressScale.chip, pressedOpacity: 0.85))
+            .buttonStyle(M3ESquishButtonStyle())
             .accessibilityLabel(Localization.localized("quality.accessibility.equalizer"))
 
             // Letras
@@ -773,7 +788,7 @@ struct NowPlayingView: View {
                 .contentShape(Rectangle())
             }
             // ✅ M3E: rebote elástico al pulsar (antes `.plain`, sin respuesta).
-            .buttonStyle(PressableButtonStyle(scale: AuroraPressScale.chip, pressedOpacity: 0.85))
+            .buttonStyle(M3ESquishButtonStyle())
             .accessibilityLabel(Localization.localized("quality.accessibility.lyrics"))
 
             // Cola
@@ -797,7 +812,7 @@ struct NowPlayingView: View {
                 .contentShape(Rectangle())
             }
             // ✅ M3E: rebote elástico al pulsar (antes `.plain`, sin respuesta).
-            .buttonStyle(PressableButtonStyle(scale: AuroraPressScale.chip, pressedOpacity: 0.85))
+            .buttonStyle(M3ESquishButtonStyle())
             .accessibilityLabel(Localization.localized("quality.accessibility.queue"))
 
             // ✅ AirPlay (FIX): en vez de abrir un sheet con un AVRoutePickerView
@@ -1011,7 +1026,6 @@ private struct ProgressScrubView: View {
 
     @State private var isScrubbing = false
     @State private var scrubPreviewTime: TimeInterval = 0
-    @State private var progressBarWidth: CGFloat = 0
 
     private var progress: Double {
         if isScrubbing {
@@ -1028,49 +1042,26 @@ private struct ProgressScrubView: View {
 
     var body: some View {
         VStack(spacing: 8) {
-            // ✅ FIX: .frame(maxWidth: .infinity) para que el GeometryReader
-            // se expanda al ancho completo disponible. El gesture usa
-            // progressBarWidth (actualizado por onAppear/onChange del
-            // GeometryReader) para calcular el porcentaje de scrub.
-            GeometryReader { geometry in
-                // ✅ M3E (Bloque 3): barra ONDULADA. El ancho se guarda una sola
-                // vez para el gesto (no se lee por frame) y la onda la dibuja el
-                // componente con transformaciones GPU: cero Path por frame.
-                AuroraWavyProgress(
-                    progress: isScrubbing ? scrubPreviewTime / max(audioEngine.duration, 1) : clock.time / max(audioEngine.duration, 1),
-                    isPlaying: audioEngine.isPlaying,
-                    isScrubbing: isScrubbing,
-                    onScrub: { newProgress in
-                        scrubPreviewTime = newProgress * audioEngine.duration
-                    }
-                )
-                .frame(height: 18)
-                .contentShape(Rectangle())
-                .gesture(
-                    DragGesture(minimumDistance: 0)
-                        .onChanged { value in
-                            guard audioEngine.duration > 0, progressBarWidth > 0 else { return }
-                            if !isScrubbing { Haptics.selection() }
-                            isScrubbing = true
-                            let percentage = max(0, min(1, value.location.x / progressBarWidth))
-                            scrubPreviewTime = audioEngine.duration * percentage
-                        }
-                        .onEnded { value in
-                            guard progressBarWidth > 0 else { return }
-                            let percentage = max(0, min(1, value.location.x / progressBarWidth))
-                            let newTime = audioEngine.duration * percentage
-                            isScrubbing = false
-                            Haptics.light()
-                            audioEngine.seek(to: newTime)
-                        }
-                )
-                .onAppear {
-                    progressBarWidth = geometry.size.width
+            // ✅ FASE 1 (remake): el gesto vive dentro del componente, que ya
+            // conoce su ancho real con GeometryReader. Aquí solo se traduce el
+            // progreso 0...1 a tiempo y se hace UN seek al soltar.
+            AuroraWavyProgress(
+                progress: isScrubbing ? scrubPreviewTime / max(audioEngine.duration, 1) : clock.time / max(audioEngine.duration, 1),
+                isPlaying: audioEngine.isPlaying,
+                isScrubbing: isScrubbing,
+                onScrub: { newProgress in
+                    guard audioEngine.duration > 0 else { return }
+                    if !isScrubbing { Haptics.selection() }
+                    isScrubbing = true
+                    scrubPreviewTime = audioEngine.duration * newProgress
+                },
+                onScrubEnd: { newProgress in
+                    guard audioEngine.duration > 0 else { return }
+                    isScrubbing = false
+                    Haptics.light()
+                    audioEngine.seek(to: audioEngine.duration * newProgress)
                 }
-                .onChange(of: geometry.size.width) { newWidth in
-                    progressBarWidth = newWidth
-                }
-            }
+            )
             .frame(maxWidth: .infinity)
             .frame(height: 18)
             .padding(.vertical, 12)

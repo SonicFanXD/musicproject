@@ -81,12 +81,12 @@ struct LibrarySongRow: View, Equatable {
                         // ✅ Jerarquía: título 16 (igual que las filas de
                         // álbum/artista) para separarse del subtítulo de 12.
                         Text(song.displayName)
-                            .font(.system(size: 16, weight: .semibold, design: .rounded))
+                            .font(M3ETypography.titleMediumEmphasized)
                             .foregroundStyle(isCurrent ? AppTheme.accent : .primary)
                             .lineLimit(1)
 
                         Text(song.displaySubtitle)
-                            .font(.system(size: 12))
+                            .font(M3ETypography.bodyMedium)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
 
@@ -120,7 +120,7 @@ struct LibrarySongRow: View, Equatable {
                             AuroraEqualizerBars(color: AppTheme.accent, isPlaying: isPlaying)
                         } else {
                             Text(Self.durationLabel(song.duration))
-                                .font(.system(size: 11, weight: .medium).monospacedDigit())
+                                .font(M3ETypography.labelMedium)
                                 .foregroundStyle(.tertiary)
                         }
                     }
@@ -265,15 +265,15 @@ struct AlbumRow: View, Equatable {
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(album.name)
-                    .font(.system(size: 16, weight: .semibold, design: .rounded))
+                    .font(M3ETypography.titleMediumEmphasized)
                     .foregroundStyle(.primary)
                     .lineLimit(1)
                 Text(album.artist)
-                    .font(.system(size: 12))
+                    .font(M3ETypography.bodyMedium)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                 Text(localizedSongCount(album.songs.count))
-                    .font(.system(size: 11))
+                    .font(M3ETypography.labelMedium)
                     .foregroundStyle(.tertiary)
             }
 
@@ -323,12 +323,12 @@ struct ArtistRow: View, Equatable {
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(artist.name)
-                    .font(.system(size: 16, weight: .semibold, design: .rounded))
+                    .font(M3ETypography.titleMediumEmphasized)
                     .foregroundStyle(.primary)
                     .lineLimit(1)
                 // ✅ Solo canciones: `artist.albums` agrupa discos y es caro por fila.
                 Text(localizedSongCount(artist.songs.count))
-                    .font(.system(size: 12))
+                    .font(M3ETypography.bodyMedium)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }

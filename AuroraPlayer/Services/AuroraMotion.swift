@@ -77,6 +77,16 @@ struct M3ETypography {
     // como artista/álbum en NowPlaying y datos de pista.
     static let labelLargeEmphasized: Font = .system(size: 14, weight: .semibold, design: .rounded)
 
+    // ✅ FASE 3 (remake): rol de fila. M3E no tiene un "16 semibold" ad-hoc;
+    // es el title-medium de la escala, un paso por encima del body.
+    static let titleMediumEmphasized: Font = .system(size: 16, weight: .semibold, design: .rounded)
+
+    // Cuerpo medio: subtítulos de fila y metadatos.
+    static let bodyMedium: Font = .system(size: 12, weight: .regular)
+
+    // Etiqueta pequeña: duración, contadores y datos numéricos.
+    static let labelMedium: Font = .system(size: 11, weight: .medium).monospacedDigit()
+
     // Subtítulo de pista: usado para información de calidad y route display.
     static let trackSubtitle: Font = .system(size: 10, weight: .regular)
         .monospacedDigit()

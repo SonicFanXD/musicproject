@@ -1,23 +1,17 @@
 import SwiftUI
 
 // ══════════════════════════════════════════════════════════════════════════
-// AURORA WAVY PROGRESS — barra ondulada M3E.
+// AURORA WAVY PROGRESS — barra ondulada M3E, INTERACTIVA.
 //
-// Implementación mínima y a prueba de fallos (FASE 1):
-//  · La PISTA es una `Capsule` de SwiftUI, fuera del Canvas. Aunque el Canvas
-//    no llegase a dibujar, la barra sigue visible: es imposible que
-//    "desaparezca" porque ya no depende de un dibujo imperativo.
-//  · La ONDA activa es un `Path` sinusoidal real:
-//        y = midY + sin(x * frequency + phase) * amplitude
-//    con la fase tomada de `TimelineView(.animation)`. El Path se construye en
-//    cada frame solo hasta `width * progress` (coste lineal al progreso, no al
-//    ancho total).
-//  · El thumb se posiciona con `width * progress` del GeometryReader; NUNCA
-//    con `UIScreen.main.bounds`.
-//  · Cero `repeatForever`: al pausar, el TimelineView se pausa y la amplitud
-//    pasa a 0 (la onda queda como una línea plana sobre la parte activa).
-//  · El gesto de arrastre vive en PlayerBar / NowPlayingView (el componente
-//    solo dibuja); así no compite con el gesto de la vista anfitriona.
+// · La PISTA es una `Capsule` de SwiftUI, fuera del Canvas: siempre visible.
+// · La ONDA es un `Path` sinusoidal real (`y = midY + sin(...) * amplitude`)
+//   dibujado solo hasta `width * progress`, con la fase de TimelineView.
+// · El GESTO vive AQUÍ (no en la vista anfitriona): arrastre continuo con
+//   `onScrub`, seek único al soltar con `onScrubEnd` y `onTap` para los toques
+//   sin desplazamiento (en PlayerBar abre NowPlaying).
+// · Canvas y thumb llevan `.allowsHitTesting(false)`: el único hit target es
+//   el `contentShape` del contenedor, así el arrastre nunca se pierde.
+// · Cero `repeatForever`: al pausar, el TimelineView se pausa.
 // ══════════════════════════════════════════════════════════════════════════
 
 struct AuroraWavyProgress: View {
@@ -25,9 +19,12 @@ struct AuroraWavyProgress: View {
     let isPlaying: Bool
     let isScrubbing: Bool
 
-    /// Se conserva por compatibilidad con las llamadas existentes. El gesto lo
-    /// gestiona la vista anfitriona.
+    /// Se llama en cada frame del arrastre con el progreso 0...1.
     var onScrub: ((Double) -> Void)? = nil
+    /// Se llama UNA vez al soltar. Si no existe, se reutiliza `onScrub`.
+    var onScrubEnd: ((Double) -> Void)? = nil
+    /// Toque sin arrastre (p. ej. abrir NowPlaying desde la PlayerBar).
+    var onTap: (() -> Void)? = nil
 
     var thickness: CGFloat = 4
     var amplitude: CGFloat = 2.4
@@ -40,15 +37,31 @@ struct AuroraWavyProgress: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
 
-    /// Nunca NaN ni fuera de 0...1: un progreso inválido no puede romper el
-    /// `Path` (SwiftUI deja de dibujar un Canvas con coordenadas NaN).
+    // Progreso local durante el arrastre: el thumb sigue al dedo al instante,
+    // sin esperar a que la vista anfitriona publique su preview.
+    @State private var dragPreview: Double? = nil
+    @State private var dragStarted = false
+    @State private var dragMoved = false
+
+    /// Nunca NaN ni fuera de 0...1.
     private var clampedProgress: CGFloat {
         let value = progress.isFinite ? CGFloat(progress) : 0
         return min(max(value, 0), 1)
     }
 
+    private var renderedProgress: CGFloat {
+        if let preview = dragPreview, preview.isFinite {
+            return min(max(CGFloat(preview), 0), 1)
+        }
+        return clampedProgress
+    }
+
     private var isAnimating: Bool {
         isPlaying && !reduceMotion && scenePhase == .active
+    }
+
+    private var isDragging: Bool {
+        isScrubbing || dragPreview != nil
     }
 
     private var gradientColors: [Color] {
@@ -58,16 +71,16 @@ struct AuroraWavyProgress: View {
     var body: some View {
         GeometryReader { geo in
             let size = geo.size
-            let activeWidth = size.width * clampedProgress
             let midY = size.height / 2
+            let activeWidth = size.width * renderedProgress
 
             ZStack(alignment: .leading) {
-                // 1) Pista completa (siempre visible, sin Canvas).
+                // 1) Pista completa.
                 Capsule(style: .continuous)
                     .fill(trackColor)
                     .frame(height: thickness)
 
-                // 2) Onda activa, dibujada solo hasta el progreso actual.
+                // 2) Onda activa.
                 TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: !isAnimating)) { timeline in
                     Canvas { context, canvasSize in
                         guard activeWidth > 0.5,
@@ -76,7 +89,6 @@ struct AuroraWavyProgress: View {
 
                         let mid = canvasSize.height / 2
                         let seconds = timeline.date.timeIntervalSinceReferenceDate
-                        // Se acota para no perder precisión con la fecha absoluta.
                         let phase = CGFloat(seconds.truncatingRemainder(dividingBy: 1_000)) * 4
                         let amp: CGFloat = isAnimating ? amplitude : 0
                         let frequency = 2 * CGFloat.pi / max(waveLength, 1)
@@ -105,8 +117,9 @@ struct AuroraWavyProgress: View {
                     }
                 }
                 .frame(width: size.width, height: size.height)
+                .allowsHitTesting(false)
 
-                // 3) Thumb: posición real con el ancho del GeometryReader.
+                // 3) Thumb: estrictamente `width * progress`.
                 if showsThumb, size.width > 0 {
                     Circle()
                         .fill(gradientColors.first ?? AppTheme.accent)
@@ -114,21 +127,67 @@ struct AuroraWavyProgress: View {
                             Circle().strokeBorder(Color.white.opacity(0.9), lineWidth: 2)
                         )
                         .frame(width: thumbSize, height: thumbSize)
-                        .scaleEffect(isScrubbing ? 1.3 : 1.0)
-                        .animation(AuroraMotion.spatialFast, value: isScrubbing)
+                        .scaleEffect(isDragging ? 1.3 : 1.0)
+                        .animation(AuroraMotion.spatialFast, value: isDragging)
                         .shadow(color: .black.opacity(isScrubbing ? 0.25 : 0.15), radius: 3, x: 0, y: 1)
-                        .position(
-                            x: min(max(activeWidth, thumbSize / 2),
-                                   max(thumbSize / 2, size.width - thumbSize / 2)),
-                            y: midY
-                        )
+                        .position(x: activeWidth, y: midY)
+                        .allowsHitTesting(false)
                 }
             }
             .frame(width: size.width, height: size.height)
+            // ✅ Hit target ampliado 10 pt por arriba y por abajo: la barra mide
+            // 16/18 pt, pero el dedo necesita ~44 pt para agarrarla sin fallar.
+            .contentShape(Rectangle().inset(by: -10))
+            .gesture(dragGesture(width: size.width))
         }
-        // Altura mínima: un `GeometryReader` suelto no tiene altura intrínseca
-        // y podía colapsar a 0 en un VStack. Los call sites fijan 16/18 pt.
         .frame(maxWidth: .infinity, minHeight: 16)
+    }
+
+    /// Arrastre con distinción toque/scrub: el toque (< 4 pt) no hace seek y
+    /// dispara `onTap`; a partir de ahí el thumb sigue al dedo y se hace un
+    /// único seek al soltar.
+    private func dragGesture(width: CGFloat) -> some Gesture {
+        DragGesture(minimumDistance: 0)
+            .onChanged { value in
+                if !dragStarted {
+                    dragStarted = true
+                    dragMoved = false
+                    dragPreview = Double(clampedProgress)
+                }
+
+                let dx = value.translation.width
+                let dy = value.translation.height
+                let distance = (dx * dx + dy * dy).squareRoot()
+                guard distance > 4 else { return }
+                dragMoved = true
+
+                guard width > 0 else { return }
+                let newProgress = min(max(value.location.x / width, 0), 1)
+                dragPreview = Double(newProgress)
+                onScrub?(Double(newProgress))
+            }
+            .onEnded { value in
+                let finalProgress: Double
+                if dragMoved, width > 0 {
+                    finalProgress = Double(min(max(value.location.x / width, 0), 1))
+                } else {
+                    finalProgress = Double(clampedProgress)
+                }
+
+                if dragMoved {
+                    if let scrubEnd = onScrubEnd {
+                        scrubEnd(finalProgress)
+                    } else {
+                        onScrub?(finalProgress)
+                    }
+                } else {
+                    onTap?()
+                }
+
+                dragPreview = nil
+                dragStarted = false
+                dragMoved = false
+            }
     }
 }
 

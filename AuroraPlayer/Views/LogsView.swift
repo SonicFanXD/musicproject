@@ -71,12 +71,10 @@ struct LogsView: View {
                     // pasa al NUEVO slot `leading`: es la única pantalla con menú
                     // a la izquierda, así que el chevron.down de cierre se oculta
                     // y su hueco de 44pt lo ocupa el menú (el título no se mueve).
-                    AuroraSheetHeader(
+                    M3ENavigationBar(
                         title: "Registros",
-                        leading: AnyView(diagnosticsMenu),
-                        onClose: { dismiss() },
-                        titleColor: AppTheme.accent,
-                        trailing: AnyView(doneButton)
+                        leading: { diagnosticsMenu },
+                        trailing: { doneButton }
                     )
 
                     // ✅ AURORA DESIGN: buscador INLINE (magnifyingglass + campo +
