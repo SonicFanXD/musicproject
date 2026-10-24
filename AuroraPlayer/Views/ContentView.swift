@@ -1395,10 +1395,8 @@ struct SplashView: View {
     // ✅ FIX SPLASH (VIGENTE): el contenido EMPIEZA VISIBLE — la firma nace a
     // opacity 1 y nada depende del `.onAppear` para pintarse. PROHIBIDO volver
     // a opacity condicionada a @State en 0 (fue la causa del cuadro negro).
-    // ✅ REDISEÑO A: única animación propia del splash, el latido lento de la
-    // firma de acento (1,0 ↔ 0,4 en 2,5 s, ida y vuelta). Valor inicial =
-    // visible: si el onAppear no llegara a dispararse, la firma se ve igual.
-    @State private var accentPulse = false
+    // ✅ FASE 1 (bucle infinito): el latido del splash ya no es @State ni
+    // `repeatForever`; su fase se calcula en el TimelineView de la firma.
     // ✅ M3E (Tanda 4): driver del "pop" elástico de entrada del logotipo.
     // Nace en false → el bloque se pinta al 88 % de escala (VISIBLE, nunca
     // opaco a 0: la regla dura del splash se mantiene) y al dispararse el
@@ -1439,14 +1437,18 @@ struct SplashView: View {
                         .tracking(5)
                         .foregroundStyle(.secondary)
                     
-                    // ✅ REDISEÑO A: firma de acento — barra de 32×4 (la
-                    // alternativa era un punto de 6pt). ÚNICA animación propia
-                    // del splash: latido lento 1,0 ↔ 0,4. Nace a opacity 1.
-                    Capsule()
-                        .fill(AppTheme.accent)
-                        .frame(width: 32, height: 4)
-                        .padding(.top, AuroraSpacing.sm)
-                        .opacity(accentPulse ? 0.4 : 1.0)
+                    // ✅ FASE 1: firma de acento con latido por TimelineView.
+                    // La fase sale de la fecha de cada frame; no hay ninguna
+                    // animación infinita encolada que pueda quedar viva al
+                    // desmontarse el splash.
+                    TimelineView(.animation(minimumInterval: 1.0 / 20.0)) { timeline in
+                        let phase = CGFloat((sin(2 * Double.pi * timeline.date.timeIntervalSinceReferenceDate / 2.5) + 1) / 2)
+                        Capsule()
+                            .fill(AppTheme.accent)
+                            .frame(width: 32, height: 4)
+                            .padding(.top, AuroraSpacing.sm)
+                            .opacity(Double(1.0 - 0.6 * phase))
+                    }
                 }
                 .background(
                     RadialGradient(
@@ -1490,41 +1492,44 @@ struct SplashView: View {
             withAnimation(AuroraMotion.emphasized) {
                 logoPopped = true
             }
-            // ✅ REDISEÑO A: el latido arranca ENTERO (1,0) y solo baja a 0,4 y
-            // vuelve: es decorativo, nunca oculta la firma. Una sola animación
-            // continua; el resto de la pantalla queda estático.
-            withAnimation(.easeInOut(duration: 2.5).repeatForever(autoreverses: true)) {
-                accentPulse = true
-            }
         }
     }
 }
 
-// ✅ Indicador de carga personalizado (puntos animados)
+// ✅ FASE 1: indicador de carga por Canvas (una sola pasada por frame).
+// Antes cada punto lanzaba su propio `repeatForever` escalonado con `delay`:
+// al re-renderizarse el splash las transacciones se reencolaban y el bucle no
+// terminaba nunca. Ahora la fase es una función de la fecha del TimelineView.
 struct LoadingDots: View {
-    @State private var animating = false
-    
     var body: some View {
-        HStack(spacing: 6) {
-            ForEach(0..<3, id: \.self) { index in
-                Circle()
-                    .fill(AppTheme.accent.opacity(0.7))
-                    .frame(width: 6, height: 6)
-                    .scaleEffect(animating ? 1.0 : 0.5)
-                    .opacity(animating ? 1.0 : 0.4)
-                    // ✅ autoreverses: el punto late (0,5 s) en vez de saltar de
-                    // golpe al reanudar el ciclo; stagger de 0,12 s entre puntos.
-                    .animation(
-                        .easeInOut(duration: 0.5)
-                            .repeatForever(autoreverses: true)
-                            .delay(Double(index) * 0.12),
-                        value: animating
+        TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { timeline in
+            Canvas { context, size in
+                let t = timeline.date.timeIntervalSinceReferenceDate
+                let dot: CGFloat = 6
+                let gap: CGFloat = 6
+                for index in 0..<3 {
+                    let phase = (sin(2 * Double.pi * (t - Double(index) * 0.12)) + 1) / 2
+                    let scale = CGFloat(0.5 + 0.5 * phase)
+                    let radius = dot / 2 * scale
+                    let center = CGPoint(
+                        x: dot / 2 + CGFloat(index) * (dot + gap),
+                        y: size.height / 2
                     )
+                    let rect = CGRect(
+                        x: center.x - radius,
+                        y: center.y - radius,
+                        width: radius * 2,
+                        height: radius * 2
+                    )
+                    context.fill(
+                        Path(ellipseIn: rect),
+                        with: .color(AppTheme.accent.opacity(Double(0.4 + 0.6 * scale)))
+                    )
+                }
             }
         }
-        .onAppear {
-            animating = true
-        }
+        .frame(width: 6 * 3 + 6 * 2, height: 6)
+        .accessibilityHidden(true)
     }
 }
 

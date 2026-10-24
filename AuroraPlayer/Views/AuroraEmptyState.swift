@@ -77,20 +77,25 @@ struct AuroraEmptyState: View {
     }
 }
 
-/// ✅ Oscilación de respiración. Separada en un ViewModifier para que el
-/// `withAnimation(repeatForever)` viva en el `onAppear` de una vista que existe
-/// solo mientras la app está activa: así no hay forma de dejar un bucle vivo.
+/// ✅ FASE 1 (bucle infinito): la respiración ya NO usa `repeatForever` ni
+/// `withAnimation` en `onAppear`. La fase se calcula con la fecha de cada
+/// frame del `TimelineView`, así que no hay ninguna transacción viva que
+/// SwiftUI pueda rearmar cuando esta vista se re-renderiza (p. ej. al cambiar
+/// de sección o al abrir/cerrar un sheet).
 private struct BreathingModifier: ViewModifier {
-    @State private var expanded = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     func body(content: Content) -> some View {
-        content
-            .scaleEffect(expanded ? 1.04 : 0.97)
-            .opacity(expanded ? 1.0 : 0.80)
-            .onAppear {
-                withAnimation(AuroraMotion.breathing) {
-                    expanded = true
-                }
+        if reduceMotion {
+            content
+        } else {
+            TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { timeline in
+                let t = timeline.date.timeIntervalSinceReferenceDate
+                let phase = CGFloat((sin(2 * Double.pi * t / 3.2) + 1) / 2)
+                content
+                    .scaleEffect(0.97 + 0.07 * phase)
+                    .opacity(Double(0.80 + 0.20 * phase))
             }
+        }
     }
 }

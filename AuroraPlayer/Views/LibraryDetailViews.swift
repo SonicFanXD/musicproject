@@ -821,35 +821,23 @@ struct AlbumSongRow: View, Equatable {
 // MARK: - Equalizer Bars (animaci�n optimizada sin bloqueo de hilo)
 struct EqualizerBars: View {
     let color: Color
-    /// ✅ BATERÍA: el latido solo corre mientras hay reproducción. Antes el
-    /// repeatForever seguía oscilando con la música en pausa (frames, CPU y GPU
-    /// gastados para nada) porque la animación nunca se retiraba.
     let isPlaying: Bool
-    @State private var animate = false
 
     var body: some View {
-        HStack(spacing: 2.5) {
-            ForEach(0..<3, id: \.self) { bar in
-                RoundedRectangle(cornerRadius: 1).fill(color)
-                    // ✅ FIX iOS 16: la altura se deriva de @State y la animación
-                    // repeatForever se lanza al aparecer. Con .animation(value:)
-                    // la animación persiste (se re-aplica en cada cambio de @State)
-                    // — antes, sin value:, iOS 16 la abandonaba al primer re-render
-                    // y las barras del tema activo quedaban CONGELADAS.
-                    .frame(width: 2.5, height: animate ? (bar % 2 == 0 ? 13 : 8) : (bar % 2 == 0 ? 8 : 13))
-                    .animation(
-                        animate ? Animation.easeInOut(duration: 0.5).repeatForever(autoreverses: true) : nil,
-                        value: animate
-                    )
-            }
-        }
+        // ✅ FASE 1: un único TimelineView + Canvas por indicador y ningún
+        // `repeatForever`. Antes cada una de las 3 barras abría su propio bucle
+        // y, al re-renderizarse la fila, SwiftUI volvía a encolarlo: la fuente
+        // del "bucle infinito" que no terminaba al cambiar de sección.
+        AuroraEqualizerBars(
+            color: color,
+            isPlaying: isPlaying,
+            barWidth: 2.5,
+            spacing: 2.5,
+            minHeight: 8,
+            maxHeight: 13,
+            height: 13
+        )
         .frame(width: 24)
-        .onAppear {
-            animate = isPlaying
-        }
-        .onChange(of: isPlaying) { playing in
-            animate = playing
-        }
     }
 }
 

@@ -151,10 +151,60 @@ enum AuroraMotion {
 // Activación de línea de letra (karaoke). Misma calibración que el .spring(0.4, 0.75).
     static let lyricLine = Animation.interpolatingSpring(mass: 1, stiffness: 200, damping: 0.75, initialVelocity: 0)
 
-// ✅ Respiración de los estados vacíos: spring CRÍTICAMENTE amortiguado
-// (damping 1.0 = sin overshoot) en bucle. No es un `easeInOut` porque el
-// contrato de movimiento de la app son resortes; con damping 1.0 el spring
-// entra y sale sin rebote, así que se lee como respiración y no como pulso.
-// El bucle lo arranca `AuroraEmptyState` SOLO con la app en primer plano.
-    static let breathing = Animation.interpolatingSpring(mass: 1, stiffness: 50, damping: 1.0, initialVelocity: 0).repeatForever(autoreverses: true)
+    // ✅ FASE 1 (bucle infinito): el token `breathing` con `repeatForever` se
+    // elimina. Las respiraciones/pulsos continuos se calculan con la FECHA de
+    // `TimelineView` (ver `AuroraEqualizerBars` y los modificadores de cada
+    // vista): SwiftUI no reencola ninguna transacción en cada re-render.
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// MARK: - Indicadores continuos SIN `repeatForever`
+// ══════════════════════════════════════════════════════════════════════════
+
+// ✅ FASE 1. Antes cada barra del ecualizador arrancaba un `repeatForever` con
+// `withAnimation`/`.animation(value:)`; en listas (y con el TimelineView de la
+// barra ondulada en la misma jerarquía) eso deja transacciones rearmándose en
+// cada re-render y la vista no termina de asentarse. Aquí la fase sale de la
+// fecha de cada frame: no hay @State que rearmar, no hay bucle que cancelar y
+// al pausar / pasar a segundo plano el TimelineView deja de pedir frames.
+struct AuroraEqualizerBars: View {
+    var color: Color = AppTheme.accent
+    var isPlaying: Bool
+    var barWidth: CGFloat = 2.5
+    var spacing: CGFloat = 2.5
+    var minHeight: CGFloat = 5
+    var maxHeight: CGFloat = 13
+    var height: CGFloat = 14
+
+    @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var isActive: Bool {
+        isPlaying && scenePhase == .active && !reduceMotion
+    }
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !isActive)) { timeline in
+            Canvas { context, size in
+                let t = timeline.date.timeIntervalSinceReferenceDate
+                for index in 0..<3 {
+                    let phase = t * 7.0 + Double(index) * 1.9
+                    let level = isActive ? (sin(phase) * 0.5 + 0.5) : 0.0
+                    let barHeight = minHeight + (maxHeight - minHeight) * CGFloat(level)
+                    let rect = CGRect(
+                        x: CGFloat(index) * (barWidth + spacing),
+                        y: (size.height - barHeight) / 2,
+                        width: barWidth,
+                        height: barHeight
+                    )
+                    context.fill(
+                        Path(roundedRect: rect, cornerRadius: barWidth / 2),
+                        with: .color(color)
+                    )
+                }
+            }
+        }
+        .frame(width: barWidth * 3 + spacing * 2, height: height)
+        .accessibilityHidden(true)
+    }
 }

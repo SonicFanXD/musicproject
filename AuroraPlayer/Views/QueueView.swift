@@ -25,11 +25,9 @@ struct QueueView: View {
     // usuario le cambiaba el álbum. Ahora la cola se lee y se edita DIRECTAMENTE
     // sobre `audioEngine.manualQueue` (moveInQueue/removeFromQueue/clearQueue) y
     // el resto del orden solo se MUESTRA, nunca se toca.
-    // ✅ B2: disparador de la animación de las barras del ecualizador. Vive en
-    // @State (y no directamente en `audioEngine.isPlaying`) porque es lo que
-    // hace que la animación `repeatForever` ARRANQUE al reanudar y se DESTRUYA
-    // al pausar: al aparecer la versión estática se rearma a false.
-    @State private var barsExpanded = false
+    // ✅ FASE 1: el disparador @State de las barras se elimina. El pulso lo
+    // calcula `AuroraEqualizerBars` con la fecha de cada frame (sin
+    // `repeatForever`), así que no hay animación que rearmar al re-renderizar.
     // ✅ C2: escala real del dispositivo (el iPhone 8 Plus es @3x). Se lee del
     // entorno de SwiftUI (la API de pantalla global está en desuso).
     @Environment(\.displayScale) private var displayScale
@@ -556,30 +554,20 @@ struct QueueView: View {
         .listRowBackground(Color.clear)
     }
 
-    /// ✅ B2: tres barras de ecualizador. Con `animated == false` se renderiza la
-    /// versión ESTÁTICA, sin un solo modificador de animación: no queda nada que
-    /// cancelar (el reposo mostrado, 6 pt, es el mismo punto de partida de la
-    /// oscilación, así que reanudar no da ningún salto visual).
+    /// ✅ FASE 1: las tres barras se dibujan en UN TimelineView + Canvas.
+    /// Con `animated == false` el TimelineView queda pausado y muestra el
+    /// reposo (no hay bucle vivo ni frames de más en pausa/segundo plano).
     @ViewBuilder
     private func equalizerBars(animated: Bool) -> some View {
-        HStack(spacing: 2.5) {
-            ForEach(0..<3, id: \.self) { bar in
-                if animated {
-                    RoundedRectangle(cornerRadius: 1.5)
-                        .fill(equalizerBarGradient)
-                        .frame(width: 3, height: barsExpanded ? (bar % 2 == 0 ? 14 : 9) : 6)
-                        .animation(
-                            Animation.easeInOut(duration: 0.45 + Double(bar) * 0.12).repeatForever(autoreverses: true),
-                            value: barsExpanded
-                        )
-                } else {
-                    RoundedRectangle(cornerRadius: 1.5)
-                        .fill(equalizerBarGradient)
-                        .frame(width: 3, height: 6)
-                }
-            }
-        }
-        .onAppear { barsExpanded = animated }
+        AuroraEqualizerBars(
+            color: AppTheme.accent,
+            isPlaying: animated,
+            barWidth: 3,
+            spacing: 2.5,
+            minHeight: 6,
+            maxHeight: 14,
+            height: 14
+        )
     }
 
     private var equalizerBarGradient: LinearGradient {

@@ -113,25 +113,11 @@ struct LibrarySongRow: View, Equatable {
                     // ancho de la duración y las barras se centran dentro.
                     Group {
                         if isCurrent {
-                            // ✅ 60fps: drawingGroup rasteriza las barras animadas.
-                            HStack(spacing: 2.5) {
-                                ForEach(0..<3, id: \.self) { bar in
-                                    RoundedRectangle(cornerRadius: 1)
-                                        .fill(AppTheme.accentGradient)
-                                        .frame(
-                                            width: 2.5,
-                                            height: isPlaying ? (bar % 2 == 0 ? 12 : 7) : 4
-                                        )
-                                        // ✅ BATERÍA: en pausa no hay bucle que animar.
-                                        .animation(
-                                            isPlaying
-                                                ? Animation.easeInOut(duration: 0.4 + Double(bar) * 0.1).repeatForever(autoreverses: true)
-                                                : nil,
-                                            value: isPlaying
-                                        )
-                                }
-                            }
-                            .drawingGroup()
+                            // ✅ FASE 1: barras dibujadas por un único
+                            // TimelineView + Canvas. Sin `repeatForever` (no
+                            // hay transacción que rearmar en cada re-render de
+                            // la lista) y sin pedir frames en pausa.
+                            AuroraEqualizerBars(color: AppTheme.accent, isPlaying: isPlaying)
                         } else {
                             Text(Self.durationLabel(song.duration))
                                 .font(.system(size: 11, weight: .medium).monospacedDigit())

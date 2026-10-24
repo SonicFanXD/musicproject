@@ -214,22 +214,19 @@ struct PlayerBar: View {
                                         .fill(textSafeAccentGradient())
                                         .animation(AuroraMotion.emphasized, value: audioEngine.isPlaying)
 
-                                    // ✅ Halo animado cuando reproduce Y solo en primer plano.
-                                    // La escala y la opacidad dependen de la MISMA condición que la
-                                    // animación: al pausar o al pasar a segundo plano hay una
-                                    // transacción real que sustituye al bucle (sin eso, retirar el
-                                    // `repeatForever` no detenía nada).
-                                    Circle()
-                                        .stroke(accentGradient(primaryOpacity: 0.5, secondaryOpacity: 0.35), lineWidth: 2)
-                                        .scaleEffect(isHaloAnimating ? 1.15 : 1.0)
-                                        .opacity(isHaloAnimating ? 1.0 : 0)
-                                        .animation(
-                                            isHaloAnimating
-                                                ? Animation.easeInOut(duration: 0.8).repeatForever(autoreverses: true)
-                                                : Animation.easeOut(duration: 0.15),
-                                            value: isHaloAnimating
-                                        )
-                                        .drawingGroup()
+                                    // ✅ FASE 1 (bucle infinito): el halo ya NO usa
+                                    // `repeatForever`. La fase se calcula con la fecha de
+                                    // cada frame que entrega el TimelineView; al pausar o
+                                    // al pasar a segundo plano el TimelineView se pausa y
+                                    // no queda ninguna transacción rearmándose en cada
+                                    // re-render (el origen del "bucle atascado").
+                                    TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !isHaloAnimating)) { timeline in
+                                        let phase = CGFloat((sin(2 * Double.pi * timeline.date.timeIntervalSinceReferenceDate / 1.6) + 1) / 2)
+                                        Circle()
+                                            .stroke(accentGradient(primaryOpacity: 0.5, secondaryOpacity: 0.35), lineWidth: 2)
+                                            .scaleEffect(isHaloAnimating ? 1.0 + 0.15 * phase : 1.0)
+                                            .opacity(isHaloAnimating ? Double(0.35 + 0.65 * phase) : 0)
+                                    }
 
                                     Image(systemName: audioEngine.isPlaying ? "pause.fill" : "play.fill")
                                         .font(.system(size: 16, weight: .bold))

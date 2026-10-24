@@ -10,7 +10,6 @@ struct FolderPickerView: View {
     @State private var showImporter = false
     @State private var importMode: ImportMode = .both
     @State private var appearAnimation = false
-    @State private var headerPulse = false
 
     enum ImportMode {
         case folders
@@ -66,11 +65,6 @@ struct FolderPickerView: View {
             }
             .onAppear {
                 withAnimation(.easeOut(duration: 0.5)) { appearAnimation = true }
-                // ✅ El anillo empieza a latir DESPUÉS de la entrada (0,25 s) para que
-                // el pulso no compita con la escala de aparición del icono.
-                withAnimation(.easeInOut(duration: 1.5).repeatForever(autoreverses: true).delay(0.25)) {
-                    headerPulse = true
-                }
             }
         }
     }
@@ -91,12 +85,17 @@ struct FolderPickerView: View {
     private var headerSection: some View {
         VStack(spacing: 16) {
             ZStack {
-                // ✅ Anillo pulsante con material de vidrio (estilo NowPlayingView)
-                Circle()
-                    .stroke(AppTheme.accentGradient(opacity: 0.45), lineWidth: 2)
-                    .frame(width: 88, height: 88)
-                    .scaleEffect(headerPulse ? 1.12 : 0.95)
-                    .opacity(headerPulse ? 0.6 : 0.25)
+                // ✅ FASE 1: anillo pulsante por TimelineView (fase = fecha del
+                // frame). Sin `repeatForever`: este sheet puede re-renderizarse
+                // (escaneo, cambios de la librería) sin rearmar el pulso.
+                TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { timeline in
+                    let phase = CGFloat((sin(2 * Double.pi * timeline.date.timeIntervalSinceReferenceDate / 1.5) + 1) / 2)
+                    Circle()
+                        .stroke(AppTheme.accentGradient(opacity: 0.45), lineWidth: 2)
+                        .frame(width: 88, height: 88)
+                        .scaleEffect(0.95 + 0.17 * phase)
+                        .opacity(Double(0.25 + 0.35 * phase))
+                }
 
                 // ✅ AURORA DESIGN: primer uso del vidrio del sistema en esta vista
                 // (`auroraGlass()`): mismo Shape y mismo tamaño, pero reactivo a
