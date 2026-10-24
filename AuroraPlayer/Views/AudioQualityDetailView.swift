@@ -93,7 +93,8 @@ struct AudioQualityDetailView: View {
                     .frame(width: 76, height: 76)
 
                 Circle()
-                    .fill(Color(UIColor.tertiarySystemBackground))
+                    // ✅ M3E: superficie tonal sólida, no gris de iOS.
+                    .fill(M3EColor.surfaceContainerHighest)
                     .frame(width: 66, height: 66)
                     .overlay(
                         Image(systemName: "waveform.circle.fill")
@@ -379,7 +380,7 @@ struct AudioQualityDetailView: View {
                 .padding(.horizontal, 18).padding(.vertical, 14)
                 .background(
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(Color(UIColor.tertiarySystemBackground).opacity(0.4))
+                        .fill(M3EColor.surfaceContainer)
                 )
             }
 
@@ -424,7 +425,7 @@ struct AudioQualityDetailView: View {
                 .padding(.horizontal, 18).padding(.vertical, 14)
                 .background(
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(Color(UIColor.tertiarySystemBackground).opacity(0.4))
+                        .fill(M3EColor.surfaceContainer)
                 )
             }
 
@@ -876,7 +877,7 @@ struct AudioQualityDetailView: View {
         .padding(.horizontal, 18).padding(.vertical, 14)
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(AnyShapeStyle(isHighlighted ? AnyShapeStyle(AppTheme.accentGradient(opacity: 0.1)) : AnyShapeStyle(Color(UIColor.tertiarySystemBackground).opacity(0.4))))
+                .fill(AnyShapeStyle(isHighlighted ? AnyShapeStyle(AppTheme.accentGradient(opacity: 0.1)) : AnyShapeStyle(M3EColor.surfaceContainer)))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 12, style: .continuous)

@@ -598,20 +598,12 @@ private struct LyricsArtworkBackground: View, Equatable {
         .allowsHitTesting(false)
     }
 
-    /// 1️⃣ Carátula desenfocada (la única fuente de color del fondo).
+    /// 1️⃣ Fondo tonal SÓLIDO. M3E no usa carátula desenfocada como superficie:
+    /// el único blur de fondo de la app queda reservado a NowPlaying.
     @ViewBuilder
     private func artworkLayer(in size: CGSize) -> some View {
-        if let artwork, !reduceTransparency {
-            Image(uiImage: AppTheme.thumbnail(from: artwork, size: Design.thumbnailSize))
-                .resizable()
-                .interpolation(.medium)
-                .scaledToFill()
-                .frame(width: size.width, height: size.height)
-                .blur(radius: Design.artworkBlurRadius)
-                .opacity(Design.artworkOpacity)
-        } else {
-            M3EColor.surface
-        }
+        M3EColor.surface
+            .frame(width: size.width, height: size.height)
     }
 
     /// 2️⃣ Vidrio esmerilado: `.ultraThinMaterial` (el más transparente de los
@@ -628,7 +620,8 @@ private struct LyricsArtworkBackground: View, Equatable {
         // desenfocada. El material añadía un segundo muestreo de blur por frame
         // justo debajo de las letras animadas; un color con alfa deja pasar la
         // portada y conserva la lectura, con coste de composición plano.
-        M3EColor.surface.opacity(reduceTransparency ? 1 : 0.88)
+        // ✅ M3E: capa 100 % opaca (cero translucidez en superficies).
+        M3EColor.surface
     }
 
     /// 3️⃣ Tinte del acento ACTUAL (`AppTheme.accent` respeta "acento desde

@@ -120,6 +120,14 @@ enum M3EColor {
         )
     }
 
+    /// Texto principal sobre cualquier superficie tonal.
+    static var onSurface: Color {
+        tone(
+            light: (brightness: 0.100, chroma: 0.140),
+            dark: (brightness: 0.950, chroma: 0.040)
+        )
+    }
+
     static var onSurfaceVariant: Color {
         tone(
             light: (brightness: 0.420, chroma: 0.120),

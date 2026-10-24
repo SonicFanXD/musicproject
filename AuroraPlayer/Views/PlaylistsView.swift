@@ -8,11 +8,12 @@ struct PlaylistsView: View {
     @State private var showCreatePlaylist = false
     @State private var newPlaylistName = ""
     @State private var newPlaylistDescription = ""
+    /// ✅ M3E: detalle como pantalla completa (sin NavigationStack).
+    @State private var selectedPlaylist: Playlist? = nil
 
     var body: some View {
-        NavigationStack {
-            ZStack {
-                AppBackground()
+        ZStack {
+            AppBackground()
 
                 VStack(spacing: 0) {
                     // ✅ AURORA DESIGN: header de sheet del sistema (primer uso en el
@@ -51,15 +52,15 @@ struct PlaylistsView: View {
                     .scrollIndicators(.hidden)
                 }
             }
-            // ✅ Ocultar la barra: el header del sistema ocupa su sitio, no se suman.
-            .toolbar(.hidden, for: .navigationBar)
-            // ✅ FIX BACK ACCENT: acento vivo para el back de PlaylistDetailView
-            // (push) y los controles de este stack, sobre el AccentColor del asset.
-            .tint(AppTheme.accent)
-            .sheet(isPresented: $showCreatePlaylist) {
-
-                createPlaylistSheet
-            }
+        .fullScreenCover(item: $selectedPlaylist) { playlist in
+            PlaylistDetailView(
+                playlist: playlist,
+                fileAccessService: fileAccessService,
+                audioEngine: audioEngine
+            )
+        }
+        .fullScreenCover(isPresented: $showCreatePlaylist) {
+            createPlaylistSheet
         }
     }
 
@@ -140,16 +141,13 @@ struct PlaylistsView: View {
             GridItem(.flexible(), spacing: 16)
         ], spacing: 20) {
             ForEach(fileAccessService.playlists) { playlist in
-                NavigationLink {
-                    PlaylistDetailView(
-                        playlist: playlist,
-                        fileAccessService: fileAccessService,
-                        audioEngine: audioEngine
-                    )
+                Button {
+                    Haptics.light()
+                    selectedPlaylist = playlist
                 } label: {
                     playlistCard(playlist)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(PressableButtonStyle(scale: AuroraPressScale.chip))
             }
         }
     }
@@ -205,20 +203,20 @@ struct PlaylistsView: View {
             // Playlist info
             VStack(alignment: .leading, spacing: 4) {
                 Text(playlist.name)
-                    .font(.subheadline.weight(.semibold))
+                    .font(M3ETypography.titleMediumEmphasized)
                     .foregroundStyle(.primary)
                     .lineLimit(1)
 
                 if !playlist.description.isEmpty {
                     Text(playlist.description)
-                        .font(.caption)
+                        .font(M3ETypography.bodyMedium)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
 
                 Text(localizedSongCount(playlist.songIDs.count))
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
+                    .font(M3ETypography.labelMedium)
+                    .foregroundStyle(.secondary)
             }
         }
         .frame(width: 150)
@@ -226,35 +224,11 @@ struct PlaylistsView: View {
 
     // MARK: - Create Playlist Sheet
     private var createPlaylistSheet: some View {
-        NavigationStack {
-            ZStack {
-                AppBackground()
+        ZStack {
+            AppBackground()
 
                 ScrollView {
                     VStack(spacing: 24) {
-                        VStack(spacing: 16) {
-                            ZStack {
-                                Circle()
-                                    .fill(AppTheme.accentGradient(opacity: 0.16))
-                                    .frame(width: 70, height: 70)
-
-                                Image(systemName: "plus.circle.fill")
-                                    .font(.system(size: 28, weight: .semibold))
-                                    .foregroundStyle(AppTheme.accentGradient)
-                            }
-
-                            Text(Localization.localized("playlists.newPlaylist"))
-                                .font(M3ETypography.titleLargeEmphasized)
-
-                            Text(Localization.localized("playlists.newPlaylistSubtitle"))
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                                .multilineTextAlignment(.center)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 20)
-                        .enhancedGlass(cornerRadius: 22)
-
                         VStack(spacing: 16) {
                             VStack(alignment: .leading, spacing: 8) {
                                 Text(Localization.localized("playlists.name"))
@@ -262,8 +236,13 @@ struct PlaylistsView: View {
                                     .foregroundStyle(.secondary)
 
                                 TextField(Localization.localized("playlists.placeholderName"), text: $newPlaylistName)
-                                    .textFieldStyle(.roundedBorder)
-                                    .padding(.horizontal, 4)
+                                    .textFieldStyle(.plain)
+                                    .padding(.horizontal, 14)
+                                    .frame(height: 48)
+                                    .background(
+                                        M3EColor.surfaceContainerHigh,
+                                        in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    )
                             }
 
                             VStack(alignment: .leading, spacing: 8) {
@@ -272,50 +251,25 @@ struct PlaylistsView: View {
                                     .foregroundStyle(.secondary)
 
                                 TextField(Localization.localized("playlists.placeholderDescription"), text: $newPlaylistDescription)
-                                    .textFieldStyle(.roundedBorder)
-                                    .padding(.horizontal, 4)
+                                    .textFieldStyle(.plain)
+                                    .padding(.horizontal, 14)
+                                    .frame(height: 48)
+                                    .background(
+                                        M3EColor.surfaceContainerHigh,
+                                        in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    )
                             }
                         }
                         .padding(.horizontal, 4)
 
-                        Button {
-                            createPlaylist()
-                        } label: {
-                            HStack {
+                        M3EFilledButton(action: createPlaylist) {
+                            HStack(spacing: 10) {
                                 Image(systemName: "plus.circle.fill")
                                     .font(.system(size: 18, weight: .semibold))
 
                                 Text(Localization.localized("playlists.createPlaylist"))
-                                    .font(M3ETypography.labelLargeEmphasized)
                             }
-                            .foregroundStyle(.white)
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 18) // Expanded touch target (16→18)
-                            .background {
-                                ZStack {
-                                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                        .fill(LinearGradient(
-                                            colors: [AppTheme.accent, AppTheme.accent.opacity(0.7)],
-                                            startPoint: .topLeading,
-                                            endPoint: .bottomTrailing
-                                        ))
-
-                                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                        .fill(
-                                            LinearGradient(
-                                                colors: [
-                                                    .white.opacity(0.15),
-                                                    .white.opacity(0.05),
-                                                    .clear
-                                                ],
-                                                startPoint: .topLeading,
-                                                endPoint: .bottomTrailing
-                                            )
-                                        )
-                                }
-                            }
-                            .contentShape(Rectangle())
-                            .shadow(color: AppTheme.accent.opacity(0.5), radius: 16, x: 0, y: 8)
                         }
                         .disabled(newPlaylistName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
@@ -324,19 +278,36 @@ struct PlaylistsView: View {
                 }
                 .scrollIndicators(.hidden)
             }
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(.hidden, for: .navigationBar)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(Localization.localized("actions.cancel")) {
-                        showCreatePlaylist = false
+            // ✅ M3E: cabecera propia del diálogo a pantalla completa (sin
+            // NavigationStack ni toolbar del sistema).
+            .safeAreaInset(edge: .top, spacing: 0) {
+                M3ENavigationBar(
+                    title: Localization.localized("playlists.newPlaylist"),
+                    leading: {
+                        Button { showCreatePlaylist = false } label: {
+                            Image(systemName: "close")
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundStyle(M3EColor.onSurfaceVariant)
+                                .frame(width: 44, height: 44)
+                                .contentShape(Rectangle())
+                        }
+                        .accessibilityLabel(Localization.localized("design.close"))
+                    },
+                    trailing: {
+                        Button(Localization.localized("actions.done")) {
+                            createPlaylist()
+                        }
+                        .font(M3ETypography.labelLargeEmphasized)
+                        .foregroundStyle(
+                            newPlaylistName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                                ? M3EColor.onSurfaceVariant
+                                : M3EColor.primary
+                        )
+                        .disabled(newPlaylistName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        .frame(height: 44)
                     }
-                    .foregroundStyle(.secondary)
-                    .frame(width: 44, height: 44) // Bigger invisible touch target
-                    .contentShape(Rectangle())
-                }
+                )
             }
-        }
     }
 
     private func createPlaylist() {
@@ -419,58 +390,53 @@ struct PlaylistDetailView: View {
                 }
             }
         }
-        .navigationTitle(playlist.name) // Needed for back button label
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbarBackground(.hidden, for: .navigationBar)
-        // ✅ FIX back del detalle de playlist: el root del stack oculta la barra
-        // (el header del sistema ocupa su sitio) y en iOS 16 la visibilidad del
-        // toolbar es POR VISTA. Esta vista apilada no tiene botón de cierre propio
-        // (solo un menú trailing), así que depende del back NATIVO: se pide la
-        // barra visible explícitamente para garantizar que aparezca.
-        .toolbar(.visible, for: .navigationBar)
-        // ✅ FIX BACK TEXT: back nativo oculto (el título del padre era vacío →
-        // iOS caía al "Back" del sistema, en inglés y sin acento). Back propio
-        // con acento vivo y texto localizado; el dismiss de entorno hace el pop.
-        .navigationBarBackButtonHidden(true)
-        .toolbar {
-            ToolbarItem(placement: .navigationBarLeading) {
-                Button {
-                    Haptics.light()
-                    dismiss()
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "chevron.left")
-                            .font(.system(size: 17, weight: .semibold))
-                        Text(Localization.localized("design.back"))
-                            .font(M3ETypography.labelLargeEmphasized)
-                    }
-                    .foregroundStyle(AppTheme.accent)
-                }
-            }
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Menu {
+        // ✅ M3E: top app bar propia (sin NavigationStack ni toolbar del sistema).
+        .safeAreaInset(edge: .top, spacing: 0) {
+            M3ENavigationBar(
+                title: playlist.name,
+                leading: {
                     Button {
-                        editedName = playlist.name
-                        editedDescription = playlist.description
-                        showEditPlaylist = true
+                        Haptics.light()
+                        dismiss()
                     } label: {
-                        Label(Localization.localized("playlists.editPlaylist"), systemImage: "pencil")
-                    }
-
-                    Button(role: .destructive) {
-                        showDeleteConfirmation = true
-                    } label: {
-                        Label(Localization.localized("playlists.deletePlaylist"), systemImage: "trash")
-                    }
-                } label: {
-                    Image(systemName: "ellipsis.circle")
-                        .foregroundStyle(.primary)
-                        .frame(width: 44, height: 44) // Bigger invisible touch target
+                        HStack(spacing: 4) {
+                            Image(systemName: "chevron.left")
+                                .font(.system(size: 17, weight: .semibold))
+                            Text(Localization.localized("design.back"))
+                                .font(M3ETypography.labelLargeEmphasized)
+                        }
+                        .foregroundStyle(M3EColor.primary)
+                        .frame(height: 44)
                         .contentShape(Rectangle())
+                    }
+                    .accessibilityLabel(Localization.localized("design.back"))
+                },
+                trailing: {
+                    Menu {
+                        Button {
+                            editedName = playlist.name
+                            editedDescription = playlist.description
+                            showEditPlaylist = true
+                        } label: {
+                            Label(Localization.localized("playlists.editPlaylist"), systemImage: "pencil")
+                        }
+
+                        Button(role: .destructive) {
+                            showDeleteConfirmation = true
+                        } label: {
+                            Label(Localization.localized("playlists.deletePlaylist"), systemImage: "trash")
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundStyle(M3EColor.onSurfaceVariant)
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
+                    }
                 }
-            }
+            )
         }
-        .sheet(isPresented: $showEditPlaylist) {
+        .fullScreenCover(isPresented: $showEditPlaylist) {
             editPlaylistSheet
         }
         .alert(String(format: Localization.localized("playlists.deleteConfirm"), playlist.name), isPresented: $showDeleteConfirmation) {
@@ -616,27 +582,14 @@ struct PlaylistDetailView: View {
         .frame(maxWidth: .infinity)
         .padding(.bottom, 4)
         .background(alignment: .top) {
-            // Fondo desenfocado del artwork de la lista
+            // ✅ M3E: cabecera con gradiente tonal. Sin carátula desenfocada:
+            // el único blur de fondo permitido es el de NowPlaying.
             GeometryReader { geometry in
-                Group {
-                    if let artwork = playlist.artwork {
-                        // ✅ ANTI-JETSAM: el fondo va desenfocado a 44pt, así que
-                        // se decodifica una miniatura de 400px en vez de la
-                        // carátula completa (≈2.4MB) en cada re-render del header.
-                        Image(uiImage: AppTheme.thumbnail(from: artwork, size: CGSize(width: 400, height: 400)))
-                            .resizable()
-                            .scaledToFill()
-                            .blur(radius: 44)
-                            .opacity(0.35)
-                            .overlay(M3EColor.surface.opacity(0.45))
-                    } else {
-                        LinearGradient(
-                            colors: [AppTheme.accent.opacity(0.18), M3EColor.surface],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                    }
-                }
+                LinearGradient(
+                    colors: [AppTheme.accent.opacity(0.18), M3EColor.surface],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
                 .frame(width: geometry.size.width, height: geometry.size.height + 80)
                 .clipped()
                 .ignoresSafeArea(edges: .top)
@@ -670,9 +623,8 @@ struct PlaylistDetailView: View {
     }
 
     private var editPlaylistSheet: some View {
-        NavigationStack {
-            ZStack {
-                AppBackground()
+        ZStack {
+            AppBackground()
 
                 ScrollView {
                     VStack(spacing: 24) {
@@ -683,8 +635,13 @@ struct PlaylistDetailView: View {
                     .foregroundStyle(.secondary)
 
                 TextField(Localization.localized("playlists.placeholderName"), text: $editedName)
-                    .textFieldStyle(.roundedBorder)
-                    .padding(.horizontal, 4)
+                    .textFieldStyle(.plain)
+                    .padding(.horizontal, 14)
+                    .frame(height: 48)
+                    .background(
+                        M3EColor.surfaceContainerHigh,
+                        in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    )
             }
 
             VStack(alignment: .leading, spacing: 8) {
@@ -693,49 +650,25 @@ struct PlaylistDetailView: View {
                     .foregroundStyle(.secondary)
 
                 TextField(Localization.localized("playlists.placeholderDescription"), text: $editedDescription)
-                    .textFieldStyle(.roundedBorder)
-                    .padding(.horizontal, 4)
+                    .textFieldStyle(.plain)
+                    .padding(.horizontal, 14)
+                    .frame(height: 48)
+                    .background(
+                        M3EColor.surfaceContainerHigh,
+                        in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    )
             }
                         }
                         .padding(.horizontal, 4)
 
-                        Button {
-                            savePlaylistChanges()
-                        } label: {
-                            HStack {
+                        M3EFilledButton(action: savePlaylistChanges) {
+                            HStack(spacing: 10) {
                                 Image(systemName: "checkmark.circle.fill")
                                     .font(.system(size: 18, weight: .semibold))
 
                                 Text(Localization.localized("playlists.saveChanges"))
-                                    .font(M3ETypography.labelLargeEmphasized)
                             }
-                            .foregroundStyle(.white)
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 16)
-                            .background {
-                                ZStack {
-                                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                        .fill(LinearGradient(
-                                            colors: [AppTheme.accent, AppTheme.accent.opacity(0.7)],
-                                            startPoint: .topLeading,
-                                            endPoint: .bottomTrailing
-                                        ))
-
-                                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                        .fill(
-                                            LinearGradient(
-                                                colors: [
-                                                    .white.opacity(0.15),
-                                                    .white.opacity(0.05),
-                                                    .clear
-                                                ],
-                                                startPoint: .topLeading,
-                                                endPoint: .bottomTrailing
-                                            )
-                                        )
-                                }
-                            }
-                            .shadow(color: AppTheme.accent.opacity(0.5), radius: 16, x: 0, y: 8)
                         }
                         .disabled(editedName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
@@ -744,19 +677,35 @@ struct PlaylistDetailView: View {
                 }
                 .scrollIndicators(.hidden)
             }
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(.hidden, for: .navigationBar)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(Localization.localized("actions.cancel")) {
-                        showEditPlaylist = false
+            // ✅ M3E: cabecera propia del diálogo (sin NavigationStack).
+            .safeAreaInset(edge: .top, spacing: 0) {
+                M3ENavigationBar(
+                    title: Localization.localized("playlists.editPlaylist"),
+                    leading: {
+                        Button { showEditPlaylist = false } label: {
+                            Image(systemName: "close")
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundStyle(M3EColor.onSurfaceVariant)
+                                .frame(width: 44, height: 44)
+                                .contentShape(Rectangle())
+                        }
+                        .accessibilityLabel(Localization.localized("design.close"))
+                    },
+                    trailing: {
+                        Button(Localization.localized("actions.done")) {
+                            savePlaylistChanges()
+                        }
+                        .font(M3ETypography.labelLargeEmphasized)
+                        .foregroundStyle(
+                            editedName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                                ? M3EColor.onSurfaceVariant
+                                : M3EColor.primary
+                        )
+                        .disabled(editedName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        .frame(height: 44)
                     }
-                    .foregroundStyle(.secondary)
-                    .frame(width: 44, height: 44) // Bigger invisible touch target
-                    .contentShape(Rectangle())
-                }
+                )
             }
-        }
     }
 
     private func savePlaylistChanges() {

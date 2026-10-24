@@ -146,7 +146,7 @@ struct AlbumDetailView: View {
     // Esta vista SOLO LEE: aquí no se computa ningún color.
     @State private var appearAnimation = false
     // ? OPT: blur precalculado UNA vez (en background) en vez de re-renderizar .blur(50) en cada frame
-    @State private var heroBlurredArtwork: UIImage? = nil
+
 
     // ? OPT: cachear c�mputos costosos que se leen m�ltiples veces por frame
     @State private var cachedSongs: [Song] = []
@@ -268,47 +268,22 @@ struct AlbumDetailView: View {
             if abs(offset - scrollOffset) > 1 { scrollOffset = offset }
         }
         .background(AppBackground().ignoresSafeArea())
-        // ✅ FIX FRANJA SUPERIOR: el ScrollView recortaba su contenido a su marco,
-        // que empieza por debajo del status bar + nav bar, así que el hero no
-        // podía pintar ahí y se veía el fondo de la app (negro arriba en oscuro).
-        // Con esto el contenido puede llegar a y=0: la franja se la come el hero.
-        .ignoresSafeArea(edges: .top)
-        .navigationBarTitleDisplayMode(.inline)
+        // ✅ M3E: top app bar PROPIA. Sin `NavigationStack` ni toolbar del
+        // sistema: el detalle es una pantalla completa con su barra Material
+        // (título title-large, back con dismiss), como una activity de Android.
+        .safeAreaInset(edge: .top, spacing: 0) {
+            detailTopBar
+        }
+
         // ✅ FIX BACK TEXT: back nativo oculto (salía "Back" en inglés y con el
         // azul del asset). Back propio: acento vivo + texto localizado; el
         // dismiss de entorno hace el pop del stack.
-        .navigationBarBackButtonHidden(true)
+
         // ✅ BARRERA EMERGENTE (estilo Apple Music): el título aparece solo
         // cuando el hero ya casi salió de pantalla. Solo opacidad, sin recalculos.
-        .toolbar {
-            ToolbarItem(placement: .navigationBarLeading) {
-                Button {
-                    Haptics.light()
-                    dismiss()
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "chevron.left")
-                            .font(.system(size: 17, weight: .semibold))
-                        Text(Localization.localized("design.back"))
-                            .font(M3ETypography.titleMediumEmphasized)
-                    }
-                    .foregroundStyle(AppTheme.accent)
-                }
-            }
-            ToolbarItem(placement: .principal) {
-                Text(album.name)
-                    .font(M3ETypography.titleMediumEmphasized)
-                    .lineLimit(1)
-                    // ✅ M3E: entra con el spring estándar y una micro-escala desde
-                    // 0.94 (el «aflorar» de M3E). Solo cambia de estado al cruzar el
-                    // umbral, no en cada tick de scroll.
-                    .opacity(showsInlineTitle ? 1 : 0)
-                    .scaleEffect(showsInlineTitle ? 1 : 0.94)
-                    .animation(AuroraMotion.spatialDefault, value: showsInlineTitle)
-            }
-        }
+
         // ? Sin banda gris: el hero inmersivo fluye bajo la barra de navegaci�n
-        .toolbarBackground(.hidden, for: .navigationBar)
+
         .onAppear {
             // ? Cachear c�mputos una sola vez
             if cachedSongs.isEmpty {
@@ -324,17 +299,36 @@ struct AlbumDetailView: View {
                 appearAnimation = true
             }
             // ? OPT: precalcular el blur del hero UNA vez en background
-            prepareBlurredArtwork(from: album.artwork)
         }
     }
 
     // ? OPT: gaussian blur costoso ? se calcula UNA vez en hilo de fondo y se cachea
-    private func prepareBlurredArtwork(from artwork: UIImage?) {
-        guard heroBlurredArtwork == nil, let artwork = artwork else { return }
-        DispatchQueue.global(qos: .userInitiated).async {
-            let blurred = artwork.applyingGaussianBlur(radius: 40)
-            DispatchQueue.main.async { self.heroBlurredArtwork = blurred }
-        }
+
+
+    /// ✅ M3E: top app bar propia del detalle. Sustituye al toolbar del
+    /// `NavigationStack`: back + título `title-large` sobre `surface` sólido.
+    private var detailTopBar: some View {
+        M3ENavigationBar(
+            title: album.name,
+            leading: {
+                Button {
+                    Haptics.light()
+                    dismiss()
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 17, weight: .semibold))
+                        Text(Localization.localized("design.back"))
+                            .font(M3ETypography.labelLargeEmphasized)
+                    }
+                    .foregroundStyle(M3EColor.primary)
+                    .frame(height: 44)
+                    .contentShape(Rectangle())
+                }
+                .accessibilityLabel(Localization.localized("design.back"))
+            },
+            trailing: { EmptyView() }
+        )
     }
 
     private var heroSection: some View {
@@ -419,27 +413,17 @@ struct AlbumDetailView: View {
         // ScrollView ya no aporta el inset, lo aporta aquí) y el fondo —que cuelga
         // de ESTE frame con alignment .top— crece esos mismos puntos hacia
         // arriba, hasta el borde de la pantalla. El contenido no se mueve.
-        .padding(.top, DetailHeroMetrics.topSafeInset)
+
         .frame(maxWidth: .infinity).padding(.bottom, 4)
         .background(alignment: .top) {
             GeometryReader { geometry in
                 Group {
-                    if let artwork = album.artwork {
-                        Image(uiImage: heroBlurredArtwork ?? artwork)
-                            .resizable().scaledToFill().opacity(0.35)
-                            .overlay(
-                                LinearGradient(
-                                    colors: accent.colors(primaryOpacity: 0.3, secondaryOpacity: 0.12)
-                                        + [M3EColor.surfaceContainerLow.opacity(0.6)],
-                                    startPoint: .top, endPoint: .bottom
-                                )
-                            )
-                    } else {
-                        LinearGradient(
-                            colors: accent.colors(primaryOpacity: 0.2, secondaryOpacity: 0.1) + [M3EColor.surface],
-                            startPoint: .top, endPoint: .bottom
-                        )
-                    }
+                    // ✅ M3E: fondo TONAL sólido, no carátula desenfocada.
+                    // El único blur de fondo permitido es NowPlaying.
+                    LinearGradient(
+                        colors: accent.colors(primaryOpacity: 0.2, secondaryOpacity: 0.1) + [M3EColor.surface],
+                        startPoint: .top, endPoint: .bottom
+                    )
                 }
                 .frame(width: geometry.size.width, height: geometry.size.height + 80)
                 // ✅ PARALLAX BARATO: esta capa YA está rasterizada por el
@@ -867,7 +851,7 @@ struct ArtistDetailView: View {
 
     @State private var appearAnimation = false
     // ? OPT: blur precalculado UNA vez (en background)
-    @State private var heroBlurredArtwork: UIImage? = nil
+
 
     // ? OPT: cachear c�mputos
     @State private var cachedAlbums: [Album] = []
@@ -882,6 +866,9 @@ struct ArtistDetailView: View {
     @ObservedObject private var theme = ThemeManager.shared
     // ✅ PARALLAX / BARRA EMERGENTE (mismo criterio que AlbumDetailView).
     @State private var scrollOffset: CGFloat = 0
+    /// ✅ M3E: álbum abierto desde el carrusel del artista (fullScreenCover,
+    /// sin NavigationStack).
+    @State private var selectedAlbum: Album? = nil
 
     /// ✅ M3E: ver `detailShowsInlineTitle`. Se calcula del offset ya
     /// cuantizado a 1pt, así que el body no se despierta por micro-movimientos.
@@ -933,16 +920,12 @@ struct ArtistDetailView: View {
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 14) {
                                 ForEach(cachedAlbums) { album in
-                                    NavigationLink {
-                                        AlbumDetailView(album: album, audioEngine: audioEngine, fileAccessService: fileAccessService)
+                                    Button {
+                                        Haptics.light()
+                                        selectedAlbum = album
                                     } label: {
                                         ArtistAlbumCard(album: album)
                                     }
-                                    // ✅ AURORA DESIGN: feedback de presión del
-                                    // sistema en el único sitio que no lo tenía.
-                                    // Sigue siendo un NavigationLink normal: el
-                                    // ButtonStyle solo dibuja el label, no
-                                    // intercepta la acción de navegación.
                                     .buttonStyle(PressableButtonStyle(scale: AuroraPressScale.chip))
                                 }
                             }
@@ -984,45 +967,20 @@ struct ArtistDetailView: View {
             if abs(offset - scrollOffset) > 1 { scrollOffset = offset }
         }
         .background(AppBackground().ignoresSafeArea())
-        // ✅ FIX FRANJA SUPERIOR: el ScrollView recortaba su contenido a su marco,
-        // que empieza por debajo del status bar + nav bar, así que el hero no
-        // podía pintar ahí y se veía el fondo de la app (negro arriba en oscuro).
-        // Con esto el contenido puede llegar a y=0: la franja se la come el hero.
-        .ignoresSafeArea(edges: .top)
-        .navigationBarTitleDisplayMode(.inline)
+        // ✅ M3E: top app bar PROPIA. Sin `NavigationStack` ni toolbar del
+        // sistema: el detalle es una pantalla completa con su barra Material
+        // (título title-large, back con dismiss), como una activity de Android.
+        .safeAreaInset(edge: .top, spacing: 0) {
+            detailTopBar
+        }
+
         // ✅ FIX BACK TEXT: mismo criterio que AlbumDetailView (back propio con
         // acento y texto localizado, en vez del "Back" del sistema).
-        .navigationBarBackButtonHidden(true)
+
         // ✅ Barra emergente con el nombre del artista (mismo criterio que Album).
-        .toolbar {
-            ToolbarItem(placement: .navigationBarLeading) {
-                Button {
-                    Haptics.light()
-                    dismiss()
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "chevron.left")
-                            .font(.system(size: 17, weight: .semibold))
-                        Text(Localization.localized("design.back"))
-                            .font(M3ETypography.titleMediumEmphasized)
-                    }
-                    .foregroundStyle(AppTheme.accent)
-                }
-            }
-            ToolbarItem(placement: .principal) {
-                Text(artist.name)
-                    .font(M3ETypography.titleMediumEmphasized)
-                    .lineLimit(1)
-                    // ✅ M3E: entra con el spring estándar y una micro-escala desde
-                    // 0.94 (el «aflorar» de M3E). Solo cambia de estado al cruzar el
-                    // umbral, no en cada tick de scroll.
-                    .opacity(showsInlineTitle ? 1 : 0)
-                    .scaleEffect(showsInlineTitle ? 1 : 0.94)
-                    .animation(AuroraMotion.spatialDefault, value: showsInlineTitle)
-            }
-        }
+
         // ? Sin banda gris (coherente con AlbumDetailView)
-        .toolbarBackground(.hidden, for: .navigationBar)
+
         .onAppear {
             // ? Cachear c�mputos una sola vez
             if cachedAlbums.isEmpty {
@@ -1034,17 +992,38 @@ struct ArtistDetailView: View {
                 appearAnimation = true
             }
             // ? OPT: precalcular el blur del hero UNA vez en background
-            prepareBlurredArtwork(from: artist.artwork)
             }
+        .fullScreenCover(item: $selectedAlbum) { album in
+            AlbumDetailView(album: album, audioEngine: audioEngine, fileAccessService: fileAccessService)
+        }
         }
 
     // ? OPT: gaussian blur costoso ? se calcula UNA vez en hilo de fondo y se cachea
-    private func prepareBlurredArtwork(from artwork: UIImage?) {
-        guard heroBlurredArtwork == nil, let artwork = artwork else { return }
-        DispatchQueue.global(qos: .userInitiated).async {
-            let blurred = artwork.applyingGaussianBlur(radius: 40)
-            DispatchQueue.main.async { self.heroBlurredArtwork = blurred }
-        }
+
+
+    /// ✅ M3E: top app bar propia (ver AlbumDetailView).
+    private var detailTopBar: some View {
+        M3ENavigationBar(
+            title: artist.name,
+            leading: {
+                Button {
+                    Haptics.light()
+                    dismiss()
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 17, weight: .semibold))
+                        Text(Localization.localized("design.back"))
+                            .font(M3ETypography.labelLargeEmphasized)
+                    }
+                    .foregroundStyle(M3EColor.primary)
+                    .frame(height: 44)
+                    .contentShape(Rectangle())
+                }
+                .accessibilityLabel(Localization.localized("design.back"))
+            },
+            trailing: { EmptyView() }
+        )
     }
 
     private var artistHeroSection: some View {
@@ -1095,27 +1074,16 @@ struct ArtistDetailView: View {
         // ScrollView ya no aporta el inset, lo aporta aquí) y el fondo —que cuelga
         // de ESTE frame con alignment .top— crece esos mismos puntos hacia
         // arriba, hasta el borde de la pantalla. El contenido no se mueve.
-        .padding(.top, DetailHeroMetrics.topSafeInset)
+
         .frame(maxWidth: .infinity).padding(.bottom, 4)
         .background(alignment: .top) {
             GeometryReader { geometry in
                 Group {
-                    if let artwork = artist.artwork {
-                        Image(uiImage: heroBlurredArtwork ?? artwork)
-                            .resizable().scaledToFill().opacity(0.3)
-                            .overlay(
-                                LinearGradient(
-                                    colors: accent.colors(primaryOpacity: 0.25, secondaryOpacity: 0.12)
-                                        + [M3EColor.surfaceContainerLow.opacity(0.5)],
-                                    startPoint: .top, endPoint: .bottom
-                                )
-                            )
-                    } else {
-                        LinearGradient(
-                            colors: accent.colors(primaryOpacity: 0.2, secondaryOpacity: 0.1) + [M3EColor.surface],
-                            startPoint: .top, endPoint: .bottom
-                        )
-                    }
+                    // ✅ M3E: fondo tonal sólido (sin carátula desenfocada).
+                    LinearGradient(
+                        colors: accent.colors(primaryOpacity: 0.25, secondaryOpacity: 0.12) + [M3EColor.surface],
+                        startPoint: .top, endPoint: .bottom
+                    )
                 }
                 .frame(width: geometry.size.width, height: geometry.size.height + 80)
                 // ✅ PARALLAX BARATO: esta capa YA está rasterizada por el

@@ -208,7 +208,7 @@ private struct AuroraCardModifier: ViewModifier {
     /// ✅ Superficie M3E compartida: rol tonal derivado del acento. La base ya
     /// lleva el tinte; no se compone un gris del sistema con un velo encima.
     private var tonalSurface: some View {
-        Rectangle().fill(M3EColor.surfaceContainerLow)
+        Rectangle().fill(M3EColor.surfaceContainer)
     }
 
     @ViewBuilder
@@ -219,12 +219,12 @@ private struct AuroraCardModifier: ViewModifier {
             // tonal de contenedor; el enum se conserva para no tocar call sites.
             tonalSurface
         case .flat:
-            // ✅ REMAKE: `surfaceContainerLow` del acento (antes era el gris
-            // del sistema al 60 %, que dejaba ver el fondo y delataba iOS).
+            // ✅ M3E: card = `surfaceContainer` sólido del acento (antes era el
+            // gris del sistema al 60 %, que dejaba ver el fondo y delataba iOS).
             tonalSurface
         case .opaque:
             // Los contenedores elevados suben un nivel tonal.
-            Rectangle().fill(M3EColor.surfaceContainer)
+            Rectangle().fill(M3EColor.surfaceContainerHigh)
         }
     }
 }
@@ -505,7 +505,7 @@ struct AuroraSheetHeader: View {
             Spacer()
 
             Text(title)
-                .font(M3ETypography.titleMediumEmphasized)
+                .font(M3ETypography.titleLargeEmphasized)
                 .foregroundStyle(titleColor)
                 .lineLimit(1)
 

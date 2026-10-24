@@ -13,11 +13,10 @@ import SwiftUI
 
 // MARK: - Superficie tonal
 
-/// Superficie M3E real: un rol tonal (`surfaceContainer`) + un velo mínimo
-/// del acento + borde de 1.5 pt con `outline` al 20 %. No es translúcida: el
-/// contenido que scrollea por debajo no se transparenta (lo que delataba el
-/// "look iOS"). La base ya viene tintada del acento; el velo solo refuerza la
-/// pertenencia cromática cuando el acento viene de la carátula.
+/// Superficie M3E real: UN rol tonal sólido (`surfaceContainer`) + borde de
+/// 1.5 pt con `outline` al 20 %. No es translúcida: el contenido que scrollea
+/// por debajo no se transparenta (lo que delataba el "look iOS"). La base ya
+/// viene tintada del acento desde `M3EColor`.
 struct M3ETonalSurface: View {
     var cornerRadius: CGFloat = 24
     var tint: Color = M3EColor.primary
@@ -25,12 +24,12 @@ struct M3ETonalSurface: View {
     var showsBorder: Bool = true
 
     var body: some View {
+        // ✅ M3E estricto: UNA superficie sólida tonal. Nada de velos con
+        // `opacity` encima de la card (eso reintroduce translucidez y un pase
+        // de composición por frame en el A11). El tinte ya está dentro de
+        // `base` porque sale del acento en `M3EColor`.
         RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
             .fill(base)
-            .overlay(
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .fill(tint.opacity(0.04))
-            )
             .overlay(
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .strokeBorder(
@@ -55,7 +54,7 @@ struct M3ECard<Content: View>: View {
     init(
         cornerRadius: CGFloat = 24,
         padding: CGFloat = 16,
-        surface: Color = M3EColor.surfaceContainerLow,
+        surface: Color = M3EColor.surfaceContainer,
         tint: Color = M3EColor.primary,
         showsBorder: Bool = true,
         @ViewBuilder content: () -> Content
@@ -73,7 +72,8 @@ struct M3ECard<Content: View>: View {
             .padding(padding)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
-                // ✅ FASE 2: base sólida + velo tonal al 8 % + borde al 20 %.
+                // ✅ M3E: base sólida tonal + borde al 20 % (cero opacidad
+                // añadida sobre la card).
                 M3ETonalSurface(
                     cornerRadius: cornerRadius,
                     tint: tint,
@@ -189,7 +189,7 @@ struct M3ETonalButton<Label: View>: View {
 
 // MARK: - Filter chip
 
-/// Chip de filtro con morphing de forma (radio 12 ↔ cápsula) y spring finito.
+/// Chip de filtro con morphing de forma (radio 14 ↔ 20) y spring finito.
 /// No usa `matchedGeometryEffect`: cada chip interpola SU propia forma, así el
 /// layout no se mueve y no hay namespace compartido en el ScrollView.
 struct M3EFilterChip: View {
@@ -230,24 +230,23 @@ struct M3EFilterChip: View {
                     .font(M3ETypography.labelLargeEmphasized)
                     .lineLimit(1)
             }
-            .foregroundStyle(isSelected ? tint : Color.secondary)
+            // ✅ M3E: el chip seleccionado usa `onPrimaryContainer` sobre
+            // `primaryContainer`; el no seleccionado, `onSurfaceVariant` sobre
+            // `surfaceContainerHigh`. NO texto blanco ni gris del sistema.
+            .foregroundStyle(isSelected ? M3EColor.onPrimaryContainer : M3EColor.onSurfaceVariant)
             // ✅ FASE 2: el COLOR es un efecto (sin rebote) → effectsDefault.
             .animation(AuroraMotion.effectsDefault, value: isSelected)
             .padding(.horizontal, 16)
             .frame(height: 36)
             .background {
-                ZStack {
-                    AuroraMorphChipShape(cornerRadius: shapeRadius)
-                        .fill(M3EColor.surfaceVariant)
-                    AuroraMorphChipShape(cornerRadius: shapeRadius)
-                        .fill(isSelected ? tint.opacity(0.2) : Color.clear)
-                }
-                .animation(AuroraMotion.spatialDefault, value: isSelected)
+                AuroraMorphChipShape(cornerRadius: shapeRadius)
+                    .fill(isSelected ? M3EColor.primaryContainer : M3EColor.surfaceContainerHigh)
+                    .animation(AuroraMotion.spatialDefault, value: isSelected)
             }
             .overlay(
                 AuroraMorphChipShape(cornerRadius: shapeRadius)
                     .strokeBorder(
-                        isSelected ? tint.opacity(0.45) : M3EColor.outline.opacity(0.16),
+                        isSelected ? tint.opacity(0.35) : M3EColor.outline.opacity(0.2),
                         lineWidth: 1
                     )
                     .animation(AuroraMotion.spatialDefault, value: isSelected)
@@ -290,8 +289,10 @@ struct M3ENavigationBar<Leading: View, Trailing: View>: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .font(M3ETypography.headlineSmallEmphasized)
-                    .foregroundStyle(.primary)
+                    // ✅ M3E top app bar: `title-large` enfatizado (22/semibold)
+                    // y `onSurface` (no el `.primary` del sistema iOS).
+                    .font(M3ETypography.titleLargeEmphasized)
+                    .foregroundStyle(M3EColor.onSurface)
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
 

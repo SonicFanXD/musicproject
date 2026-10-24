@@ -18,9 +18,8 @@ struct FolderPickerView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            ZStack {
-                AppBackground()
+        ZStack {
+            AppBackground()
 
                 VStack(spacing: 0) {
                     // ✅ AURORA DESIGN: header de sheet del sistema en su propia fila
@@ -71,7 +70,6 @@ struct FolderPickerView: View {
             // ✅ AURORA DESIGN: el toolbar (título + "Listo") se sustituye por el
             // header del sistema. La barra se oculta para que el header ocupe SU
             // altura (44pt) y no se sume un segundo bloque encima.
-            .toolbar(.hidden, for: .navigationBar)
             .fileImporter(
                 isPresented: $showImporter,
                 allowedContentTypes: importMode == .folders ? [.folder] : supportedAudioTypes,
@@ -82,7 +80,6 @@ struct FolderPickerView: View {
             .onAppear {
                 withAnimation(.easeOut(duration: 0.5)) { appearAnimation = true }
             }
-        }
     }
 
     /// ✅ AURORA DESIGN: el "Listo" que antes vivía en el toolbar, ahora en el slot

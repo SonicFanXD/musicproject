@@ -321,20 +321,16 @@ struct NowPlayingView: View {
             // nativo; su header cierra con dismiss) y el tint cubre alerts,
             // sliders y controles internos. Nada de sheets apilados sobre la
             // pantalla de reproducción.
+            // ✅ M3E: sin `NavigationStack`; el detalle trae su propio top app
+            // bar y `dismiss` cierra la pantalla completa.
             .fullScreenCover(isPresented: $showArtistDetail) {
                 if let artist = currentArtist {
-                    NavigationStack {
-                        ArtistDetailView(artist: artist, audioEngine: audioEngine, fileAccessService: fileAccessService)
-                    }
-                    .tint(AppTheme.accent)
+                    ArtistDetailView(artist: artist, audioEngine: audioEngine, fileAccessService: fileAccessService)
                 }
             }
             .fullScreenCover(isPresented: $showAlbumDetail) {
                 if let album = currentAlbum {
-                    NavigationStack {
-                        AlbumDetailView(album: album, audioEngine: audioEngine, fileAccessService: fileAccessService)
-                    }
-                    .tint(AppTheme.accent)
+                    AlbumDetailView(album: album, audioEngine: audioEngine, fileAccessService: fileAccessService)
                 }
             }
             // ✅ REMAKE: pantallas completas M3E, no sheets.

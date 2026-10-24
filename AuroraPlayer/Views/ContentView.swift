@@ -284,23 +284,17 @@ struct ContentView: View {
                 .fullScreenCover(isPresented: $showPlaylists) {
                     PlaylistsView(fileAccessService: fileAccessService, audioEngine: audioEngine)
                 }
+                // ✅ M3E estricto: CERO `NavigationStack` en la app. Los
+                // detalles presentan su propio top app bar (M3ENavigationBar) y
+                // se cierran con `dismiss`, igual que una activity de Android.
                 .fullScreenCover(item: $selectedAlbum) { album in
-                    NavigationStack {
-                        AlbumDetailView(album: album, audioEngine: audioEngine, fileAccessService: fileAccessService)
-                    }
-                    .tint(AppTheme.accent)
+                    AlbumDetailView(album: album, audioEngine: audioEngine, fileAccessService: fileAccessService)
                 }
                 .fullScreenCover(item: $selectedArtist) { artist in
-                    NavigationStack {
-                        ArtistDetailView(artist: artist, audioEngine: audioEngine, fileAccessService: fileAccessService)
-                    }
-                    .tint(AppTheme.accent)
+                    ArtistDetailView(artist: artist, audioEngine: audioEngine, fileAccessService: fileAccessService)
                 }
                 .fullScreenCover(item: $selectedPlaylist) { playlist in
-                    NavigationStack {
-                        PlaylistDetailView(playlist: playlist, fileAccessService: fileAccessService, audioEngine: audioEngine)
-                    }
-                    .tint(AppTheme.accent)
+                    PlaylistDetailView(playlist: playlist, fileAccessService: fileAccessService, audioEngine: audioEngine)
                 }
                 .onAppear {
                     restoreLibraryIfNeeded()
