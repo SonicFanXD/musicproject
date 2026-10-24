@@ -429,10 +429,9 @@ private struct PlayerScrubBar: View {
                 progress: progress,
                 isPlaying: audioEngine.isPlaying,
                 isScrubbing: isScrubbing,
-                onScrub: { newProgress in }                waveLength: 22,
-                colors: [accentPair.primary.opacity(0.85), accentPair.secondary],
-                thumbSize: 14,
-                showsStopIndicator: false
+                onScrub: { newProgress in
+                    scrubPreviewProgress = newProgress
+                }
             )
             .frame(height: 16)
             .contentShape(Rectangle())

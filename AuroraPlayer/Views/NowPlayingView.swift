@@ -1028,13 +1028,12 @@ private struct ProgressScrubView: View {
                 // vez para el gesto (no se lee por frame) y la onda la dibuja el
                 // componente con transformaciones GPU: cero Path por frame.
                 AuroraWavyProgress(
-                    progress: progress,
+                    progress: isScrubbing ? scrubPreviewTime / max(audioEngine.duration, 1) : clock.time / max(audioEngine.duration, 1),
                     isPlaying: audioEngine.isPlaying,
                     isScrubbing: isScrubbing,
-                    onScrub: { newProgress in }                    waveLength: 26,
-                    colors: [extractedColor.opacity(0.9), extractedSecondaryColor ?? extractedColor],
-                    thumbSize: 14,
-                    showsStopIndicator: true
+                    onScrub: { newProgress in
+                        scrubPreviewTime = newProgress * audioEngine.duration
+                    }
                 )
                 .frame(height: 18)
                 .contentShape(Rectangle())
