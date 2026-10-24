@@ -145,7 +145,9 @@ struct ContentView: View {
                                 .transition(categoryTransition)
                         }
                     }
-                    .animation(.spring(response: 0.32, dampingFraction: 0.88), value: selectedCategory)
+                    // ✅ FASE 1: transición de vista FINITA (nunca en bucle).
+                    // Misma curva solicitada para cambios de pestaña/sheet.
+                    .animation(.spring(response: 0.4, dampingFraction: 0.8), value: selectedCategory)
                     .refreshable {
                         fileAccessService.refreshAllFolders()
                         try? await Task.sleep(nanoseconds: 600_000_000)

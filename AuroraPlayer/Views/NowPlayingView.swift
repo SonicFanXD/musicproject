@@ -215,7 +215,17 @@ struct NowPlayingView: View {
 
                     Spacer(minLength: isCompactScreen ? 8 : 14)
 
-                    AuroraWavyProgress(progress: audioEngine.currentTime / max(audioEngine.duration, 1), isPlaying: audioEngine.isPlaying, isScrubbing: false) { newProgress in }
+                    // ✅ FIX barra desaparecida: esta llamada era la única sin
+                    // `.frame(height:)`. Un `GeometryReader` suelto en un VStack
+                    // no tiene altura intrínseca (podía colapsar o comerse el
+                    // espacio de los Spacers). Misma altura que la barra
+                    // interactiva de PlayerBar/ProgressScrubView.
+                    AuroraWavyProgress(
+                        progress: audioEngine.currentTime / max(audioEngine.duration, 1),
+                        isPlaying: audioEngine.isPlaying,
+                        isScrubbing: false
+                    ) { newProgress in }
+                    .frame(height: 18)
 
                     Spacer(minLength: isCompactScreen ? 10 : 18)
 
