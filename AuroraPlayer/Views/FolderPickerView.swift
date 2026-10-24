@@ -136,12 +136,12 @@ struct FolderPickerView: View {
 
             VStack(spacing: 8) {
                 Text(Localization.localized("library.title"))
-                    .font(.system(size: 26, weight: .heavy, design: .rounded))
+                    .font(M3ETypography.headlineSmallEmphasized)
                     .tracking(-0.4)
                     .foregroundStyle(.primary)
 
                 Text(Localization.localized("library.subtitle"))
-                    .font(.system(size: 15))
+                    .font(M3ETypography.bodyLarge)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
             }

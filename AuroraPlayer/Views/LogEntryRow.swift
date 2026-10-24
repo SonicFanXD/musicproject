@@ -40,7 +40,7 @@ struct LogEntryRow: View, Equatable {
             // ✅ Columna izquierda: nivel con icono + categoría a color
             VStack(alignment: .leading, spacing: 6) {
                 Text("\(Self.levelIcon(for: entry.level)) \(entry.level)")
-                    .font(.system(size: 10, weight: .bold))
+                    .font(M3ETypography.trackSubtitle)
                     .foregroundStyle(Self.levelColor(for: entry.level))
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
@@ -54,7 +54,7 @@ struct LogEntryRow: View, Equatable {
                     }
 
                 Text(entry.category.displayName)
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(M3ETypography.labelMedium)
                     .foregroundStyle(entry.category.tintColor)
                     .lineLimit(1)
             }
@@ -66,7 +66,7 @@ struct LogEntryRow: View, Equatable {
                 // (antes `.easeOut` lineal); el `lineLimit` cambia con la misma
                 // curva, así que la fila crece de forma elástica y no "salta".
                 Text(entry.message)
-                    .font(.system(size: 14, weight: .regular))
+                    .font(M3ETypography.bodyMedium)
                     .foregroundStyle(.primary)
                     .lineLimit(isExpanded ? nil : 3)
                     .contentShape(Rectangle())
@@ -84,14 +84,14 @@ struct LogEntryRow: View, Equatable {
                         .foregroundStyle(.tertiary)
 
                     Text(Self.timeFormatter.string(from: entry.date))
-                        .font(.system(size: 11, weight: .medium))
+                        .font(M3ETypography.labelMedium)
                         .foregroundStyle(.tertiary)
 
                     if let duration = entry.duration {
                         Spacer(minLength: 8)
                         // ✅ Pill de duración (monospaced)
                         Text(String(format: "%.1f ms", duration * 1000))
-                            .font(.system(size: 10, weight: .semibold).monospacedDigit())
+                            .font(M3ETypography.trackSubtitle)
                             .foregroundStyle(entry.category.tintColor)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 3)

@@ -257,7 +257,7 @@ struct LyricsView: View {
             Spacer()
 
             Text(Localization.localized("nowPlaying.lyrics"))
-                .font(.system(size: 16, weight: .semibold, design: .rounded))
+                .font(M3ETypography.titleMediumEmphasized)
                 .foregroundStyle(.primary.opacity(0.9))
                 .shadow(color: .black.opacity(0.15), radius: 4, y: 1)
 
@@ -511,7 +511,7 @@ struct LyricsView: View {
                 .foregroundStyle(.secondary.opacity(0.5))
 
             Text(Localization.localized("lyrics.noLyrics"))
-                .font(.system(size: 18, weight: .medium))
+                .font(M3ETypography.titleMediumEmphasized)
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -763,14 +763,9 @@ private struct LyricInstrumentalIndicator: View {
             }
         }
 
-        ZStack {
-            if renderState.showsGlow {
-                dots
-                    .blur(radius: Design.haloRadius)
-                    .opacity(Design.haloOpacity)
-            }
-            dots
-        }
+        // ✅ M3E: sin halo desenfocado. El brillo se resuelve con color y
+        // opacidad (efecto), no con un pase de blur por frame en el A11.
+        dots
     }
 
     /// ✅ Acceso seguro: la lista siempre trae los tres valores, pero un índice
@@ -1375,25 +1370,11 @@ private struct LyricFillText: View, Equatable {
 
     @ViewBuilder
     private var brightLayers: some View {
-        if glowEnabled {
-            ZStack(alignment: .leading) {
-                Text(text)
-                    .font(font)
-                    .foregroundStyle(glowColor)
-                    .blur(radius: Self.glowRadius)
-                    .opacity(Self.glowOpacity)
-
-                Text(text)
-                    .font(font)
-                    .foregroundStyle(Color.primary)
-            }
-        } else {
-            // ✅ Sin halo: el texto ya sonado se sigue viendo nítido y a plena
-            // intensidad (el "ya cantado" no pierde legibilidad, solo el halo).
-            Text(text)
-                .font(font)
-                .foregroundStyle(Color.primary)
-        }
+        // ✅ M3E: cero blur en texto. El karaoke se lee nítido y el foco se
+        // marca con color/opacidad, sin copias desenfocadas por frame.
+        Text(text)
+            .font(font)
+            .foregroundStyle(Color.primary)
     }
 
     /// ✅ Ancho de la máscara = ancho REAL del texto × progreso (0...1).
@@ -1610,13 +1591,10 @@ private enum LyricCapturePolicy {
 private struct InactiveDepthBlur: ViewModifier {
     let radius: CGFloat
 
-    @ViewBuilder
     func body(content: Content) -> some View {
-        if radius > 0 {
-            content.blur(radius: radius)
-        } else {
-            content
-        }
+        // ✅ M3E: sin desenfoque de profundidad. Se conserva el modificador y su
+        // firma para no tocar los call sites, pero ya no crea pases offscreen.
+        content
     }
 }
 

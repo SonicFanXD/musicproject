@@ -50,7 +50,7 @@ struct AuroraEmptyState: View {
                 .minimumScaleFactor(0.85)
 
             Text(message)
-                .font(.system(size: compact ? 13 : 15))
+                .font(compact ? M3ETypography.bodyMedium : M3ETypography.bodyLarge)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .lineSpacing(2)

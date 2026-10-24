@@ -96,7 +96,7 @@ struct LibrarySongRow: View, Equatable {
                                     .font(.system(size: 9))
                                     .foregroundStyle(.tertiary)
                                 Text(song.album)
-                                    .font(.system(size: 11))
+                                    .font(M3ETypography.bodySmall)
                                     .foregroundStyle(.tertiary)
                                     .lineLimit(1)
                             }

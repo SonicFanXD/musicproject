@@ -416,9 +416,9 @@ struct NowPlayingView: View {
                         .overlay(
                             LinearGradient(
                                 colors: [
-                                    extractedColor.opacity(0.55),
-                                    extractedColor.opacity(0.28),
-                                    M3EColor.surface.opacity(0.92)
+                                    extractedColor.opacity(0.30),
+                                    extractedColor.opacity(0.18),
+                                    M3EColor.surface.opacity(0.94)
                                 ],
                                 startPoint: .top,
                                 endPoint: .bottom

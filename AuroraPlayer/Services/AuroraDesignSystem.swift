@@ -343,8 +343,8 @@ private struct AuroraPrimaryActionModifier: ViewModifier {
         content
             // ✅ AURORA DESIGN: acción primaria = relleno de acento completo
             // text-safe + texto blanco. Consume la regla 2.7 centralizada.
-            .font(.system(size: 16, weight: .semibold, design: .rounded))
-            .foregroundStyle(Color.white)
+            .font(M3ETypography.titleMediumEmphasized)
+            .foregroundStyle(M3EColor.onPrimary)
             .padding(.horizontal, AuroraSpacing.xl)
             .padding(.vertical, AuroraSpacing.md)
             .background(
@@ -416,7 +416,7 @@ struct AuroraInfoChip: View {
             // ✅ 13 semibold: el chip es dato de cabecera, no letra pequeña
             // (contrato tipográfico: chips y pills 10-13pt).
             Text(text)
-                .font(.system(size: 13, weight: .semibold).monospacedDigit())
+                .font(M3ETypography.timeDisplayCompact)
                 .lineLimit(1)
         }
         .foregroundStyle(color)

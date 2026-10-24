@@ -95,7 +95,7 @@ struct EqualizerView: View {
     private var presetsSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(Localization.localized("equalizer.presets"))
-                .font(.system(size: 16, weight: .semibold))
+                .font(M3ETypography.titleMediumEmphasized)
                 .foregroundStyle(.primary)
                 .padding(.horizontal, 4)
 
@@ -107,7 +107,7 @@ struct EqualizerView: View {
                             audioEngine.setEQPreset(preset)
                         } label: {
                             Text(preset.displayName)
-                                .font(.system(size: 13, weight: .semibold))
+                                .font(M3ETypography.labelLargeEmphasized)
                                 .foregroundStyle(audioEngine.eqPreset == preset && audioEngine.isEQEnabled ? .white : .primary)
                                 .padding(.horizontal, 16)
                                 .padding(.vertical, 10)
@@ -128,7 +128,7 @@ struct EqualizerView: View {
     private var bandsSection: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text(Localization.localized("equalizer.frequencies"))
-                .font(.system(size: 16, weight: .semibold))
+                .font(M3ETypography.titleMediumEmphasized)
                 .foregroundStyle(.primary)
                 .padding(.horizontal, 4)
 
@@ -155,14 +155,14 @@ struct EqualizerView: View {
         VStack(spacing: 6) {
             HStack {
                 Text(frequencyName)
-                    .font(.system(size: 13, weight: .medium))
+                    .font(M3ETypography.labelLargeNumeric)
                     .foregroundStyle(.primary)
                     .monospacedDigit()
 
                 Spacer()
 
                 Text(String(format: "%+.1f dB", currentGain))
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(M3ETypography.labelLargeNumeric)
                     .foregroundStyle(audioEngine.isEQEnabled ? AppTheme.accent : Color.secondary)
                     .monospacedDigit()
             }

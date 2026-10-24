@@ -106,7 +106,7 @@ struct AudioQualityDetailView: View {
 
             // ✅ Badge de calidad (Hi-Res / Lossless / Comprimido)
             Text(snapshot.qualityCategory)
-                .font(.system(size: 12, weight: .bold, design: .rounded))
+                .font(M3ETypography.labelLargeEmphasized)
                 .tracking(2)
                 .foregroundStyle(.white)
                 .padding(.horizontal, 18)
@@ -123,13 +123,13 @@ struct AudioQualityDetailView: View {
             // ✅ Info de la canción
             VStack(spacing: 4) {
                 Text(snapshot.title)
-                    .font(.system(size: 16, weight: .bold, design: .rounded))
+                    .font(M3ETypography.titleMediumEmphasized)
                     .foregroundStyle(.primary)
                     .lineLimit(2)
                     .multilineTextAlignment(.center)
 
                 Text(snapshot.subtitle)
-                    .font(.system(size: 12))
+                    .font(M3ETypography.bodyMedium)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
@@ -168,19 +168,19 @@ struct AudioQualityDetailView: View {
     private var specSheet: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(snapshot.resolution)
-                .font(.system(size: 28, weight: .bold, design: .monospaced))
+                .font(M3ETypography.headlineSmallEmphasized)
                 .foregroundStyle(AppTheme.accentGradient)
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
                 .accessibilityLabel(snapshot.resolution)
 
             Text(snapshot.fileLine)
-                .font(.system(size: 12, weight: .medium, design: .rounded))
+                .font(M3ETypography.bodyMedium)
                 .foregroundStyle(.secondary)
                 .lineLimit(2)
 
             Text(snapshot.codecLine)
-                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                .font(M3ETypography.trackSubtitle)
                 .foregroundStyle(.secondary.opacity(0.75))
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
@@ -232,7 +232,7 @@ struct AudioQualityDetailView: View {
                     HStack(spacing: 8) {
                         ForEach(snapshot.chainChips, id: \.self) { chip in
                             Text(chip)
-                                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                                .font(M3ETypography.trackSubtitle)
                                 .foregroundStyle(AppTheme.accent)
                                 .padding(.horizontal, 10).padding(.vertical, 5)
                                 .background {
@@ -301,7 +301,7 @@ struct AudioQualityDetailView: View {
                       isHighlighted: audioEngine.isBitPerfect)
             if let cause = snapshot.bitPerfectCauseLabel {
                 detailRow("ℹ️", cause)
-                    .font(.system(size: 11))
+                    .font(M3ETypography.bodySmall)
                     .foregroundStyle(.secondary)
             }
         }
@@ -347,7 +347,7 @@ struct AudioQualityDetailView: View {
             // ✅ Se dice explícitamente qué NO se puede saber, en vez de insinuar
             // capacidades del DAC que iOS no publica.
             detailRow("ℹ️", Localization.localized("quality.dacLimitNote"))
-                .font(.system(size: 11))
+                .font(M3ETypography.bodySmall)
                 .foregroundStyle(.secondary)
         }
     }
@@ -364,14 +364,14 @@ struct AudioQualityDetailView: View {
             if audioEngine.isUsingFallback {
                 HStack(alignment: .top, spacing: 10) {
                     Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(M3ETypography.labelLargeEmphasized)
                         .foregroundStyle(.orange)
                     VStack(alignment: .leading, spacing: 3) {
                         Text(Localization.localized("quality.fallbackEngine"))
-                            .font(.system(size: 13, weight: .semibold))
+                            .font(M3ETypography.labelLargeEmphasized)
                             .foregroundStyle(.primary)
                         Text(Localization.localized("quality.fallbackEngineHint"))
-                            .font(.system(size: 11))
+                            .font(M3ETypography.bodySmall)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -394,7 +394,7 @@ struct AudioQualityDetailView: View {
             if !audioEngine.bluetoothCodec.isEmpty {
                 detailRow(Localization.localized("quality.bluetoothCodec"), audioEngine.bluetoothCodec)
                 detailRow("ℹ️", Localization.localized("quality.iosBluetoothLimit"))
-                    .font(.system(size: 11))
+                    .font(M3ETypography.bodySmall)
                     .foregroundStyle(.secondary)
             }
 
@@ -409,14 +409,14 @@ struct AudioQualityDetailView: View {
             if audioEngine.bluetoothProfile == "HFP" {
                 HStack(alignment: .top, spacing: 10) {
                     Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(M3ETypography.labelLargeEmphasized)
                         .foregroundStyle(.orange)
                     VStack(alignment: .leading, spacing: 3) {
                         Text(Localization.localized("quality.bluetoothHFPWarning"))
-                            .font(.system(size: 13, weight: .semibold))
+                            .font(M3ETypography.labelLargeEmphasized)
                             .foregroundStyle(.primary)
                         Text(Localization.localized("quality.bluetoothHFPHint"))
-                            .font(.system(size: 11))
+                            .font(M3ETypography.bodySmall)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -437,10 +437,10 @@ struct AudioQualityDetailView: View {
             // Nota de volumen del sistema
             HStack(alignment: .top, spacing: 10) {
                 Image(systemName: "speaker.wave.2")
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(M3ETypography.labelLargeEmphasized)
                     .foregroundStyle(.blue)
                 Text(Localization.localized("quality.volumeHonestyNote"))
-                    .font(.system(size: 11))
+                    .font(M3ETypography.bodySmall)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
@@ -450,10 +450,10 @@ struct AudioQualityDetailView: View {
             // Nota del adaptador Lightning
             HStack(alignment: .top, spacing: 10) {
                 Image(systemName: "cable.connector")
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(M3ETypography.labelLargeEmphasized)
                     .foregroundStyle(.blue)
                 Text(Localization.localized("quality.lightningDACNote"))
-                    .font(.system(size: 11))
+                    .font(M3ETypography.bodySmall)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
@@ -838,10 +838,10 @@ struct AudioQualityDetailView: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(M3ETypography.labelLargeEmphasized)
                     .foregroundStyle(.primary)
                 Text(detail)
-                    .font(.system(size: 11, weight: .medium).monospacedDigit())
+                    .font(M3ETypography.labelMedium)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
@@ -865,11 +865,11 @@ struct AudioQualityDetailView: View {
     private func detailRow(_ title: String, _ value: String, isHighlighted: Bool = false) -> some View {
         HStack(alignment: .firstTextBaseline) {
             Text(title)
-                .font(.system(size: 13, weight: .medium))
+                .font(M3ETypography.labelLargeEmphasized)
                 .foregroundStyle(.secondary)
             Spacer()
             Text(value)
-                .font(.system(size: 13, weight: .semibold).monospacedDigit())
+                .font(M3ETypography.timeDisplayCompact)
                 .foregroundStyle(isHighlighted ? AppTheme.accent : .primary)
                 .multilineTextAlignment(.trailing)
                 .lineLimit(2)
@@ -905,7 +905,7 @@ struct AudioQualityDetailView: View {
                     .drawingGroup()
 
                 Text(title)
-                    .font(.system(size: 17, weight: .bold, design: .rounded))
+                    .font(M3ETypography.titleMediumEmphasized)
                     .foregroundStyle(.primary)
             }
             .padding(.horizontal, 6)

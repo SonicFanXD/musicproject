@@ -297,12 +297,12 @@ struct LogsView: View {
                     }
 
                 Text(title)
-                    .font(.caption2)
+                    .font(M3ETypography.labelMedium)
                     .foregroundStyle(.secondary)
             }
 
             Text(value)
-                .font(.system(size: 15, weight: .bold))
+                .font(M3ETypography.titleMediumEmphasized)
                 .foregroundStyle(.primary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
@@ -367,8 +367,8 @@ struct LogsView: View {
     private func filterChip(title: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(title)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(isSelected ? .white : .secondary)
+                .font(M3ETypography.labelLargeEmphasized)
+                .foregroundStyle(isSelected ? M3EColor.onPrimary : M3EColor.onSurfaceVariant)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
                 // ✅ Selección ANIMADA: el fondo ya no cambia de tipo de vista entre
@@ -417,11 +417,11 @@ struct LogsView: View {
                         }
 
                         Text("No hay logs que coincidan")
-                            .font(.system(size: 16, weight: .semibold))
+                            .font(M3ETypography.titleMediumEmphasized)
                             .foregroundStyle(.secondary)
 
                         Text("Prueba con otra categoría o borra el filtro de búsqueda")
-                            .font(.system(size: 13))
+                            .font(M3ETypography.bodyMedium)
                             .foregroundStyle(.tertiary)
                             .multilineTextAlignment(.center)
                     }
