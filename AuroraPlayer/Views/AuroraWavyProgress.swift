@@ -108,6 +108,9 @@ struct AuroraWavyProgress: View {
                             .position(x: max(0, min(CGFloat(1), CGFloat(progress)) * max(CGFloat(1), 300)),
                                       y: 8)
                     }
+                } else {
+                    EmptyView()
+                }
                 }
             }
         }
