@@ -1527,15 +1527,21 @@ class AudioEngine: NSObject, ObservableObject {
     }
 
     private func setupEqualizer() {
-        if let existingEQ = equalizerNode {
-            if usesSFBCore {
-                sfbBackend.detachNode(existingEQ)
-            } else {
-                engine.detach(existingEQ)
-            }
+        // ✅ FIX CRASH + NODOS HUÉRFANOS: PRIMERO se suelta el nodo viejo, después
+        // se desengancha. Con el orden anterior (`detachNode` mientras
+        // `equalizerNode` aún apuntaba al EQ viejo) el reinstall de SFB volvía a
+        // enganchar el nodo viejo —el customizer lee `self.equalizerNode`— y
+        // quedaba un EQ mudo de más en el grafo, además de reencontrarnos con el
+        // crash de `outputConnectionPoints` sobre un nodo sin adjuntar.
+        let previousEQ = equalizerNode
+        equalizerNode = AVAudioUnitEQ(numberOfBands: 10)
+        if let previousEQ = previousEQ, !usesSFBCore, engine.attachedNodes.contains(previousEQ) {
+            // ✅ `detach` sobre un nodo que el engine ya no tiene adjunto también
+            // lanza una excepción NO capturable (p. ej. tras un reset de media
+            // services); `attachedNodes` es la comprobación segura.
+            engine.detach(previousEQ)
         }
 
-        equalizerNode = AVAudioUnitEQ(numberOfBands: 10)
         guard let eq = equalizerNode else { return }
 
         let frequencies: [Float] = [32, 64, 125, 250, 500, 1000, 2000, 4000, 8000, 16000]
@@ -1568,7 +1574,14 @@ class AudioEngine: NSObject, ObservableObject {
             // ✅ SFB: el EQ se engancha DENTRO del grafo de SFB vía el
             // customizer (cierra sobre `equalizerNode`); la reconexión al
             // formato real la hace SFB en su propio flujo de configuración.
-            sfbBackend.rebuildGraph()
+            // Si había un EQ anterior, `detachNode` YA reinstala el grafo con el
+            // NUEVO nodo; el rebuild extra solo hace falta cuando no había nada
+            // que desenganchar.
+            if let previousEQ = previousEQ {
+                sfbBackend.detachNode(previousEQ)
+            } else {
+                sfbBackend.rebuildGraph()
+            }
         } else {
             engine.attach(eq)
             // ✅ REMUESTREO HI-RES: reconexión con el formato de conexión real
@@ -1618,14 +1631,20 @@ class AudioEngine: NSObject, ObservableObject {
 
         let mixer = engine.mainMixerNode
 
-        // Desconectar cualquier cadena previa de forma segura.
-        if !engine.outputConnectionPoints(for: playerNode, outputBus: 0).isEmpty {
+        // ✅ FIX (misma clase de crash que en SFB): `outputConnectionPoints(for:)`
+        // lanza AVAE_RaiseException si el nodo no está adjunto a ESTE engine
+        // (caso real tras un reset de media services). `attachedNodes` es una
+        // lectura segura y no lanza: solo se consulta/desconecta lo adjunto.
+        if engine.attachedNodes.contains(playerNode),
+           !engine.outputConnectionPoints(for: playerNode, outputBus: 0).isEmpty {
             engine.disconnectNodeOutput(playerNode)
         }
-        if let eq = equalizerNode, !engine.outputConnectionPoints(for: eq, outputBus: 0).isEmpty {
+        if let eq = equalizerNode, engine.attachedNodes.contains(eq),
+           !engine.outputConnectionPoints(for: eq, outputBus: 0).isEmpty {
             engine.disconnectNodeOutput(eq)
         }
-        if !engine.outputConnectionPoints(for: monoMixerNode, outputBus: 0).isEmpty {
+        if engine.attachedNodes.contains(monoMixerNode),
+           !engine.outputConnectionPoints(for: monoMixerNode, outputBus: 0).isEmpty {
             engine.disconnectNodeOutput(monoMixerNode)
         }
 
@@ -2411,21 +2430,54 @@ class AudioEngine: NSObject, ObservableObject {
     /// hardware (SRC interno del mixer cuando las tasas difieren), EQ de 10
     /// bandas y mono solo cuando está activo.
     private func customizeSFBGraph(engine: AVAudioEngine, source: AVAudioSourceNode, mixer: AVAudioMixerNode, format: AVAudioFormat) -> AVAudioNode {
-        // Red de seguridad anti-aserción (IsFormatSampleRateAndChannelCountValid)
-        // con la misma política que reconnectPlayerNode: 44100/2 nunca es basura.
-        let safeFormat: AVAudioFormat = (format.sampleRate > 1 && format.channelCount > 0)
-            ? format
-            : (AVAudioFormat(standardFormatWithSampleRate: 44_100, channels: 2)!)
+        // ✅ FIX FORMATO EN LA INSTALACIÓN INICIAL: la conexión source → primer
+        // nodo DEBE usar el formato de salida REAL de la fuente. En
+        // `reconfigureProcessingGraph` SFB ya nos pasa ese formato; en
+        // `installGraph()` (init, cambio de EQ) llegaba el formato del hardware,
+        // que puede diferir en tasa y —sobre todo— en canales (archivo mono),
+        // y `connect` lanza aserción si no coincide con la salida del sourceNode.
+        // Prioridad: salida real de la fuente → formato recibido → 44100/2
+        // (válido siempre). El SRC a la tasa del hardware lo sigue haciendo el
+        // mixer interno al conectar con `mixer`.
+        let sourceFormat = source.outputFormat(forBus: 0)
+        let safeFormat: AVAudioFormat
+        if sourceFormat.sampleRate > 1, sourceFormat.channelCount > 0 {
+            safeFormat = sourceFormat
+        } else if format.sampleRate > 1, format.channelCount > 0 {
+            safeFormat = format
+        } else {
+            safeFormat = AVAudioFormat(standardFormatWithSampleRate: 44_100, channels: 2)!
+        }
 
-        if !engine.outputConnectionPoints(for: source, outputBus: 0).isEmpty {
-            engine.disconnectNodeOutput(source)
+        // ✅ FIX CRASH AL ARRANCAR (AVAE_RaiseException → init): aquí NO se
+        // inspeccionan conexiones. `outputConnectionPoints(for:)` y
+        // `disconnectNodeOutput(_:)` levantan una NSException NO capturable
+        // (`AVAudioEngineImpl::GetOutputConnectionPointsForNode`) cuando el nodo
+        // no está adjunto a ESTE engine, y el EQ que crea `setupEqualizer()`
+        // todavía no lo está en el momento del primer `rebuildGraph()`.
+        //
+        // Contrato de SFB: antes de llamar a este bloque ya ha desconectado su
+        // `sourceNode`, y en `reconfigureProcessingGraph` nos entrega el motor
+        // con el formato real de la fuente. La cadena se re-establece con
+        // attach (si falta) + connect, que son idempotentes: `connect`
+        // reemplaza la conexión del bus de salida del nodo origen. Nada de
+        // introspección del grafo aquí: attach + connect y salir.
+
+        // ✅ FIX CRASH (init): sin EQ y sin mono NO hay cadena que insertar.
+        // Se devuelve el mixer tal cual y SFB hace su `source → mainMixer` con
+        // el formato REAL de la fuente. Antes se forzaba un `connect` con el
+        // formato de salida del hardware en un momento (init) en el que SFB
+        // todavía no ha fijado el formato de su sourceNode — trabajo de más y
+        // una fuente potencial de aserciones de formato.
+        if equalizerNode == nil && !isMonoAudioEnabled {
+            connectedFormatKey = formatKey(safeFormat)
+            updateSrcConversionState()
+            return mixer
         }
 
         var first: AVAudioNode = source
         if let eq = equalizerNode {
-            if !engine.outputConnectionPoints(for: eq, outputBus: 0).isEmpty {
-                engine.disconnectNodeOutput(eq)
-            }
+            // Attach ANTES de conectar (y antes de cualquier lectura del nodo).
             if !engine.attachedNodes.contains(eq) { engine.attach(eq) }
             engine.connect(source, to: eq, format: safeFormat)
             first = eq
@@ -2433,9 +2485,6 @@ class AudioEngine: NSObject, ObservableObject {
 
         if isMonoAudioEnabled {
             if !engine.attachedNodes.contains(monoMixerNode) { engine.attach(monoMixerNode) }
-            if !engine.outputConnectionPoints(for: monoMixerNode, outputBus: 0).isEmpty {
-                engine.disconnectNodeOutput(monoMixerNode)
-            }
             // Salida mono a la tasa del HARDWARE (misma regla que monoMixerOutputFormat).
             let hwRate = engine.outputNode.outputFormat(forBus: 0).sampleRate
             let monoRate = hwRate > 1 ? hwRate : safeFormat.sampleRate
