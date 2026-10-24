@@ -1023,7 +1023,10 @@ extension SettingsRowBuilding {
             .padding(.horizontal, 16).padding(.vertical, 14)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        // ✅ M3E (Prioridad 4): la fila de ajustes reacciona al toque con el
+        // rebote elástico del sistema (antes `.plain`: no había NINGUNA
+        // respuesta visual al pulsar, la pantalla se sentía “de solo lectura”).
+        .buttonStyle(PressableButtonStyle(scale: AuroraPressScale.row, pressedOpacity: 0.65))
     }
 
     // MARK: - Toggle Row
@@ -1162,6 +1165,13 @@ extension SettingsRowBuilding {
                     Text(subtitle)
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
+                        // ✅ M3E (Prioridad 4): al elegir otra opción, el subtítulo
+                        // no cambia de golpe: hace un crossfade corto. El menú
+                        // emergente en sí es del sistema en iOS 16 (no hay API para
+                        // cambiar su spring); lo que se puede animar —y se anima— es
+                        // la transición de estado visible de la fila.
+                        .contentTransition(.opacity)
+                        .animation(AuroraMotion.quick, value: subtitle)
                 }
 
                 Spacer()
@@ -1173,7 +1183,10 @@ extension SettingsRowBuilding {
             .padding(.horizontal, 16).padding(.vertical, 14)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        // ✅ M3E: mismo press feedback que las filas de botón. En iOS 16 el
+        // estilo de un `Menu` puede ser ignorado por su botón interno; en ese
+        // caso no hay cambio visual (degradación silenciosa, sin romper nada).
+        .buttonStyle(PressableButtonStyle(scale: AuroraPressScale.row, pressedOpacity: 0.65))
     }
 
     // MARK: - Stat Row

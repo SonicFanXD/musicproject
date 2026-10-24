@@ -426,7 +426,7 @@ struct ContentView: View {
         // ThemeManager). También cubre alerts y sliders de este stack.
         .tint(AppTheme.accent)
         .onChange(of: fileAccessService.isScanning) { scanning in
-            withAnimation(.easeInOut(duration: 0.3)) {
+            withAnimation(AuroraMotion.normal) {
                 compactIndexingVisible = scanning
             }
             // ✅ INDEXACIÓN: sincronizar tarjeta grande / indicador compacto.
@@ -465,7 +465,7 @@ struct ContentView: View {
             // a la compacta). Solo se apaga al FINALIZAR el escaneo.
             if !scanning {
                 firstIndexingDone = true
-                withAnimation(.easeOut(duration: 0.45)) { firstTimeIndexing = false }
+                withAnimation(AuroraMotion.slow) { firstTimeIndexing = false }
             }
             return
         }
@@ -476,7 +476,7 @@ struct ContentView: View {
             && fileAccessService.songs.isEmpty
             && fileAccessService.pendingSongsCount == 0
         if isFirstScanOfInstall {
-            withAnimation(.easeOut(duration: 0.3)) { firstTimeIndexing = true }
+            withAnimation(AuroraMotion.slow) { firstTimeIndexing = true }
         }
     }
 
@@ -662,7 +662,7 @@ struct ContentView: View {
         // apareciendo debajo a medida que se indexa.
         if firstTimeIndexing {
             indexingProgressCard
-                .transition(.opacity)
+                .transition(.opacity.combined(with: .scale(scale: 0.97, anchor: .top)))
                 .padding(.horizontal, 12)
                 .padding(.top, 8)
             if !currentFilteredSongs.isEmpty {
@@ -670,7 +670,7 @@ struct ContentView: View {
                     .padding(.horizontal, 12)
                     .padding(.top, 8)
                 ForEach(currentFilteredSongs) { song in
-                    songRow(song)
+                    librarySongRow(song)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 6)
                 }
@@ -707,7 +707,7 @@ struct ContentView: View {
                 .padding(.horizontal, 12)
                 .padding(.top, 8)
             ForEach(currentFilteredSongs) { song in
-                songRow(song)
+                librarySongRow(song)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 6)
             }
@@ -794,7 +794,7 @@ struct ContentView: View {
                                 )
                             )
                             .frame(width: geo.size.width * indexingProgress)
-                            .animation(.easeInOut(duration: 0.3), value: indexingProgress)
+                            .animation(AuroraMotion.quick, value: indexingProgress)
                             .shadow(color: AppTheme.accent.opacity(0.3), radius: 4, y: 0)
                     }
                 }
@@ -847,7 +847,7 @@ struct ContentView: View {
                             )
                         )
                         .frame(width: max(0, geo.size.width * indexingProgress))
-                        .animation(.easeInOut(duration: 0.25), value: indexingProgress)
+                        .animation(AuroraMotion.quick, value: indexingProgress)
                 }
             }
             .frame(width: 70, height: 5)
@@ -878,7 +878,7 @@ struct ContentView: View {
         // ✅ PRIMERA INDEXACIÓN: tarjeta grande también en álbumes.
         if firstTimeIndexing {
             indexingProgressCard
-                .transition(.opacity)
+                .transition(.opacity.combined(with: .scale(scale: 0.97, anchor: .top)))
                 .padding(.horizontal, 12)
                 .padding(.top, 8)
         }
@@ -907,9 +907,12 @@ struct ContentView: View {
                 NavigationLink {
                     AlbumDetailView(album: album, audioEngine: audioEngine, fileAccessService: fileAccessService)
                 } label: {
-                    albumListRow(album)
+                    // ✅ PERF: fila como view valor + `.equatable()`.
+                    AlbumRow(album: album).equatable()
                 }
-                .buttonStyle(.plain)
+                // ✅ M3E: rebote elástico al tocar la fila (antes .plain: la
+                // fila no reaccionaba de forma ninguna hasta que navegaba).
+                .buttonStyle(PressableButtonStyle(scale: AuroraPressScale.row, pressedOpacity: 0.7))
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
             }
@@ -922,7 +925,7 @@ struct ContentView: View {
         // ✅ PRIMERA INDEXACIÓN: tarjeta grande también en artistas.
         if firstTimeIndexing {
             indexingProgressCard
-                .transition(.opacity)
+                .transition(.opacity.combined(with: .scale(scale: 0.97, anchor: .top)))
                 .padding(.horizontal, 12)
                 .padding(.top, 8)
         }
@@ -951,9 +954,11 @@ struct ContentView: View {
                 NavigationLink {
                     ArtistDetailView(artist: artist, audioEngine: audioEngine, fileAccessService: fileAccessService)
                 } label: {
-                    artistListRow(artist)
+                    // ✅ PERF: fila como view valor + `.equatable()`.
+                    ArtistRow(artist: artist).equatable()
                 }
-                .buttonStyle(.plain)
+                // ✅ M3E: mismo press feedback que la fila de álbumes.
+                .buttonStyle(PressableButtonStyle(scale: AuroraPressScale.row, pressedOpacity: 0.7))
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
             }
@@ -988,197 +993,6 @@ struct ContentView: View {
                 .padding(.horizontal, 20)
             }
             .padding(.vertical, 16)
-        }
-    }
-
-    @ViewBuilder
-    private func songRow(_ song: Song) -> some View {
-        let isCurrent = audioEngine.currentSong?.id == song.id
-        let isLiked = fileAccessService.isLiked(song)
-        
-        HStack(spacing: 14) {
-            Button {
-                playSong(song)
-            } label: {
-                HStack(spacing: 14) {
-                    artworkView(for: song)
-                    
-                    VStack(alignment: .leading, spacing: 3) {
-                        // ✅ Jerarquía: el título sube a 16 (la fila de álbum/artista
-                        // también) para separarse mejor del subtítulo de 12.
-                        Text(song.displayName)
-                            .font(.system(size: 16, weight: .semibold, design: .rounded))
-                            .foregroundStyle(isCurrent ? AppTheme.accent : .primary)
-                            .lineLimit(1)
-                        
-                        Text(song.displaySubtitle)
-                            .font(.system(size: 12))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                        
-                        if !song.album.isEmpty {
-                            HStack(spacing: 4) {
-                                Image(systemName: "opticaldisc")
-                                    .font(.system(size: 9))
-                                    .foregroundStyle(.tertiary)
-                                Text(song.album)
-                                    .font(.system(size: 11))
-                                    .foregroundStyle(.tertiary)
-                                    .lineLimit(1)
-                            }
-                        }
-                    }
-                    
-                    Spacer(minLength: 10)
-                    
-                    if isCurrent {
-                        // ✅ 60fps: drawingGroup rasteriza las barras animadas
-                        HStack(spacing: 2.5) {
-                            ForEach(0..<3, id: \.self) { bar in
-                                RoundedRectangle(cornerRadius: 1)
-                                    .fill(AppTheme.accentGradient)
-                                    // ✅ El indicador ANIMA de verdad: la altura cambia
-                                    // al reproducir y el repeatForever la hace oscilar
-                                    // entre 4 y 12/7 pt (antes la animación no tenía
-                                    // ninguna propiedad que cambiar → barras fijas).
-                                    // ✅ BATERÍA: en pausa no hay bucle que animar.
-                                    .frame(
-                                        width: 2.5,
-                                        height: audioEngine.isPlaying ? (bar % 2 == 0 ? 12 : 7) : 4
-                                    )
-                                    .animation(
-                                        audioEngine.isPlaying
-                                            ? Animation.easeInOut(duration: 0.4 + Double(bar) * 0.1).repeatForever(autoreverses: true)
-                                            : nil,
-                                        value: audioEngine.isPlaying
-                                    )
-                            }
-                        }
-                        .drawingGroup()
-                    } else {
-                        Text(formatDuration(song.duration))
-                            .font(.system(size: 11, weight: .medium).monospacedDigit())
-                            .foregroundStyle(.tertiary)
-                    }
-                }
-            }
-            .buttonStyle(.plain)
-            
-            Button {
-                Haptics.light()
-                fileAccessService.toggleLike(song)
-            } label: {
-                // ✅ Brillo aumentado: el corazón sin like ahora usa secondary
-                // a 0.7 (antes 0.4, casi invisible) + resalta con accent cuando
-                // la canción está sonando para mantenerse legible en cualquier fondo.
-                Image(systemName: isLiked ? "heart.fill" : "heart")
-                    .font(.system(size: 16, weight: .medium))
-                    .foregroundStyle(isLiked ? Color.red : (isCurrent ? AppTheme.accent : Color.secondary.opacity(0.7)))
-                    .frame(width: 36, height: 36)
-                    .contentShape(Rectangle())
-            }
-            // ✅ G: respuesta al toque del sistema (antes `.plain`, sin feedback).
-            .buttonStyle(PressableButtonStyle(scale: AuroraPressScale.chip))
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
-        .background {
-                if isCurrent {
-                    // ✅ Estado current SIN migrar al modifier genérico (regla del
-                    // spec): velo accent + borde accent, radio alineado a .md (18).
-                    RoundedRectangle(cornerRadius: AuroraRadius.md, style: .continuous)
-                        .fill(AppTheme.accentGradient(opacity: 0.08))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: AuroraRadius.md, style: .continuous)
-                                .strokeBorder(AppTheme.accent.opacity(0.2), lineWidth: 0.5)
-                        )
-                }
-            }
-        // ✅ AURORA DESIGN: fila = superficie flat del sistema (radio .md, borde
-        // sutil, sin sombra; 60fps: cero blur por fila). Va DESPUÉS del velo
-        // current para que el card quede DEBAJO del estado accent.
-        .auroraCard(radius: AuroraRadius.md, style: .flat, withShadow: false)
-            .contextMenu {
-            // ✅ E2.3: menú al orden ESTÁNDAR, idéntico al de las filas de
-            // álbum/artista/lista, y fuera la duplicidad: "Reproducir" y
-            // "Reproducir ahora" llamaban exactamente a lo mismo (playSong →
-            // play(song, from: filteredSongs)), así que queda un único ítem, con
-            // el helper de siempre (él ya dispara su Haptics).
-            Button {
-                playSong(song)
-            } label: {
-                Label(Localization.localized("context.playNow"), systemImage: "play.circle.fill")
-            }
-
-            Button {
-                Haptics.light()
-                audioEngine.playNext(song)
-            } label: {
-                Label(Localization.localized("context.playNext"), systemImage: "text.line.first.and.arrowtriangle.forward")
-            }
-
-            // ✅ E2.3: "Añadir a la cola" no existía en la biblioteca.
-            Button {
-                Haptics.light()
-                audioEngine.addToQueue(song)
-            } label: {
-                Label(Localization.localized("actions.addToQueue"), systemImage: "text.badge.plus")
-            }
-
-            Button {
-                Haptics.light()
-                fileAccessService.toggleLike(song)
-            } label: {
-                Label(isLiked ? Localization.localized("actions.unlike") : Localization.localized("actions.like"), systemImage: isLiked ? "heart.slash" : "heart")
-            }
-            
-            // ✅ "Añadir a playlist" en context menu — solo si hay playlists
-            if !fileAccessService.playlists.isEmpty {
-                Menu {
-                    ForEach(fileAccessService.playlists) { playlist in
-                        Button {
-                            Haptics.light()
-                            fileAccessService.addSongToPlaylist(song, playlist: playlist)
-                        } label: {
-                            Label(playlist.name, systemImage: "music.note.list")
-                        }
-                    }
-                } label: {
-                    Label(Localization.localized("context.addToPlaylist"), systemImage: "plus")
-                }
-            }
-        }
-    }
-
-    private func formatDuration(_ seconds: TimeInterval) -> String {
-        guard seconds.isFinite, seconds >= 0 else { return "0:00" }
-        let totalSeconds = Int(seconds)
-        return String(format: "%d:%02d", totalSeconds / 60, totalSeconds % 60)
-    }
-
-    @ViewBuilder
-    private func artworkView(for song: Song) -> some View {
-        // ✅ PERF SCROLL: miniatura por decodificación descendente (ImageIO, una
-        // pasada a 96px cacheada por hash+px) — la ruta completa `song.artwork`
-        // decodificaba el JPEG de 768px entero en el main en cada miss del caché
-        // (countLimit 120 ≈ 83 portadas antes de expulsar) y con biblioteca
-        // grande el scroll disparaba una decodificación completa por fila.
-        if let thumbnail = song.rowThumbnail(maxPixel: 96) {
-            Image(uiImage: thumbnail)
-                .resizable()
-                .interpolation(.high)
-                .scaledToFill()
-                .frame(width: 48, height: 48)
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        } else {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(AppTheme.accentGradient(opacity: 0.15))
-                .frame(width: 48, height: 48)
-                .overlay {
-                    Image(systemName: "music.note")
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundStyle(AppTheme.accentGradient(opacity: 0.6))
-                }
         }
     }
 
@@ -1488,6 +1302,31 @@ struct ContentView: View {
         audioEngine.play(song: song, from: filteredSongs)
     }
 
+    /// ✅ PERF SCROLL (Prioridad 5): la fila de canción ya NO se construye en
+    /// este body. Vive en `LibrarySongRow` (View valor + Equatable, que NO
+    /// observa el motor) y aquí solo recibe los valores que pinta.
+    /// · `.equatable()` corta el diff ANTES de evaluar el body cuando ninguno
+    ///   de esos valores cambió: los @Published del engine (ruta de audio,
+    ///   cola, EQ, progreso de escaneo…) ya no repintan las ~30 filas visibles.
+    /// · Los closures se pasan por referencia y NO entran en la igualdad.
+    private func librarySongRow(_ song: Song) -> some View {
+        LibrarySongRow(
+            song: song,
+            isCurrent: audioEngine.currentSong?.id == song.id,
+            isPlaying: audioEngine.isPlaying,
+            isLiked: fileAccessService.isLiked(song),
+            playlists: fileAccessService.playlists,
+            onPlay: { playSong(song) },
+            onPlayNext: { audioEngine.playNext(song) },
+            onAddToQueue: { audioEngine.addToQueue(song) },
+            onToggleLike: { fileAccessService.toggleLike(song) },
+            onAddToPlaylist: { playlist in
+                fileAccessService.addSongToPlaylist(song, playlist: playlist)
+            }
+        )
+        .equatable()
+    }
+
     /// ✅ FASE B2: pistas y discos del álbum de una canción usando el MISMO
     /// agrupado que la biblioteca (`FileAccessService.albums`, que ya une discos
     /// homónimos y normaliza artista/álbum). Devuelve nil si la canción no está
@@ -1544,8 +1383,8 @@ struct ContentView: View {
     }
 }
 
-// ✅ REDISEÑO A (MARCA TIPOGRÁFICA): fuera el gradiente-aurora giratorio, el
-// badge hero con sombra y el spring de entrada. La identidad pasa a ser 100 %
+// ✅ REDISEÑO A (MARCA TIPOGRÁFICA): fuera el gradiente-aurora giratorio y el
+// badge hero con sombra. La identidad pasa a ser 100 %
 // tipográfica (AURORA + PLAYER) con una firma de acento, sobre la base opaca
 // del sistema. El motivo de fondo: el LaunchScreen NO ejecuta código y no
 // puede pintar gradientes ni badges — sí fondo del sistema y labels. Con esta
@@ -1555,6 +1394,9 @@ struct ContentView: View {
 // única @State es el latido y su valor inicial pinta la firma a opacity 1: si
 // el onAppear no llegara, se ve igual) y UNA sola animación continua propia
 // (el latido; LoadingDots es un componente existente y ya venía pulsando).
+// ✅ M3E (Tanda 4): la entrada del wordmark es un "pop" elástico de escala
+// con `AuroraMotion.emphasized` (overshoot de goma, 0.88 → 1.0). Sigue siendo
+// la única transacción finita del splash además del latido.
 // Los TIEMPOS no cambian: el mínimo de 1,2 s lo marca ContentView.
 struct SplashView: View {
     // ✅ FIX SPLASH (VIGENTE): el contenido EMPIEZA VISIBLE — la firma nace a
@@ -1564,6 +1406,13 @@ struct SplashView: View {
     // firma de acento (1,0 ↔ 0,4 en 2,5 s, ida y vuelta). Valor inicial =
     // visible: si el onAppear no llegara a dispararse, la firma se ve igual.
     @State private var accentPulse = false
+    // ✅ M3E (Tanda 4): driver del "pop" elástico de entrada del logotipo.
+    // Nace en false → el bloque se pinta al 88 % de escala (VISIBLE, nunca
+    // opaco a 0: la regla dura del splash se mantiene) y al dispararse el
+    // onAppear sube a 1.0 con `AuroraMotion.emphasized` (damping 0.68), que es
+    // el rebote de goma característico de M3E. Solo escala: transformación GPU,
+    // cero blurs ni capas nuevas.
+    @State private var logoPopped = false
     
     var body: some View {
         ZStack {
@@ -1615,6 +1464,10 @@ struct SplashView: View {
                     )
                     .frame(width: 560, height: 560)
                 )
+                // ✅ M3E: entrada con "pop" elástico del wordmark + halo (escala
+                // del bloque completo, así el logo y su halo se asientan como una
+                // sola pieza). La curva vive en el onAppear, junto al latido.
+                .scaleEffect(logoPopped ? 1.0 : 0.88)
                 
                 Spacer()
             }
@@ -1638,6 +1491,12 @@ struct SplashView: View {
         .ignoresSafeArea()
         .allowsHitTesting(false)
         .onAppear {
+            // ✅ M3E: "pop" de entrada con el spring expresivo de AuroraMotion
+            // (respuesta 0.50, damping 0.68). Es una transacción finita con
+            // overshoot visible; el bloque nunca parpadea ni se oculta.
+            withAnimation(AuroraMotion.emphasized) {
+                logoPopped = true
+            }
             // ✅ REDISEÑO A: el latido arranca ENTERO (1,0) y solo baja a 0,4 y
             // vuelve: es decorativo, nunca oculta la firma. Una sola animación
             // continua; el resto de la pantalla queda estático.
@@ -1850,123 +1709,22 @@ func localizedAlbumCount(_ count: Int) -> String {
 /// el JPEG ya al tamaño pedido y lo cachea por hash+px). La selección de
 /// portada es idéntica a `Album.artwork`/`Artist.artwork` (primera canción con
 /// arte); sin hash (instalación vieja con bytes inline) cae al camino completo.
-private func artworkRowThumbnail(_ songs: [Song], maxPixel: Int = 104) -> UIImage? {
-    songs.first(where: { $0.artworkData != nil || $0.artworkHash != nil })?
-        .rowThumbnail(maxPixel: maxPixel)
-}
-
-private func albumListRow(_ album: Album) -> some View {
-    HStack(spacing: 14) {
-        Group {
-            if let artwork = artworkRowThumbnail(album.songs) {
-                // ✅ FIX SCROLL ÁLBUMES/ARTISTAS: la fila ya NO pide la carátula
-                // completa (`album.artwork` + `AppTheme.thumbnail`). Esa ruta
-                // decodificaba el JPEG de 768px (≈2,4 MB) y llenaba
-                // `Song.artworkCache` (countLimit 120 ⇒ ~85 portadas antes de
-                // expulsar): con más álbumes que entradas, el scroll volvía a
-                // decodificar entero cada pocas filas (10-40 ms en el A11).
-                // Ahora: ImageIO una pasada a 104px (52pt @2x), cacheada por
-                // hash+px — la misma ruta de la fila de canción.
-                Image(uiImage: artwork)
-                    .resizable().interpolation(.high).scaledToFill()
-                    .frame(width: 52, height: 52)
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            } else {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(Color.secondary.opacity(0.12))
-                    .frame(width: 52, height: 52)
-                    .overlay {
-                        Image(systemName: "square.stack")
-                            .font(.system(size: 18))
-                            .foregroundStyle(.secondary.opacity(0.6))
-                    }
-            }
-        }
-
-        VStack(alignment: .leading, spacing: 3) {
-            Text(album.name)
-                .font(.system(size: 16, weight: .semibold, design: .rounded))
-                .foregroundStyle(.primary).lineLimit(1)
-            Text(album.artist)
-                .font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
-            Text(localizedSongCount(album.songs.count))
-                .font(.system(size: 11)).foregroundStyle(.tertiary)
-        }
-
-        Spacer()
-        // ✅ FIX: sin flecha manual — NavigationLink ya muestra su propio chevron
-        // (antes se veía una flecha DUPLICADA en cada fila de álbumes)
-    }
-    .padding(.horizontal, 14).padding(.vertical, 12)
-    // ✅ AURORA DESIGN: fila flat del sistema (radio .md, borde sutil, sin
-    // sombra — misma jerarquía que la fila de canción; 60fps: cero blur).
-    .auroraCard(radius: AuroraRadius.md, style: .flat, withShadow: false)
-}
-
-private func artistListRow(_ artist: Artist) -> some View {
-    HStack(spacing: 14) {
-        Group {
-            if let artwork = artworkRowThumbnail(artist.songs) {
-                // ✅ FIX SCROLL ÁLBUMES/ARTISTAS: mismo caso que la fila de
-                // álbumes (52pt @2x) por la ruta de `rowThumbnail`.
-                Image(uiImage: artwork)
-                    .resizable().interpolation(.high).scaledToFill()
-                    .frame(width: 52, height: 52)
-                    .clipShape(Circle())
-            } else {
-                Circle().fill(Color.secondary.opacity(0.12))
-                    .frame(width: 52, height: 52)
-                    .overlay {
-                        Image(systemName: "person.fill")
-                            .font(.system(size: 18))
-                            .foregroundStyle(.secondary.opacity(0.6))
-                    }
-            }
-        }
-
-        VStack(alignment: .leading, spacing: 3) {
-            Text(artist.name)
-                .font(.system(size: 16, weight: .semibold, design: .rounded))
-                .foregroundStyle(.primary).lineLimit(1)
-            // ✅ Solo canciones: artist.albums agrupa discos y es caro de calcular
-            // por fila en cada render (el detalle del artista sí muestra álbumes).
-            Text(localizedSongCount(artist.songs.count))
-                .font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
-        }
-
-        Spacer()
-        // ✅ FIX: sin flecha manual — NavigationLink ya muestra su propio chevron
-        // (antes se veía una flecha DUPLICADA en cada fila de artistas)
-    }
-    .padding(.horizontal, 14).padding(.vertical, 12)
-    // ✅ AURORA DESIGN: fila flat del sistema (radio .md, borde sutil, sin
-    // sombra — misma jerarquía que la fila de canción; 60fps: cero blur).
-    .auroraCard(radius: AuroraRadius.md, style: .flat, withShadow: false)
-}
-
 struct ContentUnavailableLibraryView: View {
     let icon: String
     let title: String
     let message: String
 
     var body: some View {
-        VStack(spacing: 16) {
-            // ✅ AURORA DESIGN: badge hero del sistema (88pt circle, gradiente
-            // dos paradas 0.22→0.08, icono accent sólido — regla 2.7).
-            Image(systemName: icon)
-                .auroraIconBadge(size: AuroraIconSize.hero, color: AppTheme.accent, shape: .circle, iconSize: 36)
-            Text(title)
-                .font(.system(size: 20, weight: .bold, design: .rounded))
-                .foregroundStyle(.primary)
-            Text(message)
-                .font(.system(size: 15))
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 20)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 32)
-        .enhancedGlass(cornerRadius: 24)
+        // ✅ M3E (Prioridad 4): el vacío usa el componente del sistema
+        // (`AuroraEmptyState`): icono hero que respira y título de 24pt, en vez
+        // de un icono de 48pt con texto de 18pt que parecía un error.
+        // ✅ RENDIMIENTO (Prioridad 3): fuera `.enhancedGlass` (era un
+        // `.ultraThinMaterial` dentro de un ScrollView de hasta 1.000 filas:
+        // un pase offscreen por frame en el A11). Ahora superficie flat del
+        // sistema, sin material y sin bordes que puedan verse como líneas
+        // blancas/grises en modo oscuro.
+        AuroraEmptyState(icon: icon, title: title, message: message)
+            .auroraCard(radius: AuroraRadius.xl, style: .flat, withShadow: false)
     }
 }
 

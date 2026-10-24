@@ -391,9 +391,12 @@ struct LogsView: View {
                             .opacity(isSelected ? 1 : 0)
                     }
                 }
-                .animation(.easeInOut(duration: 0.22), value: isSelected)
+                // ✅ M3E: el fundido de selección usa el spring rápido (antes
+                // `.easeInOut` lineal, la única curva que quedaba en la vista).
+                .animation(AuroraMotion.quick, value: isSelected)
         }
-        .buttonStyle(PressableButtonStyle(scale: 0.95))
+        // ✅ M3E: feedback al tocar el chip (antes solo escala, sin apagado).
+        .buttonStyle(PressableButtonStyle(scale: AuroraPressScale.chip, pressedOpacity: 0.7))
     }
 
     // MARK: - Log Entries List
@@ -431,7 +434,23 @@ struct LogsView: View {
                     .padding(.vertical, 40)
                 } else {
                     ForEach(entries) { entry in
-                        logEntryRow(entry: entry)
+                        LogEntryRow(
+                            entry: entry,
+                            isExpanded: expandedIDs.contains(entry.id)
+                        ) {
+                            // ✅ El estado de expansión vive en el PADRE (una sola
+                            // fuente de verdad), pero el cuerpo de la fila es
+                            // Equatable: expandir una línea repinta esa fila y no las
+                            // otras 50-300 del buffer.
+                            if expandedIDs.contains(entry.id) {
+                                expandedIDs.remove(entry.id)
+                            } else {
+                                expandedIDs.insert(entry.id)
+                            }
+                        }
+                        // ✅ PERF: corta el diff antes de evaluar el body cuando la
+                        // entrada y su estado no cambiaron.
+                        .equatable()
                     }
                 }
             }
@@ -441,122 +460,4 @@ struct LogsView: View {
         .scrollIndicators(.hidden)
     }
 
-    private func logEntryRow(entry: InAppLogEntry) -> some View {
-        let isExpanded = expandedIDs.contains(entry.id)
-
-        return HStack(alignment: .top, spacing: 12) {
-            // ✅ Columna izquierda: nivel con icono + categoría a color
-            VStack(alignment: .leading, spacing: 6) {
-                // Nivel + icono (ERROR/WARN/INFO/DEBUG) con material de vidrio
-                Text("\(levelIcon(for: entry.level)) \(entry.level)")
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(levelColor(for: entry.level))
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background {
-                        Capsule()
-                            .fill(levelColor(for: entry.level).opacity(0.15))
-                            .overlay {
-                                Capsule()
-                                    .strokeBorder(levelColor(for: entry.level).opacity(0.12), lineWidth: 0.5)
-                            }
-                    }
-
-                Text(entry.category.displayName)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(entry.category.tintColor)
-                    .lineLimit(1)
-            }
-            .frame(width: 96, alignment: .leading)
-
-            VStack(alignment: .leading, spacing: 6) {
-                // ✅ Mensaje expandible: 3 líneas por defecto, tap para desplegar
-                // ✅ Jerarquía: el mensaje sube a 14 (es el contenido a leer) y
-                // baja a regular; la metaduría (nivel, categoría, hora) sigue en
-                // 10-11 pt para que no compita con él.
-                Text(entry.message)
-                    .font(.system(size: 14, weight: .regular))
-                    .foregroundStyle(.primary)
-                    .lineLimit(isExpanded ? nil : 3)
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        withAnimation(.easeOut(duration: 0.2)) {
-                            if isExpanded {
-                                expandedIDs.remove(entry.id)
-                            } else {
-                                expandedIDs.insert(entry.id)
-                            }
-                        }
-                    }
-                    .accessibilityHint("Toca para expandir o colapsar el mensaje")
-
-                HStack(spacing: 8) {
-                    Image(systemName: "clock")
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(.tertiary)
-
-                    Text(formatDate(entry.date))
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(.tertiary)
-
-                    if let duration = entry.duration {
-                        Spacer(minLength: 8)
-                        // ✅ Pill de duración (estilo spec sheet, monospaced)
-                        Text(String(format: "%.1f ms", duration * 1000))
-                            .font(.system(size: 10, weight: .semibold).monospacedDigit())
-                            .foregroundStyle(entry.category.tintColor)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 3)
-                            .background {
-                                Capsule().fill(entry.category.tintColor.opacity(0.12))
-                            }
-                    }
-                }
-            }
-
-            Spacer(minLength: 4)
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
-        // ✅ AURORA DESIGN: fila de lista larga (LazyVStack) → superficie FLAT del
-        // sistema: cero blur por fila al scrollear en el A11 (cada material es un
-        // pase offscreen por frame). Radio .md (18, +2pt desde el 16 original) para
-        // alinearse con las filas del resto de la app; el texto sobre gris plano se
-        // lee mejor. El stat card de arriba sigue en glass (ahí sí hay vidrio).
-        .auroraCard(radius: AuroraRadius.md, style: .flat, withShadow: false)
-        // ✅ Raya lateral de categoría: jerarquía visual instantánea
-        .overlay(alignment: .leading) {
-            Capsule()
-                .fill(entry.category.tintColor.opacity(0.65))
-                .frame(width: 2.5)
-                .padding(.vertical, 10)
-                .padding(.leading, 2)
-                .allowsHitTesting(false)
-        }
-    }
-
-    /// Icono por nivel (jerarquía visual más rápida que leer el texto).
-    private func levelIcon(for level: String) -> String {
-        switch level {
-        case "ERROR": return "xmark.octagon.fill"
-        case "WARN": return "exclamationmark.triangle.fill"
-        case "INFO": return "info.circle.fill"
-        case "DEBUG": return "ladybug.fill"
-        default: return "circle.fill"
-        }
-    }
-
-    private func levelColor(for level: String) -> Color {
-        switch level {
-        case "ERROR": return .red
-        case "WARN": return .orange
-        case "INFO": return .blue
-        case "DEBUG": return .gray
-        default: return .primary
-        }
-    }
-
-    private func formatDate(_ date: Date) -> String {
-        Self.timeFormatter.string(from: date)
-    }
 }

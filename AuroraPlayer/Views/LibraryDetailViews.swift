@@ -123,6 +123,15 @@ private func detailTitleReveal(for progress: CGFloat) -> CGFloat {
     min(max((progress - 0.5) / 0.4, 0), 1)
 }
 
+/// ✅ M3E: visibilidad del título de la barra como BOOLEANO con umbral.
+/// Antes el título recibía una opacidad CONTINUA calculada del scroll, y una
+/// opacidad reasignada en cada tick no se puede animar: el sistema la aplicaba
+/// de golpe y el cruce se sentía abrupto. Con un estado booleano, SwiftUI
+/// anima el CAMBIO con `AuroraMotion.normal` (spring) y solo cuando cruza.
+private func detailShowsInlineTitle(for progress: CGFloat) -> Bool {
+    detailTitleReveal(for: progress) > 0.35
+}
+
 // MARK: - Album Detail (dise�o inmersivo premium con color de car�tula)
 struct AlbumDetailView: View {
     let album: Album
@@ -152,6 +161,12 @@ struct AlbumDetailView: View {
     // ✅ PARALLAX / BARRA EMERGENTE: offset vertical del scroll (0 = arriba del
     // todo). Alimenta únicamente transform y opacidad del fondo del hero.
     @State private var scrollOffset: CGFloat = 0
+
+    /// ✅ M3E: ver `detailShowsInlineTitle`. Se calcula del offset ya
+    /// cuantizado a 1pt, así que el body no se despierta por micro-movimientos.
+    private var showsInlineTitle: Bool {
+        detailShowsInlineTitle(for: detailHeroProgress(for: scrollOffset))
+    }
 
     // ✅ Acento de DOS colores: primario + secundario publicados por ThemeManager
     // (fuente unificada = carátula de la canción actual). El secundario solo se
@@ -232,6 +247,11 @@ struct AlbumDetailView: View {
                             ) {
                                 audioEngine.play(song: song, from: cachedSongs)
                             }
+                            // ✅ PERF: sin `.equatable()` el body del detalle (que
+                            // observa el motor) re-evaluaría cada fila visible en
+                            // cada @Published. Con esto solo se repinta la fila
+                            // cuyo estado cambió.
+                            .equatable()
                         }
                     }
                 }
@@ -279,7 +299,12 @@ struct AlbumDetailView: View {
                 Text(album.name)
                     .font(.system(size: 17, weight: .semibold))
                     .lineLimit(1)
-                    .opacity(detailTitleReveal(for: detailHeroProgress(for: scrollOffset)))
+                    // ✅ M3E: entra con el spring estándar y una micro-escala desde
+                    // 0.94 (el «aflorar» de M3E). Solo cambia de estado al cruzar el
+                    // umbral, no en cada tick de scroll.
+                    .opacity(showsInlineTitle ? 1 : 0)
+                    .scaleEffect(showsInlineTitle ? 1 : 0.94)
+                    .animation(AuroraMotion.normal, value: showsInlineTitle)
             }
         }
         // ? Sin banda gris: el hero inmersivo fluye bajo la barra de navegaci�n
@@ -295,7 +320,7 @@ struct AlbumDetailView: View {
                 cachedQuality = Self.computeMajorityQuality(cachedSongs)
             }
             // ? Animaci�n de entrada suave
-            withAnimation(.easeOut(duration: 0.4)) {
+            withAnimation(AuroraMotion.normal) {
                 appearAnimation = true
             }
             // ? OPT: precalcular el blur del hero UNA vez en background
@@ -317,46 +342,23 @@ struct AlbumDetailView: View {
             // ? Artwork con animaci�n de entrada y brillo sutil
             // ? 60fps: sombra �NICA consolidada (la doble sombra = 2 pasadas
             // de offscreen rendering por frame en A11; visualmente equivalente).
-            Group {
-                if let artwork = album.artwork {
-                    // ✅ ANTI-JETSAM: 200pt de display → miniatura de 400px
-                    // cacheada en vez de decodificar la carátula completa.
-                    Image(uiImage: AppTheme.thumbnail(from: artwork, size: CGSize(width: 400, height: 400)))
-                        .resizable().interpolation(.high).scaledToFill()
-                        .frame(width: 200, height: 200)
-                        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-                        .overlay {
-                            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                                .strokeBorder(
-                                    LinearGradient(
-                                        colors: [.white.opacity(0.35), .white.opacity(0.08), .clear],
-                                        startPoint: .topLeading, endPoint: .bottomTrailing
-                                    ),
-                                    lineWidth: 1.5
-                                )
-                        }
-                        .shadow(color: .black.opacity(0.4), radius: 16, x: 0, y: 10)
-                } else {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 24, style: .continuous)
-                            .fill(
-                                LinearGradient(
-                                    colors: accent.colors(primaryOpacity: 0.35, secondaryOpacity: 0.2) + [Color.secondary.opacity(0.18)],
-                                    startPoint: .topLeading, endPoint: .bottomTrailing
-                                )
-                            )
-                            .frame(width: 200, height: 200)
-                        Image(systemName: "square.stack")
-                            .font(.system(size: 54, weight: .light))
-                            .foregroundStyle(.secondary.opacity(0.7))
-                    }
-                    .shadow(color: .black.opacity(0.25), radius: 14, x: 0, y: 8)
-                }
-            }
+            // ✅ PERF/M3E: la portada es ahora una view VALOR Equatable
+            // (`DetailHeroArtwork`). Esta vista se reevalúa en cada tick de scroll y
+            // en cada @Published del motor; con `.equatable()` el subtree de la
+            // portada (clip + borde + sombra) ni se evalúa mientras nada cambie, y la
+            // sombra se calcula en UNA pasada (`compositingGroup`).
+            DetailHeroArtwork(
+                kind: .album,
+                identity: album.songs.compactMap { $0.artworkHash }.first ?? album.id,
+                image: album.artwork.map { AppTheme.thumbnail(from: $0, size: CGSize(width: 400, height: 400)) },
+                size: 200,
+                accentPrimary: accent.primary,
+                accentSecondary: accent.secondary,
+                shadowColor: .black,
+                isVisible: appearAnimation
+            )
             .padding(.top, 8)
-            .scaleEffect(appearAnimation ? 1.0 : 0.9)
-            .opacity(appearAnimation ? 1.0 : 0)
-            .animation(.spring(response: 0.5, dampingFraction: 0.8), value: appearAnimation)
+            .equatable()
 
             // ? Info del �lbum con mejor jerarqu�a visual
             VStack(spacing: 6) {
@@ -373,7 +375,7 @@ struct AlbumDetailView: View {
             .padding(.horizontal, 24)
             .offset(y: appearAnimation ? 0 : 10)
             .opacity(appearAnimation ? 1.0 : 0)
-            .animation(.easeOut(duration: 0.5).delay(0.1), value: appearAnimation)
+            .animation(AuroraMotion.normal.delay(0.06), value: appearAnimation)
 
             // ? Estad�sticas con dise�o mejorado
             FlowLayout(horizontalSpacing: 10, verticalSpacing: 8) {
@@ -405,7 +407,7 @@ struct AlbumDetailView: View {
             .padding(.horizontal, 20)
             .offset(y: appearAnimation ? 0 : 10)
             .opacity(appearAnimation ? 1.0 : 0)
-            .animation(.easeOut(duration: 0.5).delay(0.15), value: appearAnimation)
+            .animation(AuroraMotion.normal.delay(0.12), value: appearAnimation)
         }
         // ✅ FIX FRANJA SUPERIOR: el contenido del hero vuelve a su sitio (el
         // ScrollView ya no aporta el inset, lo aporta aquí) y el fondo —que cuelga
@@ -508,7 +510,8 @@ struct AlbumDetailView: View {
                 .contentShape(Capsule())
                 .shadow(color: tintColor.opacity(0.5), radius: 10, x: 0, y: 5)
             }
-            .buttonStyle(PressableButtonStyle(scale: AuroraPressScale.button))
+            // ✅ M3E: rebote + leve apagado, coherente con el resto de transportes.
+            .buttonStyle(PressableButtonStyle(scale: AuroraPressScale.button, pressedOpacity: 0.85))
 
             Button {
                 Haptics.medium()
@@ -553,7 +556,8 @@ struct AlbumDetailView: View {
                 .contentShape(Capsule())
             }
             .accessibilityLabel(Localization.localized("details.shuffle"))
-            .buttonStyle(PressableButtonStyle(scale: AuroraPressScale.button))
+            // ✅ M3E: rebote + leve apagado, coherente con el resto de transportes.
+            .buttonStyle(PressableButtonStyle(scale: AuroraPressScale.button, pressedOpacity: 0.85))
         }
         .padding(.horizontal, 4)
     }
@@ -593,6 +597,7 @@ struct AlbumDetailView: View {
                 ) {
                     audioEngine.play(song: song, from: cachedSongs)
                 }
+                .equatable()
             }
         }
     }
@@ -663,7 +668,13 @@ struct AlbumDetailView: View {
 }
 
 // MARK: - Song Row optimizado (View struct para diffing correcto y 60fps)
-struct AlbumSongRow: View {
+// ✅ PERF SCROLL (Prioridad 5): la fila es `Equatable` y se usa con
+// `.equatable()` en los DOS call sites. El body del detalle (álbum/artista)
+// observa `AudioEngine`, así que cada @Published suyo lo re-evalúa; sin la
+// igualdad, cada evento volvía a evaluar también TODAS las filas visibles.
+// `==` compara solo lo que la fila PINTA (ver abajo): los closures de acción
+// se ignoran y `isPlaying` solo cuenta en la fila que suena de verdad.
+struct AlbumSongRow: View, Equatable {
     let song: Song
     let index: Int
     let isCurrent: Bool
@@ -685,6 +696,24 @@ struct AlbumSongRow: View {
     // (play(song, from: cachedSongs)), así que el menú reusa `action()`.
     let onPlayNext: () -> Void
     let action: () -> Void
+
+    /// ✅ Igualdad = "¿está igual lo que esta fila PINTA?". Los closures se
+    /// ignoran (capturan el engine por referencia) y `isPlaying`/`tintColor`
+    /// solo cuentan en la fila actual: son los únicos casos en los que el body
+    /// los lee. Así un play/pausa repinta UNA fila, no la lista entera.
+    static func == (lhs: AlbumSongRow, rhs: AlbumSongRow) -> Bool {
+        guard lhs.song.id == rhs.song.id,
+              lhs.song.title == rhs.song.title,
+              lhs.song.artist == rhs.song.artist,
+              lhs.song.album == rhs.song.album,
+              lhs.song.duration == rhs.song.duration,
+              lhs.index == rhs.index,
+              lhs.isCurrent == rhs.isCurrent,
+              lhs.isLiked == rhs.isLiked
+        else { return false }
+        guard lhs.isCurrent else { return true }
+        return lhs.isPlaying == rhs.isPlaying && lhs.tintColor == rhs.tintColor
+    }
 
     var body: some View {
         Button {
@@ -859,6 +888,12 @@ struct ArtistDetailView: View {
     @ObservedObject private var theme = ThemeManager.shared
     // ✅ PARALLAX / BARRA EMERGENTE (mismo criterio que AlbumDetailView).
     @State private var scrollOffset: CGFloat = 0
+
+    /// ✅ M3E: ver `detailShowsInlineTitle`. Se calcula del offset ya
+    /// cuantizado a 1pt, así que el body no se despierta por micro-movimientos.
+    private var showsInlineTitle: Bool {
+        detailShowsInlineTitle(for: detailHeroProgress(for: scrollOffset))
+    }
     private var totalDuration: TimeInterval { cachedTotalDuration }
     /// ✅ Acento de la vista, SIEMPRE de dos colores (mismo criterio que Album
     /// Detail): lee el par publicado por ThemeManager (fuente unificada =
@@ -939,6 +974,8 @@ struct ArtistDetailView: View {
                         ) {
                             audioEngine.play(song: song, from: cachedSongs)
                         }
+                        // ✅ PERF: mismo corte de diff que en AlbumSongRow.
+                        .equatable()
                     }
                 }
                 .padding(.horizontal, 20).padding(.top, 28)
@@ -982,7 +1019,12 @@ struct ArtistDetailView: View {
                 Text(artist.name)
                     .font(.system(size: 17, weight: .semibold))
                     .lineLimit(1)
-                    .opacity(detailTitleReveal(for: detailHeroProgress(for: scrollOffset)))
+                    // ✅ M3E: entra con el spring estándar y una micro-escala desde
+                    // 0.94 (el «aflorar» de M3E). Solo cambia de estado al cruzar el
+                    // umbral, no en cada tick de scroll.
+                    .opacity(showsInlineTitle ? 1 : 0)
+                    .scaleEffect(showsInlineTitle ? 1 : 0.94)
+                    .animation(AuroraMotion.normal, value: showsInlineTitle)
             }
         }
         // ? Sin banda gris (coherente con AlbumDetailView)
@@ -994,7 +1036,7 @@ struct ArtistDetailView: View {
                 cachedSongs = artist.songs
                 cachedTotalDuration = cachedSongs.reduce(0) { $0 + $1.duration }
             }
-            withAnimation(.easeOut(duration: 0.4)) {
+            withAnimation(AuroraMotion.normal) {
                 appearAnimation = true
             }
             // ? OPT: precalcular el blur del hero UNA vez en background
@@ -1014,45 +1056,20 @@ struct ArtistDetailView: View {
     private var artistHeroSection: some View {
         VStack(spacing: 22) {
             // ? Avatar del artista con animaci�n y efectos mejorados
-            Group {
-                if let artwork = artist.artwork {
-                    // ✅ ANTI-JETSAM: avatar de 170pt → miniatura de 340px.
-                    Image(uiImage: AppTheme.thumbnail(from: artwork, size: CGSize(width: 340, height: 340)))
-                        .resizable().interpolation(.high).scaledToFill()
-                        .frame(width: 170, height: 170)
-                        .clipShape(Circle())
-                        .overlay {
-                            // ? Borde con gradiente premium (estilo NowPlayingView)
-                            Circle().strokeBorder(
-                                LinearGradient(
-                                    colors: [.white.opacity(0.45), accent.primary.opacity(0.7), accent.secondary.opacity(0.55), .white.opacity(0.15)],
-                                    startPoint: .topLeading, endPoint: .bottomTrailing
-                                ),
-                                lineWidth: 3.5
-                            )
-                        }
-                        // ? 60fps: sombra �nica consolidada (antes: doble)
-                        .shadow(color: tintColor.opacity(0.3), radius: 22, x: 0, y: 10)
-                } else {
-                    ZStack {
-                        Circle().fill(
-                            LinearGradient(
-                                colors: accent.colors(primaryOpacity: 0.45, secondaryOpacity: 0.25) + [Color.secondary.opacity(0.25)],
-                                startPoint: .topLeading, endPoint: .bottomTrailing
-                            )
-                        )
-                        .frame(width: 170, height: 170)
-                        Image(systemName: "person.fill")
-                            .font(.system(size: 56, weight: .light))
-                            .foregroundStyle(.white.opacity(0.9))
-                    }
-                    .shadow(color: tintColor.opacity(0.25), radius: 18, x: 0, y: 10)
-                }
-            }
+            // ✅ PERF/M3E: avatar Equatable (ver `DetailHeroArtwork`). El detalle del
+            // artista se reevalúa en cada tick de scroll; este subtree ya no.
+            DetailHeroArtwork(
+                kind: .artist,
+                identity: artist.songs.compactMap { $0.artworkHash }.first ?? artist.id,
+                image: artist.artwork.map { AppTheme.thumbnail(from: $0, size: CGSize(width: 340, height: 340)) },
+                size: 170,
+                accentPrimary: accent.primary,
+                accentSecondary: accent.secondary,
+                shadowColor: tintColor,
+                isVisible: appearAnimation
+            )
             .padding(.top, 20)
-            .scaleEffect(appearAnimation ? 1.0 : 0.85)
-            .opacity(appearAnimation ? 1.0 : 0)
-            .animation(.spring(response: 0.5, dampingFraction: 0.8), value: appearAnimation)
+            .equatable()
 
             // ? Info del artista con mejor jerarqu�a visual
             VStack(spacing: 10) {
@@ -1076,7 +1093,7 @@ struct ArtistDetailView: View {
             .padding(.horizontal, 24)
             .offset(y: appearAnimation ? 0 : 10)
             .opacity(appearAnimation ? 1.0 : 0)
-            .animation(.easeOut(duration: 0.5).delay(0.1), value: appearAnimation)
+            .animation(AuroraMotion.normal.delay(0.06), value: appearAnimation)
         }
         // ✅ FIX FRANJA SUPERIOR: el contenido del hero vuelve a su sitio (el
         // ScrollView ya no aporta el inset, lo aporta aquí) y el fondo —que cuelga
@@ -1160,7 +1177,8 @@ struct ArtistDetailView: View {
                 .contentShape(Capsule())
                 .shadow(color: tintColor.opacity(0.5), radius: 10, x: 0, y: 5)
             }
-            .buttonStyle(PressableButtonStyle(scale: AuroraPressScale.button))
+            // ✅ M3E: rebote + leve apagado, coherente con el resto de transportes.
+            .buttonStyle(PressableButtonStyle(scale: AuroraPressScale.button, pressedOpacity: 0.85))
 
             Button {
                 Haptics.medium()
@@ -1205,7 +1223,8 @@ struct ArtistDetailView: View {
                 .contentShape(Capsule())
             }
             .accessibilityLabel(Localization.localized("details.shuffle"))
-            .buttonStyle(PressableButtonStyle(scale: AuroraPressScale.button))
+            // ✅ M3E: rebote + leve apagado, coherente con el resto de transportes.
+            .buttonStyle(PressableButtonStyle(scale: AuroraPressScale.button, pressedOpacity: 0.85))
         }
         .padding(.horizontal, 4)
     }
@@ -1315,7 +1334,7 @@ struct ArtistAlbumCard: View {
 }
 
 // MARK: - Song Row optimizado para Artist Detail
-struct ArtistSongRow: View {
+struct ArtistSongRow: View, Equatable {
     let song: Song
     let index: Int
     let isCurrent: Bool
@@ -1337,6 +1356,21 @@ struct ArtistSongRow: View {
     // (play(song, from: cachedSongs)), así que el menú reusa `action()`.
     let onPlayNext: () -> Void
     let action: () -> Void
+
+    /// ✅ Misma igualdad que `AlbumSongRow` (ver comentario allí).
+    static func == (lhs: ArtistSongRow, rhs: ArtistSongRow) -> Bool {
+        guard lhs.song.id == rhs.song.id,
+              lhs.song.title == rhs.song.title,
+              lhs.song.artist == rhs.song.artist,
+              lhs.song.album == rhs.song.album,
+              lhs.song.duration == rhs.song.duration,
+              lhs.index == rhs.index,
+              lhs.isCurrent == rhs.isCurrent,
+              lhs.isLiked == rhs.isLiked
+        else { return false }
+        guard lhs.isCurrent else { return true }
+        return lhs.isPlaying == rhs.isPlaying && lhs.tintColor == rhs.tintColor
+    }
 
     var body: some View {
         Button {

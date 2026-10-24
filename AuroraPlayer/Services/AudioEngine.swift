@@ -202,6 +202,20 @@ class AudioEngine: NSObject, ObservableObject {
     // MARK: - Motor de audio mejorado
     private let engine = AVAudioEngine()
     private let playerNode = AVAudioPlayerNode()
+    // ✅ MIGRACIÓN SFB (núcleo híbrido): cuando `usesSFBCore` es true la
+    // reproducción la dirige SFBAudioEngine (SFBPlaybackBackend) y esta
+    // instancia AVAudioEngine + AVAudioPlayerNode queda RESERVADA como ruta
+    // de rollback (`UserDefaults com.aurora.playbackCore = avAudioPlayerNode`
+    // + reinicio). Todos los seams son early-returns: la ruta original queda
+    // intacta byte a byte y sigue funcionando sin tocarla.
+    private let sfbBackend = SFBPlaybackBackend()
+    var usesSFBCore: Bool { PlaybackCorePreference.current == .sfb }
+    /// Mezclador que recibe ganancia y fades (mainMixer del núcleo ACTIVO).
+    private var mixerNode: AVAudioMixerNode { usesSFBCore ? sfbBackend.mainMixerNode : engine.mainMixerNode }
+    /// Salud del motor ACTIVO (watchdogs y recuperación en background/foreground).
+    private var isEngineHealthy: Bool { usesSFBCore ? sfbBackend.engineIsRunning : engine.isRunning }
+    /// ¿Hay una fuente cargada en el núcleo activo? (En SFB no hay `audioFile`.)
+    private var hasLoadedSource: Bool { audioFile != nil || (usesSFBCore && currentSong != nil) }
     // ✅ Audio Mono REAL: mezclador intermedio siempre presente en el grafo.
     // El downmix se hace reconectando su SALIDA con formato de 1 canal
     // (AVAudioMixerNode adapta canales por DSP). El método anterior usaba
@@ -305,6 +319,11 @@ class AudioEngine: NSObject, ObservableObject {
     }
 
     private func clearChainedAhead() {
+        // ✅ SFB: "descartar la transición armada" equivale a vaciar la cola de
+        // decoders pendientes de SFB (un no-op si no hay nada encolado). Así
+        // TODOS los llamadores compartidos (play, reset, media-services…)
+        // hacen lo correcto en ambos núcleos sin duplicar lógica.
+        if usesSFBCore { sfbBackend.clearPendingDecoders() }
         chainedAheadIndex = nil
         chainedAheadSong = nil
         chainedAheadFile = nil
@@ -324,6 +343,10 @@ class AudioEngine: NSObject, ObservableObject {
     /// modo/orden ya actualizados. Coste: esa transición deja de ser gapless.
     private func invalidateChainedAhead() {
         guard chainedAheadIndex != nil else { return }
+        // ✅ SFB: el desalojo de la transición (playNext/eliminar del orden)
+        // también descarta el decoder encolado; el índice se conserva para no
+        // re-armar, EXACTAMENTE igual que la semántica de la ruta AV.
+        if usesSFBCore { sfbBackend.clearPendingDecoders() }
         chainedAheadToken = 0
     }
 
@@ -337,6 +360,12 @@ class AudioEngine: NSObject, ObservableObject {
     /// forma reactiva (reinicio atómico con reconexión, con un pequeño gap
     /// inevitable) cuando la canción actual termine.
     private func scheduleAheadIfPossible() {
+        // ✅ SFB (seam): gapless nativo — aquí SOLO se encola la siguiente pista
+        // en SFB; la promoción llega por el delegate `nowPlayingChanged`.
+        if usesSFBCore {
+            sfbScheduleAhead()
+            return
+        }
         guard chainedAheadIndex == nil, isPlaying, !isStopping,
               engine.isRunning, playerNode.isPlaying else { return }
         guard let index = indexToChainAhead(), playbackOrder.indices.contains(index) else { return }
@@ -719,6 +748,7 @@ class AudioEngine: NSObject, ObservableObject {
             name: UIApplication.didBecomeActiveNotification,
             object: nil
         )
+        wireSFBBackend()
         setupEngine()
         setupEqualizer()
         observeRouteChanges()
@@ -805,6 +835,17 @@ class AudioEngine: NSObject, ObservableObject {
     // residual de la extrapolación de iOS y sigue siendo 2,5× más barato que el
     // refresco de 0.8 s que existía antes de la FASE B.
     private let nowPlayingRefreshInterval: TimeInterval = 2
+    // ✅ REGLA DE ORO (fase 2): tolerancia de la republicación PERIÓDICA.
+    // iOS extrapola el elapsed con `playbackRate`; solo se re-ancla cuando la
+    // extrapolación del sistema se aleja de nuestro reloj de pared más allá de
+    // este umbral (corrección con motivo documentado en el log, NUNCA un tick
+    // silencioso). 0.75 s > cualquier ruido de un tick de timer (0.4/6 s).
+    private let nowPlayingDriftTolerance: TimeInterval = 0.75
+    // ✅ REGLA DE ORO: último elapsed/rate PUBLICADOS. Permiten calcular en
+    // publishIfNeeded qué habría calculado iOS por su cuenta y saltarnos el
+    // envío cuando coincida con el nuestro (cero churn en CC/bloqueo).
+    private var lastPublishedElapsed: TimeInterval?
+    private var lastPublishedRate: Double = 0
     // ✅ FIX (restauración al retroceder): qué se publicó la última vez. La red
     // de seguridad temporal solo puede saltarse un tick si NADA de esto cambió;
     // un cambio de identidad/estado se publica SIEMPRE (no puede quedar tapado
@@ -870,7 +911,13 @@ class AudioEngine: NSObject, ObservableObject {
             // ✅ Si no se reproduce, liberar el engine para ahorrar batería:
             // detener el engine (no la sesión) reduce consumo de CPU/RAM.
             stopDisplayTimer()  // 🛡 Red de seguridad: sin timer, cero CPU en background.
-            if engine.isRunning {
+            if usesSFBCore {
+                // ✅ SFB: en pausa, SFB mantiene su engine corriendo (render de
+                // silencio). En SEGUNDO PLANO eso es CPU inútil: se detiene el
+                // transporte (la reanudación reprograma la pista en su posición
+                // exacta y re-arma el gapless sola).
+                sfbStopTransportForIdle()
+            } else if engine.isRunning {
                 engine.pause()
             }
             return
@@ -889,7 +936,7 @@ class AudioEngine: NSObject, ObservableObject {
         // ✅ Mantener el engine corriendo (no pausar) para que la reproducción
         // continúe de forma fluida al volver a primer plano. iOS permite audio
         // en background gracias a UIBackgroundModes = audio.
-        if !engine.isRunning, isPlaying, audioFile != nil {
+        if !isEngineHealthy, isPlaying, hasLoadedSource {
             // ✅ FIX CRASH INTERRUPCION: este bloque SOLO entra con el engine ya
             // detenido (guard de arriba) — reconectar el grafo con
             // startEngineSafely()/reconnectPlayerNode sobre un grafo muerto es
@@ -945,7 +992,7 @@ class AudioEngine: NSObject, ObservableObject {
         }
 
         // ✅ Si se pausó en segundo plano, asegurar que el engine siga listo
-        if !engine.isRunning, isPlaying, audioFile != nil {
+        if !isEngineHealthy, isPlaying, hasLoadedSource {
             // ✅ FIX CRASH INTERRUPCION: mismo caso que en background — el guard
             // de arriba ya garantiza engine detenido, así que reconectar el
             // grafo aquí era el crash (AVAE_RaiseException, no capturable).
@@ -1075,6 +1122,9 @@ class AudioEngine: NSObject, ObservableObject {
         playerNode.stop()
         engine.stop()
         clearChainedAhead()
+        // ✅ SFB: tirar también el transporte/decoders de SFB (idempotente y
+        // necesario: el motor legacy de arriba ni se usa en el núcleo SFB).
+        if usesSFBCore { sfbBackend.reset() }
         audioFile = nil
         connectedFormatKey = nil
         // ✅ FIX CRASH SUSPENSION: tirar también la precarga. Su AVAudioFile se
@@ -1462,6 +1512,9 @@ class AudioEngine: NSObject, ObservableObject {
     }
 
     private func setupEngine() {
+        // ✅ SFB: en el núcleo SFB el grafo lo construye SFBPlaybackBackend
+        // (modifyProcessingGraph) y estos nodos legacy ni se enganchan.
+        guard !usesSFBCore else { return }
         engine.attach(playerNode)
         // ✅ Mono: el mezclador de downmix vive permanentemente en el grafo
         engine.attach(monoMixerNode)
@@ -1475,7 +1528,11 @@ class AudioEngine: NSObject, ObservableObject {
 
     private func setupEqualizer() {
         if let existingEQ = equalizerNode {
-            engine.detach(existingEQ)
+            if usesSFBCore {
+                sfbBackend.detachNode(existingEQ)
+            } else {
+                engine.detach(existingEQ)
+            }
         }
 
         equalizerNode = AVAudioUnitEQ(numberOfBands: 10)
@@ -1507,13 +1564,24 @@ class AudioEngine: NSObject, ObservableObject {
         // Procesa solo si está activado Y el preset no es plano (misma regla que
         // updateEQBypassState(): "flat" = bypass total, cero biquads de más).
         eq.bypass = !(isEQEnabled && eqPreset != .flat)
-        engine.attach(eq)
-        // ✅ REMUESTREO HI-RES: reconexión con el formato de conexión real
-        // (hardware); ver reconnectPlayerNode / makeHardwareFormat.
-        reconnectPlayerNode(format: makeHardwareFormat())
+        if usesSFBCore {
+            // ✅ SFB: el EQ se engancha DENTRO del grafo de SFB vía el
+            // customizer (cierra sobre `equalizerNode`); la reconexión al
+            // formato real la hace SFB en su propio flujo de configuración.
+            sfbBackend.rebuildGraph()
+        } else {
+            engine.attach(eq)
+            // ✅ REMUESTREO HI-RES: reconexión con el formato de conexión real
+            // (hardware); ver reconnectPlayerNode / makeHardwareFormat.
+            reconnectPlayerNode(format: makeHardwareFormat())
+        }
     }
 
     private func reconnectPlayerNode(format: AVAudioFormat) {
+        // ✅ SFB: en el núcleo SFB las conexiones las hace SFB (delegate
+        // `reconfigureProcessingGraph` → customizeSFBGraph). Este camino es
+        // exclusivo del rollback AVAudioPlayerNode.
+        guard !usesSFBCore else { return }
         // ✅ FIX CRASH AL REANUDAR TRAS CAMBIO DE RUTA: un formato con tasa o
         // canales inválidos (0 Hz / 0 ch, posible en el instante en que el
         // hardware está en transición tras desconectar audífonos/BT) hace que
@@ -1850,7 +1918,7 @@ class AudioEngine: NSObject, ObservableObject {
         // ✅ FASE C4: headroom REAL aplicado (dB). La vista de calidad lo muestra
         // tal cual, así que se guarda el mismo número que acaba de sonar.
         appliedEQHeadroomDB = Double(-maxGain)
-        engine.mainMixerNode.outputVolume = outputGain * fadeFactor
+        mixerNode.outputVolume = outputGain * fadeFactor
         refreshBitPerfect(outputRate: outputSampleRate)
     }
 
@@ -1880,6 +1948,15 @@ class AudioEngine: NSObject, ObservableObject {
     }
 
     private func applyMonoAudio() {
+        // ✅ SFB (seam): el downmix entra/sale del grafo DE SFB. Se para el
+        // transporte (si sonaba), se reconstruye la cadena con modifyProcessingGraph
+        // y se reprograma la pista desde su posición — mismo coste audible que
+        // la ruta original (~30 ms).
+        if usesSFBCore {
+            sfbRebuildGraphForTopologyChange()
+            AppLog.info(.playback, "Audio mono (downmix de salida): \(isMonoAudioEnabled ? "activado" : "desactivado")")
+            return
+        }
         // ✅ Mono REAL (downmix de salida): el mezclador intermedio emite con
         // formato de 1 canal y AVAudioMixerNode hace el downmix estéreo→mono
         // por DSP; iOS lo reproduce por ambos auriculares/altavoces.
@@ -1999,12 +2076,18 @@ class AudioEngine: NSObject, ObservableObject {
         }
 
         let song = playbackOrder[currentIndex]
+        // ✅ SFB (seam): en el núcleo SFB el arranque completo de pista pasa por
+        // sfbPlayCurrentSong (mismo contrato: cola, reloj, Now Playing, fallback).
+        if usesSFBCore {
+            sfbPlayCurrentSong(song, position: position)
+            return
+        }
         // ✅ FIX anti-pop: el fade de PAUSA deja el mixer en volumen 0; si el
         // usuario elige otra canción estando en pausa, el mixer seguiría mudo.
         monoMixerNode.volume = 1
         volumeFadeGeneration += 1
         fadeFactor = 1
-        engine.mainMixerNode.outputVolume = outputGain * fadeFactor
+        mixerNode.outputVolume = outputGain * fadeFactor
         AppLog.info(.playback, "Reproduciendo: \(song.displayName)")
 
         // ✅ FIX: Incrementar scheduleGeneration UNA SOLA VEZ al inicio
@@ -2268,6 +2351,529 @@ class AudioEngine: NSObject, ObservableObject {
         }
     }
 
+    // MARK: - Núcleo SFBAudioEngine (seams, grafo y transporte)
+    // ✅ MIGRACIÓN SFB: estas funciones SOLO se ejecutan cuando
+    // `usesSFBCore == true`. La ruta AVAudioPlayerNode original no se modificó;
+    // sirve de rollback (clave `com.aurora.playbackCore`).
+
+    /// Cablea los eventos del backend y construye su grafo de procesamiento.
+    /// Se llama EN init() antes de setupEngine/setupEqualizer.
+    private func wireSFBBackend() {
+        guard usesSFBCore else { return }
+
+        // Grafo: source → [EQ] → [mono] → mainMixer DENTRO del engine de SFB.
+        sfbBackend.graphCustomizer = { [weak self] engine, source, mixer, format in
+            guard let self else { return mixer }
+            return self.customizeSFBGraph(engine: engine, source: source, mixer: mixer, format: format)
+        }
+        sfbBackend.installGraph()
+
+        // Pista nueva sonando (gapless o reconfiguración de formato).
+        sfbBackend.onTrackChange = { [weak self] url, offset, probe, gapless in
+            self?.sfbHandleTrackChange(url: url, startOffset: offset, probe: probe, gapless: gapless)
+        }
+        // Cola agotada → avanzar por el orden normal o detener.
+        sfbBackend.onEndOfAudio = { [weak self] in
+            self?.sfbHandleEndOfAudio()
+        }
+        // Error asíncrono de decodificación → mismo respaldo AVPlayer de siempre.
+        sfbBackend.onError = { [weak self] error in
+            guard let self, !self.isAVPlayerActive, let song = self.currentSong else { return }
+            AppLog.error(.playback, error, context: "SFB: error asíncrono de reproducción")
+            // ⛔️ ANTES del respaldo: parar el transporte de SFB para que no
+            // siga emitiendo (o reintentando) mientras AVPlayer toma el relevo.
+            self.scheduleGeneration += 1
+            self.sfbBackend.stop()
+            self.clearChainedAhead()
+            self.handlePlaybackFailure(song: song)
+        }
+        // El grafo de SFB cambió (ruta o formato): refrescar telemetría honesta.
+        sfbBackend.onGraphReconfigured = { [weak self] in
+            guard let self else { return }
+            // ✅ SFB acabó de RECONFIGURAR su grafo con éxito → el motor está
+            // sano. El observador de rutas marca `engineDiedExternally = true`
+            // en CADA cambio de ruta; sin limpiarlo aquí, el siguiente resume()
+            // pagaría una reconstrucción completa (reapertura + seek) sin motivo.
+            self.engineDiedExternally = false
+            self.updateSrcConversionState()
+            self.reassertNativeSampleRateIfNeeded()
+            self.updateAudioQuality()
+        }
+
+        AppLog.info(.playback, "Núcleo de reproducción: SFBAudioEngine 0.14.0 (gapless nativo, EQ/mono en su grafo)")
+    }
+
+    /// ✅ SFB: cadena de procesamiento DENTRO del grafo de SFB (equivalente a
+    /// `reconnectPlayerNode` para el núcleo nuevo). Se usa en la instalación
+    /// inicial y en cada `reconfigureProcessingGraph` de SFB. Devuelve el
+    /// PRIMER nodo tras la fuente: SFB conecta source → él con el formato real.
+    /// Política de calidad idéntica a la ruta AV: conexión al formato del
+    /// hardware (SRC interno del mixer cuando las tasas difieren), EQ de 10
+    /// bandas y mono solo cuando está activo.
+    private func customizeSFBGraph(engine: AVAudioEngine, source: AVAudioSourceNode, mixer: AVAudioMixerNode, format: AVAudioFormat) -> AVAudioNode {
+        // Red de seguridad anti-aserción (IsFormatSampleRateAndChannelCountValid)
+        // con la misma política que reconnectPlayerNode: 44100/2 nunca es basura.
+        let safeFormat: AVAudioFormat = (format.sampleRate > 1 && format.channelCount > 0)
+            ? format
+            : (AVAudioFormat(standardFormatWithSampleRate: 44_100, channels: 2)!)
+
+        if !engine.outputConnectionPoints(for: source, outputBus: 0).isEmpty {
+            engine.disconnectNodeOutput(source)
+        }
+
+        var first: AVAudioNode = source
+        if let eq = equalizerNode {
+            if !engine.outputConnectionPoints(for: eq, outputBus: 0).isEmpty {
+                engine.disconnectNodeOutput(eq)
+            }
+            if !engine.attachedNodes.contains(eq) { engine.attach(eq) }
+            engine.connect(source, to: eq, format: safeFormat)
+            first = eq
+        }
+
+        if isMonoAudioEnabled {
+            if !engine.attachedNodes.contains(monoMixerNode) { engine.attach(monoMixerNode) }
+            if !engine.outputConnectionPoints(for: monoMixerNode, outputBus: 0).isEmpty {
+                engine.disconnectNodeOutput(monoMixerNode)
+            }
+            // Salida mono a la tasa del HARDWARE (misma regla que monoMixerOutputFormat).
+            let hwRate = engine.outputNode.outputFormat(forBus: 0).sampleRate
+            let monoRate = hwRate > 1 ? hwRate : safeFormat.sampleRate
+            let monoFormat = AVAudioFormat(standardFormatWithSampleRate: monoRate, channels: 1)!
+            engine.connect(first, to: monoMixerNode, format: safeFormat)
+            engine.connect(monoMixerNode, to: mixer, format: monoFormat)
+            first = monoMixerNode
+        } else {
+            engine.connect(first, to: mixer, format: safeFormat)
+        }
+
+        connectedFormatKey = formatKey(safeFormat)
+        updateSrcConversionState()
+        return first === source ? mixer : first
+    }
+
+    /// ✅ SFB: reactiva la sesión con ruta válida — los pasos 1-2 de
+    /// `startEngineSafely` SIN arrancar el AVAudioEngine legacy (en el núcleo
+    /// SFB ese motor no se usa; el que arranca es el de SFB).
+    private func activateAudioSessionSafely() throws {
+        let session = AVAudioSession.sharedInstance()
+        do {
+            try session.setActive(true, options: [])
+        } catch {
+            AppLog.error(.playback, error, context: "activateAudioSessionSafely: setActive")
+            throw error
+        }
+        // Ruta aún en transición (0 Hz) tras reactivar: esperar ≤50 ms.
+        for _ in 0..<5 {
+            if session.sampleRate > 1 { break }
+            Thread.sleep(forTimeInterval: 0.01)
+        }
+        guard session.sampleRate > 1 else {
+            throw NSError(domain: "AuroraAudioEngine", code: -2,
+                          userInfo: [NSLocalizedDescriptionKey: "Sesión de audio sin ruta válida (posible suspensión larga)"])
+        }
+    }
+
+    // MARK: - Transporte SFB (play/pausa/seek/stop)
+
+    /// Arranque completo de pista en el núcleo SFB. Reproduce el MISMO
+    /// contrato que `playCurrentSong` (fallbacks, sesión, reloj anclado,
+    /// Now Playing, historial, persistencia) usando el transporte de SFB.
+    private func sfbPlayCurrentSong(_ song: Song, position: TimeInterval?) {
+        // ✅ FIX anti-pop: mismo reset de mezcla que la ruta original.
+        monoMixerNode.volume = 1
+        volumeFadeGeneration += 1
+        fadeFactor = 1
+        mixerNode.outputVolume = outputGain * fadeFactor
+        AppLog.info(.playback, "Reproduciendo (SFB): \(song.displayName)")
+
+        scheduleGeneration += 1
+        let currentGeneration = scheduleGeneration
+        stopFallbackPlayback()
+        isUsingFallback = false
+        isStopping = true
+        stopDisplayTimer()
+        // Detiene transporte/decoders de SFB y descarta el seek pendiente.
+        sfbBackend.stop()
+        isPlaying = false
+        audioFile = nil
+        // Limpia el rastro de transición armada (y la cola de SFB, vía hook).
+        clearChainedAhead()
+
+        guard FileManager.default.fileExists(atPath: song.url.path) else {
+            isStopping = false
+            handlePlaybackFailure(song: song)
+            return
+        }
+
+        // ✅ DOLBY (E-AC-3/AC-3): SFB tampoco los decodifica → AVPlayer, igual
+        // que la ruta original (modo intencional, sin chip de respaldo).
+        if song.requiresAVPlayerPlayback {
+            isStopping = false
+            AppLog.info(.playback, "Dolby \(song.codecDisplayName ?? song.codecName ?? "?") en '\(song.displayName)' (\(song.formatName)): reproducción por AVPlayer (SFB no decodifica E-AC-3/AC-3)")
+            startFallbackPlayback(song: song, reason: .codecUnsupported, startAt: position ?? 0)
+            return
+        }
+
+        do {
+            try activateAudioSessionSafely()
+
+            // Cabecera del archivo (barata): duración/tasa reales para el reloj
+            // y la telemetría. Sin cabecera → metadatos del índice.
+            let probe = sfbBackend.probe(song.url)
+            let fileRate = probe?.sampleRate ?? (song.sampleRate > 0 ? song.sampleRate : 44_100)
+            sampleRate = fileRate
+            duration = (probe?.duration ?? 0) > 0 ? probe!.duration : max(song.duration, 0)
+
+            // ✅ BIT-PERFECT: preferencia de tasa NATIVA en salida cableada
+            // (en BT la tasa la decide iOS — misma política que el original).
+            if !isBluetoothRoute, abs(AVAudioSession.sharedInstance().sampleRate - fileRate) > 1 {
+                try? AVAudioSession.sharedInstance().setPreferredSampleRate(fileRate)
+            }
+
+            let startTime: TimeInterval
+            if let position {
+                let safeEnd = max(song.duration - 0.05, 0.1)
+                startTime = min(max(position, 0), safeEnd)
+            } else {
+                startTime = 0
+            }
+
+            // ✅ Restauración con offset: SFB no arranca en offset (hace play +
+            // seek con reintentos). Se silencia la mezcla durante esa ventana
+            // para que no suene desde 0 en audífonos y se sube con fade.
+            if startTime > 0.05 {
+                fadeFactor = 0
+                mixerNode.outputVolume = 0
+            }
+
+            try sfbBackend.play(song.url, startingAt: startTime)
+
+            currentSong = song
+            currentFileURL = song.url
+            isPlaying = true
+            playbackErrorCount = 0
+            anchorPlaybackPosition(startTime)
+            currentTime = startTime
+            clock.time = startTime
+
+            let bits = probe?.bitsPerChannel ?? 0
+            let channels = probe?.channelCount ?? 0
+            AppLog.info(.playback, String(format: "▶ Reproduciendo (SFB) '%@' (%@ · %.0f Hz · %d bits · %d canales · %.1fs)",
+                                          song.displayName, song.formatDescription, fileRate, bits, channels, duration))
+            logQualityAuditLine(context: "play-sfb")
+
+            if startTime > 0.05 {
+                let generation = currentGeneration
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
+                    guard let self, self.scheduleGeneration == generation,
+                          self.isPlaying, !self.isStopping else { return }
+                    self.rampMixerVolume(to: 1, duration: 0.04)
+                }
+            }
+
+            isStopping = false
+            startDisplayTimer()
+            publishNowPlayingInfoImmediately()
+            // ✅ FIX TIMER CC (CAMBIO D): red de seguridad 0.3 s después.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+                guard let self, self.scheduleGeneration == currentGeneration, !self.isStopping else { return }
+                self.publishNowPlayingInfoImmediately()
+            }
+            updateAudioQuality()
+            addToHistory(song)
+            updateNextUpQueue()
+            saveState()
+            // Deja armada la SIGUIENTE (gapless). Una sola llamada por pista:
+            // es la que consume la cola manual en computeNextIndex().
+            scheduleAheadIfPossible()
+        } catch {
+            isStopping = false
+            AppLog.error(.playback, error, context: "sfbPlayCurrentSong: cargar/arrancar \(song.displayName)")
+            AppLog.warning(.playback, "Fallback a AVPlayer para '\(song.displayName)' (SFB falló)")
+            startFallbackPlayback(song: song)
+        }
+    }
+
+    /// Pausa en núcleo SFB: mismo patrón que la original (reloj congelado como
+    /// ancla + fade anti-pop de 30 ms + publicación rate 0).
+    private func sfbPause() {
+        stopDisplayTimer()
+        let current = wallClockTime
+        AppLog.info(.playback, String(format: "[CLOCK] pause (SFB): pos=%.2f posAnchor_before=%.2f", current, posAnchor))
+        currentTime = current
+        posAnchor = current
+        wallAnchor = CACurrentMediaTime()
+        clock.time = currentTime
+        rampMixerVolume(to: 0, duration: 0.03)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) { [weak self] in
+            guard let self, !self.isPlaying else { return }
+            self.sfbBackend.pause()
+        }
+        isPlaying = false
+        AppLog.info(.playback, String(format: "Pausa (SFB) en %.1fs — '%@'", currentTime, currentSong?.displayName ?? "—"))
+        updateNowPlayingInfo()
+        saveState()
+    }
+
+    /// Reanudación en núcleo SFB. Camino rápido = `resume()` de SFB (la cola
+    /// gapless queda intacta). Transporte detenido o bandera de grafo muerto →
+    /// reconstrucción completa con playCurrentSong (mismo contrato que el
+    /// original: background largo, media-services reset, ruta perdida).
+    private func sfbResume() {
+        guard let song = currentSong else {
+            AppLog.info(.playback, "resume() (SFB) sin canción: ignorado (nada que reanudar)")
+            return
+        }
+        if sfbBackend.isStopped || needsFullEngineReset || engineDiedExternally {
+            needsFullEngineReset = false
+            engineDiedExternally = false
+            AppLog.info(.playback, "Resume (SFB): transporte detenido o grafo marcado — reconstrucción completa")
+            let position = min(max(currentTime, 0), max(song.duration - 0.05, 0))
+            playCurrentSong(resumingAt: position)
+            return
+        }
+        if !sfbBackend.resume() {
+            AppLog.warning(.playback, "Resume (SFB) falló — reconstrucción completa")
+            let position = min(max(currentTime, 0), max(song.duration - 0.05, 0))
+            playCurrentSong(resumingAt: position)
+            return
+        }
+        AppLog.info(.playback, String(format: "Resume (SFB) desde %.1fs — '%@'", currentTime, song.displayName))
+        anchorPlaybackPosition(currentTime)
+        clock.time = currentTime
+        isPlaying = true
+        reassertNativeSampleRateIfNeeded()
+        rampMixerVolume(to: 1, duration: 0.04)
+        updateNowPlayingInfo()
+        startDisplayTimer()
+        Task { @MainActor in lyricsViewModel.startMonitoring() }
+        scheduleAheadIfPossible()
+        saveState()
+    }
+
+    /// Stop en núcleo SFB: mismo contrato (fallback, estado a cero, sesión
+    /// liberada con notifyOthersOnDeactivation).
+    private func sfbStop() {
+        isStopping = true
+        stopFallbackPlayback()
+        isUsingFallback = false
+        sfbBackend.stop()
+        isPlaying = false
+        currentTime = 0
+        duration = 0
+        currentSong = nil
+        currentFileURL = nil
+        clearPreloadedNext()
+        clearChainedAhead()
+        activeSegmentToken = 0
+        stopDisplayTimer()
+        isStopping = false
+        // ✅ BATERÍA: liberar la sesión al detener (igual que la ruta original).
+        DispatchQueue.main.async {
+            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        }
+        saveState()
+    }
+
+    /// Seek en núcleo SFB. A diferencia de `playerNode.stop()`, el seek de SFB
+    /// NO descarta los decoders encolados → la transición siguiente sigue
+    /// siendo gapless (antes había que re-armarla).
+    private func sfbSeek(to time: TimeInterval) {
+        let clamped = max(0, min(time, duration))
+        AppLog.info(.playback, String(format: "Seek (SFB) a %.1fs en '%@' (isPlaying: %@)", clamped, currentSong?.displayName ?? "—", isPlaying ? "sí" : "no"))
+        currentTime = clamped
+        anchorPlaybackPosition(clamped)
+        clock.time = clamped
+        Task { @MainActor in lyricsViewModel.handleSeek() }
+        _ = sfbBackend.seek(to: clamped)
+        if isPlaying { scheduleAheadIfPossible() }
+        // ✅ FIX Centro de Control: publicar elapsed exacto inmediatamente.
+        updateNowPlayingInfo()
+    }
+
+    /// Pérdida de ruta en núcleo SFB: anclar posición, marcar pausa y PUBLICAR
+    /// (rate 0) ANTES de tirar el transporte — misma secuencia anti-"reproduciendo"
+    /// congelado del lock screen que la ruta original.
+    private func sfbSuspendForRouteLoss() {
+        AppLog.warning(.playback, "⚠️ Ruta de audio perdida (SFB): suspendiendo en \(String(format: "%.1fs", currentTime)) — '\(currentSong?.displayName ?? "—")'")
+        scheduleGeneration += 1
+        sfbBackend.stop()
+        clearChainedAhead()
+        stopDisplayTimer()
+        let current = wallClockTime
+        AppLog.info(.playback, String(format: "[CLOCK] suspendForRouteLoss (SFB): pos=%.2f posAnchor_before=%.2f", current, posAnchor))
+        currentTime = current
+        posAnchor = current
+        wallAnchor = CACurrentMediaTime()
+        clock.time = current
+        isPlaying = false
+        updateSrcConversionState()
+        Task { @MainActor in lyricsViewModel.stopMonitoring() }
+        updateNowPlayingInfo()
+        saveState()
+    }
+
+    /// ⛔️ Segundo plano EN PAUSA con núcleo SFB: SFB mantiene su engine
+    /// “corriendo” (render de silencio) mientras está en pausa — CPU inútil con
+    /// la pantalla apagada. Se detiene el transporte (estado local intacto); al
+    /// reanudar, `sfbResume` detecta `isStopped` y reprograma la pista en su
+    /// posición exacta con el gapless re-armado.
+    private func sfbStopTransportForIdle() {
+        guard currentSong != nil else { return }
+        AppLog.info(.playback, "SFB: transporte detenido en segundo plano (pausa) — cero CPU en background; se reprograma al reanudar")
+        sfbBackend.stop()
+        clearChainedAhead()
+    }
+
+    /// ✅ Mono en núcleo SFB: la topología del grafo cambia (entra/sale el
+    /// downmix). Se para el transporte si sonaba, se reconstruye la cadena con
+    /// `modifyProcessingGraph` y se reprograma la pista desde su posición —
+    /// mismo coste audible que la ruta original (~30 ms).
+    private func sfbRebuildGraphForTopologyChange() {
+        let wasPlaying = isPlaying
+        let position = wasPlaying ? wallClockTime : min(max(currentTime, 0), duration)
+        if wasPlaying {
+            scheduleGeneration += 1
+            stopDisplayTimer()
+            sfbBackend.stop()
+        }
+        sfbBackend.rebuildGraph()
+        AppLog.info(.playback, "SFB: cadena de procesamiento reconstruida (mono \(isMonoAudioEnabled ? "ON" : "OFF"))")
+        guard wasPlaying, let song = currentSong else { return }
+        playCurrentSong(resumingAt: min(max(position, 0), max(song.duration - 0.05, 0)))
+    }
+
+    // MARK: - Transiciones gapless SFB
+
+    /// Encola la siguiente pista en SFB (gapless nativo). Mantiene la MISMA
+    /// disciplina que la ruta AV: UNA llamada a `indexToChainAhead()` por pista
+    /// (consume la cola manual) y un solo armado a la vez (`chainedAhead*`).
+    private func sfbScheduleAhead() {
+        guard chainedAheadIndex == nil, isPlaying, !isStopping, !isAVPlayerActive,
+              sfbBackend.queueIsEmpty,
+              let index = indexToChainAhead(),
+              playbackOrder.indices.contains(index) else { return }
+        let song = playbackOrder[index]
+
+        let token = nextScheduleToken
+        nextScheduleToken += 1
+        chainedAheadIndex = index
+        chainedAheadSong = song
+        chainedAheadToken = token
+
+        do {
+            try sfbBackend.enqueueNext(song.url)
+            // ✅ DIAGNÓSTICO GAPLESS honesto (evidencia en dispositivo):
+            // “unión exacta” = misma tasa/canales; “reconfiguración” = SFB
+            // reconecta el grafo en la transición (puede costar ~1 buffer).
+            if sfbBackend.willBeGapless(song.url) {
+                AppLog.info(.playback, "Gapless (SFB): '\(song.displayName)' encolada (mismo formato → unión exacta)")
+            } else {
+                AppLog.warning(.playback, "Gapless (SFB): '\(song.displayName)' encolada con formato distinto (SFB reconfigurará el grafo en la transición)")
+            }
+        } catch {
+            AppLog.error(.playback, error, context: "sfbScheduleAhead: encolar \(song.displayName)")
+            // Sin encolado no hay transición armada: al final de la pista
+            // EndOfAudio → respaldo atómico (mismo contrato que la ruta AV).
+            chainedAheadIndex = nil
+            chainedAheadSong = nil
+            chainedAheadToken = 0
+        }
+    }
+
+    // MARK: - Promoción de pista SFB
+
+    /// `nowPlayingChanged` → promover la pista que SFB empezó a sonar a
+    /// `currentSong` (equivalente de `commitChainedSong`): estado, reloj anclado
+    /// en el offset REAL de arranque (hostTime), publicación de Now Playing y
+    /// re-armado de la siguiente. Siempre en el hilo principal.
+    private func sfbHandleTrackChange(url: URL, startOffset: TimeInterval, probe: SFBTrackProbe?, gapless: Bool) {
+        guard isPlaying, !isStopping, !isAVPlayerActive else { return }
+
+        let resolved: Int
+        let wasArmed: Bool
+        if let armed = chainedAheadIndex, let armedSong = chainedAheadSong,
+           armedSong.url == url, playbackOrder.indices.contains(armed) {
+            resolved = armed
+            wasArmed = true
+        } else if currentSong?.url == url {
+            // Evento de ARRANQUE de la pista que acabamos de pedir con play(url):
+            // NO es una transición. Solo se corrige el ancla si el callback
+            // revela que el audio lleva ≥50 ms sonando (evita barra por detrás
+            // del altavoz cuando el arranque sufrió retraso).
+            if startOffset >= 0.05 {
+                let pos = min(startOffset, max(duration - 0.1, 0))
+                currentTime = pos
+                clock.time = pos
+                anchorPlaybackPosition(pos)
+                AppLog.info(.playback, String(format: "[CLOCK] SFB arranque: ancla corregida +%.0f ms", startOffset * 1000))
+            }
+            return
+        } else {
+            // Transición NO armada (carrera con un desalojo de cola): resolver
+            // por URL — primero a partir de la posición actual, luego con envoltura.
+            wasArmed = false
+            let after = currentIndex + 1
+            if after < playbackOrder.count,
+               let found = (after..<playbackOrder.count).first(where: { $0.url == url }) {
+                resolved = found
+            } else if let found = playbackOrder.firstIndex(where: { $0.url == url }) {
+                resolved = found
+            } else {
+                AppLog.warning(.playback, "SFB: nowPlayingChanged sin índice para '\(url.lastPathComponent)' — ignorado")
+                return
+            }
+            AppLog.warning(.playback, "SFB: transición no armada resuelta por URL → índice \(resolved)")
+        }
+
+        let song = playbackOrder[resolved]
+        clearChainedAhead()   // hook: vacía pendientes de SFB (su cola ya avanzó)
+        activeSegmentToken = 0
+        currentIndex = resolved
+        currentSong = song
+        currentFileURL = song.url
+        audioFile = nil
+        if let probe, probe.duration > 0 {
+            duration = probe.duration
+            sampleRate = probe.sampleRate
+        } else {
+            duration = max(song.duration, 0)
+            if song.sampleRate > 0 { sampleRate = song.sampleRate }
+        }
+        // Offset real de arranque (hostTime de SFB): el equivalente al
+        // joinLateness de la ruta AV — evita que barra/CC queden por detrás del
+        // altavoz cuando el delegate llega tarde (típico en Bluetooth/AirPlay).
+        let start = min(max(startOffset, 0), max(duration - 0.1, 0))
+        currentTime = start
+        clock.time = start
+        anchorPlaybackPosition(start)
+        AppLog.info(.playback, String(format: "Gapless (SFB): promovida '%@' (%@ · arranque +%.0f ms · armada: %@)", song.displayName, gapless ? "unión exacta" : "reconfiguración", start * 1000, wasArmed ? "sí" : "no, resuelta por URL"))
+        updateNowPlayingInfo()
+        // ✅ FIX TIMER CC (CAMBIO D): red de seguridad 0.3 s después.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+            guard let self, self.currentSong?.id == song.id else { return }
+            self.publishNowPlayingInfoImmediately()
+        }
+        updateAudioQuality()
+        logQualityAuditLine(context: "gapless-sfb")
+        addToHistory(song)
+        updateNextUpQueue()
+        saveState()
+        scheduleAheadIfPossible()
+    }
+
+    /// `audioPlayerEndOfAudio` → cola agotada: avanzar por el orden normal o
+    /// detener. Equivalente a `segmentDidFinish` SIN transición armada
+    /// → `chainGaplessPlayNext()` (camino ya existente, aquí SFB no falló:
+    /// simplemente no había nada más encolado).
+    private func sfbHandleEndOfAudio() {
+        guard isPlaying, !isStopping, !isAVPlayerActive else { return }
+        AppLog.info(.playback, "SFB: fin de audio (cola agotada) — avanzando por el orden o deteniendo")
+        clearChainedAhead()
+        chainGaplessPlayNext()
+    }
+
     // MARK: - Remuestreo Hi-Res (SRC interno del engine)
 
     /// ✅ REMUESTREO HI-RES (infraestructura): formato de CONEXIÓN del grafo =
@@ -2281,7 +2887,13 @@ class AudioEngine: NSObject, ObservableObject {
     /// aplique. La señal que procesan EQ/mono/headroom pasa a la tasa del
     /// hardware (el EQ de 10 bandas está diseñado para 44.1/48 kHz).
     private func hardwareOutputFormat() -> AVAudioFormat {
-        engine.outputNode.outputFormat(forBus: 0)
+        currentOutputFormat()
+    }
+
+    /// ✅ SFB: formato REAL de salida del hardware del NÚCLEO ACTIVO
+    /// (telemetría, bit-perfect y auditorías leen esto, no el engine legacy).
+    private func currentOutputFormat() -> AVAudioFormat {
+        usesSFBCore ? sfbBackend.outputFormat : engine.outputNode.outputFormat(forBus: 0)
     }
 
     /// Formato de conexión/render del grafo: tasa REAL del hardware (fallback:
@@ -2401,7 +3013,7 @@ class AudioEngine: NSObject, ObservableObject {
             guard self.volumeFadeGeneration == generation else { return }
             let progress = Float(step) / Float(steps)
             self.fadeFactor = from + (target - from) * progress
-            self.engine.mainMixerNode.outputVolume = self.outputGain * self.fadeFactor
+            self.mixerNode.outputVolume = self.outputGain * self.fadeFactor
             if step < steps {
                 DispatchQueue.main.asyncAfter(deadline: .now() + stepDuration) {
                     scheduleStep(step + 1)
@@ -2433,6 +3045,12 @@ class AudioEngine: NSObject, ObservableObject {
     }
 
     func pause() {
+        // ✅ SFB (seam): con el respaldo AVPlayer activo se mantiene la ruta
+        // original (gestiona AVPlayer y sus no-ops de motor sin cambios).
+        if usesSFBCore && !isAVPlayerActive {
+            sfbPause()
+            return
+        }
         // ✅ FIX: detener el display timer PRIMERO para evitar que siga
         // actualizando currentTime mientras capturamos la posición exacta.
         stopDisplayTimer()
@@ -2498,6 +3116,13 @@ class AudioEngine: NSObject, ObservableObject {
     ///     recibe rate 0 → lock screen/CC pasan a pausa en la posición exacta
     ///     (se acabó el "reproduciendo" con la barra congelada).
     private func suspendForRouteLoss() {
+        // ✅ SFB (seam): mismo contrato — anclar posición, marcar pausa y
+        // publicar rate 0 antes de tirar el transporte (SFB detiene decoder y
+        // cola; la reanudación reprograma con playCurrentSong).
+        if usesSFBCore && !isAVPlayerActive {
+            sfbSuspendForRouteLoss()
+            return
+        }
         AppLog.warning(.playback, "⚠️ Ruta de audio perdida: suspendiendo reproducción en \(String(format: "%.1fs", currentTime)) — '\(currentSong?.displayName ?? "—")'")
         if isAVPlayerActive {
             avPlayer?.pause()
@@ -2557,6 +3182,13 @@ class AudioEngine: NSObject, ObservableObject {
             return
         }
         lastResumeCallTime = now
+        // ✅ SFB (seam): reanudación dirigida por el núcleo ACTIVO (incluye la
+        // reconstrucción completa cuando el transporte está detenido). El
+        // respaldo AVPlayer sigue en la ruta original.
+        if usesSFBCore && !isAVPlayerActive {
+            sfbResume()
+            return
+        }
         // ✅ FIX CRASH SUSPENSION: si la app estuvo en segundo plano en pausa
         // más de 30 s, iOS ya desactivó la sesión y el grafo quedó
         // inconsistente; reutilizarlo (playerNode.play() /
@@ -2676,6 +3308,11 @@ class AudioEngine: NSObject, ObservableObject {
     }
 
     func stop() {
+        // ✅ SFB (seam): mismo contrato (fallback + estado + sesión liberada).
+        if usesSFBCore {
+            sfbStop()
+            return
+        }
         isStopping = true
         stopFallbackPlayback()
         // ✅ FIX: detener TERMINA el modo de respaldo, así que el flag vuelve a
@@ -2999,6 +3636,12 @@ class AudioEngine: NSObject, ObservableObject {
     }
 
     func seek(to time: TimeInterval) {
+        // ✅ SFB (seam): si el respaldo AVPlayer está activo, cae a la ruta
+        // original (se valida contra avPlayer y no toca audioFile).
+        if usesSFBCore && !isAVPlayerActive {
+            sfbSeek(to: time)
+            return
+        }
         guard let file = audioFile else {
             if isAVPlayerActive {
                 let cmTime = CMTime(seconds: time, preferredTimescale: 1000)
@@ -3479,7 +4122,7 @@ class AudioEngine: NSObject, ObservableObject {
             // Seguro: el engine siempre corre mientras isPlaying=true en modo
             // engine (los cambios de ruta se detectan y re-programan aparte),
             // y el modo respaldo (AVPlayer) queda excluido por isUsingFallback.
-            if !self.isAVPlayerActive, !self.engine.isRunning {
+            if !self.isAVPlayerActive, !self.isEngineHealthy {
                 AppLog.warning(.playback, "Watchdog: engine detenido con isPlaying=true — suspendiendo por pérdida de ruta")
                 self.suspendForRouteLoss()
                 return
@@ -3558,6 +4201,11 @@ class AudioEngine: NSObject, ObservableObject {
     ///   en el seed la dejaba como sesgo constante +latencia en cada medida (en
     ///   BT ≈ 150 ms, indistinguible de un drift real).
     private func measureClockDrift() {
+        // ✅ SFB: esta medición usa el timeline del AVAudioPlayerNode, que en el
+        // núcleo SFB no existe (su reloj vive en el decoder/ring buffer). Se
+        // desactiva ahí para no medir ruido; el reloj de pared sigue activo y
+        // las correcciones/repúblicas de arriba cubren la sincronía de la UI.
+        guard !usesSFBCore else { return }
         guard isPlaying, !isAVPlayerActive, playerNode.isPlaying,
               let lastRender = playerNode.lastRenderTime,
               let playerTime = playerNode.playerTime(forNodeTime: lastRender),
@@ -3631,6 +4279,12 @@ class AudioEngine: NSObject, ObservableObject {
             posAnchor = audible
             wallAnchor = CACurrentMediaTime()
             clockDriftReference = nil
+            // ✅ REGLA DE ORO: una corrección de reloj debe VERSE en la
+            // superficie del sistema en el mismo momento (siguiente publicación
+            // de estado), nunca quedar oculta en un tick: si no, CC/bloqueo
+            // seguirían extrapoldando desde el ancla vieja hasta la siguiente
+            // transición real (play/pausa/seek/pista).
+            updateNowPlayingInfo(force: true)
             AppLog.info(.playback, String(format: "Drift corregido: %.0f ms", drift * 1000))
         }
     }
@@ -3701,6 +4355,13 @@ class AudioEngine: NSObject, ObservableObject {
     private func startFallbackPlayback(song: Song, reason: FallbackReason = .engineFailure, startAt position: TimeInterval = 0) {
         scheduleGeneration += 1
         stopFallbackPlayback()
+        // ✅ SFB: si el relevo lo da un fallo del núcleo nuevo, parar también su
+        // transporte AQUÍ (red de seguridad): nunca puede quedar SFB emitiendo
+        // mientras AVPlayer toma el mando (doble audio).
+        if usesSFBCore {
+            sfbBackend.stop()
+            clearChainedAhead()
+        }
         if playerNode.isPlaying {
             playerNode.stop()
         }
@@ -3887,7 +4548,7 @@ class AudioEngine: NSObject, ObservableObject {
         // ✅ FASE C5: tasa REAL del hardware = formato del nodo de salida del
         // grafo (frente a la tasa NEGOCIADA de la sesión, `session.sampleRate`).
         // Cuando difieren es que iOS remuestrea en el nodo de salida.
-        let newHardwareRate = engine.outputNode.outputFormat(forBus: 0).sampleRate
+        let newHardwareRate = currentOutputFormat().sampleRate
         // ✅ OPTIMIZACIÓN BATERÍA: no recrear el string de calidad ni publicar
         // si no hubo cambios reales en la salida (evita re-render UI + dispatch).
         // Recalcular SIEMPRE (cambia con la cancion aunque la tasa de salida no).
@@ -3998,7 +4659,7 @@ class AudioEngine: NSObject, ObservableObject {
     /// de ruta. No se llama en cada tick ni en cada refresh de telemetría.
     private func logQualityAuditLine(context: String) {
         let session = AVAudioSession.sharedInstance()
-        let graphRate = engine.outputNode.outputFormat(forBus: 0).sampleRate
+        let graphRate = currentOutputFormat().sampleRate
         let src = srcConversionActive ? "SRC activo" : "sin SRC"
         let mono = isMonoAudioEnabled ? "mono" : "estéreo"
         let eq = (isEQEnabled && eqPreset != .flat) ? "EQ \(eqPreset.rawValue)" : "sin EQ"
@@ -4347,10 +5008,31 @@ class AudioEngine: NSObject, ObservableObject {
         let identityChanged = lastPublishedSongID != currentSong?.id
             || lastPublishedIsPlaying != isPlaying
             || abs(lastPublishedDuration - duration) > 0.01
-        if !force,
-           !identityChanged,
-           CACurrentMediaTime() - lastNowPlayingPublishTime < nowPlayingRefreshInterval {
+        // ✅ Cambios de ESTADO (play/pausa, seek, pista, cola, duración) →
+        // publicación inmediata: son los únicos puntos en los que Apple
+        // recomienda enviar elapsed + rate.
+        if force || identityChanged {
+            publishNowPlayingInfo()
             return
+        }
+        let now = CACurrentMediaTime()
+        guard now - lastNowPlayingPublishTime >= nowPlayingRefreshInterval else { return }
+        // ✅ REGLA DE ORO (ventana de seguridad): mientras suena, iOS avanza el
+        // elapsed publicado con el rate. Si esa extrapolación coincide con
+        // nuestro reloj de pared (≤ tolerancia), NO se envía nada: el sistema
+        // ya tiene el dato correcto y republicar solo añade churn. Si se desvía
+        // (drift real del host, publicación descartada por iOS en una
+        // transición…), se re-ancla con el diccionario completo y el motivo
+        // queda logueado. Es la única excepción a “solo cambios de estado”, y
+        // está medida, no es un tick ciego.
+        if duration > 0, let published = lastPublishedElapsed {
+            let systemElapsed = isPlaying
+                ? published + (now - lastNowPlayingPublishTime)
+                : published
+            let ourElapsed = (isPlaying && !isAVPlayerActive) ? wallClockTime : currentTime
+            let gap = abs(systemElapsed - ourElapsed)
+            if gap <= nowPlayingDriftTolerance { return }
+            AppLog.info(.playback, String(format: "NowPlaying: extrapolación del sistema desfasada %.2fs → re-anclaje forzado", gap))
         }
         publishNowPlayingInfo()
     }
@@ -4424,6 +5106,9 @@ class AudioEngine: NSObject, ObservableObject {
             info[MPNowPlayingInfoPropertyPlaybackRate] = 0.0
             info[MPNowPlayingInfoPropertyDefaultPlaybackRate] = 1.0
             MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+            // ✅ REGLA DE ORO: sin cronómetro publicado no hay extrapolación que
+            // corregir → publishIfNeeded no estimará ni re-enviará por ventana.
+            lastPublishedElapsed = nil
             lastNowPlayingPublishTime = CACurrentMediaTime()
             lastPublishedSongID = currentSong?.id
             lastPublishedIsPlaying = isPlaying
@@ -4477,6 +5162,10 @@ class AudioEngine: NSObject, ObservableObject {
             info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = 0.0
             MPNowPlayingInfoCenter.default().nowPlayingInfo = info
             MPNowPlayingInfoCenter.default().playbackState = .paused
+            // ✅ REGLA DE ORO: fase 1 (rate 0 + elapsed 0) — memorizar lo
+            // publicado para que fase 2 no re-dispare el ciclo por identidad.
+            lastPublishedElapsed = 0
+            lastPublishedRate = 0
             lastNowPlayingPublishTime = CACurrentMediaTime()
             lastPublishedSongID = currentSong?.id
             lastPublishedIsPlaying = isPlaying
@@ -4499,6 +5188,11 @@ class AudioEngine: NSObject, ObservableObject {
         // lock screen en el estado contrario al real.
         // `publishNowPlayingInfo()` ya se ejecuta en el hilo principal.
         MPNowPlayingInfoCenter.default().playbackState = isPlaying ? .playing : .paused
+        // ✅ REGLA DE ORO: memorizar elapsed/rate publicados para que
+        // publishIfNeeded pueda comparar la extrapolación de iOS con nuestro
+        // reloj y saltarse el envío cuando coincidan (ver publishIfNeeded).
+        lastPublishedElapsed = elapsedForPublish
+        lastPublishedRate = isPlaying ? 1 : 0
         // ✅ FASE B3: marcar el envío real. Los ticks del display timer
         // (`force: false`) lo consultan junto con lastPublished* para decidir si
         // pueden saltarse el tick (ventana de 2 s; ver publishIfNeeded).

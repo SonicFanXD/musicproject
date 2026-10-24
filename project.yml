@@ -4,10 +4,21 @@ options:
   deploymentTarget:
     iOS: 16.0
 
+# ✅ MIGRACIÓN SFB: SFBAudioEngine (decodificación + gapless nativo).
+# El paquete tira de ~20 dependencias (XCFrameworks binarios: FLAC, Opus,
+# Vorbis, mpg123, LAME…) — la primera resolución/compilación en CI es lenta;
+# fijar versión con `from:` para builds deterministas.
+packages:
+  SFBAudioEngine:
+    url: https://github.com/sbooth/SFBAudioEngine
+    from: 0.14.0
+
 targets:
   AuroraPlayer:
     type: application
     platform: iOS
+    dependencies:
+      - package: SFBAudioEngine
     sources:
       - path: AuroraPlayer
       - path: AuroraPlayerApp.swift

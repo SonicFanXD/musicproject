@@ -374,14 +374,34 @@ struct PlaylistDetailView: View {
             .ignoresSafeArea()
 
             ScrollView {
+                // ✅ PERF: `songsInPlaylist` es una consulta que recorre la
+                // biblioteca; antes se ejecutaba en el body, tres veces en el hero
+                // y en CADA closure de fila (play y context menu). Ahora es UNA
+                // lectura por render y se pasa como valor al hero y a las filas.
+                let songs = self.songs
                 VStack(spacing: 0) {
                     // Hero Section
-                    playlistHeroSection
+                    playlistHeroSection(songs)
 
                     // Songs list
                     VStack(spacing: 12) {
                         ForEach(Array(songs.enumerated()), id: \.element.id) { index, song in
-                            playlistSongRow(song, index: index)
+                            PlaylistSongRow(
+                                song: song,
+                                index: index,
+                                isCurrent: audioEngine.currentSong?.id == song.id,
+                                isPlaying: audioEngine.isPlaying,
+                                isLiked: fileAccessService.isLiked(song),
+                                onPlay: { audioEngine.play(song: song, from: songs) },
+                                onPlayNext: { audioEngine.playNext(song) },
+                                onAddToQueue: { audioEngine.addToQueue(song) },
+                                onToggleLike: { fileAccessService.toggleLike(song) },
+                                onRemove: { fileAccessService.removeSongFromPlaylist(song, playlist: playlist) }
+                            )
+                            // ✅ PERF: sin `.equatable()` el body del detalle (que
+                            // observa el motor) re-evaluaría todas las filas visibles
+                            // en cada @Published. Con esto solo se repinta la que cambió.
+                            .equatable()
                         }
                     }
                     .padding(.horizontal, 20)
@@ -455,7 +475,9 @@ struct PlaylistDetailView: View {
         }
     }
 
-    private var playlistHeroSection: some View {
+    /// ✅ PERF: recibe la lista ya resuelta por el body (una sola consulta
+    /// por render en vez de cinco). El contenido del hero no cambia.
+    private func playlistHeroSection(_ songs: [Song]) -> some View {
         VStack(spacing: 18) {
             // Artwork con marco sutil
             ZStack {
@@ -527,7 +549,7 @@ struct PlaylistDetailView: View {
             if !songs.isEmpty {
                 HStack(spacing: 12) {
                     Button {
-                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                        Haptics.medium()
                         if let firstSong = songs.first {
                             audioEngine.play(song: firstSong, from: songs)
                         }
@@ -552,9 +574,11 @@ struct PlaylistDetailView: View {
                         .contentShape(Rectangle())
                         .shadow(color: AppTheme.accent.opacity(0.35), radius: 10, x: 0, y: 5)
                     }
+                    // ✅ M3E: rebote elástico al toque (antes: `.plain`, cero feedback).
+                    .buttonStyle(PressableButtonStyle(scale: AuroraPressScale.button, pressedOpacity: 0.85))
 
                     Button {
-                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                        Haptics.medium()
                         if !audioEngine.isShuffleEnabled {
                             audioEngine.toggleShuffle()
                         }
@@ -573,6 +597,8 @@ struct PlaylistDetailView: View {
                             .frame(width: 60, height: 60) // Bigger invisible touch target
                             .contentShape(Rectangle())
                     }
+                    // ✅ M3E: mismo rebote que el primario, en escala de chip.
+                    .buttonStyle(PressableButtonStyle(scale: AuroraPressScale.button, pressedOpacity: 0.85))
                 }
                 .padding(.horizontal, 20)
             }
@@ -629,134 +655,6 @@ struct PlaylistDetailView: View {
             return rem > 0 ? "\(hours) h \(rem) min" : "\(hours) h"
         }
         return "\(minutes) min"
-    }
-
-    private func playlistSongRow(_ song: Song, index: Int) -> some View {
-        let isCurrent = audioEngine.currentSong?.id == song.id
-
-        return HStack(spacing: 14) {
-            // Botón principal: reproducir
-            Button {
-                UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                audioEngine.play(song: song, from: songs)
-            } label: {
-                HStack(spacing: 14) {
-                    // Número o ecualizador animado
-                    if isCurrent {
-                        HStack(spacing: 3) {
-                            ForEach(0..<3, id: \.self) { bar in
-                                RoundedRectangle(cornerRadius: 1.5)
-                                    .fill(AppTheme.accentGradient)
-                                    // ✅ El indicador ANIMA de verdad: la altura cambia al
-                                    // reproducir (antes no había ninguna propiedad que
-                                    // animar, así que el repeatForever quedaba inerte).
-                                    // ✅ BATERÍA: en pausa se retira la animación.
-                                    .frame(width: 3, height: audioEngine.isPlaying ? (bar % 2 == 0 ? 14 : 9) : 6)
-                                    .animation(
-                                        audioEngine.isPlaying
-                                            ? Animation.easeInOut(duration: 0.45 + Double(bar) * 0.12).repeatForever(autoreverses: true)
-                                            : nil,
-                                        value: audioEngine.isPlaying
-                                    )
-                            }
-                        }
-                        .frame(width: 26)
-                    } else {
-                        Text("\(index + 1)")
-                            .font(.system(size: 15, weight: .medium).monospacedDigit())
-                            .foregroundStyle(Color.secondary.opacity(0.6))
-                            .frame(width: 26)
-                    }
-
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(song.title)
-                            .font(.system(size: 16, weight: isCurrent ? .semibold : .medium))
-                            .foregroundStyle(isCurrent ? AppTheme.accent : .primary)
-                            .lineLimit(1)
-
-                        Text(song.displaySubtitle)
-                            .font(.system(size: 13))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
-
-                    Spacer()
-
-                    Text(formatDuration(song.duration))
-                        .font(.system(size: 13).monospacedDigit())
-                        .foregroundStyle(.tertiary)
-                }
-            }
-            .buttonStyle(.plain)
-
-            // Botón de quitar (fuera del botón principal, área táctil amplia)
-            Button {
-                UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                fileAccessService.removeSongFromPlaylist(song, playlist: playlist)
-            } label: {
-                Image(systemName: "minus.circle.fill")
-                    .font(.system(size: 20))
-                    .foregroundStyle(.red.opacity(0.7))
-                    .frame(width: 44, height: 44) // Bigger invisible touch target
-                    .contentShape(Rectangle())
-            }
-            // ✅ G: respuesta al toque del sistema (antes `.plain`, sin feedback).
-            .buttonStyle(PressableButtonStyle(scale: AuroraPressScale.chip))
-            .accessibilityLabel(Localization.localized("queue.remove"))
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
-        .background {
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(AnyShapeStyle(isCurrent ? AnyShapeStyle(AppTheme.accentGradient(opacity: 0.1)) : AnyShapeStyle(Color.secondary.opacity(0.05))))
-        }
-        .overlay {
-            if isCurrent {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .strokeBorder(AppTheme.accent.opacity(0.25), lineWidth: 1)
-            }
-        }
-        // ✅ E2: menú contextual NUEVO en esta vista (no existía) con el orden
-        // estándar de las listas de canciones más el ítem propio de una lista:
-        // Reproducir ahora → Reproducir siguiente → Añadir a la cola → Me gusta
-        // → Quitar de esta lista. `songs` es la lista de ESTA playlist, el mismo
-        // contexto que el toque de la fila. El botón minus.circle de la derecha
-        // sigue haciendo lo mismo que el último ítem: no se retira ninguno.
-        .contextMenu {
-            Button {
-                Haptics.light()
-                audioEngine.play(song: song, from: songs)
-            } label: {
-                Label(Localization.localized("context.playNow"), systemImage: "play.circle.fill")
-            }
-            Button {
-                Haptics.light()
-                audioEngine.playNext(song)
-            } label: {
-                Label(Localization.localized("context.playNext"), systemImage: "text.line.first.and.arrowtriangle.forward")
-            }
-            Button {
-                Haptics.light()
-                audioEngine.addToQueue(song)
-            } label: {
-                Label(Localization.localized("actions.addToQueue"), systemImage: "text.badge.plus")
-            }
-            Button {
-                Haptics.light()
-                fileAccessService.toggleLike(song)
-            } label: {
-                Label(
-                    Localization.localized(fileAccessService.isLiked(song) ? "actions.unlike" : "actions.like"),
-                    systemImage: fileAccessService.isLiked(song) ? "heart.slash" : "heart"
-                )
-            }
-            Button {
-                Haptics.light()
-                fileAccessService.removeSongFromPlaylist(song, playlist: playlist)
-            } label: {
-                Label(Localization.localized("playlists.removeSong"), systemImage: "minus.circle")
-            }
-        }
     }
 
     private var editPlaylistSheet: some View {
@@ -859,11 +757,4 @@ struct PlaylistDetailView: View {
         showEditPlaylist = false
     }
 
-    private func formatDuration(_ seconds: TimeInterval) -> String {
-        guard seconds.isFinite, seconds >= 0 else { return "0:00" }
-        let totalSeconds = Int(seconds)
-        let minutes = totalSeconds / 60
-        let remainingSeconds = totalSeconds % 60
-        return String(format: "%d:%02d", minutes, remainingSeconds)
-    }
 }

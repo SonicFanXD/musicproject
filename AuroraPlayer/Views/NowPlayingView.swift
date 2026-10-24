@@ -35,6 +35,14 @@ struct NowPlayingView: View {
     @State private var showArtistDetail = false
     @State private var showAlbumDetail = false
     @State private var artworkScale: CGFloat = 1.0
+    // ✅ M3E: opacidad de la portada y desplazamiento de la info para la
+    // transición de canción (fade + micro-escala + slide con stagger).
+    // Solo cambian al cambiar de pista: transformaciones GPU sobre una
+    // única imagen, nunca crossfade de dos carátulas grandes (en A11
+    // doblar el blit en el instante del cambio de pista no compensa).
+    @State private var artworkOpacity: Double = 1.0
+    @State private var infoOffset: CGFloat = 0
+    @State private var infoOpacity: Double = 1.0
     // ✅ FUENTE ÚNICA: ThemeManager resuelve y publica el par de acento
     // (resolvedAccentPair + caché por huella de imagen). Esta vista SOLO LEE:
     // aquí no se extrae ni se computa ningún color.
@@ -170,10 +178,11 @@ struct NowPlayingView: View {
                 // iPhone 8 Plus incluido) en lugar de espaciados fijos.
                 VStack(spacing: 0) {
                     artworkView
-                        // ✅ MEJORADO: la portada solo anima al CAMBIAR de canción,
-                        // no al pausar/resumir. Antes había una animación rara de
-                        // escala (1.02 → 1.0) que se veía artificial al tocar play/pause.
-                        .animation(.easeInOut(duration: 0.3), value: audioEngine.currentSong?.id)
+                        // ✅ M3E: la portada reacciona al CAMBIAR de canción con
+                        // fade + micro-escala (el resorte se dispara desde
+                        // onChange más abajo); nunca al pausar/resumir.
+                        .scaleEffect(artworkScale)
+                        .opacity(artworkOpacity)
 
                     Spacer(minLength: isCompactScreen ? 10 : 16)
 
@@ -196,7 +205,13 @@ struct NowPlayingView: View {
                     Spacer(minLength: isCompactScreen ? 8 : 14)
 
                     songInfoView
-                        .animation(.easeInOut(duration: 0.25), value: audioEngine.currentSong?.id)
+                        // ✅ M3E: la info entra con un slide vertical sutil y
+                        // fundido, escalonado 40 ms respecto a la portada
+                        // (stagger del entrance de M3E). Misma mecánica que la
+                        // portada: estado inicial fijo sin animación y resorte
+                        // desde onChange.
+                        .offset(y: infoOffset)
+                        .opacity(infoOpacity)
 
                     Spacer(minLength: isCompactScreen ? 8 : 14)
 
@@ -233,7 +248,7 @@ struct NowPlayingView: View {
                     hasLoggedAppear = true
                     AppLog.info(.interface, "NowPlaying abierto: '\(audioEngine.currentSong?.displayName ?? "—")'")
                 }
-                withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
+                withAnimation(AuroraMotion.normal) {
                     artworkScale = 1.0
                 }
                 audioEngine.isKeepScreenOnEnabled = keepScreenOn
@@ -251,6 +266,32 @@ struct NowPlayingView: View {
                 // y todas las vistas que lo observen se actualicen al instante
                 // (ThemeManager resuelve y cachea; aquí no se extrae nada).
                 ThemeManager.shared.updateArtworkAccent(from: audioEngine.currentSong)
+                // ✅ M3E: entrada de la nueva pista en DOS fases (patrón
+                // obligatorio en SwiftUI: si el estado inicial y el final se
+                // escriben en el mismo tick, coalescen y NO hay diff que
+                // animar). Fase 1: snap al estado inicial SIN animación.
+                // Fase 2 (siguiente tick): los springs lanzan la entrada. La
+                // portada y la info comparten curva (normal) con 40 ms de
+                // stagger: la sensación es un "despliegue" orgánico, no dos
+                // animaciones sueltas.
+                var snap = Transaction()
+                snap.disablesAnimations = true
+                withTransaction(snap) {
+                    artworkScale = 0.94
+                    artworkOpacity = 0
+                    infoOffset = 12
+                    infoOpacity = 0
+                }
+                DispatchQueue.main.async {
+                    withAnimation(AuroraMotion.normal) {
+                        artworkScale = 1.0
+                        artworkOpacity = 1.0
+                    }
+                    withAnimation(AuroraMotion.normal.delay(0.04)) {
+                        infoOffset = 0
+                        infoOpacity = 1
+                    }
+                }
             }
             .onChange(of: ThemeManager.shared.accentFromArtwork) { value in
                 // ✅ FIX: propaga el color a ThemeManager (que a su vez publica a
@@ -303,7 +344,7 @@ struct NowPlayingView: View {
                         .transition(.opacity.combined(with: .scale(scale: 0.92)))
                 }
             }
-            .animation(.easeOut(duration: 0.22), value: showQualityDetail)
+            .animation(AuroraMotion.slow, value: showQualityDetail)
     }
 
     // MARK: - Header (fila fija: no depende de la altura del contenido)
@@ -523,8 +564,8 @@ struct NowPlayingView: View {
                     .frame(width: 44, height: 34)
                     .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
-            .animation(.spring(response: 0.3, dampingFraction: 0.6), value: isCurrentLiked)
+            .buttonStyle(PressableButtonStyle(scale: AuroraPressScale.chip, pressedOpacity: 0.6))
+            .animation(AuroraMotion.quick, value: isCurrentLiked)
             .accessibilityLabel(Localization.localized("actions.like"))
         }
         .padding(.horizontal, 6)
@@ -560,8 +601,8 @@ struct NowPlayingView: View {
             // ✅ Feedback de PRENSIÓN visible (antes .plain: sin reacción al tocar
             // y el cambio de estado era casi invisible sobre la portada). El
             // .animation(value:) colorea el icono AL INSTANTE al conmutar.
-            .buttonStyle(PressableButtonStyle(scale: 0.86))
-            .animation(.easeInOut(duration: 0.2), value: audioEngine.isShuffleEnabled)
+            .buttonStyle(PressableButtonStyle(scale: AuroraPressScale.chip, pressedOpacity: 0.6))
+            .animation(AuroraMotion.quick, value: audioEngine.isShuffleEnabled)
 
             // Previous
             Button {
@@ -577,7 +618,10 @@ struct NowPlayingView: View {
                 .frame(width: isCompactScreen ? 56 : 64, height: isCompactScreen ? 56 : 64)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            // ✅ M3E: antes .plain (sin reacción visual al tocar sobre la
+            // portada). Rebote elástico + apagado sutil: la respuesta táctil
+            // es el 50% de la sensación "M3E".
+            .buttonStyle(PressableButtonStyle(scale: AuroraPressScale.circle, pressedOpacity: 0.7))
 
             // Play/Pause (icono con contraste)
             Button {
@@ -589,20 +633,38 @@ struct NowPlayingView: View {
                 }
             } label: {
                 ZStack {
-                    Circle().fill(textSafeAccentGradient()).frame(width: isCompactScreen ? 62 : 72, height: isCompactScreen ? 62 : 72)
-                    // ✅ El icono cambia instantáneamente (sin .id() ni transición
-                    // de reemplazo — recreaba la vista entera y se sentía lento en
-                    // A11); solo un breve fade de 0.1s suaviza el cambio visual.
+                    // ✅ M3E MORPH (la pieza central del rediseño): el fondo del
+                    // botón NO se sustituye, se TRANSFORMA. En pausa es un
+                    // círculo perfecto (invitación a tocar); al reproducir se
+                    // estira a un squircle continuo 12% más ancho (la forma
+                    // "en marcha" de M3E). La interpolación es una path
+                    // animation del propio shape (AuroraMorphShape.animatableData),
+    // la transformación más barata para la GPU: ni un render
+                    // pass extra, ni layout móvil (el frame exterior es fijo),
+                    // ni matchedGeometryEffect (eso reinstancia jerarquías y en
+                    // A11 provoca el micro-saltito que queremos evitar).
+                    AuroraMorphShape(
+                        cornerRadiusRatio: audioEngine.isPlaying ? 0.34 : 0.5,
+                        widthRatio: audioEngine.isPlaying ? 1.12 : 1.0
+                    )
+                    .fill(textSafeAccentGradient())
+                    .frame(width: isCompactScreen ? 62 : 72, height: isCompactScreen ? 62 : 72)
+                    // damping 0.68: es el rebote elástico "emphasized" de M3E,
+                    // el que se siente como goma al cambiar de estado.
+                    .animation(AuroraMotion.emphasized, value: audioEngine.isPlaying)
+                    // ✅ El icono sigue cambiando instantáneamente (sin .id() ni
+                    // transición de reemplazo — recreaba la vista entera y se
+                    // sentía lento en A11); el morph del fondo lleva toda la
+                    // expresión del cambio de estado.
                     Image(systemName: audioEngine.isPlaying ? "pause.fill" : "play.fill")
                         .font(.system(size: isCompactScreen ? 22 : 26, weight: .bold))
                         .foregroundStyle(playIconColor)
                 }
                 .shadow(color: extractedColor.opacity(0.35), radius: 10, x: 0, y: 4)
-                .animation(.easeOut(duration: 0.1), value: audioEngine.isPlaying)
                 .frame(width: isCompactScreen ? 76 : 88, height: isCompactScreen ? 76 : 88)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(PressableButtonStyle(scale: AuroraPressScale.circle, pressedOpacity: 0.8))
 
             // Next
             // ✅ Al final de la cola se atenúa y deja de responder (mismo criterio
@@ -620,7 +682,8 @@ struct NowPlayingView: View {
                 .frame(width: isCompactScreen ? 56 : 64, height: isCompactScreen ? 56 : 64)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            // ✅ M3E: mismo tratamiento que "anterior" (rebote + apagado).
+            .buttonStyle(PressableButtonStyle(scale: AuroraPressScale.circle, pressedOpacity: 0.7))
             .opacity(audioEngine.hasNextTrack ? 1 : 0.4)
             .disabled(!audioEngine.hasNextTrack)
 
@@ -645,8 +708,8 @@ struct NowPlayingView: View {
             }
             // ✅ Mismo tratamiento que shuffle: feedback de presión visible y
             // animación inmediata del icono (repeat → repeat.1 → off) al tocar.
-            .buttonStyle(PressableButtonStyle(scale: 0.86))
-            .animation(.easeInOut(duration: 0.2), value: audioEngine.repeatMode)
+            .buttonStyle(PressableButtonStyle(scale: AuroraPressScale.chip, pressedOpacity: 0.6))
+            .animation(AuroraMotion.quick, value: audioEngine.repeatMode)
         }
         .frame(maxWidth: .infinity)
         .fixedSize()
@@ -816,7 +879,7 @@ struct NowPlayingView: View {
             Color.black.opacity(0.22)
                 .ignoresSafeArea()
                 .onTapGesture {
-                    withAnimation(.easeOut(duration: 0.22)) {
+                    withAnimation(AuroraMotion.quick) {
                         showQualityDetail = false
                     }
                 }
@@ -836,7 +899,7 @@ struct NowPlayingView: View {
 
                     Button {
                         Haptics.light()
-                        withAnimation(.easeOut(duration: 0.22)) {
+                        withAnimation(AuroraMotion.quick) {
                             showQualityDetail = false
                         }
                     } label: {
@@ -890,7 +953,7 @@ struct NowPlayingView: View {
             .scaleEffect(showQualityDetail ? 1.0 : 0.94)
             .opacity(showQualityDetail ? 1.0 : 0)
         }
-        .animation(.easeOut(duration: 0.22), value: showQualityDetail)
+        .animation(AuroraMotion.slow, value: showQualityDetail)
     }
 
     // MARK: - Helpers

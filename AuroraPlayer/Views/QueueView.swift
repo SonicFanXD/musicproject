@@ -11,6 +11,9 @@ struct QueueView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var selectedTab: QueueTab = .nextUp
+    // ✅ M3E: namespace del morph del selector de pestañas (la cápsula activa
+    // se DESLIZA entre pestañas en vez de aparecer/desaparecer dos veces).
+    @Namespace private var tabNamespace
     // ✅ E3.2: modo edición EXPLÍCITO para el arrastre de "En cola". Con el menú
     // contextual en cada fila, el toque sostenido abre el menú y el arrastre
     // (que sin edición necesita ESE mismo gesto) no llega a arrancar. En edición
@@ -108,7 +111,7 @@ struct QueueView: View {
         HStack(spacing: 6) {
             ForEach(QueueTab.allCases, id: \.self) { tab in
                 Button {
-                    withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                    withAnimation(AuroraMotion.quick) {
                         selectedTab = tab
                     }
                 } label: {
@@ -125,13 +128,19 @@ struct QueueView: View {
                         if selectedTab == tab {
                             Capsule().fill(AppTheme.accentGradient)
                                 .shadow(color: AppTheme.accent.opacity(0.3), radius: 6, x: 0, y: 3)
+                                // ✅ M3E MORPH: la misma cápsula viaja entre
+                                // pestañas con `matchedGeometryEffect` (una sola
+                                // geometría animada). Antes eran dos cápsulas
+                                // distintas que se apagaban/encendían: el ojo
+                                // leía “parpadeo”, no movimiento.
+                                .matchedGeometryEffect(id: "queue.tab.selection", in: tabNamespace)
                         } else {
                             // ✅ 60fps: color OPACO (sin blur) para el selector
                             Capsule().fill(Color(UIColor.secondarySystemBackground))
                         }
                     }
                 }
-                .buttonStyle(PressableButtonStyle(scale: 0.95))
+                .buttonStyle(PressableButtonStyle(scale: AuroraPressScale.chip, pressedOpacity: 0.7))
             }
         }
         .padding(.horizontal, 16).padding(.vertical, 10)
@@ -362,23 +371,42 @@ struct QueueView: View {
                     Text(Localization.localized("queue.clear"))
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(AppTheme.accent)
+                        .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                // ✅ M3E: feedback de presión también en las acciones de texto
+                // (antes `.plain`: no había respuesta visual al tocar “Limpiar”).
+                .buttonStyle(PressableButtonStyle(scale: AuroraPressScale.chip, pressedOpacity: 0.55))
             }
 
-            // ✅ E3.2: alterna el modo edición. Mismo lenguaje que "Limpiar"
-            // (texto accent, sin fondo ni cápsula).
+            // ✅ E3.2: alterna el modo edición.
+            // ✅ M3E MORPH (Prioridad 4): el indicador de edición ya no es un
+            // texto plano que cambia de golpe. Al entrar en edición aparece una
+            // cápsula con morph (escala 0.8 → 1 con el spring del sistema) y el
+            // rótulo hace crossfade. El layout de la fila no salta: el cambio
+            // de texto ocurre dentro del mismo botón y “Limpiar” se oculta en
+            // el mismo ciclo.
             Button {
                 Haptics.light()
-                withAnimation(.easeInOut(duration: 0.2)) {
+                withAnimation(AuroraMotion.quick) {
                     editMode = editMode == .active ? .inactive : .active
                 }
             } label: {
                 Text(Localization.localized(editMode == .active ? "queue.doneEditing" : "queue.edit"))
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(AppTheme.accent)
+                    .contentTransition(.opacity)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background {
+                        if editMode == .active {
+                            Capsule()
+                                .fill(AppTheme.accent.opacity(0.14))
+                                .transition(.scale(scale: 0.8).combined(with: .opacity))
+                        }
+                    }
+                    .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(PressableButtonStyle(scale: AuroraPressScale.chip, pressedOpacity: 0.6))
         }
         .listRowSeparator(.hidden)
         .listRowBackground(Color.clear)
@@ -467,7 +495,15 @@ struct QueueView: View {
             }
             .contentShape(Rectangle())
         }
-        .buttonStyle(PressableButtonStyle(scale: 0.98))
+        // ✅ M3E: rebote + apagado del sistema (antes 0.98 pelado).
+        .buttonStyle(PressableButtonStyle(scale: AuroraPressScale.row, pressedOpacity: 0.75))
+        // ✅ PRIORIDAD 3 (bordes de lista): la `List` dibuja su separador por
+        // defecto y pinta el fondo de celda del sistema. Sobre el fondo propio
+        // de la app eso se veía como líneas grises/blancas sueltas en modo
+        // oscuro. Se ocultan en la FILA (no en la List) para que las secciones
+        // que sí necesitan separadores los conserven si algún día los piden.
+        .listRowSeparator(.hidden)
+        .listRowBackground(Color.clear)
     }
 
     private func historySongRow(_ song: Song, index: Int) -> some View {
@@ -514,7 +550,10 @@ struct QueueView: View {
             }
             .contentShape(Rectangle())
         }
-        .buttonStyle(PressableButtonStyle(scale: 0.98))
+        .buttonStyle(PressableButtonStyle(scale: AuroraPressScale.row, pressedOpacity: 0.75))
+        // ✅ PRIORIDAD 3: mismo criterio que la fila de "En cola".
+        .listRowSeparator(.hidden)
+        .listRowBackground(Color.clear)
     }
 
     /// ✅ B2: tres barras de ecualizador. Con `animated == false` se renderiza la
@@ -581,21 +620,11 @@ struct QueueView: View {
         }
     }
 
+    /// ✅ M3E (Prioridad 4): el vacío de la cola usa el componente del sistema
+    /// (icono hero que respira + título fuerte). `compact: true` porque vive
+    /// DENTRO de una lista: mantiene la jerarquía sin competir con las filas.
     private func emptyState(icon: String, title: String, message: String) -> some View {
-        VStack(spacing: 16) {
-            Image(systemName: icon)
-                .font(.system(size: 48))
-                .foregroundStyle(.secondary.opacity(0.5))
-            Text(title)
-                .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(.secondary)
-            Text(message)
-                .font(.system(size: 14))
-                .foregroundStyle(.tertiary)
-                .multilineTextAlignment(.center)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 40)
+        AuroraEmptyState(icon: icon, title: title, message: message, compact: true)
     }
 
     private func formatDuration(_ seconds: TimeInterval) -> String {

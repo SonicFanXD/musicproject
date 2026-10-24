@@ -131,7 +131,9 @@ struct PlayerBar: View {
                                     // ✅ iOS 16 compatible: animar opacidad con value: isPlaying
                                     // (audioEngine es ObservedObject → re-renderiza al cambiar)
                                     .opacity(audioEngine.isPlaying ? 1 : 0)
-                                    .animation(.easeInOut(duration: 0.3), value: audioEngine.isPlaying)
+                                    // ✅ M3E: toda transición de estado de la app
+                                    // usa los springs del sistema (no easings lineales).
+                                    .animation(AuroraMotion.quick, value: audioEngine.isPlaying)
                             }
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -192,12 +194,26 @@ struct PlayerBar: View {
                                 }
                             } label: {
                                 ZStack {
-                                    // ✅ Círculo con gradiente de DOS colores del
-                                    // acento (portada: dominante + secundario real)
-                                    Circle()
-                                        .fill(
-                                            textSafeAccentGradient()
-                                        )
+                                    // ✅ M3E MORPH: mismo lenguaje de forma que el
+                                    // play de NowPlaying (círculo → squircle con
+                                    // el mismo resorte). `AuroraMorphShape`
+                                    // interpola SU path (GPU barata); el halo y
+                                    // el icono no se tocan.
+                                    // ✅ PRIORIDAD 3: en la barra el botón mide
+                                    // 40/44 pt y sus vecinos están a 4 pt, así que el
+                                    // estirado se limita a 1.06 (≈1.3 pt por lado): el
+                                    // morph se lee igual pero NUNCA roza los botones
+                                    // de al lado. El 1.12 se reserva para NowPlaying,
+                                    // donde el frame exterior (76/88) deja margen.
+                                    // Ninguno de los dos afecta al LAYOUT: el shape
+                                    // dibuja fuera de su rect y el frame es fijo, de
+                                    // modo que pausar/reanudar no mueve nada.
+                                    AuroraMorphShape(
+                                        cornerRadiusRatio: audioEngine.isPlaying ? 0.34 : 0.5,
+                                        widthRatio: audioEngine.isPlaying ? 1.06 : 1.0
+                                    )
+                                        .fill(textSafeAccentGradient())
+                                        .animation(AuroraMotion.emphasized, value: audioEngine.isPlaying)
 
                                     // ✅ Halo animado cuando reproduce Y solo en primer plano.
                                     // La escala y la opacidad dependen de la MISMA condición que la
@@ -297,10 +313,13 @@ struct PlayerBar: View {
 
     // MARK: - Animaciones optimizadas
 
-    /// Animación de feedback del botón play (spring discreto, no repeatForever)
+    /// Animación de feedback del botón play (spring discreto, no repeatForever).
+    /// ✅ M3E: el rebote de la liberación usa el spring *emphasized* — el mismo
+    /// lenguaje de resorte que el morph del play en NowPlaying. El 0.88 previo
+    /// se mantiene (era la calibración ya validada en dispositivo).
     private func animatePlayButton() {
         playButtonScale = 0.88
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
+        withAnimation(AuroraMotion.emphasized) {
             playButtonScale = 1.0
         }
     }
@@ -330,7 +349,7 @@ struct PlayerBar: View {
                                 .opacity(audioEngine.isPlaying ? 1.0 : 0.0),
                             lineWidth: 2
                         )
-                        .animation(.easeInOut(duration: 0.35), value: audioEngine.isPlaying)
+                        .animation(AuroraMotion.quick, value: audioEngine.isPlaying)
                 )
                 .contentShape(Rectangle())
                 .onTapGesture {
@@ -348,7 +367,7 @@ struct PlayerBar: View {
                 Image(systemName: audioEngine.isPlaying ? "waveform" : "music.note")
                     .font(.system(size: 20, weight: .medium))
                     .foregroundStyle(artworkDominantColor)
-                    .animation(.easeInOut(duration: 0.3), value: audioEngine.isPlaying)
+                    .animation(AuroraMotion.quick, value: audioEngine.isPlaying)
             }
             .contentShape(Rectangle())
             .onTapGesture {
@@ -497,13 +516,7 @@ private struct PlayerScrubBar: View {
     }
 }
 
-// MARK: - ButtonStyle con feedback de presión (reusable, GPU barato)
-struct PressableButtonStyle: ButtonStyle {
-    let scale: CGFloat
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .scaleEffect(configuration.isPressed ? scale : 1.0)
-            .animation(.spring(response: 0.25, dampingFraction: 0.6), value: configuration.isPressed)
-    }
-}
+// MARK: - ButtonStyle con feedback de presión
+// ✅ M3E: `PressableButtonStyle` vive ahora en AuroraMotion.swift, con la
+// curva unificada (AuroraMotion.quick) y el nuevo parámetro opcional
+// `pressedOpacity`. La firma no cambió: los 30+ call sites siguen igual.

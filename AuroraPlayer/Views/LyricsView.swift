@@ -1065,6 +1065,14 @@ private struct LyricLineView: View, Equatable {
         // alimenta la animación, así que una sola declaración cubre los dos casos
         // y la fila ACTIVA cae en la identidad: no paga ningún efecto extra.
         .scaleEffect(focus.scale)
+        // ✅ M3E "lift": la línea enfocada se separa 3 pt del suelo con el MISMO
+        // resorte que su pop de escala (el offset va dentro del Style y por lo
+        // tanto se anima con focusAnimation, sin una segunda declaración que
+        // pudiera pisarle la curva). Un offset es una transformación GPU: cero
+        // coste de layout y cero efecto sobre el LazyVStack vecino. En la
+        // línea activa se siente como si el verso "flotara hacia ti" — el
+        // matiz que pedía el brief, resuelto con la economía del A11.
+        .offset(y: focus.lift)
         // ✅ Una sola animación por cambio: entrar o salir del foco usa el spring
         // de la casa; un paso de distancia entre líneas ya inactivas usa el
         // easeInOut corto del efecto lupa. Encadenar dos `.animation(value:)`
@@ -1089,8 +1097,11 @@ private struct LyricLineView: View, Equatable {
 
     /// ✅ Spring del cambio de línea (activación de la capa brillante y pop de
     /// escala). El wipe a 60 fps NO lo usa: el TimelineView interpola por frame.
+    /// ✅ M3E: la curva vive centralizada en AuroraMotion.lyricLine (mismos
+    /// valores 0.4/0.75 con los que la vista ya estaba calibrada en dispositivo;
+    /// solo cambia el domicilio, para poder retocarla en un solo sitio).
     private var lineActivation: Animation {
-        .spring(response: 0.4, dampingFraction: 0.75)
+        AuroraMotion.lyricLine
     }
 
     /// ✅ Filas REALES de la línea (cacheado por texto+fuente+ancho): las lógicas
@@ -1296,6 +1307,11 @@ private enum LyricFocus {
         /// ✅ Radio del desenfoque de profundidad (0 = sin pasada fuera de
         /// pantalla). Bajo grabación la política lo apaga desde el llamador.
         let blurRadius: CGFloat
+        /// ✅ M3E "lift": desplazamiento vertical de la línea enfocada (pt,
+        /// negativo = hacia arriba). Parte del Style para que viaje con la MISMA
+        /// animación que el resto del foco (una sola curva, sin declaraciones
+        /// competidoras) y forma parte de la igualdad de la fila.
+        let lift: CGFloat
     }
 
     /// ✅ La escalera del efecto. Nivel 0 = la línea enfocada (identidad total) y a
@@ -1305,16 +1321,17 @@ private enum LyricFocus {
         switch distance {
         case ...0:
             // Foco: sin escala, sin atenuación extra y sin desenfoque. La línea
-            // activa —la única que pide frames— no paga absolutamente nada.
-            return Style(scale: 1.0, dimMultiplier: 1.0, blurRadius: 0)
+            // activa —la única que pide frames— no paga absolutamente nada, y
+            // su lift de -3 pt es el "flotar hacia ti" del karaoke.
+            return Style(scale: 1.0, dimMultiplier: 1.0, blurRadius: 0, lift: -3)
         case 1:
             // Vecina: conserva el "pop" (0.96) y la tenuidad de siempre, y el
             // texto que el usuario está a punto de cantar sigue nítido.
-            return Style(scale: 0.96, dimMultiplier: 1.0, blurRadius: 0)
+            return Style(scale: 0.96, dimMultiplier: 1.0, blurRadius: 0, lift: 0)
         case 2:
-            return Style(scale: 0.93, dimMultiplier: 0.88, blurRadius: blurEnabled ? 1.5 : 0)
+            return Style(scale: 0.93, dimMultiplier: 0.88, blurRadius: blurEnabled ? 1.5 : 0, lift: 0)
         default:
-            return Style(scale: 0.90, dimMultiplier: 0.80, blurRadius: blurEnabled ? 2.5 : 0)
+            return Style(scale: 0.90, dimMultiplier: 0.80, blurRadius: blurEnabled ? 2.5 : 0, lift: 0)
         }
     }
 }
