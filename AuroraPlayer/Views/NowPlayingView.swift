@@ -88,10 +88,11 @@ struct NowPlayingView: View {
     private var artworkSize: CGFloat {
         let screenWidth = UIScreen.main.bounds.width
         let screenHeight = UIScreen.main.bounds.height
-        // ✅ MEJORADO: Portada más grande y mejor centrada
-        let maxByWidth = screenWidth - 40
-        let maxByHeight = screenHeight * (isCompactScreen ? 0.32 : 0.42)
-        return min(340, maxByWidth, maxByHeight)
+        // ✅ GOLPE FINAL: portada más grande y centrada, como el hero de un
+        // reproductor Android. En el 8 Plus gana ~50 pt frente al layout iOS.
+        let maxByWidth = screenWidth - 48
+        let maxByHeight = screenHeight * (isCompactScreen ? 0.35 : 0.46)
+        return min(360, maxByWidth, maxByHeight)
     }
 
     // ✅ Contraste: si el color dominante es claro → texto oscuro; si es oscuro → texto blanco
@@ -191,55 +192,45 @@ struct NowPlayingView: View {
 
                     Spacer(minLength: isCompactScreen ? 10 : 16)
 
+                    // ✅ GOLPE FINAL: info ALINEADA A LA IZQUIERDA (título,
+                    // artista y chip de calidad), como una fila de Android.
+                    songInfoView
+                        // ✅ M3E: la info entra con un slide vertical sutil y
+                        // fundido, escalonado 40 ms respecto a la portada.
+                        .offset(y: infoOffset)
+                        .opacity(infoOpacity)
+
                     if showVisualizer {
-                        // ✅ MEJORADO: AudioVisualizer ya rasteriza internamente
-                        // con .drawingGroup() y maneja la atenuación al pausar.
-                        // Nada de animaciones raras de escala aquí.
-                        // ✅ Mismo sistema de DOS colores que el resto de la vista:
-                        // dominante de la carátula + su secundario real (nil si no
-                        // hay secundario → cae al degradado de un solo color).
+                        // ✅ Mismo sistema de DOS colores que el resto de la vista.
+                        // Va debajo de la info y alineado a la izquierda: en
+                        // Android el visualizador acompaña al texto, no flota
+                        // centrado sobre la portada.
                         AudioVisualizer(
                             audioEngine: audioEngine,
                             tintColor: extractedColor,
                             secondaryTintColor: extractedSecondaryColor
                         )
-                            .frame(height: isCompactScreen ? 32 : 48)
-                            .padding(.horizontal, 36)
+                            .frame(height: isCompactScreen ? 26 : 38)
+                            .padding(.horizontal, 2)
+                            .padding(.top, isCompactScreen ? 4 : 8)
                     }
 
-                    Spacer(minLength: isCompactScreen ? 8 : 14)
+                    Spacer(minLength: isCompactScreen ? 6 : 10)
 
-                    songInfoView
-                        // ✅ M3E: la info entra con un slide vertical sutil y
-                        // fundido, escalonado 40 ms respecto a la portada
-                        // (stagger del entrance de M3E). Misma mecánica que la
-                        // portada: estado inicial fijo sin animación y resorte
-                        // desde onChange.
-                        .offset(y: infoOffset)
-                        .opacity(infoOpacity)
-
-                    Spacer(minLength: isCompactScreen ? 8 : 14)
-
-                    // ✅ FIX barra desaparecida: esta llamada era la única sin
-                    // `.frame(height:)`. Un `GeometryReader` suelto en un VStack
-                    // no tiene altura intrínseca (podía colapsar o comerse el
-                    // espacio de los Spacers). Misma altura que la barra
-                    // interactiva de PlayerBar/ProgressScrubView.
-                    // ✅ FASE 1 (remake): esta barra del layout compacto ya
-                    // busca de verdad (antes era un `onScrub` vacío).
-                    AuroraWavyProgress(
-                        progress: audioEngine.currentTime / max(audioEngine.duration, 1),
-                        isPlaying: audioEngine.isPlaying,
-                        isScrubbing: false,
-                        onScrub: { _ in },
-                        onScrubEnd: { newProgress in
-                            guard audioEngine.duration > 0 else { return }
-                            audioEngine.seek(to: audioEngine.duration * newProgress)
-                        }
+                    // ✅ Barra ondulada + tiempos justo ENCIMA de los controles
+                    // (orden de un reproductor Android, no debajo del título).
+                    ProgressScrubView(
+                        audioEngine: audioEngine,
+                        clock: clock,
+                        extractedColor: extractedColor,
+                        extractedSecondaryColor: extractedSecondaryColor,
+                        extractedUIColor: extractedUIColor,
+                        playIconColor: playIconColor,
+                        isCompactScreen: isCompactScreen
                     )
-                    .frame(height: 18)
+                    .frame(maxWidth: .infinity)
 
-                    Spacer(minLength: isCompactScreen ? 10 : 18)
+                    Spacer(minLength: isCompactScreen ? 2 : 6)
 
                     controlsView
 
@@ -323,12 +314,12 @@ struct NowPlayingView: View {
             // pantalla de reproducción.
             // ✅ M3E: sin `NavigationStack`; el detalle trae su propio top app
             // bar y `dismiss` cierra la pantalla completa.
-            .fullScreenCover(isPresented: $showArtistDetail) {
+            .m3eScreen(isPresented: $showArtistDetail) {
                 if let artist = currentArtist {
                     ArtistDetailView(artist: artist, audioEngine: audioEngine, fileAccessService: fileAccessService)
                 }
             }
-            .fullScreenCover(isPresented: $showAlbumDetail) {
+            .m3eScreen(isPresented: $showAlbumDetail) {
                 if let album = currentAlbum {
                     AlbumDetailView(album: album, audioEngine: audioEngine, fileAccessService: fileAccessService)
                 }
@@ -340,7 +331,7 @@ struct NowPlayingView: View {
             .fullScreenCover(isPresented: $showEqualizer) {
                 EqualizerView(audioEngine: audioEngine)
             }
-            .fullScreenCover(isPresented: $showQueue) {
+            .m3eScreen(isPresented: $showQueue) {
                 // ✅ E3.4: la cola necesita el servicio de archivos para el item
                 // "Me gusta" del menú de "A continuación". Ya vivía aquí al lado.
                 QueueView(audioEngine: audioEngine, fileAccessService: fileAccessService)
@@ -504,77 +495,64 @@ struct NowPlayingView: View {
 
     // MARK: - Song Info (mejorado con mejor tipografía y espaciado)
     private var songInfoView: some View {
-        VStack(spacing: 6) {
-            // ✅ SIN RESERVA: el header está anclado con safeAreaInset (a4243bb)
-            // y no depende de la altura de songInfoView, así que el título ocupa
-            // 1 o 2 líneas de forma natural (patrón Apple Music).
-            // ✅ Título con gradiente sutil del color extraído (mejor tipografía)
-            // ✅ 60fps: shadow removido del texto con gradiente (forzaba blur
-            // offscreen por frame; el gradiente ya da suficiente profundidad).
-            Text(audioEngine.currentSong?.displayName ?? Localization.localized("quality.noSong"))
-                .font(songTitleFont)
-                .multilineTextAlignment(.center)
-                .foregroundStyle(
-                    LinearGradient(
-                        colors: [playIconColor, playIconColor.opacity(0.85)],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
-                )
-                .lineLimit(2)
-
-            Text(audioEngine.currentSong?.displaySubtitle ?? "—")
-                // ✅ FASE 2 (M3E): labelLargeEmphasized (14/semibold), el rol
-                // de información secundaria (artista/álbum).
-                .font(M3ETypography.labelLargeEmphasized)
-                .foregroundStyle(AppTheme.contrastingText(on: extractedUIColor).opacity(0.75))
-                .lineLimit(1)
-                .padding(.horizontal, 20)
-
-            // ✅ SIN RESERVA: el chip solo aparece cuando corresponde. El header
-            // anclado con safeAreaInset (a4243bb) ya no depende de la altura de
-            // songInfoView, así que no hace falta espejar una caja worst-case.
-            if let song = audioEngine.currentSong, !song.audioQualityDescription.isEmpty {
-                Button {
-                    Haptics.light()
-                    showQualityDetail = true
-                } label: {
-                    HStack(spacing: 5) {
-                        Image(systemName: "waveform.circle.fill")
-                            .font(.system(size: 10, weight: .semibold))
-
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(song.audioQualityDescription)
-                                .font(qualityChipFont)
-
-                            if !audioEngine.routeDisplay.isEmpty {
-                                Text(audioEngine.routeDisplay)
-                                    .font(routeChipFont)
-                                    .foregroundStyle(playIconColor.opacity(0.7))
-                            }
-                        }
-
-                        Image(systemName: "chevron.down")
-                            .font(.system(size: 7, weight: .bold))
-                            .foregroundStyle(extractedColor.opacity(0.6))
-                    }
+        // ✅ GOLPE FINAL: bloque alineado a la IZQUIERDA. El corazón queda a la
+        // derecha de la fila (patrón Android); ya no se centra todo el bloque
+        // como una hoja de iOS.
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 5) {
+                Text(audioEngine.currentSong?.displayName ?? Localization.localized("quality.noSong"))
+                    .font(songTitleFont)
+                    .multilineTextAlignment(.leading)
                     .foregroundStyle(playIconColor)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background {
-                        Capsule().fill(accentGradient(primaryOpacity: 0.2, secondaryOpacity: 0.2))
-                    }
-                    .overlay {
-                        Capsule().strokeBorder(playIconColor.opacity(0.15), lineWidth: 0.5)
-                    }
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(Localization.localized("quality.viewDetails"))
-            }
+                    .lineLimit(2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
-            // ✅ Me gusta movido aquí: debajo de las ondas, junto a la info de
-            // calidad de la canción (antes estaba en la fila de transporte).
+                Text(audioEngine.currentSong?.displaySubtitle ?? "—")
+                    .font(M3ETypography.labelLargeEmphasized)
+                    .foregroundStyle(playIconColor.opacity(0.72))
+                    .lineLimit(1)
+
+                if let song = audioEngine.currentSong, !song.audioQualityDescription.isEmpty {
+                    Button {
+                        Haptics.light()
+                        showQualityDetail = true
+                    } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: "waveform.circle.fill")
+                                .font(.system(size: 10, weight: .semibold))
+
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(song.audioQualityDescription)
+                                    .font(qualityChipFont)
+
+                                if !audioEngine.routeDisplay.isEmpty {
+                                    Text(audioEngine.routeDisplay)
+                                        .font(routeChipFont)
+                                        .foregroundStyle(playIconColor.opacity(0.7))
+                                }
+                            }
+
+                            Image(systemName: "chevron.down")
+                                .font(.system(size: 7, weight: .bold))
+                                .foregroundStyle(extractedColor.opacity(0.6))
+                        }
+                        .foregroundStyle(playIconColor)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 7)
+                        .background {
+                            Capsule().fill(extractedColor.opacity(0.22))
+                        }
+                        .overlay {
+                            Capsule().strokeBorder(playIconColor.opacity(0.15), lineWidth: 0.5)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(Localization.localized("quality.viewDetails"))
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
             Button {
                 Haptics.light()
                 if let song = audioEngine.currentSong {
@@ -583,15 +561,19 @@ struct NowPlayingView: View {
             } label: {
                 Image(systemName: isCurrentLiked ? "heart.fill" : "heart")
                     .font(.system(size: 18, weight: isCurrentLiked ? .bold : .semibold))
-                    .foregroundStyle(isCurrentLiked ? Color.red : AppTheme.contrastingText(on: extractedUIColor).opacity(0.7))
-                    .frame(width: 44, height: 34)
-                    .contentShape(Rectangle())
+                    .foregroundStyle(isCurrentLiked ? Color.red : playIconColor.opacity(0.75))
+                    .frame(width: 42, height: 42)
+                    .background(
+                        Circle().fill(extractedColor.opacity(0.18))
+                    )
+                    .contentShape(Circle())
             }
             .buttonStyle(PressableButtonStyle(scale: AuroraPressScale.chip, pressedOpacity: 0.6))
             .animation(AuroraMotion.spatialFast, value: isCurrentLiked)
             .accessibilityLabel(Localization.localized("actions.like"))
         }
-        .padding(.horizontal, 6)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 2)
     }
 
     // MARK: - Progress View (scrub fluido a 60fps)
@@ -601,139 +583,116 @@ struct NowPlayingView: View {
 
     // MARK: - Controls
     private var controlsView: some View {
-        HStack(spacing: isCompactScreen ? 8 : 14) {
-            // Shuffle
-            Button {
-                Haptics.light()
+        // ✅ GOLPE FINAL: fila de transporte Android. El play deja de ser un
+        // círculo flotante y pasa a ser una PÍLDORA con icono + texto, con
+        // shuffle/prev/next/repeat a los lados.
+        HStack(spacing: isCompactScreen ? 2 : 6) {
+            transportIcon(
+                icon: "shuffle",
+                isActive: audioEngine.isShuffleEnabled,
+                accessibility: Localization.localized("accessibility.shuffle")
+            ) {
                 audioEngine.toggleShuffle()
-            } label: {
-                ZStack {
-                    Capsule()
-                        .fill(audioEngine.isShuffleEnabled
-                              ? AnyShapeStyle(textSafeAccentGradient(primaryOpacity: 0.45, secondaryOpacity: 0.45))
-                              : AnyShapeStyle(Color.clear))
-                        .frame(width: isCompactScreen ? 42 : 46, height: isCompactScreen ? 30 : 36)
-
-                    Image(systemName: "shuffle")
-                        .font(.system(size: isCompactScreen ? 15 : 17, weight: audioEngine.isShuffleEnabled ? .bold : .semibold))
-                        .foregroundStyle(audioEngine.isShuffleEnabled ? playIconColor : AppTheme.contrastingText(on: extractedUIColor).opacity(0.7))
-                }
-                .frame(width: isCompactScreen ? 56 : 64, height: isCompactScreen ? 56 : 64)
-                .contentShape(Rectangle())
             }
-            // ✅ Feedback de PRENSIÓN visible (antes .plain: sin reacción al tocar
-            // y el cambio de estado era casi invisible sobre la portada). El
-            // .animation(value:) colorea el icono AL INSTANTE al conmutar.
-            .buttonStyle(PressableButtonStyle(scale: AuroraPressScale.chip, pressedOpacity: 0.6))
             .animation(AuroraMotion.spatialFast, value: audioEngine.isShuffleEnabled)
 
-            // Previous
-            Button {
-                Haptics.light()
+            transportIcon(
+                icon: "backward.fill",
+                accessibility: Localization.localized("accessibility.previousSong")
+            ) {
                 audioEngine.playPrevious()
-            } label: {
-                ZStack {
-                    Circle().fill(controlBackground).frame(width: isCompactScreen ? 44 : 50, height: isCompactScreen ? 44 : 50)
-                    Image(systemName: "backward.fill")
-                        .font(.system(size: isCompactScreen ? 16 : 18, weight: .semibold))
-                        .foregroundStyle(playIconColor)
-                }
-                .frame(width: isCompactScreen ? 56 : 64, height: isCompactScreen ? 56 : 64)
-                .contentShape(Rectangle())
             }
-            // ✅ FASE 1 (remake): squish M3E (deformación corta con spatialFast).
-            .buttonStyle(M3ESquishButtonStyle())
 
-            // Play/Pause (icono con contraste)
-            Button {
-                Haptics.medium()
-                if audioEngine.isPlaying {
-                    audioEngine.pause()
-                } else {
-                    audioEngine.resume()
-                }
-            } label: {
-                ZStack {
-                    // ✅ M3E MORPH (la pieza central del rediseño): el fondo del
-                    // botón NO se sustituye, se TRANSFORMA. En pausa es un
-                    // círculo perfecto (invitación a tocar); al reproducir se
-                    // estira a un squircle continuo 12% más ancho (la forma
-                    // "en marcha" de M3E). La interpolación es una path
-                    // animation del propio shape (AuroraMorphShape.animatableData),
-    // la transformación más barata para la GPU: ni un render
-                    // pass extra, ni layout móvil (el frame exterior es fijo),
-                    // ni matchedGeometryEffect (eso reinstancia jerarquías y en
-                    // A11 provoca el micro-saltito que queremos evitar).
-                    AuroraMorphShape(
-                        cornerRadiusRatio: audioEngine.isPlaying ? 0.34 : 0.5,
-                        widthRatio: audioEngine.isPlaying ? 1.12 : 1.0
-                    )
-                    .fill(textSafeAccentGradient())
-                    .frame(width: isCompactScreen ? 62 : 72, height: isCompactScreen ? 62 : 72)
-                    // damping 0.68: es el rebote elástico "emphasized" de M3E,
-                    // el que se siente como goma al cambiar de estado.
-                    .animation(AuroraMotion.spatialDefault, value: audioEngine.isPlaying)
-                    // ✅ El icono sigue cambiando instantáneamente (sin .id() ni
-                    // transición de reemplazo — recreaba la vista entera y se
-                    // sentía lento en A11); el morph del fondo lleva toda la
-                    // expresión del cambio de estado.
-                    Image(systemName: audioEngine.isPlaying ? "pause.fill" : "play.fill")
-                        .font(.system(size: isCompactScreen ? 22 : 26, weight: .bold))
-                        .foregroundStyle(playIconColor)
-                }
-                .shadow(color: extractedColor.opacity(0.35), radius: 10, x: 0, y: 4)
-                .frame(width: isCompactScreen ? 76 : 88, height: isCompactScreen ? 76 : 88)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(PressableButtonStyle(scale: AuroraPressScale.circle, pressedOpacity: 0.8))
+            playPill
 
-            // Next
-            // ✅ Al final de la cola se atenúa y deja de responder (mismo criterio
-            //    que la barra): el estado se ve antes de pulsar.
-            Button {
-                Haptics.light()
+            transportIcon(
+                icon: "forward.fill",
+                enabled: audioEngine.hasNextTrack,
+                accessibility: Localization.localized("accessibility.nextSong")
+            ) {
                 audioEngine.playNext()
-            } label: {
-                ZStack {
-                    Circle().fill(controlBackground).frame(width: isCompactScreen ? 44 : 50, height: isCompactScreen ? 44 : 50)
-                    Image(systemName: "forward.fill")
-                        .font(.system(size: isCompactScreen ? 16 : 18, weight: .semibold))
-                        .foregroundStyle(playIconColor)
-                }
-                .frame(width: isCompactScreen ? 56 : 64, height: isCompactScreen ? 56 : 64)
-                .contentShape(Rectangle())
             }
-            // ✅ FASE 1 (remake): mismo squish que "anterior".
-            .buttonStyle(M3ESquishButtonStyle())
-            .opacity(audioEngine.hasNextTrack ? 1 : 0.4)
-            .disabled(!audioEngine.hasNextTrack)
 
-            // Repeat
-            Button {
-                Haptics.light()
+            transportIcon(
+                icon: repeatIcon,
+                isActive: audioEngine.repeatMode != .off,
+                accessibility: Localization.localized("accessibility.repeat")
+            ) {
                 audioEngine.cycleRepeatMode()
-            } label: {
-                ZStack {
-                    Capsule()
-                        .fill(audioEngine.repeatMode != .off
-                              ? AnyShapeStyle(textSafeAccentGradient(primaryOpacity: 0.45, secondaryOpacity: 0.45))
-                              : AnyShapeStyle(Color.clear))
-                        .frame(width: isCompactScreen ? 42 : 46, height: isCompactScreen ? 30 : 36)
-
-                    Image(systemName: repeatIcon)
-                        .font(.system(size: isCompactScreen ? 15 : 17, weight: audioEngine.repeatMode != .off ? .bold : .semibold))
-                        .foregroundStyle(audioEngine.repeatMode != .off ? playIconColor : AppTheme.contrastingText(on: extractedUIColor).opacity(0.7))
-                }
-                .frame(width: isCompactScreen ? 56 : 64, height: isCompactScreen ? 56 : 64)
-                .contentShape(Rectangle())
             }
-            // ✅ Mismo tratamiento que shuffle: feedback de presión visible y
-            // animación inmediata del icono (repeat → repeat.1 → off) al tocar.
-            .buttonStyle(PressableButtonStyle(scale: AuroraPressScale.chip, pressedOpacity: 0.6))
             .animation(AuroraMotion.spatialFast, value: audioEngine.repeatMode)
         }
         .frame(maxWidth: .infinity)
-        .fixedSize()
+    }
+
+    /// Píldora central de reproducción. Mantiene el morph de ancho de M3E
+    /// (más ancha al reproducir) pero con la forma de píldora que pide el
+    /// lenguaje Android, no un círculo.
+    private var playPill: some View {
+        Button {
+            Haptics.medium()
+            if audioEngine.isPlaying {
+                audioEngine.pause()
+            } else {
+                audioEngine.resume()
+            }
+        } label: {
+            HStack(spacing: 7) {
+                Image(systemName: audioEngine.isPlaying ? "pause.fill" : "play.fill")
+                    .font(.system(size: isCompactScreen ? 15 : 17, weight: .bold))
+
+                Text(audioEngine.isPlaying
+                     ? Localization.localized("actions.pause")
+                     : Localization.localized("actions.play"))
+                    .font(M3ETypography.labelLargeEmphasized)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+            }
+            .foregroundStyle(playIconColor)
+            .padding(.horizontal, isCompactScreen ? 13 : 20)
+            .frame(height: isCompactScreen ? 48 : 54)
+            .background(
+                Capsule(style: .continuous)
+                    .fill(textSafeAccentGradient())
+            )
+            .overlay(
+                Capsule(style: .continuous)
+                    .strokeBorder(playIconColor.opacity(0.12), lineWidth: 1)
+            )
+            .contentShape(Capsule(style: .continuous))
+        }
+        .buttonStyle(M3ESquishButtonStyle())
+        .accessibilityLabel(Localization.localized("accessibility.playPause"))
+    }
+
+    private func transportIcon(
+        icon: String,
+        isActive: Bool = false,
+        enabled: Bool = true,
+        accessibility: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button {
+            Haptics.light()
+            action()
+        } label: {
+            Image(systemName: icon)
+                .font(.system(size: isCompactScreen ? 15 : 17, weight: isActive ? .bold : .semibold))
+                .foregroundStyle(isActive ? playIconColor : playIconColor.opacity(0.72))
+                .frame(width: isCompactScreen ? 40 : 46, height: isCompactScreen ? 40 : 46)
+                .background {
+                    Circle().fill(
+                        isActive
+                            ? AnyShapeStyle(textSafeAccentGradient(primaryOpacity: 0.38, secondaryOpacity: 0.38))
+                            : AnyShapeStyle(Color.clear)
+                    )
+                }
+                .contentShape(Circle())
+        }
+        .buttonStyle(M3ESquishButtonStyle())
+        .disabled(!enabled)
+        .opacity(enabled ? 1 : 0.4)
+        .accessibilityLabel(accessibility)
     }
 
     // MARK: - Feature Buttons (EQ · Letras · Cola · AirPlay en una sola línea)
@@ -1067,7 +1026,7 @@ private struct ProgressScrubView: View {
             )
             .frame(maxWidth: .infinity)
             .frame(height: 18)
-            .padding(.vertical, 12)
+            .padding(.vertical, isCompactScreen ? 6 : 10)
 
             HStack {
                 Text(scrubPreviewText)

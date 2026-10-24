@@ -949,6 +949,18 @@ private enum LyricRowBuilder {
 // ✅ Struct (no clase) y sin envoltorios de tipo borrado: el cuerpo solo se
 //    re-evalúa cuando cambia el estado de activación; el TimelineView
 //    recalcula únicamente su contenido.
+/// ✅ Roboto también en el karaoke: el tamaño dinámico se conserva y solo
+/// cambia la familia/peso. Bold para las sílabas resaltadas, Medium para el
+/// resto (el karaoke no usa el rol emphasized de la interfaz).
+private func auroraLyricFont(size: CGFloat, weight: Font.Weight) -> Font {
+    switch weight {
+    case .bold, .heavy, .black:
+        return .custom("Roboto-Bold", size: size)
+    default:
+        return .custom("Roboto-Medium", size: size)
+    }
+}
+
 private struct LyricLineView: View, Equatable {
     let line: LyricsLine
     let isActive: Bool
@@ -1204,7 +1216,7 @@ private struct LyricLineView: View, Equatable {
         VStack(alignment: .leading, spacing: Self.rowSpacing) {
             ForEach(rows.indices, id: \.self) { index in
                 Text(rows[index].text)
-                    .font(.system(size: rows[index].fontSize, weight: fontWeight))
+                    .font(auroraLyricFont(size: rows[index].fontSize, weight: fontWeight))
                     .foregroundStyle(Color.primary.opacity(LyricDim.inactiveOpacity * opacityMultiplier))
                     // ✅ Misma escala/tenuidad que en la capa activa: el texto no
                     // puede cambiar de tamaño al activarse la línea.
@@ -1359,7 +1371,7 @@ private struct LyricFillText: View, Equatable {
     }
 
     private var font: Font {
-        .system(size: fontSize, weight: fontWeight)
+        auroraLyricFont(size: fontSize, weight: fontWeight)
     }
 
     private var dimmedLayer: some View {

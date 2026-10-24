@@ -8,7 +8,7 @@ struct QueueView: View {
     // ContentView / LibraryDetailViews / PlaylistsView). Se observa para que la
     // etiqueta del corazón siga al estado real.
     @ObservedObject var fileAccessService: FileAccessService
-    @Environment(\.dismiss) private var dismiss
+    @M3EDismiss private var dismiss
 
     @State private var selectedTab: QueueTab = .nextUp
     // ✅ M3E: namespace del morph del selector de pestañas (la cápsula activa

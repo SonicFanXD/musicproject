@@ -4,7 +4,7 @@ import UniformTypeIdentifiers
 struct SettingsView: View, SettingsRowBuilding {
     @ObservedObject var audioEngine: AudioEngine
     @ObservedObject var fileAccessService: FileAccessService
-    @Environment(\.dismiss) private var dismiss
+    @M3EDismiss private var dismiss
 
     @State private var showImporter = false
     @State private var showLogs = false

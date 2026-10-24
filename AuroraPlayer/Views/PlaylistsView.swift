@@ -3,7 +3,7 @@ import SwiftUI
 struct PlaylistsView: View {
     @ObservedObject var fileAccessService: FileAccessService
     @ObservedObject var audioEngine: AudioEngine
-    @Environment(\.dismiss) private var dismiss
+    @M3EDismiss private var dismiss
 
     @State private var showCreatePlaylist = false
     @State private var newPlaylistName = ""
@@ -52,7 +52,7 @@ struct PlaylistsView: View {
                     .scrollIndicators(.hidden)
                 }
             }
-        .fullScreenCover(item: $selectedPlaylist) { playlist in
+        .m3eScreen(item: $selectedPlaylist) { playlist in
             PlaylistDetailView(
                 playlist: playlist,
                 fileAccessService: fileAccessService,
@@ -329,7 +329,7 @@ struct PlaylistDetailView: View {
     let playlist: Playlist
     @ObservedObject var fileAccessService: FileAccessService
     @ObservedObject var audioEngine: AudioEngine
-    @Environment(\.dismiss) private var dismiss
+    @M3EDismiss private var dismiss
 
     @State private var showEditPlaylist = false
     @State private var editedName = ""

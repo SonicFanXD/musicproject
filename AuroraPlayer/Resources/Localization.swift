@@ -267,6 +267,7 @@ final class Localization: ObservableObject {
         "actions.done": [.spanish: "Listo", .english: "Done"],
         "actions.clearQueue": [.spanish: "Limpiar cola", .english: "Clear queue"],
         "actions.play": [.spanish: "Reproducir", .english: "Play"],
+        "actions.pause": [.spanish: "Pausar", .english: "Pause"],
         "actions.like": [.spanish: "Me Gusta", .english: "Like"],
         "actions.unlike": [.spanish: "Quitar de Me Gusta", .english: "Remove from Likes"],
         "actions.addToQueue": [.spanish: "Añadir a cola", .english: "Add to Queue"],
@@ -327,6 +328,8 @@ final class Localization: ObservableObject {
         "accessibility.previousSong": [.spanish: "Canción anterior", .english: "Previous song"],
         "accessibility.nextSong": [.spanish: "Siguiente canción", .english: "Next song"],
         "accessibility.playPause": [.spanish: "Reproducir/Pausar", .english: "Play/Pause"],
+        "accessibility.shuffle": [.spanish: "Aleatorio", .english: "Shuffle"],
+        "accessibility.repeat": [.spanish: "Repetir", .english: "Repeat"],
 
         // Equalizer
         "equalizer.title": [.spanish: "Ecualizador", .english: "Equalizer"],

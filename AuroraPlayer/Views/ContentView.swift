@@ -275,25 +275,25 @@ struct ContentView: View {
                         }
                     }
                 }
-                // ✅ REMAKE: fuera el NavigationStack y su toolbar. La
-                // navegación ahora es M3E: header propio con título + acciones
-                // y pantallas completas (fullScreenCover) para el resto.
-                .fullScreenCover(isPresented: $showSettings) {
+                // ✅ GOLPE FINAL: la navegación es M3E de verdad. Las pantallas
+                // entran con la transición lateral shared-axis X (m3eScreen),
+                // no con el slide-up vertical de `fullScreenCover`.
+                .m3eScreen(isPresented: $showSettings) {
                     SettingsView(audioEngine: audioEngine, fileAccessService: fileAccessService)
                 }
-                .fullScreenCover(isPresented: $showPlaylists) {
+                .m3eScreen(isPresented: $showPlaylists) {
                     PlaylistsView(fileAccessService: fileAccessService, audioEngine: audioEngine)
                 }
                 // ✅ M3E estricto: CERO `NavigationStack` en la app. Los
                 // detalles presentan su propio top app bar (M3ENavigationBar) y
                 // se cierran con `dismiss`, igual que una activity de Android.
-                .fullScreenCover(item: $selectedAlbum) { album in
+                .m3eScreen(item: $selectedAlbum) { album in
                     AlbumDetailView(album: album, audioEngine: audioEngine, fileAccessService: fileAccessService)
                 }
-                .fullScreenCover(item: $selectedArtist) { artist in
+                .m3eScreen(item: $selectedArtist) { artist in
                     ArtistDetailView(artist: artist, audioEngine: audioEngine, fileAccessService: fileAccessService)
                 }
-                .fullScreenCover(item: $selectedPlaylist) { playlist in
+                .m3eScreen(item: $selectedPlaylist) { playlist in
                     PlaylistDetailView(playlist: playlist, fileAccessService: fileAccessService, audioEngine: audioEngine)
                 }
                 .onAppear {
@@ -403,8 +403,8 @@ struct ContentView: View {
                     heroNamespace: nowPlayingNamespace,
                     onOpenNowPlaying: openNowPlaying
                 )
-                .padding(.horizontal, 10)
-                .padding(.bottom, 6)
+                .padding(.horizontal, 14)
+                .padding(.bottom, 8)
             }
         }
         // ✅ FIX ORDEN SPLASH: el splash sale del ZStack raíz y pasa a ser un
@@ -1466,12 +1466,12 @@ struct SplashView: View {
                 // sustituye al gradiente diagonal giratorio sin coste por frame.
                 VStack(spacing: AuroraSpacing.md) {
                     Text("AURORA")
-                        .font(.system(size: 68, weight: .heavy, design: .rounded))
+                        .font(.custom("Roboto-Bold", size: 68))
                         .tracking(9)
                         .foregroundStyle(AppTheme.accentGradient)
                     
                     Text("PLAYER")
-                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        .font(.custom("Roboto-Medium", size: 12))
                         .tracking(5)
                         .foregroundStyle(.secondary)
                     

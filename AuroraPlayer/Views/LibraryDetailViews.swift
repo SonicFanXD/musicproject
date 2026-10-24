@@ -139,7 +139,7 @@ struct AlbumDetailView: View {
     // ✅ Inyectado (mismo patrón que NowPlayingView/PlayerBar): lo necesitan las
     // acciones rápidas de las filas (añadir a la cola y me gusta).
     @ObservedObject var fileAccessService: FileAccessService
-    @Environment(\.dismiss) private var dismiss
+    @M3EDismiss private var dismiss
 
     // ✅ ACENTO UNIFICADO: el par de la carátula lo resuelve y publica
     // ThemeManager (una sola pasada + caché por huella de imagen).
@@ -847,7 +847,7 @@ struct ArtistDetailView: View {
     @ObservedObject var audioEngine: AudioEngine
     // ✅ Inyectado: acciones rápidas de las filas (cola y me gusta).
     @ObservedObject var fileAccessService: FileAccessService
-    @Environment(\.dismiss) private var dismiss
+    @M3EDismiss private var dismiss
 
     @State private var appearAnimation = false
     // ? OPT: blur precalculado UNA vez (en background)
@@ -993,7 +993,7 @@ struct ArtistDetailView: View {
             }
             // ? OPT: precalcular el blur del hero UNA vez en background
             }
-        .fullScreenCover(item: $selectedAlbum) { album in
+        .m3eScreen(item: $selectedAlbum) { album in
             AlbumDetailView(album: album, audioEngine: audioEngine, fileAccessService: fileAccessService)
         }
         }

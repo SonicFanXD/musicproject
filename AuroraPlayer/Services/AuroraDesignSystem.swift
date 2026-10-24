@@ -19,12 +19,13 @@ import UIKit
 //    .artworkAccentColor / .artworkSecondaryColor. NUNCA extraer localmente.
 //
 // REGLAS DE TIPOGRAFÍA (PARTE 2.8 del contrato):
-//  · Título de hero (26-30pt): .system(size:, weight: .bold, design: .rounded)
-//  · Título de sección (18-20pt): .system(size:, weight: .bold, design: .rounded)
-//  · Título de fila (15-16pt): .system(size:, weight: .semibold, design: .rounded)
-//  · Subtítulo de fila (12-13pt): .system(size:) SIN .rounded (contraste)
-//  · Datos numéricos (duración, kbps, FPS): .monospacedDigit()
-//  · Chips y pills (10-13pt): .system(size:, weight: .semibold, design: .rounded)
+//  · Toda la interfaz usa ROBOTO (Resources/Fonts, registrada en Info.plist).
+//  · Títulos y énfasis: M3ETypography.titleLargeEmphasized / headlineSmall...
+//    (Roboto Medium: el corte 500 es el peso de énfasis real de Android).
+//  · Cuerpo y subtítulos: M3ETypography.bodyMedium / labelLargeEmphasized.
+//  · Datos numéricos (duración, kbps, FPS): .monospacedDigit().
+//  · Chips y pills: M3ETypography.labelLargeEmphasized.
+//  · No se usa `.system(design: .rounded)`: esa curva delata el look iOS.
 // ─────────────────────────────────────────────────────────────────────────
 
 // MARK: - Radii

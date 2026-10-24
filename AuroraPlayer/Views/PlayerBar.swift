@@ -1,59 +1,41 @@
 import SwiftUI
 
+// ══════════════════════════════════════════════════════════════════════════
+// PLAYER BAR — mini reproductor flotante con lenguaje Android/M3E.
+//
+// · Superficie tonal sólida (`M3ETonalSurface`), radio 28 y separación de los
+//   bordes: es una barra que FLOTA sobre la biblioteca, no un dock pegado.
+// · El play es una píldora con icono + texto ("Reproducir"/"Pausar"), no el
+//   círculo de iOS.
+// · La onda de progreso vive entre anterior/siguiente, en una segunda fila,
+//   con el gesto de scrub dentro del propio componente.
+// · Sin halo `repeatForever`: el único movimiento continuo es la onda y se
+//   detiene al pausar (`TimelineView` pausado).
+// ══════════════════════════════════════════════════════════════════════════
+
 struct PlayerBar: View {
     @ObservedObject var audioEngine: AudioEngine
     @ObservedObject var fileAccessService: FileAccessService
-    // ✅ FIX TÁCTIL: el reloj de reproducción YA NO se observa en PlayerBar.
-    // Vive en la subvista PlayerScrubBar (la única que necesita el tiempo).
-    // Antes, cada tick (0.4s) re-renderizaba TODA la barra incluidos los
-    // botones, y un re-render justo en el instante del toque descartaba el
-    // primer tap → los botones a veces requerían dos pulsaciones.
+    // El reloj de reproducción YA NO se observa aquí: vive en la subvista
+    // PlayerScrubBar, la única que necesita el tiempo. Así cada tick (0.4 s)
+    // no re-renderiza los botones y el primer toque nunca se pierde.
     var clock: PlaybackClock
-    // ✅ REMAKE: NowPlaying ya no se presenta desde aquí con un sheet. La
-    // portada de la barra y la de NowPlaying comparten namespace para que el
-    // hero animation viaje entre ambas geometrías.
+    // La portada de la barra y la de NowPlaying comparten namespace para que
+    // el hero viaje entre ambas geometrías.
     var heroNamespace: Namespace.ID
     var onOpenNowPlaying: () -> Void
-    // ✅ Observar el idioma: al cambiar, esta vista se re-renderiza al instante
+
     @ObservedObject private var localization = Localization.shared
+    @ObservedObject private var theme = ThemeManager.shared
 
-    // Animaciones optimizadas (una sola @State, triggers discretos = 60fps)
-    @State private var playButtonScale: CGFloat = 1.0
-
-    // ✅ Esquinas del artwork sincronizadas con el ajuste de Apariencia
     @AppStorage("com.aurora.artworkCorner") private var artworkCorner: Double = 22
     @AppStorage("com.aurora.compactPlayerBar") private var compactPlayerBar = false
-    // ✅ Ajuste "Visualizador en barra" (antes no se aplicaba)
     @AppStorage("com.aurora.showVisualizerInBar") private var showVisualizerInBar = true
 
-    // ✅ Observar ThemeManager para que los cambios de acento (manual o desde carátula)
-    // se apliquen instantáneamente sin necesidad de cambiar de canción.
-    @ObservedObject private var theme = ThemeManager.shared
-    // ✅ CRÍTICO - BATERÍA: observar scenePhase para detener animaciones en segundo plano
-    @Environment(\.scenePhase) private var scenePhase
+    private var artworkSide: CGFloat { compactPlayerBar ? 44 : 48 }
 
-    // ✅ Color dominante del artwork para indicadores dinámicos
-    // Observa ThemeManager: si "Acento desde portada" está activo, usa el color
-    // publicado (re-render instantáneo). Si no, usa el acento manual del tema.
-    private var artworkDominantColor: Color {
-        if theme.accentFromArtwork, let artworkColor = theme.artworkAccentColor {
-            return artworkColor
-        }
-        return theme.accent
-    }
+    // MARK: - Acento
 
-    /// ✅ BATERÍA: el halo del botón de play solo late con la app en primer plano.
-    /// El `.onChange(of: scenePhase)` que había antes estaba VACÍO (con un
-    /// comentario que prometía detener la animación), así que el `repeatForever`
-    /// seguía consumiendo CPU/GPU en segundo plano.
-    private var isHaloAnimating: Bool {
-        audioEngine.isPlaying && scenePhase != .background
-    }
-
-    /// ✅ Par de colores del acento (SIEMPRE dos): con "Acento desde portada" usa
-    /// el color dominante de la carátula + su secundario REAL; con el modo
-    /// desactivado, el acento manual con su segunda parada al 40% (mismo criterio
-    /// que `AppTheme.accentGradient`).
     private var accentPair: (primary: Color, secondary: Color) {
         if theme.accentFromArtwork, let artworkColor = theme.artworkAccentColor {
             return (artworkColor, theme.artworkSecondaryColor ?? artworkColor.opacity(0.7))
@@ -61,8 +43,6 @@ struct PlayerBar: View {
         return (theme.accent, theme.accent.opacity(0.4))
     }
 
-    /// ✅ Gradiente de DOS colores con opacidad por parada: sustituye los antiguos
-    /// `[color, color.opacity(x)]`, que eran de un solo color.
     private func accentGradient(
         start: UnitPoint = .topLeading,
         end: UnitPoint = .bottomTrailing,
@@ -77,11 +57,9 @@ struct PlayerBar: View {
         )
     }
 
-    /// ✅ Superficies con GLIFO BLANCO encima (botón de play): mismo criterio que
-    /// Album/Artist detail — si el secundario de la carátula difiere MUCHO en
-    /// brillo del primario, se conserva su TONO pero se ancla su brillo al del
-    /// primario. El degradado sigue siendo de dos colores reales y la legibilidad
-    /// del icono blanco queda igual que antes de este cambio.
+    /// Si el secundario de la carátula difiere MUCHO en brillo del primario, se
+    /// conserva su TONO pero se ancla su brillo al del primario: el glifo del
+    /// play mantiene contraste sin perder el color real de la portada.
     private func textSafeAccentGradient() -> LinearGradient {
         let pair = accentPair
         var secondaryStop = pair.secondary
@@ -99,312 +77,190 @@ struct PlayerBar: View {
         )
     }
 
+    private var playGlyphColor: Color {
+        if theme.accentFromArtwork, let accent = theme.artworkAccentUIColor {
+            return AppTheme.contrastingText(on: accent)
+        }
+        return AppTheme.contrastingText(on: AppTheme.accentUIColor)
+    }
+
+    // MARK: - Body
+
     var body: some View {
         Group {
             if let song = audioEngine.currentSong {
                 VStack(spacing: 0) {
                     HStack(spacing: 12) {
-                        // ✅ Artwork con mejor calidad y animación
                         artwork(for: song)
 
-                        // ✅ Song info con tap target expandido
-                        HStack(spacing: 10) {
+                        HStack(spacing: 8) {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(song.title)
-                                    .font(M3ETypography.titleLargeEmphasized)
-                                    .foregroundStyle(.primary)
+                                    .font(M3ETypography.titleMediumEmphasized)
+                                    .foregroundStyle(M3EColor.onSurface)
                                     .lineLimit(1)
 
                                 Text(song.artist.isEmpty ? Localization.localized("details.unknownArtist") : song.artist)
-                                    .font(M3ETypography.labelLargeEmphasized)
-                                    .foregroundStyle(.secondary)
+                                    .font(M3ETypography.bodyMedium)
+                                    .foregroundStyle(M3EColor.onSurfaceVariant)
                                     .lineLimit(1)
                             }
 
-                            // ✅ Visualizador compacto junto al título (cambia con isPlaying,
-                            // no con cada tick de reloj)
                             if showVisualizerInBar {
-                                // ✅ Mismo sistema de DOS colores que el resto de la barra:
-                                // el degradado de las barras usa el secundario real de la
-                                // carátula (nil con el modo desactivado → cae al actual).
                                 AudioVisualizer(
                                     audioEngine: audioEngine,
                                     secondaryTintColor: theme.artworkSecondaryColor
                                 )
-                                    .frame(width: 18, height: 14)
-                                    // ✅ iOS 16 compatible: animar opacidad con value: isPlaying
-                                    // (audioEngine es ObservedObject → re-renderiza al cambiar)
-                                    .opacity(audioEngine.isPlaying ? 1 : 0)
-                                    // ✅ M3E: toda transición de estado de la app
-                                    // usa los springs del sistema (no easings lineales).
-                                    .animation(AuroraMotion.spatialFast, value: audioEngine.isPlaying)
+                                .frame(width: 18, height: 14)
+                                .opacity(audioEngine.isPlaying ? 1 : 0)
+                                .animation(AuroraMotion.spatialFast, value: audioEngine.isPlaying)
                             }
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .contentShape(Rectangle())
-                        .padding(.vertical, 6)
-                        .onTapGesture {
-                            openNowPlaying()
-                        }
+                        .onTapGesture { openNowPlaying() }
 
-                        // ✅ Botón de me gusta con material de vidrio (estilo NowPlayingView)
-                        Button {
-                            Haptics.light()
-                            fileAccessService.toggleLike(song)
-                        } label: {
-                            Image(systemName: fileAccessService.isLiked(song) ? "heart.fill" : "heart")
-                                .font(.system(size: 15, weight: .semibold))
-                                .foregroundStyle(fileAccessService.isLiked(song) ? .red : .secondary)
-                                .frame(width: 38, height: 38)
-                                .background {
-                                    // ✅ M3E: contenedor SÓLIDO (el glyph ya es
-                                    // `.primary`/`.red`), mismo Shape y tamaño.
-                                    Circle().fill(M3EColor.surfaceContainerHigh)
-                                        .frame(width: 38, height: 38)
-                                }
-                                .contentShape(Circle())
-                        }
-                        .buttonStyle(PressableButtonStyle(scale: 0.9))
+                        likeButton(for: song)
 
-                        // ✅ Controles rediseñados con mejor feedback visual
-                        HStack(spacing: 4) {
-                            // ✅ Previous con material de vidrio (estilo NowPlayingView)
-                            Button {
-                                Haptics.light()
-                                audioEngine.playPrevious()
-                            } label: {
-                                Image(systemName: "backward.fill")
-                                    .font(.system(size: 15, weight: .semibold))
-                                    .foregroundStyle(.primary)
-                                    .frame(width: 42, height: 42)
-                                    .background {
-                                        // ✅ M3E tonal: el contenedor del transporte
-                                        // se tiñe con el acento al 15 % (no un gris
-                                        // neutro con look iOS).
-                                        Circle()
-                                            .fill(AppTheme.accent.opacity(0.15))
-                                            .overlay(
-                                                Circle().strokeBorder(AppTheme.accent.opacity(0.2), lineWidth: 1)
-                                            )
-                                    }
-                                    .contentShape(Circle())
-                                    .scaleEffect(playButtonScale)
-                            }
-                            .buttonStyle(M3ESquishButtonStyle())
-                            .accessibilityLabel(Localization.localized("accessibility.previousSong"))
-
-                            // ✅ Play/Pause con animación de escala y halo
-                            Button {
-                                animatePlayButton()
-                                Haptics.light()
-                                if audioEngine.isPlaying {
-                                    audioEngine.pause()
-                                } else {
-                                    audioEngine.resume()
-                                }
-                            } label: {
-                                ZStack {
-                                    // ✅ M3E MORPH: mismo lenguaje de forma que el
-                                    // play de NowPlaying (círculo → squircle con
-                                    // el mismo resorte). `AuroraMorphShape`
-                                    // interpola SU path (GPU barata); el halo y
-                                    // el icono no se tocan.
-                                    // ✅ PRIORIDAD 3: en la barra el botón mide
-                                    // 40/44 pt y sus vecinos están a 4 pt, así que el
-                                    // estirado se limita a 1.06 (≈1.3 pt por lado): el
-                                    // morph se lee igual pero NUNCA roza los botones
-                                    // de al lado. El 1.12 se reserva para NowPlaying,
-                                    // donde el frame exterior (76/88) deja margen.
-                                    // Ninguno de los dos afecta al LAYOUT: el shape
-                                    // dibuja fuera de su rect y el frame es fijo, de
-                                    // modo que pausar/reanudar no mueve nada.
-                                    AuroraMorphShape(
-                                        cornerRadiusRatio: audioEngine.isPlaying ? 0.34 : 0.5,
-                                        widthRatio: audioEngine.isPlaying ? 1.06 : 1.0
-                                    )
-                                        .fill(textSafeAccentGradient())
-                                        .animation(AuroraMotion.spatialDefault, value: audioEngine.isPlaying)
-
-                                    // ✅ FASE 1 (bucle infinito): el halo ya NO usa
-                                    // `repeatForever`. La fase se calcula con la fecha de
-                                    // cada frame que entrega el TimelineView; al pausar o
-                                    // al pasar a segundo plano el TimelineView se pausa y
-                                    // no queda ninguna transacción rearmándose en cada
-                                    // re-render (el origen del "bucle atascado").
-                                    TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !isHaloAnimating)) { timeline in
-                                        let phase = CGFloat((sin(2 * Double.pi * timeline.date.timeIntervalSinceReferenceDate / 1.6) + 1) / 2)
-                                        Circle()
-                                            .stroke(accentGradient(primaryOpacity: 0.5, secondaryOpacity: 0.35), lineWidth: 2)
-                                            .scaleEffect(isHaloAnimating ? 1.0 + 0.15 * phase : 1.0)
-                                            .opacity(isHaloAnimating ? Double(0.35 + 0.65 * phase) : 0)
-                                    }
-
-                                    Image(systemName: audioEngine.isPlaying ? "pause.fill" : "play.fill")
-                                        .font(.system(size: 16, weight: .bold))
-                                        .foregroundStyle(.white)
-                                }
-                                .frame(width: compactPlayerBar ? 40 : 44, height: compactPlayerBar ? 40 : 44)
-                                .shadow(color: artworkDominantColor.opacity(0.4), radius: 10, x: 0, y: 4)
-                                .scaleEffect(playButtonScale)
-                                .contentShape(Circle())
-                            }
-                            .buttonStyle(PressableButtonStyle(scale: 0.88))
-                            .accessibilityLabel(Localization.localized("accessibility.playPause"))
-
-                            // ✅ Next con material de vidrio (estilo NowPlayingView)
-                            // ✅ Al final de la cola el botón se atenúa y deja de
-                            //    responder: el estado se ve antes de pulsar, en vez
-                            //    de descubrir en silencio que no había siguiente.
-                            Button {
-                                Haptics.light()
-                                audioEngine.playNext()
-                            } label: {
-                                Image(systemName: "forward.fill")
-                                    .font(.system(size: 15, weight: .semibold))
-                                    .foregroundStyle(.primary)
-                                    .frame(width: 42, height: 42)
-                                    .background {
-                                        // ✅ M3E tonal: el contenedor del transporte
-                                        // se tiñe con el acento al 15 % (no un gris
-                                        // neutro con look iOS).
-                                        Circle()
-                                            .fill(AppTheme.accent.opacity(0.15))
-                                            .overlay(
-                                                Circle().strokeBorder(AppTheme.accent.opacity(0.2), lineWidth: 1)
-                                            )
-                                    }
-                                    .contentShape(Circle())
-                            }
-                            .buttonStyle(M3ESquishButtonStyle())
-                            .opacity(audioEngine.hasNextTrack ? 1 : 0.4)
-                            .disabled(!audioEngine.hasNextTrack)
-                            .accessibilityLabel(Localization.localized("accessibility.nextSong"))
-                        }
+                        playPill
                     }
                     .padding(.leading, 14)
                     .padding(.trailing, 10)
-                    .padding(.top, compactPlayerBar ? 8 : 12)
-                    .padding(.bottom, 4)
+                    .padding(.top, compactPlayerBar ? 8 : 10)
+                    .padding(.bottom, 2)
 
-                    // ✅ BARRA AISLADA: única subvista que observa el reloj (0.4s).
-                    // Los botones ya no se re-renderizan en cada tick → responden
-                    // siempre al primer toque.
                     PlayerScrubBar(
                         audioEngine: audioEngine,
                         clock: clock,
                         onOpenNowPlaying: { openNowPlaying() }
                     )
                 }
-                // ✅ AURORA DESIGN: el contenedor nivel 1 de la app usa ya la card del
-                // sistema. Coincidencia EXACTA, no cambia nada: radio 34 =
-                // AuroraRadius.xxl y sombra 0.18/20/8 = AuroraShadow.medium. Va con
-                // `withBorder: false` porque su borde es propio (gradiente de TRES
-                // paradas blanco 0.15 → 0.03 → clear, que el borde estándar del
-                // sistema no reproduce): se conserva como overlay DESPUÉS del card.
-                // `auroraCard` añade clipShape (radio 34): verificado que ningún
-                // contenido cae en las esquinas recortadas (el artwork empieza en
-                // 14/12pt y la barra de progreso queda a 18pt de los bordes).
-                // ✅ M3E: la barra es un CONTENEDOR SÓLIDO (SurfaceContainer), no
-                // vidrio. Sin `.ultraThinMaterial` no hay pase offscreen por frame
-                // sobre la lista que se desplaza debajo.
-                // ✅ FASE 2/3 (remake): superficie tonal M3E —base sólida +
-                // acento al 8 % + borde al 20 %— sin sombra, material ni blur.
                 .background(
                     M3ETonalSurface(
-                        cornerRadius: AuroraRadius.xxl,
+                        cornerRadius: 28,
                         tint: theme.accent
                     )
                 )
-                .clipShape(RoundedRectangle(cornerRadius: AuroraRadius.xxl, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
             }
         }
     }
 
-    // MARK: - Animaciones optimizadas
+    // MARK: - Play (píldora Android)
 
-    /// Animación de feedback del botón play (spring discreto, no repeatForever).
-    /// ✅ M3E: el rebote de la liberación usa el spring *emphasized* — el mismo
-    /// lenguaje de resorte que el morph del play en NowPlaying. El 0.88 previo
-    /// se mantiene (era la calibración ya validada en dispositivo).
-    private func animatePlayButton() {
-        playButtonScale = 0.88
-        withAnimation(AuroraMotion.spatialDefault) {
-            playButtonScale = 1.0
+    private var playPill: some View {
+        Button {
+            Haptics.light()
+            if audioEngine.isPlaying {
+                audioEngine.pause()
+            } else {
+                audioEngine.resume()
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: audioEngine.isPlaying ? "pause.fill" : "play.fill")
+                    .font(.system(size: 14, weight: .bold))
+
+                Text(audioEngine.isPlaying
+                     ? Localization.localized("actions.pause")
+                     : Localization.localized("actions.play"))
+                    .font(M3ETypography.labelLargeEmphasized)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+            }
+            .foregroundStyle(playGlyphColor)
+            .padding(.horizontal, 12)
+            .frame(height: 40)
+            .background(
+                Capsule(style: .continuous)
+                    .fill(textSafeAccentGradient())
+            )
+            .overlay(
+                Capsule(style: .continuous)
+                    .strokeBorder(playGlyphColor.opacity(0.12), lineWidth: 1)
+            )
+            .contentShape(Capsule(style: .continuous))
         }
+        .buttonStyle(M3ESquishButtonStyle())
+        .accessibilityLabel(Localization.localized("accessibility.playPause"))
+    }
+
+    // MARK: - Like
+
+    private func likeButton(for song: Song) -> some View {
+        Button {
+            Haptics.light()
+            fileAccessService.toggleLike(song)
+        } label: {
+            Image(systemName: fileAccessService.isLiked(song) ? "heart.fill" : "heart")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(fileAccessService.isLiked(song) ? .red : M3EColor.onSurfaceVariant)
+                .frame(width: 36, height: 36)
+                .background(
+                    Circle().fill(M3EColor.surfaceContainerHigh)
+                )
+                .contentShape(Circle())
+        }
+        .buttonStyle(PressableButtonStyle(scale: 0.9))
+    }
+
+    // MARK: - Artwork
+
+    private func artwork(for song: Song) -> some View {
+        Group {
+            if let art = song.artwork {
+                // Miniatura 96 px (48 pt @2x) en vez de la 768 px completa.
+                Image(uiImage: AppTheme.thumbnail(from: art, size: CGSize(width: 96, height: 96)))
+                    .resizable()
+                    .interpolation(.high)
+                    .scaledToFill()
+                    .frame(width: artworkSide, height: artworkSide)
+                    .clipShape(RoundedRectangle(cornerRadius: CGFloat(artworkCorner * (14.0 / 22.0)), style: .continuous))
+                    .shadow(color: .black.opacity(0.18), radius: 6, x: 0, y: 3)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: CGFloat(artworkCorner * (14.0 / 22.0)), style: .continuous)
+                            .stroke(
+                                accentGradient(primaryOpacity: 0.6, secondaryOpacity: 0.45)
+                                    .opacity(audioEngine.isPlaying ? 1.0 : 0.0),
+                                lineWidth: 2
+                            )
+                            .animation(AuroraMotion.spatialFast, value: audioEngine.isPlaying)
+                    )
+                    .contentShape(Rectangle())
+                    .onTapGesture { openNowPlaying() }
+            } else {
+                ZStack {
+                    RoundedRectangle(cornerRadius: CGFloat(artworkCorner * (14.0 / 22.0)), style: .continuous)
+                        .fill(accentGradient(primaryOpacity: 0.32, secondaryOpacity: 0.18))
+                        .frame(width: artworkSide, height: artworkSide)
+
+                    Image(systemName: audioEngine.isPlaying ? "waveform" : "music.note")
+                        .font(.system(size: 20, weight: .medium))
+                        .foregroundStyle(theme.accent)
+                        .animation(AuroraMotion.spatialFast, value: audioEngine.isPlaying)
+                }
+                .contentShape(Rectangle())
+                .onTapGesture { openNowPlaying() }
+            }
+        }
+        // Hero: la MISMA portada de NowPlaying lleva el id compartido.
+        .matchedGeometryEffect(id: "nowPlaying.artwork", in: heroNamespace)
     }
 
     private func openNowPlaying() {
         onOpenNowPlaying()
     }
-
-    // MARK: - Artwork (calidad alta, animación sutil = 60fps)
-    private func artwork(for song: Song) -> some View {
-        Group {
-        if let art = song.artwork {
-            // ✅ ANTI-JETSAM: miniatura 96px (48pt @2x) en vez de la 768px completa.
-            Image(uiImage: AppTheme.thumbnail(from: art, size: CGSize(width: 96, height: 96)))
-                .resizable()
-                .interpolation(.high) // ✅ Mejor calidad de interpolación
-                .scaledToFill()
-                .frame(width: 48, height: 48)
-                .clipShape(RoundedRectangle(cornerRadius: CGFloat(artworkCorner * (14.0 / 22.0)), style: .continuous))
-                .shadow(color: .black.opacity(0.18), radius: 6, x: 0, y: 3)
-                .overlay(
-                    // ✅ Indicador de reproducción con color dinámico del artwork
-                    RoundedRectangle(cornerRadius: CGFloat(artworkCorner * (14.0 / 22.0)), style: .continuous)
-                        .stroke(
-                            accentGradient(primaryOpacity: 0.6, secondaryOpacity: 0.45)
-                                .opacity(audioEngine.isPlaying ? 1.0 : 0.0),
-                            lineWidth: 2
-                        )
-                        .animation(AuroraMotion.spatialFast, value: audioEngine.isPlaying)
-                )
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    openNowPlaying()
-                }
-        } else {
-            ZStack {
-                RoundedRectangle(cornerRadius: CGFloat(artworkCorner * (14.0 / 22.0)), style: .continuous)
-                    .fill(
-                        accentGradient(primaryOpacity: 0.32, secondaryOpacity: 0.18)
-                    )
-                    .frame(width: 48, height: 48)
-                    .shadow(color: artworkDominantColor.opacity(0.2), radius: 6, x: 0, y: 3)
-
-                Image(systemName: audioEngine.isPlaying ? "waveform" : "music.note")
-                    .font(.system(size: 20, weight: .medium))
-                    .foregroundStyle(artworkDominantColor)
-                    .animation(AuroraMotion.spatialFast, value: audioEngine.isPlaying)
-            }
-            .contentShape(Rectangle())
-            .onTapGesture {
-                openNowPlaying()
-            }
-        }
-        }
-        // Hero: la MISMA portada de NowPlaying lleva el id compartido. Al abrir
-        // o cerrar, SwiftUI interpola el frame entre 48 y ~340 pt.
-        .matchedGeometryEffect(id: "nowPlaying.artwork", in: heroNamespace)
-    }
 }
 
-// MARK: - Barra de progreso aislada (única vista que observa el reloj)
-// ✅ FIX TÁCTIL: al separar el reloj aquí, los botones de PlayerBar ya no se
-// re-renderizan cada 0.4s y responden siempre al primer toque.
+// MARK: - Onda + anterior/siguiente (única vista que observa el reloj)
+
 private struct PlayerScrubBar: View {
     @ObservedObject var audioEngine: AudioEngine
     @ObservedObject var clock: PlaybackClock
     var onOpenNowPlaying: () -> Void
 
-    @ObservedObject private var theme = ThemeManager.shared
-    @AppStorage("com.aurora.compactPlayerBar") private var compactPlayerBar = false
-
-    // ✅ Scrub optimizado: preview local a 60fps, seek real solo al soltar
     @State private var isScrubbing = false
     @State private var scrubPreviewProgress: Double = 0
-    // ✅ Inicializar scrub con progreso actual para evitar salto a 0
-    @State private var scrubStartProgress: Double = 0
 
     private var progress: Double {
         if isScrubbing { return scrubPreviewProgress }
@@ -412,67 +268,65 @@ private struct PlayerScrubBar: View {
         return min(max(clock.time / audioEngine.duration, 0), 1)
     }
 
-    /// Progreso actual real (para inicializar scrub sin salto)
     private var currentProgress: Double {
         guard audioEngine.duration > 0 else { return 0 }
         return min(max(clock.time / audioEngine.duration, 0), 1)
     }
 
-    /// ✅ Par de colores del acento (SIEMPRE dos): dominante + secundario real de
-    /// la carátula con "Acento desde portada"; acento manual + su segunda parada
-    /// al 40% si el modo está desactivado.
-    private var accentPair: (primary: Color, secondary: Color) {
-        if theme.accentFromArtwork, let artworkColor = theme.artworkAccentColor {
-            return (artworkColor, theme.artworkSecondaryColor ?? artworkColor.opacity(0.7))
-        }
-        return (theme.accent, theme.accent.opacity(0.4))
-    }
-
     var body: some View {
-        // ✅ FASE 1 (remake): el gesto vive DENTRO de `AuroraWavyProgress`.
-        // La vista anfitriona solo recibe el preview (`onScrub`), el seek
-        // único al soltar (`onScrubEnd`) y el toque sin arrastre (`onTap`).
-        // Así no hay dos DragGesture compitiendo por el mismo toque.
-        AuroraWavyProgress(
-            progress: progress,
-            isPlaying: audioEngine.isPlaying,
-            isScrubbing: isScrubbing,
-            onScrub: { newProgress in
-                guard audioEngine.duration > 0 else { return }
-                if !isScrubbing { startScrubbing() }
-                scrubPreviewProgress = newProgress
-            },
-            onScrubEnd: { newProgress in
-                guard audioEngine.duration > 0 else { return }
-                scrubPreviewProgress = newProgress
-                endScrubbing()
-            },
-            onTap: { onOpenNowPlaying() }
-        )
-        // ✅ Mismo alto total que antes (16 + 8 pt de margen inferior): la barra no
-        // cambia de sitio ni empuja la PlayerBar al entrar el nuevo componente.
-        .frame(height: 16)
-        .padding(.horizontal, 18)
-        .padding(.bottom, 8)
-    }
+        HStack(spacing: 4) {
+            Button {
+                Haptics.light()
+                audioEngine.playPrevious()
+            } label: {
+                Image(systemName: "backward.fill")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(M3EColor.onSurfaceVariant)
+                    .frame(width: 30, height: 30)
+                    .contentShape(Circle())
+            }
+            .buttonStyle(M3ESquishButtonStyle())
+            .accessibilityLabel(Localization.localized("accessibility.previousSong"))
 
-    private func startScrubbing() {
-        Haptics.selection()
-        scrubStartProgress = currentProgress
-        scrubPreviewProgress = currentProgress
-        isScrubbing = true
-    }
+            AuroraWavyProgress(
+                progress: progress,
+                isPlaying: audioEngine.isPlaying,
+                isScrubbing: isScrubbing,
+                onScrub: { newProgress in
+                    guard audioEngine.duration > 0 else { return }
+                    if !isScrubbing {
+                        Haptics.selection()
+                        scrubPreviewProgress = currentProgress
+                    }
+                    isScrubbing = true
+                    scrubPreviewProgress = newProgress
+                },
+                onScrubEnd: { newProgress in
+                    guard audioEngine.duration > 0 else { return }
+                    isScrubbing = false
+                    Haptics.light()
+                    audioEngine.seek(to: audioEngine.duration * newProgress)
+                },
+                onTap: { onOpenNowPlaying() }
+            )
+            .frame(height: 16)
 
-    /// Finalizar scrub con seek real
-    private func endScrubbing() {
-        Haptics.light()
-        let targetTime = scrubPreviewProgress * audioEngine.duration
-        isScrubbing = false
-        audioEngine.seek(to: targetTime)
+            Button {
+                Haptics.light()
+                audioEngine.playNext()
+            } label: {
+                Image(systemName: "forward.fill")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(M3EColor.onSurfaceVariant)
+                    .frame(width: 30, height: 30)
+                    .contentShape(Circle())
+            }
+            .buttonStyle(M3ESquishButtonStyle())
+            .opacity(audioEngine.hasNextTrack ? 1 : 0.35)
+            .disabled(!audioEngine.hasNextTrack)
+            .accessibilityLabel(Localization.localized("accessibility.nextSong"))
+        }
+        .padding(.horizontal, 12)
+        .padding(.bottom, 6)
     }
 }
-
-// MARK: - ButtonStyle con feedback de presión
-// ✅ M3E: `PressableButtonStyle` vive ahora en AuroraMotion.swift, con la
-// curva unificada (AuroraMotion.spatialFast) y el nuevo parámetro opcional
-// `pressedOpacity`. La firma no cambió: los 30+ call sites siguen igual.

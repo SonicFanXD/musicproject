@@ -65,50 +65,52 @@ struct AuroraMorphShape: Shape, Animatable {
 struct M3ETypography {
     // Título grande enfatizado: usado para el título de la canción en NowPlaying
     // y encabezados principales de sección.
-    // ✅ FASE 2: peso "emphasized" = un paso por encima del baseline M3
-    // (medium 500) → semibold 600. El tamaño y la altura de línea no cambian.
-    static let titleLargeEmphasized: Font = .system(size: 22, weight: .semibold, design: .rounded)
+    // ✅ GOLPE FINAL: la app usa Roboto (la fuente de Android) empaquetada
+    // en Resources/Fonts y registrada en Info.plist. Roboto clásico no tiene
+    // un corte 600 estático: el rol "emphasized" usa Roboto Medium (500),
+    // que es el peso de énfasis real de Android. El tamaño no cambia.
+    static let titleLargeEmphasized: Font = .custom("Roboto-Medium", size: 22)
 
     // Título pequeño enfatizado: usado para títulos de categoría en ContentView
     // y otros encabezados de sección medianos.
-    static let headlineSmallEmphasized: Font = .system(size: 24, weight: .semibold, design: .rounded)
+    static let headlineSmallEmphasized: Font = .custom("Roboto-Medium", size: 24)
 
     // Etiqueta grande enfatizada: usado para texto de información secundaria,
     // como artista/álbum en NowPlaying y datos de pista.
-    static let labelLargeEmphasized: Font = .system(size: 14, weight: .semibold, design: .rounded)
+    static let labelLargeEmphasized: Font = .custom("Roboto-Medium", size: 14)
 
     // ✅ FASE 3 (remake): rol de fila. M3E no tiene un "16 semibold" ad-hoc;
     // es el title-medium de la escala, un paso por encima del body.
-    static let titleMediumEmphasized: Font = .system(size: 16, weight: .semibold, design: .rounded)
+    static let titleMediumEmphasized: Font = .custom("Roboto-Medium", size: 16)
 
     // Cuerpo grande: entradas de texto y párrafos.
-    static let bodyLarge: Font = .system(size: 16, weight: .regular)
+    static let bodyLarge: Font = .custom("Roboto-Regular", size: 16)
 
     // Cuerpo medio: subtítulos de fila y metadatos.
-    static let bodyMedium: Font = .system(size: 12, weight: .regular)
+    static let bodyMedium: Font = .custom("Roboto-Regular", size: 12)
 
     // Cuerpo pequeño: ruta de audio, notas al pie.
-    static let bodySmall: Font = .system(size: 11, weight: .regular)
+    static let bodySmall: Font = .custom("Roboto-Regular", size: 11)
 
     // Etiqueta pequeña: duración, contadores y datos numéricos.
-    static let labelMedium: Font = .system(size: 11, weight: .medium).monospacedDigit()
+    static let labelMedium: Font = .custom("Roboto-Medium", size: 11).monospacedDigit()
 
     // Etiqueta mínima: chips de calidad y datos numéricos muy compactos.
-    static let labelSmall: Font = .system(size: 9, weight: .medium).monospacedDigit()
+    static let labelSmall: Font = .custom("Roboto-Medium", size: 9).monospacedDigit()
 
     // Número de fila / índice de pista (14 pt) con dígitos tabulares.
-    static let labelLargeNumeric: Font = .system(size: 14, weight: .medium).monospacedDigit()
+    static let labelLargeNumeric: Font = .custom("Roboto-Medium", size: 14).monospacedDigit()
 
     // Subtítulo de pista: usado para información de calidad y route display.
-    static let trackSubtitle: Font = .system(size: 10, weight: .regular)
+    static let trackSubtitle: Font = .custom("Roboto-Regular", size: 10)
         .monospacedDigit()
 
     // Texto de tiempo (formato mm:ss): siempre monospaced para alineación perfecta.
-    static let timeDisplay: Font = .system(size: 20, weight: .medium)
+    static let timeDisplay: Font = .custom("Roboto-Medium", size: 20)
         .monospacedDigit()
 
     // Tiempo compacto de la barra de scrub (13 pt) con dígitos tabulares.
-    static let timeDisplayCompact: Font = .system(size: 13, weight: .medium)
+    static let timeDisplayCompact: Font = .custom("Roboto-Medium", size: 13)
         .monospacedDigit()
 }
 
