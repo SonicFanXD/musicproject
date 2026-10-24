@@ -61,8 +61,7 @@ struct LogsView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            ZStack {
+        ZStack {
                 AppBackground()
 
                 VStack(spacing: 0) {
@@ -112,10 +111,6 @@ struct LogsView: View {
                     .transition(.opacity)
                 }
             }
-            // ✅ AURORA DESIGN: el toolbar se sustituye por el header del sistema.
-            // La barra se OCULTA: así el header ocupa SU altura (44pt) en lugar de
-            // sumarse un segundo bloque de 44pt encima.
-            .toolbar(.hidden, for: .navigationBar)
             .sheet(item: $shareItem) { item in
                 ActivityShareSheet(items: [item.url])
             }
@@ -130,7 +125,6 @@ struct LogsView: View {
                 lastSeenEntryID = newest
                 refreshTick += 1
             }
-        }
     }
 
     // MARK: - Exportar / Copiar
@@ -384,7 +378,7 @@ struct LogsView: View {
                     ZStack {
                         // ✅ M3E: base SÓLIDA del chip (SurfaceContainer). El acento
                         // seleccionado se funde encima, igual que en la Biblioteca.
-                        Capsule().fill(Color(UIColor.secondarySystemBackground))
+                        Capsule().fill(M3EColor.surfaceContainerHigh)
 
                         Capsule()
                             .fill(textSafeAccentGradient())

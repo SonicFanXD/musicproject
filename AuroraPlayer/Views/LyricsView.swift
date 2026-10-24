@@ -610,7 +610,7 @@ private struct LyricsArtworkBackground: View, Equatable {
                 .blur(radius: Design.artworkBlurRadius)
                 .opacity(Design.artworkOpacity)
         } else {
-            Color(UIColor.systemBackground)
+            M3EColor.surface
         }
     }
 
@@ -628,7 +628,7 @@ private struct LyricsArtworkBackground: View, Equatable {
         // desenfocada. El material añadía un segundo muestreo de blur por frame
         // justo debajo de las letras animadas; un color con alfa deja pasar la
         // portada y conserva la lectura, con coste de composición plano.
-        Color(UIColor.systemBackground).opacity(reduceTransparency ? 1 : 0.88)
+        M3EColor.surface.opacity(reduceTransparency ? 1 : 0.88)
     }
 
     /// 3️⃣ Tinte del acento ACTUAL (`AppTheme.accent` respeta "acento desde

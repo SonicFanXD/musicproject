@@ -8,9 +8,9 @@ import UIKit
 // QUÉ APORTA FRENTE A UN TextField CON `.textFieldStyle(.roundedBorder)`:
 //  · Forma de PÍLDORA (radio = alto/2), no un rectángulo con radio fijo: es la
 //    forma canónica de M3E para campos de búsqueda y entradas de una línea.
-//  · Contenedor SÓLIDO (`SurfaceContainer` = secondarySystemBackground), sin
-//    material ni blur: cero capas offscreen por frame en el A11, y sigue
-//    respetando "Reducir transparencia" porque directamente no hay vidrio.
+//  · Contenedor SÓLIDO y TONAL (`M3EColor.surfaceVariant`, derivado del
+//    acento), sin material ni blur: cero capas offscreen por frame en el A11,
+//    y sin el gris de iOS que delataba el look nativo.
 //  · El borde CAMBIA de color y grosor al enfocar (outline de M3E) con el
 //    spring rápido de la app; el foco se anima, no se "salta".
 //  · Icono guía a la izquierda y botón de limpiar que aparece/desaparece con
@@ -56,7 +56,7 @@ struct AuroraM3TextField: View {
     }
 
     private var borderColor: Color {
-        isEditing ? resolvedAccent.opacity(0.9) : Color.secondary.opacity(0.14)
+        isEditing ? resolvedAccent.opacity(0.9) : M3EColor.outline.opacity(0.28)
     }
 
     private var borderWidth: CGFloat {
@@ -81,9 +81,9 @@ struct AuroraM3TextField: View {
         }
         .padding(.horizontal, 16)
         .frame(height: fieldHeight)
-        // ✅ SurfaceContainer sólido (cero material).
+        // ✅ SurfaceContainer tonal sólido (cero material).
         .background {
-            Capsule().fill(Color(UIColor.secondarySystemBackground))
+            Capsule().fill(M3EColor.surfaceVariant)
         }
         // ✅ Outline que cambia con el foco (M3E).
         .overlay {
@@ -111,7 +111,7 @@ struct AuroraM3TextField: View {
     private var baseField: some View {
         TextField(placeholder, text: $text)
             .textFieldStyle(.plain)
-            .font(.system(size: 16, weight: .regular))
+            .font(M3ETypography.bodyLarge)
             .foregroundStyle(.primary)
             .submitLabel(submitLabel)
             .keyboardType(keyboardType)
@@ -176,7 +176,7 @@ struct AuroraM3TextField_Previews: PreviewProvider {
                 AuroraM3TextField(placeholder: "Desactivado", text: .constant(""), isEnabled: false)
             }
             .padding(24)
-            .background(Color(UIColor.systemBackground))
+            .background(M3EColor.surface)
         }
     }
 

@@ -43,8 +43,7 @@ struct SettingsView: View, SettingsRowBuilding {
     }
 
     var body: some View {
-        NavigationStack {
-            ZStack {
+        ZStack {
                 AppBackground()
 
                 VStack(spacing: 0) {
@@ -135,14 +134,13 @@ struct SettingsView: View, SettingsRowBuilding {
                     .scrollIndicators(.hidden)
                 }
             }
-            // ✅ AURORA DESIGN: el toolbar (título + "Listo") se sustituye por el
-            // header del sistema. La barra se oculta para que el header ocupe SU
-            // altura (44pt) y no se sume un segundo bloque encima.
-            .toolbar(.hidden, for: .navigationBar)
-            .sheet(isPresented: $showLogs) {
+            // ✅ REMAKE: pantalla completa M3E; fuera el NavigationStack y sus
+            // sheets. Los registros y el ecualizador también son pantallas
+            // completas, no hojas.
+            .fullScreenCover(isPresented: $showLogs) {
                 LogsView()
             }
-            .sheet(isPresented: $showEqualizerSheet) {
+            .fullScreenCover(isPresented: $showEqualizerSheet) {
                 EqualizerView(audioEngine: audioEngine)
             }
             .fileImporter(
@@ -175,7 +173,6 @@ struct SettingsView: View, SettingsRowBuilding {
             } message: {
                 Text(Localization.localized("settings.resetCacheMessage"))
             }
-        }
     }
 
     // MARK: - Header (diseño premium estilo NowPlayingView)
@@ -210,19 +207,19 @@ struct SettingsView: View, SettingsRowBuilding {
 
             VStack(spacing: 6) {
                 Text(Localization.localized("settings.title"))
-                    // ✅ M3E: headline-large (30/heavy).
-                    .font(.system(size: 30, weight: .heavy, design: .rounded))
-                    .tracking(-0.6)
+                    // ✅ REMAKE: rol del catálogo M3E, sin 30/heavy ad-hoc.
+                    .font(M3ETypography.headlineSmallEmphasized)
+                    .tracking(-0.2)
                     .foregroundStyle(.primary)
 
                 Text(Localization.localized("settings.subtitle"))
-                    .font(.system(size: 14))
+                    .font(M3ETypography.bodyMedium)
                     .foregroundStyle(.secondary)
 
                 // ✅ Versión visible en el header (los números de versión no se
                 // traducen, así que no hace falta una key de Localización).
                 Text(appVersionLabel)
-                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                    .font(M3ETypography.labelMedium)
                     .foregroundStyle(.tertiary)
                     .padding(.top, 2)
             }
@@ -232,7 +229,7 @@ struct SettingsView: View, SettingsRowBuilding {
         .background {
             // ✅ Fondo opaco + borde gradiente sutil (look vidrio sin blur)
             RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .fill(Color(UIColor.secondarySystemGroupedBackground))
+                .fill(M3EColor.surfaceContainerLow)
                 .shadow(color: .black.opacity(0.06), radius: 10, x: 0, y: 4)
         }
         .overlay {
@@ -537,7 +534,7 @@ private struct LibrarySettingsSection: View, SettingsRowBuilding {
                 settingsDivider
                 VStack(spacing: 6) {
                     Text(Localization.localized("settings.emptyLibraryTitle"))
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(M3ETypography.labelLargeEmphasized)
                         .foregroundStyle(.primary)
                     Text(Localization.localized("settings.emptyLibrarySubtitle"))
                         .font(M3ETypography.bodyMedium)
@@ -562,7 +559,7 @@ private struct LibrarySettingsSection: View, SettingsRowBuilding {
                     ProgressView()
                         .progressViewStyle(CircularProgressViewStyle(tint: theme.resolvedAccent))
                     Text(Localization.localized("settings.scanning"))
-                        .font(.system(size: 13))
+                        .font(M3ETypography.bodyMedium)
                         .foregroundStyle(.secondary)
                     Spacer()
                 }
@@ -787,7 +784,7 @@ private struct ArtworkAccentSettingsSection: View, SettingsRowBuilding {
                     )
                     .shadow(color: (theme.artworkAccentColor ?? theme.accent).opacity(0.4), radius: 4, y: 2)
                 Text(Localization.localized("settings.artworkAccentActive"))
-                    .font(.system(size: 14, weight: .medium, design: .rounded))
+                    .font(M3ETypography.bodyMedium)
                     .foregroundStyle(.secondary)
                 Spacer()
             }
@@ -1092,7 +1089,7 @@ extension SettingsRowBuilding {
                 Spacer()
 
                 Text("\(Int(value.wrappedValue)) \(suffix)")
-                    .font(.system(size: 13, weight: .bold).monospacedDigit())
+                    .font(M3ETypography.labelMedium)
                     .foregroundStyle(color)
             }
 
@@ -1118,7 +1115,7 @@ extension SettingsRowBuilding {
                     .foregroundStyle(.primary)
 
                 Text(value)
-                    .font(.system(size: 12, weight: .semibold).monospacedDigit())
+                    .font(M3ETypography.labelMedium)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
@@ -1212,13 +1209,13 @@ extension SettingsRowBuilding {
     func statRow(title: String, value: String) -> some View {
         HStack {
             Text(title)
-                .font(.system(size: 15, weight: .medium))
+                .font(M3ETypography.bodyLarge)
                 .foregroundStyle(.secondary)
 
             Spacer()
 
              Text(value)
-                .font(.system(size: 15, weight: .semibold))
+                .font(M3ETypography.titleMediumEmphasized)
                 .foregroundStyle(.primary)
                 .monospacedDigit()
         }

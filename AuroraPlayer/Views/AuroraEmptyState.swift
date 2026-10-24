@@ -43,7 +43,7 @@ struct AuroraEmptyState: View {
             }
 
             Text(title)
-                .font(.system(size: compact ? 18 : 24, weight: .bold, design: .rounded))
+                .font(compact ? M3ETypography.titleMediumEmphasized : M3ETypography.headlineSmallEmphasized)
                 .foregroundStyle(.primary)
                 .multilineTextAlignment(.center)
                 .lineLimit(2)

@@ -117,7 +117,7 @@ struct FolderPickerView: View {
                 // (`auroraGlass()`): mismo Shape y mismo tamaño, pero reactivo a
                 // "Reducir transparencia".
                 Circle()
-                    .fill(Color(UIColor.secondarySystemBackground))
+                    .fill(M3EColor.surfaceContainerHigh)
                     .frame(width: 76, height: 76)
                     .overlay {
                         Circle()
@@ -208,7 +208,7 @@ struct FolderPickerView: View {
                     // tonal. Fuera el vidrio: cero muestreo de material por
                     // fila (el sheet tiene 3 y debajo hay una lista larga).
                     RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .fill(Color(UIColor.secondarySystemBackground))
+                        .fill(M3EColor.surfaceContainerHigh)
                         .overlay(
                             RoundedRectangle(cornerRadius: 20, style: .continuous)
                                 .strokeBorder(AppTheme.accent.opacity(0.10), lineWidth: 1)
@@ -256,7 +256,7 @@ struct FolderPickerView: View {
                     // tonal. Fuera el vidrio: cero muestreo de material por
                     // fila (el sheet tiene 3 y debajo hay una lista larga).
                     RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .fill(Color(UIColor.secondarySystemBackground))
+                        .fill(M3EColor.surfaceContainerHigh)
                         .overlay(
                             RoundedRectangle(cornerRadius: 20, style: .continuous)
                                 .strokeBorder(AppTheme.accent.opacity(0.10), lineWidth: 1)
@@ -303,7 +303,7 @@ struct FolderPickerView: View {
                     // tonal. Fuera el vidrio: cero muestreo de material por
                     // fila (el sheet tiene 3 y debajo hay una lista larga).
                     RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .fill(Color(UIColor.secondarySystemBackground))
+                        .fill(M3EColor.surfaceContainerHigh)
                         .overlay(
                             RoundedRectangle(cornerRadius: 20, style: .continuous)
                                 .strokeBorder(AppTheme.accent.opacity(0.10), lineWidth: 1)
@@ -396,7 +396,7 @@ struct FolderPickerView: View {
                             .background {
                                 // ✅ 60fps: color OPACO (no material blur) para listas largas
                                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                    .fill(Color(UIColor.secondarySystemBackground).opacity(0.6))
+                                    .fill(M3EColor.surfaceContainerHigh.opacity(0.6))
                             }
                         }
                     }
@@ -460,7 +460,7 @@ struct FolderPickerView: View {
                             .background {
                                 // ✅ 60fps: color OPACO (no material blur) para listas largas
                                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                    .fill(Color(UIColor.secondarySystemBackground).opacity(0.6))
+                                    .fill(M3EColor.surfaceContainerHigh.opacity(0.6))
                             }
                         }
                     }

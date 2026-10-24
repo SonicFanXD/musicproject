@@ -85,7 +85,7 @@ struct PlaylistsView: View {
                 // mismo tamaño; el borde de acento conserva la jerarquía
                 // tonal que antes daba el material.
                 Circle()
-                    .fill(Color(UIColor.secondarySystemBackground))
+                    .fill(M3EColor.surfaceContainerHigh)
                     .frame(width: 88, height: 88)
                     .overlay {
                         Circle()
@@ -99,12 +99,12 @@ struct PlaylistsView: View {
             }
 
             Text(Localization.localized("playlists.yourPlaylists"))
-                // ✅ M3E: mismo headline-large que la Biblioteca (30/heavy).
-                .font(.system(size: 30, weight: .heavy, design: .rounded))
+                // ✅ REMAKE: `headlineSmallEmphasized` del catálogo M3E.
+                .font(M3ETypography.headlineSmallEmphasized)
                 .tracking(-0.6)
 
             Text(Localization.localized("playlists.subtitle"))
-                .font(.system(size: 16))
+                .font(M3ETypography.bodyLarge)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
         }
@@ -121,11 +121,11 @@ struct PlaylistsView: View {
                 .foregroundStyle(.tertiary)
 
             Text(Localization.localized("playlists.empty"))
-                .font(.system(size: 18, weight: .semibold))
+                .font(M3ETypography.titleMediumEmphasized)
                 .foregroundStyle(.secondary)
 
             Text(Localization.localized("playlists.emptySubtitle2"))
-                .font(.system(size: 14))
+                .font(M3ETypography.bodyMedium)
                 .foregroundStyle(.tertiary)
                 .multilineTextAlignment(.center)
         }
@@ -189,11 +189,11 @@ struct PlaylistsView: View {
                             // ✅ 60fps: fondo OPACO (no material blur) — el grid de
                             // playlists puede tener varias tarjetas con blur simultáneo
                             Circle()
-                                .fill(Color(UIColor.secondarySystemBackground).opacity(0.8))
+                                .fill(M3EColor.surfaceContainerHigh.opacity(0.8))
                                 .frame(width: 32, height: 32)
 
                             Text("\(playlist.songIDs.count)")
-                                .font(.system(size: 12, weight: .semibold))
+                                .font(M3ETypography.labelMedium)
                                 .foregroundStyle(.primary)
                         }
                     }
@@ -244,7 +244,7 @@ struct PlaylistsView: View {
                             }
 
                             Text(Localization.localized("playlists.newPlaylist"))
-                                .font(.system(size: 22, weight: .bold))
+                                .font(M3ETypography.titleLargeEmphasized)
 
                             Text(Localization.localized("playlists.newPlaylistSubtitle"))
                                 .font(.subheadline)
@@ -258,7 +258,7 @@ struct PlaylistsView: View {
                         VStack(spacing: 16) {
                             VStack(alignment: .leading, spacing: 8) {
                                 Text(Localization.localized("playlists.name"))
-                                    .font(.system(size: 14, weight: .semibold))
+                                    .font(M3ETypography.labelLargeEmphasized)
                                     .foregroundStyle(.secondary)
 
                                 TextField(Localization.localized("playlists.placeholderName"), text: $newPlaylistName)
@@ -268,7 +268,7 @@ struct PlaylistsView: View {
 
                             VStack(alignment: .leading, spacing: 8) {
                                 Text(Localization.localized("playlists.descriptionOptional"))
-                                    .font(.system(size: 14, weight: .semibold))
+                                    .font(M3ETypography.labelLargeEmphasized)
                                     .foregroundStyle(.secondary)
 
                                 TextField(Localization.localized("playlists.placeholderDescription"), text: $newPlaylistDescription)
@@ -286,7 +286,7 @@ struct PlaylistsView: View {
                                     .font(.system(size: 18, weight: .semibold))
 
                                 Text(Localization.localized("playlists.createPlaylist"))
-                                    .font(.system(size: 17, weight: .semibold))
+                                    .font(M3ETypography.labelLargeEmphasized)
                             }
                             .foregroundStyle(.white)
                             .frame(maxWidth: .infinity)
@@ -374,8 +374,8 @@ struct PlaylistDetailView: View {
             // iOS 16 native background
             LinearGradient(
                 colors: [
-                    Color(UIColor.systemBackground),
-                    Color(UIColor.secondarySystemBackground)
+                    M3EColor.surface,
+                    M3EColor.surfaceContainerLow
                 ],
                 startPoint: .top,
                 endPoint: .bottom
@@ -442,7 +442,7 @@ struct PlaylistDetailView: View {
                         Image(systemName: "chevron.left")
                             .font(.system(size: 17, weight: .semibold))
                         Text(Localization.localized("design.back"))
-                            .font(.system(size: 17))
+                            .font(M3ETypography.labelLargeEmphasized)
                     }
                     .foregroundStyle(AppTheme.accent)
                 }
@@ -530,7 +530,7 @@ struct PlaylistDetailView: View {
             // Playlist info
             VStack(spacing: 6) {
                 Text(playlist.name)
-                    .font(.system(size: 26, weight: .heavy))
+                    .font(M3ETypography.headlineSmallEmphasized)
                     .tracking(-0.4)
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.primary)
@@ -538,7 +538,7 @@ struct PlaylistDetailView: View {
 
                 if !playlist.description.isEmpty {
                     Text(playlist.description)
-                        .font(.system(size: 15))
+                        .font(M3ETypography.bodyLarge)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
                         .lineLimit(2)
@@ -568,7 +568,7 @@ struct PlaylistDetailView: View {
                     Image(systemName: "play.fill")
                         .font(.system(size: 16, weight: .semibold))
                     Text(Localization.localized("details.play"))
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(M3ETypography.labelLargeEmphasized)
                 }
                         .foregroundStyle(.white)
                         .frame(maxWidth: .infinity)
@@ -628,10 +628,10 @@ struct PlaylistDetailView: View {
                             .scaledToFill()
                             .blur(radius: 44)
                             .opacity(0.35)
-                            .overlay(Color(UIColor.systemBackground).opacity(0.45))
+                            .overlay(M3EColor.surface.opacity(0.45))
                     } else {
                         LinearGradient(
-                            colors: [AppTheme.accent.opacity(0.18), Color(UIColor.systemBackground)],
+                            colors: [AppTheme.accent.opacity(0.18), M3EColor.surface],
                             startPoint: .top,
                             endPoint: .bottom
                         )
@@ -649,14 +649,14 @@ struct PlaylistDetailView: View {
             Image(systemName: icon)
                 .font(.system(size: 11, weight: .semibold))
             Text(text)
-                .font(.system(size: 13, weight: .medium).monospacedDigit())
+                .font(M3ETypography.labelMedium)
         }
         .foregroundStyle(.secondary)
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
         // ✅ M3E: píldora de estadística sólida (sin material sobre la cabecera
         // con carátula desenfocada).
-        .background(Capsule().fill(Color(UIColor.secondarySystemBackground)))
+        .background(Capsule().fill(M3EColor.surfaceContainerHigh))
     }
 
     private func formatLongDuration(_ seconds: TimeInterval) -> String {
@@ -679,7 +679,7 @@ struct PlaylistDetailView: View {
                         VStack(spacing: 16) {
             VStack(alignment: .leading, spacing: 8) {
                 Text(Localization.localized("playlists.name"))
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(M3ETypography.labelLargeEmphasized)
                     .foregroundStyle(.secondary)
 
                 TextField(Localization.localized("playlists.placeholderName"), text: $editedName)
@@ -689,7 +689,7 @@ struct PlaylistDetailView: View {
 
             VStack(alignment: .leading, spacing: 8) {
                 Text(Localization.localized("playlists.description"))
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(M3ETypography.labelLargeEmphasized)
                     .foregroundStyle(.secondary)
 
                 TextField(Localization.localized("playlists.placeholderDescription"), text: $editedDescription)
@@ -707,7 +707,7 @@ struct PlaylistDetailView: View {
                                     .font(.system(size: 18, weight: .semibold))
 
                                 Text(Localization.localized("playlists.saveChanges"))
-                                    .font(.system(size: 17, weight: .semibold))
+                                    .font(M3ETypography.labelLargeEmphasized)
                             }
                             .foregroundStyle(.white)
                             .frame(maxWidth: .infinity)

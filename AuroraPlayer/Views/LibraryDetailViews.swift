@@ -290,14 +290,14 @@ struct AlbumDetailView: View {
                         Image(systemName: "chevron.left")
                             .font(.system(size: 17, weight: .semibold))
                         Text(Localization.localized("design.back"))
-                            .font(.system(size: 17))
+                            .font(M3ETypography.titleMediumEmphasized)
                     }
                     .foregroundStyle(AppTheme.accent)
                 }
             }
             ToolbarItem(placement: .principal) {
                 Text(album.name)
-                    .font(.system(size: 17, weight: .semibold))
+                    .font(M3ETypography.titleMediumEmphasized)
                     .lineLimit(1)
                     // ✅ M3E: entra con el spring estándar y una micro-escala desde
                     // 0.94 (el «aflorar» de M3E). Solo cambia de estado al cruzar el
@@ -368,12 +368,13 @@ struct AlbumDetailView: View {
             // ? Info del �lbum con mejor jerarqu�a visual
             VStack(spacing: 6) {
                 Text(album.name)
-                    .font(.system(size: 24, weight: .bold, design: .rounded))
+                    .font(M3ETypography.headlineSmallEmphasized)
+                    .tracking(-0.2)
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.primary)
                     .lineLimit(2)
                 Text(album.artist)
-                    .font(.system(size: 15, weight: .medium))
+                    .font(M3ETypography.bodyLarge)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
@@ -429,13 +430,13 @@ struct AlbumDetailView: View {
                             .overlay(
                                 LinearGradient(
                                     colors: accent.colors(primaryOpacity: 0.3, secondaryOpacity: 0.12)
-                                        + [Color(UIColor.secondarySystemBackground).opacity(0.6)],
+                                        + [M3EColor.surfaceContainerLow.opacity(0.6)],
                                     startPoint: .top, endPoint: .bottom
                                 )
                             )
                     } else {
                         LinearGradient(
-                            colors: accent.colors(primaryOpacity: 0.2, secondaryOpacity: 0.1) + [Color(UIColor.secondarySystemBackground)],
+                            colors: accent.colors(primaryOpacity: 0.2, secondaryOpacity: 0.1) + [M3EColor.surface],
                             startPoint: .top, endPoint: .bottom
                         )
                     }
@@ -498,7 +499,7 @@ struct AlbumDetailView: View {
             } label: {
                 HStack(spacing: 10) {
                     Image(systemName: "play.fill").font(.system(size: 15, weight: .bold))
-                    Text(Localization.localized("details.play")).font(.system(size: 15, weight: .bold, design: .rounded))
+                    Text(Localization.localized("details.play")).font(M3ETypography.labelLargeEmphasized)
                 }
                 .foregroundStyle(onTintColor).frame(maxWidth: .infinity).frame(height: 48)
                 // ✅ AURORA DESIGN (excepción justificada): el botón de Play NO
@@ -527,7 +528,7 @@ struct AlbumDetailView: View {
             } label: {
                 HStack(spacing: 10) {
                     Image(systemName: "shuffle").font(.system(size: 15, weight: .bold))
-                    Text(Localization.localized("details.shuffle")).font(.system(size: 15, weight: .bold, design: .rounded))
+                    Text(Localization.localized("details.shuffle")).font(M3ETypography.labelLargeEmphasized)
                 }
                 .foregroundStyle(tintColor)
                 // ✅ GEMELO del botón de reproducir: misma altura (48) y mismo eje
@@ -730,24 +731,24 @@ struct AlbumSongRow: View, Equatable {
                     EqualizerBars(color: tintColor, isPlaying: isPlaying)
                 } else {
                     Text("\(index + 1)")
-                        .font(.system(size: 14, weight: .medium).monospacedDigit())
+                        .font(M3ETypography.labelLargeNumeric)
                         .foregroundStyle(Color.secondary.opacity(0.5)).frame(width: 24)
                 }
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text(song.title)
-                        .font(.system(size: 15, weight: isCurrent ? .bold : .semibold, design: .rounded))
+                        .font(M3ETypography.titleMediumEmphasized)
                         .foregroundStyle(isCurrent ? tintColor : .primary).lineLimit(1)
                     // ✅ Debajo del título: el ARTISTA (en la vista de álbum el
                     // nombre del álbum es redundante — siempre es el mismo).
                     Text(song.artist.isEmpty ? song.displaySubtitle : song.artist)
-                        .font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
+                        .font(M3ETypography.bodyMedium).foregroundStyle(.secondary).lineLimit(1)
                 }
 
                 Spacer()
 
                 Text(formatDuration(song.duration))
-                    .font(.system(size: 11, weight: .medium).monospacedDigit()).foregroundStyle(.tertiary)
+                    .font(M3ETypography.labelMedium).foregroundStyle(.tertiary)
             }
             .padding(.horizontal, 16).padding(.vertical, 14)
             // ✅ AURORA DESIGN: fila = superficie flat del sistema (radio .md en
@@ -1003,14 +1004,14 @@ struct ArtistDetailView: View {
                         Image(systemName: "chevron.left")
                             .font(.system(size: 17, weight: .semibold))
                         Text(Localization.localized("design.back"))
-                            .font(.system(size: 17))
+                            .font(M3ETypography.titleMediumEmphasized)
                     }
                     .foregroundStyle(AppTheme.accent)
                 }
             }
             ToolbarItem(placement: .principal) {
                 Text(artist.name)
-                    .font(.system(size: 17, weight: .semibold))
+                    .font(M3ETypography.titleMediumEmphasized)
                     .lineLimit(1)
                     // ✅ M3E: entra con el spring estándar y una micro-escala desde
                     // 0.94 (el «aflorar» de M3E). Solo cambia de estado al cruzar el
@@ -1068,7 +1069,8 @@ struct ArtistDetailView: View {
             // ? Info del artista con mejor jerarqu�a visual
             VStack(spacing: 10) {
                 Text(artist.name)
-                    .font(.system(size: 30, weight: .bold, design: .rounded))
+                    .font(M3ETypography.headlineSmallEmphasized)
+                    .tracking(-0.3)
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.primary)
                     .lineLimit(2)
@@ -1104,13 +1106,13 @@ struct ArtistDetailView: View {
                             .overlay(
                                 LinearGradient(
                                     colors: accent.colors(primaryOpacity: 0.25, secondaryOpacity: 0.12)
-                                        + [Color(UIColor.secondarySystemBackground).opacity(0.5)],
+                                        + [M3EColor.surfaceContainerLow.opacity(0.5)],
                                     startPoint: .top, endPoint: .bottom
                                 )
                             )
                     } else {
                         LinearGradient(
-                            colors: accent.colors(primaryOpacity: 0.2, secondaryOpacity: 0.1) + [Color(UIColor.secondarySystemBackground)],
+                            colors: accent.colors(primaryOpacity: 0.2, secondaryOpacity: 0.1) + [M3EColor.surface],
                             startPoint: .top, endPoint: .bottom
                         )
                     }
@@ -1154,7 +1156,7 @@ struct ArtistDetailView: View {
             } label: {
                 HStack(spacing: 10) {
                     Image(systemName: "play.fill").font(.system(size: 15, weight: .bold))
-                    Text(Localization.localized("details.play")).font(.system(size: 15, weight: .bold, design: .rounded))
+                    Text(Localization.localized("details.play")).font(M3ETypography.labelLargeEmphasized)
                 }
                 .foregroundStyle(onTintColor).frame(maxWidth: .infinity).frame(height: 48)
                 // ✅ AURORA DESIGN (excepción justificada): el botón de Play NO
@@ -1183,7 +1185,7 @@ struct ArtistDetailView: View {
             } label: {
                 HStack(spacing: 10) {
                     Image(systemName: "shuffle").font(.system(size: 15, weight: .bold))
-                    Text(Localization.localized("details.shuffle")).font(.system(size: 15, weight: .bold, design: .rounded))
+                    Text(Localization.localized("details.shuffle")).font(M3ETypography.labelLargeEmphasized)
                 }
                 .foregroundStyle(tintColor)
                 // ✅ GEMELO del botón de reproducir: misma altura (48) y mismo eje
@@ -1306,12 +1308,12 @@ struct ArtistAlbumCard: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(album.name)
-                    .font(.system(size: 14, weight: .semibold, design: .rounded))
+                    .font(M3ETypography.labelLargeEmphasized)
                     .foregroundStyle(.primary).lineLimit(1)
                 // ✅ Año + nº de canciones: en un carrusel de discografía el año
                 // es el dato que orienta al usuario (antes solo el recuento).
                 Text(cardSubtitle)
-                    .font(.system(size: 12)).foregroundStyle(.secondary)
+                    .font(M3ETypography.bodyMedium).foregroundStyle(.secondary)
                     .lineLimit(1)
             }
         }
@@ -1376,22 +1378,22 @@ struct ArtistSongRow: View, Equatable {
                     EqualizerBars(color: tintColor, isPlaying: isPlaying)
                 } else {
                     Text("\(index + 1)")
-                        .font(.system(size: 14, weight: .medium).monospacedDigit())
+                        .font(M3ETypography.labelLargeNumeric)
                         .foregroundStyle(Color.secondary.opacity(0.5)).frame(width: 24)
                 }
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text(song.title)
-                        .font(.system(size: 15, weight: isCurrent ? .bold : .semibold, design: .rounded))
+                        .font(M3ETypography.titleMediumEmphasized)
                         .foregroundStyle(isCurrent ? tintColor : .primary).lineLimit(1)
                     Text(song.album.isEmpty ? song.displaySubtitle : song.album)
-                        .font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
+                        .font(M3ETypography.bodyMedium).foregroundStyle(.secondary).lineLimit(1)
                 }
 
                 Spacer()
 
                 Text(formatDuration(song.duration))
-                    .font(.system(size: 11, weight: .medium).monospacedDigit()).foregroundStyle(.tertiary)
+                    .font(M3ETypography.labelMedium).foregroundStyle(.tertiary)
             }
             .padding(.horizontal, 16).padding(.vertical, 14)
             // ✅ AURORA DESIGN: fila = superficie flat del sistema (radio .md en

@@ -45,8 +45,7 @@ struct QueueView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            ZStack {
+        ZStack {
                 AppBackground()
 
                 VStack(spacing: 0) {
@@ -90,11 +89,6 @@ struct QueueView: View {
                     .environment(\.editMode, $editMode)
                 }
             }
-            // ✅ AURORA DESIGN: el toolbar se sustituye por el header del sistema.
-            // La barra se oculta en vez de dejarse vacía: así el header ocupa SU
-            // altura (44pt) y no se suma un segundo bloque de 44pt encima.
-            .toolbar(.hidden, for: .navigationBar)
-        }
     }
 
     /// ✅ AURORA DESIGN: los botones que vivían en el toolbar pasan al slot trailing
@@ -125,7 +119,7 @@ struct QueueView: View {
                         Image(systemName: tab == .nextUp ? "list.number" : "clock.arrow.circlepath")
                             .font(.system(size: 12, weight: .semibold))
                         Text(tab.localizedTitle)
-                            .font(.system(size: 14, weight: selectedTab == tab ? .semibold : .medium, design: .rounded))
+                            .font(M3ETypography.labelLargeEmphasized)
                     }
                     // ✅ FASE 2/3: segmento seleccionado tonal (texto en el
                     // acento), no píldora de gradiente con texto blanco.
@@ -144,7 +138,7 @@ struct QueueView: View {
                                 .matchedGeometryEffect(id: "queue.tab.selection", in: tabNamespace)
                         } else {
                             // ✅ 60fps: color OPACO (sin blur) para el selector
-                            Capsule().fill(Color(UIColor.secondarySystemBackground))
+                            Capsule().fill(M3EColor.surfaceContainerHigh)
                         }
                     }
                 }
@@ -160,7 +154,7 @@ struct QueueView: View {
             if let current = audioEngine.currentSong {
                 VStack(alignment: .leading, spacing: 8) {
                     Text(Localization.localized("queue.nowPlaying"))
-                        .font(.system(size: 13, weight: .medium))
+                        .font(M3ETypography.bodyMedium)
                         .foregroundStyle(.secondary)
 
                     HStack(spacing: 12) {
@@ -168,10 +162,10 @@ struct QueueView: View {
 
                         VStack(alignment: .leading, spacing: 3) {
                             Text(current.title)
-                                .font(.system(size: 16, weight: .semibold, design: .rounded))
+                                .font(M3ETypography.titleMediumEmphasized)
                                 .foregroundStyle(AppTheme.accentGradient).lineLimit(1)
                             Text(current.displaySubtitle)
-                                .font(.system(size: 13)).foregroundStyle(.secondary).lineLimit(1)
+                                .font(M3ETypography.bodyMedium).foregroundStyle(.secondary).lineLimit(1)
                         }
 
                         Spacer()
@@ -196,7 +190,7 @@ struct QueueView: View {
                         // ✅ FASE 3 (M3E): card tonal sólida, radio 20 y borde
                         // tonal (sin sombra ni material).
                         RoundedRectangle(cornerRadius: 20, style: .continuous)
-                            .fill(Color(UIColor.secondarySystemBackground))
+                            .fill(M3EColor.surfaceContainerLow)
                             .overlay(
                                 RoundedRectangle(cornerRadius: 20, style: .continuous)
                                     .strokeBorder(AppTheme.accent.opacity(0.18), lineWidth: 1)
@@ -284,7 +278,7 @@ struct QueueView: View {
             // SOLO LECTURA a propósito: sin swipe, sin arrastre y sin menú.
             if !upcomingFromOrder.isEmpty {
                 Text(Localization.localized("queue.upNext"))
-                    .font(.system(size: 13, weight: .medium))
+                    .font(M3ETypography.bodyMedium)
                     .foregroundStyle(.secondary)
                     .listRowSeparator(.hidden)
                     .listRowBackground(Color.clear)
@@ -366,7 +360,7 @@ struct QueueView: View {
     private var manualQueueHeader: some View {
         HStack(spacing: 8) {
             Text(Localization.localized("queue.inQueue"))
-                .font(.system(size: 13, weight: .medium))
+                .font(M3ETypography.bodyMedium)
                 .foregroundStyle(.secondary)
 
             Spacer()
@@ -379,7 +373,7 @@ struct QueueView: View {
                     audioEngine.clearQueue()
                 } label: {
                     Text(Localization.localized("queue.clear"))
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(M3ETypography.labelLargeEmphasized)
                         .foregroundStyle(AppTheme.accent)
                         .contentShape(Rectangle())
                 }
@@ -402,7 +396,7 @@ struct QueueView: View {
                 }
             } label: {
                 Text(Localization.localized(editMode == .active ? "queue.doneEditing" : "queue.edit"))
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(M3ETypography.labelLargeEmphasized)
                     .foregroundStyle(AppTheme.accent)
                     .contentTransition(.opacity)
                     .padding(.horizontal, 10)
@@ -454,8 +448,8 @@ struct QueueView: View {
                     .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
             } else {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text(Localization.localized("queue.historyTitle"))
-                        .font(.system(size: 13, weight: .medium))
+                Text(Localization.localized("queue.historyTitle"))
+                    .font(M3ETypography.bodyMedium)
                         .foregroundStyle(.secondary)
 
                     // ✅ PERF: el historial PUEDE repetir pista (insert sin
@@ -496,7 +490,7 @@ struct QueueView: View {
                 Spacer()
 
                 Text(formatDuration(song.duration))
-                    .font(.system(size: 12, weight: .medium).monospacedDigit())
+                    .font(M3ETypography.labelMedium)
                     .foregroundStyle(.tertiary)
             }
             .padding(.horizontal, 14).padding(.vertical, 12)

@@ -3,8 +3,9 @@ import SwiftUI
 // ══════════════════════════════════════════════════════════════════════════
 // M3E COMPONENTS — vocabulario visual Material 3 Expressive de Aurora.
 //
-// · Superficies SÓLIDAS (cero `.ultraThinMaterial` / blurs en cards y barras).
-// · Elevación TONAL: borde de 1 pt con el acento al 10 %, sin sombras.
+// · Superficies SÓLIDAS y TONALES (`M3EColor`): el tinte sale del acento,
+//   no de `secondarySystemBackground`, y la elevación es tonal (borde), no
+//   sombra. Cero `.ultraThinMaterial` y cero blurs.
 // · Formas de píldora para acciones y radios de 24/32 para contenedores.
 // · Todo el feedback de presión es un spring FINITO (`AuroraMotion`): aquí no
 //   se usa `repeatForever` en ningún sitio.
@@ -12,14 +13,15 @@ import SwiftUI
 
 // MARK: - Superficie tonal
 
-/// ✅ FASE 2 (remake): superficie M3E real. Base SÓLIDA del sistema + velo
-/// tonal del acento al 8 % + borde de 1.5 pt al 20 %. No es translúcida: el
-/// velo se compone sobre la base opaca, así el contenido que scrollea por
-/// debajo no se transparenta (lo que delataba el "look iOS").
+/// Superficie M3E real: un rol tonal (`surfaceContainer`) + un velo mínimo
+/// del acento + borde de 1.5 pt con `outline` al 20 %. No es translúcida: el
+/// contenido que scrollea por debajo no se transparenta (lo que delataba el
+/// "look iOS"). La base ya viene tintada del acento; el velo solo refuerza la
+/// pertenencia cromática cuando el acento viene de la carátula.
 struct M3ETonalSurface: View {
     var cornerRadius: CGFloat = 24
-    var tint: Color = AppTheme.accent
-    var base: Color = Color(UIColor.secondarySystemBackground)
+    var tint: Color = M3EColor.primary
+    var base: Color = M3EColor.surfaceContainer
     var showsBorder: Bool = true
 
     var body: some View {
@@ -27,12 +29,12 @@ struct M3ETonalSurface: View {
             .fill(base)
             .overlay(
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .fill(tint.opacity(0.08))
+                    .fill(tint.opacity(0.04))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .strokeBorder(
-                        tint.opacity(showsBorder ? 0.2 : 0),
+                        M3EColor.outline.opacity(showsBorder ? 0.2 : 0),
                         lineWidth: showsBorder ? 1.5 : 0
                     )
             )
@@ -53,8 +55,8 @@ struct M3ECard<Content: View>: View {
     init(
         cornerRadius: CGFloat = 24,
         padding: CGFloat = 16,
-        surface: Color = Color(UIColor.secondarySystemBackground),
-        tint: Color = AppTheme.accent,
+        surface: Color = M3EColor.surfaceContainerLow,
+        tint: Color = M3EColor.primary,
         showsBorder: Bool = true,
         @ViewBuilder content: () -> Content
     ) {
@@ -111,8 +113,8 @@ struct M3EFilledButton<Label: View>: View {
     private let label: Label
 
     init(
-        tint: Color = AppTheme.accent,
-        foreground: Color = .white,
+        tint: Color = M3EColor.primary,
+        foreground: Color = M3EColor.onPrimary,
         horizontalPadding: CGFloat = 22,
         verticalPadding: CGFloat = 12,
         action: @escaping () -> Void,
@@ -151,7 +153,7 @@ struct M3ETonalButton<Label: View>: View {
     private let label: Label
 
     init(
-        tint: Color = AppTheme.accent,
+        tint: Color = M3EColor.primary,
         horizontalPadding: CGFloat = 18,
         verticalPadding: CGFloat = 10,
         action: @escaping () -> Void,
@@ -168,10 +170,17 @@ struct M3ETonalButton<Label: View>: View {
         Button(action: action) {
             label
                 .font(M3ETypography.labelLargeEmphasized)
-                .foregroundStyle(tint)
+                .foregroundStyle(M3EColor.onPrimaryContainer)
                 .padding(.horizontal, horizontalPadding)
                 .padding(.vertical, verticalPadding)
-                .background(Capsule(style: .continuous).fill(tint.opacity(0.15)))
+                .background(
+                    Capsule(style: .continuous)
+                        .fill(M3EColor.primaryContainer)
+                )
+                .overlay(
+                    Capsule(style: .continuous)
+                        .strokeBorder(tint.opacity(0.28), lineWidth: 1)
+                )
                 .contentShape(Capsule(style: .continuous))
         }
         .buttonStyle(M3ESquishButtonStyle())
@@ -194,7 +203,7 @@ struct M3EFilterChip: View {
         title: String,
         icon: String? = nil,
         isSelected: Bool,
-        tint: Color = AppTheme.accent,
+        tint: Color = M3EColor.primary,
         action: @escaping () -> Void
     ) {
         self.title = title
@@ -226,15 +235,19 @@ struct M3EFilterChip: View {
             .animation(AuroraMotion.effectsDefault, value: isSelected)
             .padding(.horizontal, 16)
             .frame(height: 36)
-            .background(
-                AuroraMorphChipShape(cornerRadius: shapeRadius)
-                    .fill(isSelected ? tint.opacity(0.2) : Color(UIColor.secondarySystemBackground))
-                    .animation(AuroraMotion.spatialDefault, value: isSelected)
-            )
+            .background {
+                ZStack {
+                    AuroraMorphChipShape(cornerRadius: shapeRadius)
+                        .fill(M3EColor.surfaceVariant)
+                    AuroraMorphChipShape(cornerRadius: shapeRadius)
+                        .fill(isSelected ? tint.opacity(0.2) : Color.clear)
+                }
+                .animation(AuroraMotion.spatialDefault, value: isSelected)
+            }
             .overlay(
                 AuroraMorphChipShape(cornerRadius: shapeRadius)
                     .strokeBorder(
-                        isSelected ? tint.opacity(0.5) : Color.clear,
+                        isSelected ? tint.opacity(0.45) : M3EColor.outline.opacity(0.16),
                         lineWidth: 1
                     )
                     .animation(AuroraMotion.spatialDefault, value: isSelected)
@@ -242,7 +255,7 @@ struct M3EFilterChip: View {
             .contentShape(Capsule(style: .continuous))
         }
         .buttonStyle(PressableButtonStyle(scale: 0.96, pressedOpacity: 0.9))
-        .accessibilityAddTraits(isSelected ? AccessibilityTraits.isSelected : [])
+        .accessibilityAddTraits(isSelected ? .isSelected : AccessibilityTraits())
     }
 }
 
@@ -297,11 +310,11 @@ struct M3ENavigationBar<Leading: View, Trailing: View>: View {
         .padding(.horizontal, 20)
         .padding(.vertical, 10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(UIColor.systemBackground))
+        .background(M3EColor.surface)
         .overlay(alignment: .bottom) {
             if showsDivider {
                 Rectangle()
-                    .fill(Color.primary.opacity(0.06))
+                    .fill(M3EColor.outlineVariant.opacity(0.6))
                     .frame(height: 1)
             }
         }

@@ -24,18 +24,16 @@ extension View {
     }
 }
 
-// ✅ FASE 3 (M3E): cero `.ultraThinMaterial`. La superficie es SIEMPRE el
-// color sólido SurfaceContainer del sistema. Se conserva el nombre del
-// modificador (y su firma) para no tocar los call sites existentes, pero ya
-// no hay muestreo de material ni pase offscreen por frame: en el A11 el
-// vidrio se pagaba en cada scroll de las listas que quedaban debajo.
-// "Reducir transparencia" deja de ser necesario para esta superficie: ya es
-// opaca en ambos estados.
+// ✅ Cero `.ultraThinMaterial`. La superficie es SIEMPRE un rol tonal de
+// `M3EColor` (no el gris del sistema). Se conserva el nombre del modificador
+// (y su firma) para no tocar los call sites existentes, pero ya no hay
+// muestreo de material ni pase offscreen por frame: en el A11 el vidrio se
+// pagaba en cada scroll de las listas que quedaban debajo.
 private struct NativeGlassSurface<S: Shape>: View {
     let shape: S
 
     var body: some View {
-        shape.fill(Color(UIColor.secondarySystemBackground))
+        shape.fill(M3EColor.surfaceContainerHigh)
     }
 }
 

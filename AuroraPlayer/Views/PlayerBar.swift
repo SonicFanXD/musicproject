@@ -9,9 +9,13 @@ struct PlayerBar: View {
     // botones, y un re-render justo en el instante del toque descartaba el
     // primer tap → los botones a veces requerían dos pulsaciones.
     var clock: PlaybackClock
+    // ✅ REMAKE: NowPlaying ya no se presenta desde aquí con un sheet. La
+    // portada de la barra y la de NowPlaying comparten namespace para que el
+    // hero animation viaje entre ambas geometrías.
+    var heroNamespace: Namespace.ID
+    var onOpenNowPlaying: () -> Void
     // ✅ Observar el idioma: al cambiar, esta vista se re-renderiza al instante
     @ObservedObject private var localization = Localization.shared
-    @State private var showingNowPlaying = false
 
     // Animaciones optimizadas (una sola @State, triggers discretos = 60fps)
     @State private var playButtonScale: CGFloat = 1.0
@@ -155,7 +159,7 @@ struct PlayerBar: View {
                                 .background {
                                     // ✅ M3E: contenedor SÓLIDO (el glyph ya es
                                     // `.primary`/`.red`), mismo Shape y tamaño.
-                                    Circle().fill(Color(UIColor.secondarySystemBackground))
+                                    Circle().fill(M3EColor.surfaceContainerHigh)
                                         .frame(width: 38, height: 38)
                                 }
                                 .contentShape(Circle())
@@ -312,11 +316,6 @@ struct PlayerBar: View {
                     )
                 )
                 .clipShape(RoundedRectangle(cornerRadius: AuroraRadius.xxl, style: .continuous))
-                // ✅ Presentación original: sheet que sube desde abajo, con la
-                // transición nativa del sistema y cierre deslizando hacia abajo.
-                .sheet(isPresented: $showingNowPlaying) {
-                    NowPlayingView(audioEngine: audioEngine, fileAccessService: fileAccessService, clock: audioEngine.clock)
-                }
             }
         }
     }
@@ -335,13 +334,12 @@ struct PlayerBar: View {
     }
 
     private func openNowPlaying() {
-        Haptics.light()
-        showingNowPlaying = true
+        onOpenNowPlaying()
     }
 
     // MARK: - Artwork (calidad alta, animación sutil = 60fps)
-    @ViewBuilder
     private func artwork(for song: Song) -> some View {
+        Group {
         if let art = song.artwork {
             // ✅ ANTI-JETSAM: miniatura 96px (48pt @2x) en vez de la 768px completa.
             Image(uiImage: AppTheme.thumbnail(from: art, size: CGSize(width: 96, height: 96)))
@@ -384,6 +382,10 @@ struct PlayerBar: View {
                 openNowPlaying()
             }
         }
+        }
+        // Hero: la MISMA portada de NowPlaying lleva el id compartido. Al abrir
+        // o cerrar, SwiftUI interpola el frame entre 48 y ~340 pt.
+        .matchedGeometryEffect(id: "nowPlaying.artwork", in: heroNamespace)
     }
 }
 

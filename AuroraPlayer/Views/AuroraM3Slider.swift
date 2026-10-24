@@ -236,7 +236,7 @@ struct AuroraM3Slider_Previews: PreviewProvider {
                            fillFromCenter: true, accessibilityLabel: "Desactivado") { _ in }
         }
         .padding(24)
-        .background(Color(UIColor.systemBackground))
+        .background(M3EColor.surface)
     }
 }
 #endif

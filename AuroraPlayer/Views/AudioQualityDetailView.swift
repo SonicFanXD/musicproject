@@ -142,7 +142,7 @@ struct AudioQualityDetailView: View {
         .padding(.horizontal, 12)
         .background(
             RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .fill(Color(UIColor.secondarySystemBackground).opacity(0.45))
+                .fill(M3EColor.surfaceContainerLow.opacity(0.45))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 22, style: .continuous)
@@ -188,7 +188,7 @@ struct AudioQualityDetailView: View {
         .padding(.horizontal, 16).padding(.vertical, 12)
         .background {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color(UIColor.secondarySystemBackground).opacity(0.5))
+                .fill(M3EColor.surfaceContainerLow.opacity(0.5))
         }
         .overlay {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
@@ -856,7 +856,7 @@ struct AudioQualityDetailView: View {
         .padding(.horizontal, 16).padding(.vertical, 14)
         .background(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color(UIColor.secondarySystemBackground).opacity(0.5))
+                .fill(M3EColor.surfaceContainerLow.opacity(0.5))
         )
     }
 
@@ -917,7 +917,7 @@ struct AudioQualityDetailView: View {
                 // ✅ Cristal: 0.5 de opacidad para que el material del panel
                 // (y el artwork borroso detrás) se vea a través de la sección.
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(Color(UIColor.secondarySystemBackground).opacity(0.5))
+                    .fill(M3EColor.surfaceContainerLow.opacity(0.5))
             }
         }
     }

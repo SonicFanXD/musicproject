@@ -5,8 +5,7 @@ struct EqualizerView: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        NavigationStack {
-            ZStack {
+        ZStack {
                 AppBackground()
 
                 VStack(spacing: 0) {
@@ -42,12 +41,6 @@ struct EqualizerView: View {
                     .scrollIndicators(.hidden)
                 }
             }
-            // ✅ AURORA DESIGN: el toolbar (título + "Listo") se sustituye por el
-            // header del sistema. La barra se oculta para que el header ocupe SU
-            // altura (44pt) y no se sume un segundo bloque encima. Se va también el
-            // fondo opaco de barra que tenía esta vista.
-            .toolbar(.hidden, for: .navigationBar)
-        }
     }
 
     /// ✅ AURORA DESIGN: el "Listo" que antes vivía en el toolbar, ahora en el slot
@@ -75,11 +68,11 @@ struct EqualizerView: View {
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(Localization.localized("equalizer.bandTitle"))
-                    .font(.system(size: 16, weight: .bold))
+                    .font(M3ETypography.titleMediumEmphasized)
                     .foregroundStyle(.primary)
 
                 Text(audioEngine.isEQEnabled ? "\(Localization.localized("equalizer.active")) (\(audioEngine.eqPreset.displayName))" : Localization.localized("equalizer.disabled"))
-                    .font(.system(size: 13))
+                    .font(M3ETypography.bodyMedium)
                     .foregroundStyle(.secondary)
             }
 

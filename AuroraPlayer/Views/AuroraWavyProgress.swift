@@ -1,17 +1,19 @@
 import SwiftUI
 
 // ══════════════════════════════════════════════════════════════════════════
-// AURORA WAVY PROGRESS — barra ondulada M3E, INTERACTIVA.
+// AURORA WAVY PROGRESS — LinearWavyProgressIndicator de M3E.
 //
-// · La PISTA es una `Capsule` de SwiftUI, fuera del Canvas: siempre visible.
-// · La ONDA es un `Path` sinusoidal real (`y = midY + sin(...) * amplitude`)
-//   dibujado solo hasta `width * progress`, con la fase de TimelineView.
-// · El GESTO vive AQUÍ (no en la vista anfitriona): arrastre continuo con
-//   `onScrub`, seek único al soltar con `onScrubEnd` y `onTap` para los toques
-//   sin desplazamiento (en PlayerBar abre NowPlaying).
-// · Canvas y thumb llevan `.allowsHitTesting(false)`: el único hit target es
-//   el `contentShape` del contenedor, así el arrastre nunca se pierde.
-// · Cero `repeatForever`: al pausar, el TimelineView se pausa.
+// · PISTA: `Capsule` de SwiftUI fuera del Canvas (siempre visible).
+// · ONDA: `Path` sinusoidal real, `y = midY + sin(x·f + fase)·amplitud`,
+//   dibujado solo hasta `width · progress`. La fase avanza a UNA longitud de
+//   onda por segundo (`2π rad/s`) con la fecha de `TimelineView`.
+// · La AMPLITUD es proporcional al progreso y se aplana al pausar con una
+//   caída exponencial acotada (~0.4 s). Al terminar, el TimelineView se
+//   pausa: no queda ninguna transacción viva ni `repeatForever`.
+// · El GESTO vive aquí: arrastre con `onScrub`, seek único con `onScrubEnd`
+//   y `onTap` para el toque sin desplazamiento. Canvas y thumb no reciben
+//   toques; el hit target se amplía 8 pt arriba/abajo.
+// · El thumb escala con `spatialFast` y dispara hápticos al empezar/soltar.
 // ══════════════════════════════════════════════════════════════════════════
 
 struct AuroraWavyProgress: View {
@@ -27,21 +29,24 @@ struct AuroraWavyProgress: View {
     var onTap: (() -> Void)? = nil
 
     var thickness: CGFloat = 4
-    var amplitude: CGFloat = 2.4
+    var amplitude: CGFloat = 3.2
     var waveLength: CGFloat = 24
-    var trackColor: Color = Color.secondary.opacity(0.22)
-    var colors: [Color] = [AppTheme.accent, AppTheme.accent.opacity(0.5)]
+    var trackColor: Color = M3EColor.outlineVariant.opacity(0.55)
+    var colors: [Color] = [AppTheme.accent, AppTheme.accent.opacity(0.55)]
     var showsThumb: Bool = true
     var thumbSize: CGFloat = 12
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
 
-    // Progreso local durante el arrastre: el thumb sigue al dedo al instante,
-    // sin esperar a que la vista anfitriona publique su preview.
+    /// Progreso local durante el arrastre: el thumb sigue al dedo al instante.
     @State private var dragPreview: Double? = nil
     @State private var dragStarted = false
     @State private var dragMoved = false
+
+    /// Aplanado acotado tras pausar (no hay animación infinita).
+    @State private var flattenStart: Date? = nil
+    @State private var isFlattening = false
 
     /// Nunca NaN ni fuera de 0...1.
     private var clampedProgress: CGFloat {
@@ -56,8 +61,9 @@ struct AuroraWavyProgress: View {
         return clampedProgress
     }
 
-    private var isAnimating: Bool {
-        isPlaying && !reduceMotion && scenePhase == .active
+    private var isActive: Bool {
+        guard !reduceMotion, scenePhase == .active else { return false }
+        return isPlaying || isFlattening
     }
 
     private var isDragging: Bool {
@@ -80,8 +86,9 @@ struct AuroraWavyProgress: View {
                     .fill(trackColor)
                     .frame(height: thickness)
 
-                // 2) Onda activa.
-                TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: !isAnimating)) { timeline in
+                // 2) Onda activa. El TimelineView se pausa al terminar el
+                //    aplanado; mientras corre, la fase sale de la fecha.
+                TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: !isActive)) { timeline in
                     Canvas { context, canvasSize in
                         guard activeWidth > 0.5,
                               canvasSize.width > 0,
@@ -89,9 +96,10 @@ struct AuroraWavyProgress: View {
 
                         let mid = canvasSize.height / 2
                         let seconds = timeline.date.timeIntervalSinceReferenceDate
-                        let phase = CGFloat(seconds.truncatingRemainder(dividingBy: 1_000)) * 4
-                        let amp: CGFloat = isAnimating ? amplitude : 0
+                        // 1 longitud de onda / segundo: 2π rad/s.
+                        let phase = CGFloat(seconds.truncatingRemainder(dividingBy: 1_000)) * (2 * .pi)
                         let frequency = 2 * CGFloat.pi / max(waveLength, 1)
+                        let amp = currentAmplitude(at: timeline.date)
 
                         var wave = Path()
                         wave.move(to: CGPoint(x: 0, y: mid + sin(phase) * amp))
@@ -127,20 +135,47 @@ struct AuroraWavyProgress: View {
                             Circle().strokeBorder(Color.white.opacity(0.9), lineWidth: 2)
                         )
                         .frame(width: thumbSize, height: thumbSize)
-                        .scaleEffect(isDragging ? 1.3 : 1.0)
+                        .scaleEffect(isDragging ? 1.35 : 1.0)
                         .animation(AuroraMotion.spatialFast, value: isDragging)
-                        .shadow(color: .black.opacity(isScrubbing ? 0.25 : 0.15), radius: 3, x: 0, y: 1)
+                        .shadow(color: .black.opacity(isDragging ? 0.25 : 0.15), radius: 3, x: 0, y: 1)
                         .position(x: activeWidth, y: midY)
                         .allowsHitTesting(false)
                 }
             }
             .frame(width: size.width, height: size.height)
-            // ✅ Hit target ampliado 10 pt por arriba y por abajo: la barra mide
-            // 16/18 pt, pero el dedo necesita ~44 pt para agarrarla sin fallar.
-            .contentShape(Rectangle().inset(by: -10))
+            // Hit target ampliado 8 pt por arriba y por abajo: la barra mide
+            // 16/18 pt, pero el dedo necesita ~34 pt para agarrarla.
+            .contentShape(Rectangle().inset(by: -8))
             .gesture(dragGesture(width: size.width))
         }
         .frame(maxWidth: .infinity, minHeight: 16)
+        .onChange(of: isPlaying) { playing in
+            guard !playing, !reduceMotion else {
+                flattenStart = nil
+                isFlattening = false
+                return
+            }
+            // Aplanado corto: mantiene el TimelineView vivo solo 0.4 s.
+            flattenStart = Date()
+            isFlattening = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                isFlattening = false
+                flattenStart = nil
+            }
+        }
+    }
+
+    /// Amplitud del frame. Proporcional al progreso mientras suena; al pausar
+    /// decae exponencialmente desde la última amplitud (sin salto brusco).
+    private func currentAmplitude(at date: Date) -> CGFloat {
+        guard !reduceMotion else { return 0 }
+        let proportional = amplitude * renderedProgress
+        if isPlaying {
+            return proportional
+        }
+        guard isFlattening, let start = flattenStart else { return 0 }
+        let elapsed = max(0, date.timeIntervalSince(start))
+        return proportional * CGFloat(exp(-9.0 * elapsed))
     }
 
     /// Arrastre con distinción toque/scrub: el toque (< 4 pt) no hace seek y
@@ -153,6 +188,7 @@ struct AuroraWavyProgress: View {
                     dragStarted = true
                     dragMoved = false
                     dragPreview = Double(clampedProgress)
+                    Haptics.selection()
                 }
 
                 let dx = value.translation.width
@@ -175,6 +211,7 @@ struct AuroraWavyProgress: View {
                 }
 
                 if dragMoved {
+                    Haptics.light()
                     if let scrubEnd = onScrubEnd {
                         scrubEnd(finalProgress)
                     } else {
@@ -205,7 +242,7 @@ struct AuroraWavyProgress_Previews: PreviewProvider {
                 .frame(height: 18)
         }
         .padding(32)
-        .background(Color(UIColor.systemBackground))
+        .background(M3EColor.surface)
     }
 }
 #endif

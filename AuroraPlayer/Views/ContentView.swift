@@ -1,9 +1,10 @@
 import SwiftUI
 
-// ✅ FIX header: ContentView ya no usa NavigationStack. El header float
-// con el nombre de la app se renderiza como parte del layout. La navegación
-// (songs → artista/detalle) se maneja con sheets, eliminando la barra
-// de navegación y su división visual con el fondo.
+// ✅ REMAKE M3E: ContentView ya no usa NavigationStack ni empuja detalles.
+// El header flotante con el nombre de la app es parte del layout y la
+// navegación se resuelve con pantallas completas (`fullScreenCover`) y con
+// NowPlaying como overlay hero, sin barra de navegación ni división visual
+// contra el fondo.
 struct ContentView: View {
     @StateObject private var audioEngine = AudioEngine()
     @StateObject private var fileAccessService = FileAccessService()
@@ -19,6 +20,18 @@ struct ContentView: View {
     @State private var showSettings = false
     @State private var showPlaylists = false
     @State private var showFolderPicker = false
+    // ✅ REMAKE: NowPlaying ya no es un sheet. Vive como overlay a pantalla
+    // completa en el ZStack raíz y comparte la geometría de la portada con la
+    // PlayerBar (hero animation). Un `.fullScreenCover` NO comparte jerarquía
+    // con la barra, así que `matchedGeometryEffect` no podría animar el viaje
+    // de 48 → 340 pt; el overlay sí.
+    @State private var showNowPlaying = false
+    @Namespace private var nowPlayingNamespace
+    // ✅ REMAKE: los detalles ya no se empujan con NavigationLink dentro de un
+    // NavigationStack. Se presentan como pantallas completas M3E.
+    @State private var selectedAlbum: Album?
+    @State private var selectedArtist: Artist?
+    @State private var selectedPlaylist: Playlist?
 
     @AppStorage("com.aurora.selectedCategory") private var selectedCategoryRaw = LibraryCategory.songs.rawValue
     private var selectedCategory: LibraryCategory {
@@ -107,8 +120,7 @@ struct ContentView: View {
                     artistSortRaw = artistSortRawStorage
                     artistSortAscending = artistSortAscendingStorage
                 }
-            NavigationStack {
-                VStack(spacing: 0) {
+            VStack(spacing: 0) {
                     // ✅ Header flotante con nombre de app integrado al fondo (sin NavigationBar separada)
                     headerView
 
@@ -263,38 +275,32 @@ struct ContentView: View {
                         }
                     }
                 }
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbarBackground(.hidden, for: .navigationBar)
-                .toolbar {
-                    ToolbarItem(placement: .navigationBarTrailing) {
-                        HStack(spacing: 6) {
-                            Button {
-                                showPlaylists = true
-                            } label: {
-                                Image(systemName: "music.note.list")
-                                    .foregroundStyle(AppTheme.accentGradient)
-                                    .font(.system(size: 16, weight: .medium))
-                                    .frame(width: 44, height: 44)
-                                    .contentShape(Rectangle())
-                            }
-
-                            Button {
-                                showSettings = true
-                            } label: {
-                                Image(systemName: "gearshape.fill")
-                                    .foregroundStyle(AppTheme.accentGradient)
-                                    .font(.system(size: 16, weight: .medium))
-                                    .frame(width: 44, height: 44)
-                                    .contentShape(Rectangle())
-                            }
-                        }
-                    }
-                }
-                .sheet(isPresented: $showSettings) {
+                // ✅ REMAKE: fuera el NavigationStack y su toolbar. La
+                // navegación ahora es M3E: header propio con título + acciones
+                // y pantallas completas (fullScreenCover) para el resto.
+                .fullScreenCover(isPresented: $showSettings) {
                     SettingsView(audioEngine: audioEngine, fileAccessService: fileAccessService)
                 }
-                .sheet(isPresented: $showPlaylists) {
+                .fullScreenCover(isPresented: $showPlaylists) {
                     PlaylistsView(fileAccessService: fileAccessService, audioEngine: audioEngine)
+                }
+                .fullScreenCover(item: $selectedAlbum) { album in
+                    NavigationStack {
+                        AlbumDetailView(album: album, audioEngine: audioEngine, fileAccessService: fileAccessService)
+                    }
+                    .tint(AppTheme.accent)
+                }
+                .fullScreenCover(item: $selectedArtist) { artist in
+                    NavigationStack {
+                        ArtistDetailView(artist: artist, audioEngine: audioEngine, fileAccessService: fileAccessService)
+                    }
+                    .tint(AppTheme.accent)
+                }
+                .fullScreenCover(item: $selectedPlaylist) { playlist in
+                    NavigationStack {
+                        PlaylistDetailView(playlist: playlist, fileAccessService: fileAccessService, audioEngine: audioEngine)
+                    }
+                    .tint(AppTheme.accent)
                 }
                 .onAppear {
                     restoreLibraryIfNeeded()
@@ -371,7 +377,7 @@ struct ContentView: View {
                                     .controlSize(.small)
                                     .tint(AppTheme.accent)
                                 Text(Localization.localized("indexing.updating"))
-                                    .font(.system(size: 13, weight: .medium))
+                                    .font(M3ETypography.bodyMedium)
                                     .foregroundStyle(.secondary)
                             }
                             .padding(.horizontal, 18)
@@ -381,7 +387,7 @@ struct ContentView: View {
                                 // lista. Mismo tamaño y misma sombra; sin muestreo de
                                 // material encima de las filas que se desplazan.
                                 Capsule()
-                                    .fill(Color(UIColor.secondarySystemBackground))
+                                    .fill(M3EColor.surfaceContainerHigh)
                                     .shadow(color: .black.opacity(0.1), radius: 8, y: 4)
                             }
                             .padding(.bottom, 80)
@@ -389,17 +395,22 @@ struct ContentView: View {
                         .transition(.opacity)
                     }
                 }
-            }
             // ✅ FIX POST-G (PlayerBar aparece antes que el resto): la barra se
-            // ancla al NavigationStack DENTRO del ZStack. Antes colgaba de un
+            // ancla al contenido DENTRO del ZStack. Antes colgaba de un
             // `.safeAreaInset` del ZStack RAÍZ: el inset es hermano de los hijos
             // del ZStack, así que se componía POR ENCIMA del Splash (su zIndex(1)
             // no ordena contra el inset). Aquí el splash vuelve a tapar la barra
             // mientras dura.
             .safeAreaInset(edge: .bottom, spacing: 0) {
-                PlayerBar(audioEngine: audioEngine, fileAccessService: fileAccessService, clock: audioEngine.clock)
-                    .padding(.horizontal, 10)
-                    .padding(.bottom, 6)
+                PlayerBar(
+                    audioEngine: audioEngine,
+                    fileAccessService: fileAccessService,
+                    clock: audioEngine.clock,
+                    heroNamespace: nowPlayingNamespace,
+                    onOpenNowPlaying: openNowPlaying
+                )
+                .padding(.horizontal, 10)
+                .padding(.bottom, 6)
             }
         }
         // ✅ FIX ORDEN SPLASH: el splash sale del ZStack raíz y pasa a ser un
@@ -419,6 +430,23 @@ struct ContentView: View {
                     // duración la marca el withAnimation del llamador, que no se
                     // toca para no alterar la duración total del splash).
                     .transition(.scale(scale: 0.96).combined(with: .opacity))
+            }
+        }
+        // ✅ REMAKE: NowPlaying a pantalla completa como overlay del ZStack
+        // raíz. La portada viaja desde la PlayerBar con `matchedGeometryEffect`
+        // (hero) y el resto de la vista entra con un fundido corto. Cerrar
+        // devuelve la portada a la barra con el mismo spring.
+        .overlay {
+            if showNowPlaying {
+                NowPlayingView(
+                    audioEngine: audioEngine,
+                    fileAccessService: fileAccessService,
+                    clock: audioEngine.clock,
+                    heroNamespace: nowPlayingNamespace,
+                    onClose: closeNowPlaying
+                )
+                .zIndex(20)
+                .transition(.opacity)
             }
         }
         .animation(.easeInOut(duration: 0.35), value: fileAccessService.isScanning)
@@ -546,8 +574,8 @@ struct ContentView: View {
         .scrollIndicators(.hidden)
     }
 
-    // ✅ Buscador INLINE con look nativo (lupa + fondo secondarySystemBackground).
-    // Sustituye a .searchable del NavigationStack sin pelear con la navBar.
+    // ✅ Buscador INLINE del sistema M3E (píldora tonal + outline que cambia
+    // con el foco). Sustituye a .searchable sin pelear con ninguna navBar.
     // ✅ M3E (Bloque 2): el buscador es el componente base `AuroraM3TextField`
     // (píldora, contenedor sólido, outline que cambia con el foco). Se le pasa el
     // `@FocusState` de esta vista para no perder ni el foco programático ni el
@@ -598,16 +626,60 @@ struct ContentView: View {
     // No usa NavigationBar ni toolbar → el nombre se ve como parte del layout,
     // sin división visual contra el AppBackground ni el buscador.
     private var headerView: some View {
-        HStack {
-            // ✅ M3E (Bloque 2): headline-small enfatizado. Wordmark a 24/medium con tracking 0.
+        HStack(spacing: 10) {
+            // ✅ REMAKE: headline-small enfatizado del catálogo M3E.
             Text(Localization.localized("app.name"))
                 .font(M3ETypography.headlineSmallEmphasized)
                 .foregroundStyle(AppTheme.accentGradient)
                 .accessibilityLabel(Localization.localized("app.name"))
+
             Spacer()
+
+            // Las acciones que antes vivían en el toolbar del NavigationStack
+            // ahora son botones tonales del header M3E.
+            headerAction(icon: "music.note.list", label: Localization.localized("playlists.title")) {
+                showPlaylists = true
+            }
+            headerAction(icon: "gearshape.fill", label: Localization.localized("settings.title")) {
+                showSettings = true
+            }
         }
         .padding(.horizontal, 20)
         .padding(.top, 12)
+    }
+
+    private func headerAction(icon: String, label: String, action: @escaping () -> Void) -> some View {
+        Button {
+            Haptics.light()
+            action()
+        } label: {
+            Image(systemName: icon)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(M3EColor.primary)
+                .frame(width: 40, height: 40)
+                .background(
+                    Circle().fill(M3EColor.surfaceContainerHigh)
+                )
+                .overlay(
+                    Circle().strokeBorder(M3EColor.outline.opacity(0.2), lineWidth: 1)
+                )
+                .contentShape(Circle())
+        }
+        .buttonStyle(M3ESquishButtonStyle())
+        .accessibilityLabel(label)
+    }
+
+    private func openNowPlaying() {
+        Haptics.light()
+        withAnimation(AuroraMotion.spatialDefault) {
+            showNowPlaying = true
+        }
+    }
+
+    private func closeNowPlaying() {
+        withAnimation(AuroraMotion.spatialDefault) {
+            showNowPlaying = false
+        }
     }
 
     private func categoryIcon(for category: LibraryCategory) -> String {
@@ -724,7 +796,7 @@ struct ContentView: View {
                 // de calor/BCM del dispositivo. Fondo opaco = mismo look, cero
                 // re-computo de blur.
                 Circle()
-                    .fill(Color(UIColor.secondarySystemBackground))
+                    .fill(M3EColor.surfaceContainerHigh)
                     .frame(width: 80, height: 80)
                     .overlay {
                         Circle()
@@ -744,7 +816,8 @@ struct ContentView: View {
             }
 
             Text(Localization.localized("indexing.indexingLibrary"))
-                .font(.system(size: 22, weight: .heavy, design: .rounded))
+                .font(M3ETypography.headlineSmallEmphasized)
+                .tracking(-0.2)
                 .foregroundStyle(.primary)
 
             VStack(spacing: 10) {
@@ -767,18 +840,18 @@ struct ContentView: View {
 
                 HStack {
                     Text("\(fileAccessService.scanProcessed) \(Localization.localized("indexing.progress")) \(fileAccessService.scanTotal)")
-                        .font(.system(size: 13, weight: .medium).monospacedDigit())
+                        .font(M3ETypography.labelMedium)
                         .foregroundStyle(.secondary)
                     Spacer()
                     Text("\(Int(indexingProgress * 100))%")
-                        .font(.system(size: 13, weight: .bold).monospacedDigit())
+                        .font(M3ETypography.labelMedium)
                         .foregroundStyle(AppTheme.accentGradient)
                 }
             }
             .padding(.horizontal, 8)
 
             Text(Localization.localized("indexing.preparing"))
-                .font(.system(size: 14))
+                .font(M3ETypography.bodyMedium)
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity)
@@ -798,7 +871,7 @@ struct ContentView: View {
                 .controlSize(.small)
                 .tint(AppTheme.accent)
             Text("\(Localization.localized("indexing.processed")) \(fileAccessService.scanProcessed)/\(fileAccessService.scanTotal)")
-                .font(.system(size: 13, weight: .medium).monospacedDigit())
+                .font(M3ETypography.labelMedium)
                 .foregroundStyle(.secondary)
             Spacer()
             GeometryReader { geo in
@@ -821,7 +894,7 @@ struct ContentView: View {
         .padding(.vertical, 10)
         .background {
             Capsule()
-                .fill(Color(UIColor.secondarySystemBackground))
+                .fill(M3EColor.surfaceContainerHigh)
                 .shadow(color: .black.opacity(0.08), radius: 6, y: 2)
         }
         .padding(.horizontal, 12)
@@ -869,14 +942,14 @@ struct ContentView: View {
                 .padding(.horizontal, 12)
                 .padding(.top, 8)
             ForEach(albums) { album in
-                NavigationLink {
-                    AlbumDetailView(album: album, audioEngine: audioEngine, fileAccessService: fileAccessService)
+                Button {
+                    Haptics.light()
+                    selectedAlbum = album
                 } label: {
                     // ✅ PERF: fila como view valor + `.equatable()`.
                     AlbumRow(album: album).equatable()
                 }
-                // ✅ M3E: rebote elástico al tocar la fila (antes .plain: la
-                // fila no reaccionaba de forma ninguna hasta que navegaba).
+                // ✅ M3E: rebote elástico al tocar la fila.
                 .buttonStyle(PressableButtonStyle(scale: AuroraPressScale.row, pressedOpacity: 0.7))
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
@@ -916,8 +989,9 @@ struct ContentView: View {
                 .padding(.horizontal, 12)
                 .padding(.top, 8)
             ForEach(artists) { artist in
-                NavigationLink {
-                    ArtistDetailView(artist: artist, audioEngine: audioEngine, fileAccessService: fileAccessService)
+                Button {
+                    Haptics.light()
+                    selectedArtist = artist
                 } label: {
                     // ✅ PERF: fila como view valor + `.equatable()`.
                     ArtistRow(artist: artist).equatable()
@@ -944,14 +1018,12 @@ struct ContentView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 16) {
                     ForEach(playlists) { playlist in
-                        NavigationLink {
-                            PlaylistDetailView(playlist: playlist, fileAccessService: fileAccessService, audioEngine: audioEngine)
+                        Button {
+                            Haptics.light()
+                            selectedPlaylist = playlist
                         } label: {
                             playlistLibraryCard(playlist: playlist)
                         }
-                        // ✅ AURORA DESIGN: feedback de presión del sistema, el mismo
-                        // caso que ArtistAlbumCard. Sigue siendo un NavigationLink
-                        // normal: el ButtonStyle solo dibuja el label.
                         .buttonStyle(PressableButtonStyle(scale: AuroraPressScale.chip))
                     }
                 }
@@ -1386,7 +1458,7 @@ struct SplashView: View {
             // ✅ REDISEÑO A: es la MISMA base que el LaunchScreen
             // (`systemBackgroundColor`), así que el handoff no cambia de fondo
             // ni en claro ni en oscuro.
-            Color(UIColor.systemBackground)
+            M3EColor.surface
                 .ignoresSafeArea()
             
             VStack(spacing: 0) {
@@ -1639,7 +1711,7 @@ struct CategorySortMenu<Option: RawRepresentable & Hashable & CaseIterable>: Vie
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(AppTheme.accentGradient)
                 Text("\(Localization.localized("sort.sortBy")): \(optionTitle(current))")
-                    .font(.system(size: 12, weight: .medium))
+                    .font(M3ETypography.labelMedium)
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .layoutPriority(1)
@@ -1724,10 +1796,10 @@ struct playlistLibraryCard: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(playlist.name)
-                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                    .font(M3ETypography.titleMediumEmphasized)
                     .foregroundStyle(.primary).lineLimit(1)
                 Text(localizedSongCount(playlist.songIDs.count))
-                    .font(.system(size: 12)).foregroundStyle(.secondary)
+                    .font(M3ETypography.bodyMedium).foregroundStyle(.secondary)
             }
         }
         .frame(width: 140).padding(.vertical, 8)

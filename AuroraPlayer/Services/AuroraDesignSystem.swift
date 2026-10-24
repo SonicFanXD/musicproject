@@ -90,16 +90,16 @@ enum AuroraPressScale {
 
 // MARK: - Superficies
 
-/// ✅ AURORA DESIGN: superficies del sistema. `.glass` SOLO sobre fondo con
-/// artwork/blur (containers de nivel 1: NowPlaying, PlayerBar, heroes) y un
-/// máximo de 3-4 simultáneos visibles. `.flat` para listas largas (biblioteca,
-/// playlists, queue, settings, logs): cero recomposición de blur por fila.
-/// `.opaque` no se elige a mano: `auroraCard` cae a él automáticamente con
-/// "Reducir transparencia" activo.
+/// ✅ REMAKE M3E: los tres casos resuelven a roles TONALES de `M3EColor`
+/// (derivados del acento). Se conservan los nombres para no tocar los call
+/// sites existentes, pero ya no hay materiales ni grises del sistema:
+///  · `.glass`  → contenedor tonal (nivel 1: PlayerBar, héroes).
+///  · `.flat`   → `surfaceContainerLow` (listas largas y filas).
+///  · `.opaque` → `surfaceContainer` (con "Reducir transparencia" activo).
 enum AuroraSurface {
-    case glass      // .ultraThinMaterial — SOLO sobre fondo con artwork/blur
-    case flat       // secondarySystemBackground.opacity(0.6) — listas largas, perf
-    case opaque     // secondarySystemBackground — reduceTransparency
+    case glass      // contenedor tonal de nivel 1
+    case flat       // surfaceContainerLow — listas largas
+    case opaque     // surfaceContainer — reduceTransparency
 }
 
 // MARK: - Gradiente text-safe (regla 2.7)
@@ -195,39 +195,36 @@ private struct AuroraCardModifier: ViewModifier {
             .background(surfaceBackground(effectiveStyle))
             .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
             .overlay(
-                // ✅ FASE 2/3 (remake M3E): elevación TONAL, no sombra. El borde
-                // de 1.5 pt con el acento al 20 % es lo que hace que una card se
+                // ✅ REMAKE M3E: elevación TONAL, no sombra. El borde de 1.5 pt
+                // con `M3EColor.outline` al 20 % es lo que hace que una card se
                 // lea como Material y no como una tarjeta de iOS.
                 withBorder
                     ? RoundedRectangle(cornerRadius: radius, style: .continuous)
-                        .strokeBorder(AppTheme.accent.opacity(0.2), lineWidth: 1.5)
+                        .strokeBorder(M3EColor.outline.opacity(0.2), lineWidth: 1.5)
                     : nil
             )
     }
 
-    /// ✅ Superficie M3E compartida: base OPACA del sistema + velo de acento.
+    /// ✅ Superficie M3E compartida: rol tonal derivado del acento. La base ya
+    /// lleva el tinte; no se compone un gris del sistema con un velo encima.
     private var tonalSurface: some View {
-        ZStack {
-            Rectangle().fill(Color(UIColor.secondarySystemBackground))
-            Rectangle().fill(AppTheme.accent.opacity(0.08))
-        }
+        Rectangle().fill(M3EColor.surfaceContainerLow)
     }
 
     @ViewBuilder
     private func surfaceBackground(_ effective: AuroraSurface) -> some View {
         switch effective {
         case .glass:
-            // ✅ FASE 3 (M3E): cero materiales. La antigua superficie de vidrio
-            // cae a SurfaceContainer tonal; el enum se conserva para no tocar
-            // los call sites (hoy ninguno pide `.glass`, pero la API sigue).
+            // ✅ Cero materiales. La antigua superficie de vidrio cae al rol
+            // tonal de contenedor; el enum se conserva para no tocar call sites.
             tonalSurface
         case .flat:
-            // ✅ FASE 3 (remake): antes era el gris del sistema al 60 % (dejaba
-            // ver el fondo y delataba el look iOS). Ahora es base sólida + velo
-            // tonal del acento al 8 %.
+            // ✅ REMAKE: `surfaceContainerLow` del acento (antes era el gris
+            // del sistema al 60 %, que dejaba ver el fondo y delataba iOS).
             tonalSurface
         case .opaque:
-            tonalSurface
+            // Los contenedores elevados suben un nivel tonal.
+            Rectangle().fill(M3EColor.surfaceContainer)
         }
     }
 }
@@ -322,15 +319,20 @@ private struct AuroraChipModifier: ViewModifier {
             // Seleccionado = gradiente text-safe + texto blanco; sin
             // seleccionar = superficie flat neutra. Mismo vocabulario que
             // los filtros de LogsView y las cápsulas de NowPlaying.
-            .font(.system(size: 12, weight: .semibold, design: .rounded))
-            .foregroundStyle(isSelected ? Color.white : Color.secondary)
+            .font(M3ETypography.labelLargeEmphasized)
+            .foregroundStyle(isSelected ? accent : M3EColor.onSurfaceVariant)
             .padding(.horizontal, AuroraSpacing.lg)
             .padding(.vertical, AuroraSpacing.sm)
-            .background(
-                Capsule().fill(
-                    isSelected
-                        ? AnyShapeStyle(AuroraDesignSystem.textSafeGradient(primary: accent, secondary: accent.opacity(0.7)))
-                        : AnyShapeStyle(Color.secondary.opacity(0.12))
+            .background {
+                ZStack {
+                    Capsule().fill(M3EColor.surfaceVariant)
+                    Capsule().fill(isSelected ? accent.opacity(0.2) : Color.clear)
+                }
+            }
+            .overlay(
+                Capsule().strokeBorder(
+                    isSelected ? accent.opacity(0.4) : M3EColor.outline.opacity(0.16),
+                    lineWidth: 1
                 )
             )
     }
@@ -360,17 +362,15 @@ private struct AuroraSecondaryActionModifier: ViewModifier {
             // velo; ahora es una superficie SÓLIDA del sistema con el velo de
             // acento encima. Misma geometría y mismo contraste, sin muestreo
             // de material en la cabecera de los detalles.
-            .font(.system(size: 16, weight: .semibold, design: .rounded))
-            .foregroundStyle(accent)
+            .font(M3ETypography.labelLargeEmphasized)
+            .foregroundStyle(M3EColor.onPrimaryContainer)
             .padding(.horizontal, AuroraSpacing.xl)
             .padding(.vertical, AuroraSpacing.md)
             .background(
-                Capsule()
-                    .fill(Color(UIColor.secondarySystemBackground))
-                    .overlay(Capsule().fill(accent.opacity(0.12)))
+                Capsule().fill(M3EColor.primaryContainer)
             )
             .overlay(
-                Capsule().strokeBorder(accent.opacity(0.35), lineWidth: 1)
+                Capsule().strokeBorder(accent.opacity(0.3), lineWidth: 1)
             )
     }
 }
@@ -445,11 +445,11 @@ struct AuroraSectionHeader: View {
             Image(systemName: icon)
                 .auroraIconBadge(size: AuroraIconSize.medium, color: color, shape: .roundedRect)
             Text(title)
-                // ✅ M3E: los títulos de sección suben a title-medium/heavy
-                // (18/bold → 20/heavy con tracking negativo). Es el mismo salto que
-                // el resto de la app: el título manda, el cuerpo se apaga.
-                .font(.system(size: 20, weight: .heavy, design: .rounded))
-                .tracking(-0.3)
+                // ✅ REMAKE: `headlineSmallEmphasized` (24/semibold) con
+                // tracking negativo. Es el rol de M3E para el encabezado de
+                // sección; ya no hay un 20/heavy ad-hoc.
+                .font(M3ETypography.headlineSmallEmphasized)
+                .tracking(-0.2)
                 .foregroundStyle(Color.primary)
             Spacer()
         }
@@ -505,7 +505,7 @@ struct AuroraSheetHeader: View {
             Spacer()
 
             Text(title)
-                .font(.system(size: 16, weight: .semibold, design: .rounded))
+                .font(M3ETypography.titleMediumEmphasized)
                 .foregroundStyle(titleColor)
                 .lineLimit(1)
 

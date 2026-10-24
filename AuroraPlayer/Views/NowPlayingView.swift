@@ -10,6 +10,11 @@ struct NowPlayingView: View {
     // tap de shuffle/repeat. Ahora vive aislado en ProgressScrubView (patrón
     // PlayerBar) y aquí se guarda como valor plano para pasarlo a subvistas.
     let clock: PlaybackClock
+    // ✅ REMAKE: presentación como overlay a pantalla completa (no sheet).
+    // `heroNamespace` conecta la portada con la PlayerBar y `onClose` cierra
+    // desde el header sin depender de un entorno de presentación.
+    var heroNamespace: Namespace.ID? = nil
+    var onClose: (() -> Void)? = nil
     // ✅ Observar el idioma: al cambiar, esta vista se re-renderiza al instante
     @ObservedObject private var localization = Localization.shared
     @Environment(\.dismiss) private var dismiss
@@ -26,10 +31,10 @@ struct NowPlayingView: View {
     @State private var showEqualizer = false
     @State private var showQueue = false
     @State private var showQualityDetail = false
-    // ✅ FIX log duplicado: el sheet se monta-desecha-vuelve a montar durante
-    // la transición (ciclo de vida conocido de .sheet) y el onAppear corre dos
-    // veces. El resto de acciones son idempotentes; el LOG no: se guarda tras
-    // este flag para que "NowPlaying abierto" aparezca una sola vez.
+    // ✅ FIX log duplicado: el overlay puede reevaluarse durante la transición
+    // de entrada y el onAppear puede correr más de una vez. El resto de
+    // acciones son idempotentes; el LOG no: se guarda tras este flag para que
+    // "NowPlaying abierto" aparezca una sola vez.
     @State private var hasLoggedAppear = false
     // ✅ NUEVO: menú de 3 puntos → ver artista / álbum / letras / cola / compartir
     @State private var showArtistDetail = false
@@ -311,38 +316,35 @@ struct NowPlayingView: View {
                     ThemeManager.shared.updateArtworkAccent(from: song)
                 }
             }
-            // ✅ NUEVO: destinos del menú de 3 puntos
-            .sheet(isPresented: $showArtistDetail) {
+            // ✅ REMAKE: destinos del menú de 3 puntos como PANTALLAS COMPLETAS
+            // M3E. El detalle entra como raíz de su propio stack (sin back
+            // nativo; su header cierra con dismiss) y el tint cubre alerts,
+            // sliders y controles internos. Nada de sheets apilados sobre la
+            // pantalla de reproducción.
+            .fullScreenCover(isPresented: $showArtistDetail) {
                 if let artist = currentArtist {
                     NavigationStack {
                         ArtistDetailView(artist: artist, audioEngine: audioEngine, fileAccessService: fileAccessService)
                     }
-                    // ✅ FIX BACK ACCENT: el detalle entra como RAÍZ de este stack,
-                    // sin back nativo, pero el tint cubre alerts/sliders/controles
-                    // que la vista presente dentro del sheet.
                     .tint(AppTheme.accent)
                 }
             }
-            .sheet(isPresented: $showAlbumDetail) {
+            .fullScreenCover(isPresented: $showAlbumDetail) {
                 if let album = currentAlbum {
                     NavigationStack {
                         AlbumDetailView(album: album, audioEngine: audioEngine, fileAccessService: fileAccessService)
                     }
-                    // ✅ FIX BACK ACCENT: mismo criterio que el sheet de artista.
                     .tint(AppTheme.accent)
                 }
             }
-            .presentationDetents([.large])
-            // ✅ Mezcla el header con el fondo inmersivo: oculta cualquier banda/corte del sistema
-            .toolbarBackground(.hidden, for: .navigationBar)
-            .navigationBarBackButtonHidden(true)
-            .sheet(isPresented: $showLyrics) {
+            // ✅ REMAKE: pantallas completas M3E, no sheets.
+            .fullScreenCover(isPresented: $showLyrics) {
                 LyricsView(song: audioEngine.currentSong, viewModel: audioEngine.lyricsViewModel)
             }
-            .sheet(isPresented: $showEqualizer) {
+            .fullScreenCover(isPresented: $showEqualizer) {
                 EqualizerView(audioEngine: audioEngine)
             }
-            .sheet(isPresented: $showQueue) {
+            .fullScreenCover(isPresented: $showQueue) {
                 // ✅ E3.4: la cola necesita el servicio de archivos para el item
                 // "Me gusta" del menú de "A continuación". Ya vivía aquí al lado.
                 QueueView(audioEngine: audioEngine, fileAccessService: fileAccessService)
@@ -366,7 +368,11 @@ struct NowPlayingView: View {
     private var headerView: some View {
         HStack(spacing: 0) {
             Button {
-                dismiss()
+                if let onClose {
+                    onClose()
+                } else {
+                    dismiss()
+                }
             } label: {
                 Image(systemName: "chevron.down")
                     .foregroundStyle(playIconColor)
@@ -380,7 +386,7 @@ struct NowPlayingView: View {
             Spacer()
 
             Text(Localization.localized("nowPlaying.title"))
-                .font(.system(size: 16, weight: .semibold, design: .rounded))
+                .font(M3ETypography.titleMediumEmphasized)
                 .foregroundStyle(playIconColor.opacity(0.9))
                 .shadow(color: .black.opacity(0.15), radius: 4, y: 1)
 
@@ -416,7 +422,7 @@ struct NowPlayingView: View {
                                 colors: [
                                     extractedColor.opacity(0.55),
                                     extractedColor.opacity(0.28),
-                                    Color(UIColor.systemBackground).opacity(0.92)
+                                    M3EColor.surface.opacity(0.92)
                                 ],
                                 startPoint: .top,
                                 endPoint: .bottom
@@ -428,8 +434,8 @@ struct NowPlayingView: View {
             } else {
                 LinearGradient(
                     colors: [
-                        Color(UIColor.systemBackground),
-                        Color(UIColor.secondarySystemBackground)
+                        M3EColor.surface,
+                        M3EColor.surfaceContainerLow
                     ],
                     startPoint: .top,
                     endPoint: .bottom
@@ -480,6 +486,7 @@ struct NowPlayingView: View {
                 .shadow(color: extractedColor.opacity(0.15), radius: 8, x: 0, y: 4)
             }
         }
+        .modifier(NowPlayingHeroModifier(namespace: heroNamespace))
     }
 
     /// ✅ Fuente del título de `songInfoView`.
@@ -492,11 +499,11 @@ struct NowPlayingView: View {
 
     /// ✅ Fuentes del chip de calidad (línea de calidad y línea de ruta).
     private var qualityChipFont: Font {
-        .system(size: 10, weight: .medium).monospacedDigit()
+        M3ETypography.labelMedium
     }
 
     private var routeChipFont: Font {
-        .system(size: 8, weight: .regular)
+        M3ETypography.labelSmall
     }
 
     // MARK: - Song Info (mejorado con mejor tipografía y espaciado)
@@ -919,7 +926,7 @@ struct NowPlayingView: View {
                         .foregroundStyle(AppTheme.accent)
 
                     Text(Localization.localized("audio.quality.title"))
-                        .font(.system(size: 17, weight: .bold, design: .rounded))
+                        .font(M3ETypography.titleMediumEmphasized)
                         .foregroundStyle(.primary)
 
                     Spacer()
@@ -955,7 +962,7 @@ struct NowPlayingView: View {
                 // en cada frame del panel; un color del sistema con el mismo
                 // radio y borde da la misma jerarquía sin coste de composición.
                 RoundedRectangle(cornerRadius: AuroraRadius.xl, style: .continuous)
-                    .fill(Color(UIColor.secondarySystemBackground))
+                    .fill(M3EColor.surfaceContainerHigh)
                     // ✅ Una sola sombra (la doble costaba render en A11)
                     .shadow(color: .black.opacity(0.35), radius: 24, x: 0, y: 12)
             }
@@ -1068,7 +1075,7 @@ private struct ProgressScrubView: View {
 
             HStack {
                 Text(scrubPreviewText)
-                    .font(.system(size: isCompactScreen ? 13 : 14, weight: isScrubbing ? .heavy : .semibold))
+                    .font(M3ETypography.timeDisplayCompact)
                     .foregroundStyle(isScrubbing ? playIconColor : AppTheme.contrastingText(on: extractedUIColor).opacity(0.75))
                     .monospacedDigit()
                     // ✅ M3E: color/peso = efecto → effectsDefault (sin rebote).
@@ -1077,7 +1084,7 @@ private struct ProgressScrubView: View {
                 Spacer()
 
                 Text(formatTime(audioEngine.duration))
-                    .font(.system(size: isCompactScreen ? 13 : 14, weight: .semibold))
+                    .font(M3ETypography.timeDisplayCompact)
                     .foregroundStyle(AppTheme.contrastingText(on: extractedUIColor).opacity(0.75))
                     .monospacedDigit()
             }
@@ -1111,5 +1118,23 @@ struct AirPlayRoutePickerView: UIViewRepresentable {
         // FIX: reaccionar al acento dinamico de la caratula / acento manual
         let tint = AppTheme.accentUIColor
         if uiView.tintColor != tint { uiView.tintColor = tint }
+    }
+}
+
+// MARK: - Hero de la portada
+
+/// Aplica `matchedGeometryEffect` solo cuando NowPlaying se presenta como
+/// overlay con un namespace compartido. Si se usa como vista suelta (preview
+/// o presentación antigua), no toca la jerarquía.
+private struct NowPlayingHeroModifier: ViewModifier {
+    let namespace: Namespace.ID?
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if let namespace {
+            content.matchedGeometryEffect(id: "nowPlaying.artwork", in: namespace)
+        } else {
+            content
+        }
     }
 }

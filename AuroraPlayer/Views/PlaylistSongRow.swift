@@ -75,19 +75,19 @@ struct PlaylistSongRow: View, Equatable {
                             .frame(width: 26)
                     } else {
                         Text("\(index + 1)")
-                            .font(.system(size: 15, weight: .medium).monospacedDigit())
+                            .font(M3ETypography.labelLargeNumeric)
                             .foregroundStyle(Color.secondary.opacity(0.6))
                             .frame(width: 26)
                     }
 
                     VStack(alignment: .leading, spacing: 3) {
                         Text(song.title)
-                            .font(.system(size: 16, weight: isCurrent ? .semibold : .medium))
+                            .font(M3ETypography.titleMediumEmphasized)
                             .foregroundStyle(isCurrent ? AppTheme.accent : .primary)
                             .lineLimit(1)
 
                         Text(song.displaySubtitle)
-                            .font(.system(size: 13))
+                            .font(M3ETypography.bodyMedium)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                     }
@@ -102,7 +102,7 @@ struct PlaylistSongRow: View, Equatable {
                             EqualizerBars(color: AppTheme.accent, isPlaying: isPlaying)
                         } else {
                             Text(Self.durationLabel(song.duration))
-                                .font(.system(size: 13).monospacedDigit())
+                                .font(M3ETypography.timeDisplayCompact)
                                 .foregroundStyle(.tertiary)
                         }
                     }

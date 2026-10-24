@@ -81,11 +81,23 @@ struct M3ETypography {
     // es el title-medium de la escala, un paso por encima del body.
     static let titleMediumEmphasized: Font = .system(size: 16, weight: .semibold, design: .rounded)
 
+    // Cuerpo grande: entradas de texto y párrafos.
+    static let bodyLarge: Font = .system(size: 16, weight: .regular)
+
     // Cuerpo medio: subtítulos de fila y metadatos.
     static let bodyMedium: Font = .system(size: 12, weight: .regular)
 
+    // Cuerpo pequeño: ruta de audio, notas al pie.
+    static let bodySmall: Font = .system(size: 11, weight: .regular)
+
     // Etiqueta pequeña: duración, contadores y datos numéricos.
     static let labelMedium: Font = .system(size: 11, weight: .medium).monospacedDigit()
+
+    // Etiqueta mínima: chips de calidad y datos numéricos muy compactos.
+    static let labelSmall: Font = .system(size: 9, weight: .medium).monospacedDigit()
+
+    // Número de fila / índice de pista (14 pt) con dígitos tabulares.
+    static let labelLargeNumeric: Font = .system(size: 14, weight: .medium).monospacedDigit()
 
     // Subtítulo de pista: usado para información de calidad y route display.
     static let trackSubtitle: Font = .system(size: 10, weight: .regular)
@@ -93,6 +105,10 @@ struct M3ETypography {
 
     // Texto de tiempo (formato mm:ss): siempre monospaced para alineación perfecta.
     static let timeDisplay: Font = .system(size: 20, weight: .medium)
+        .monospacedDigit()
+
+    // Tiempo compacto de la barra de scrub (13 pt) con dígitos tabulares.
+    static let timeDisplayCompact: Font = .system(size: 13, weight: .medium)
         .monospacedDigit()
 }
 
@@ -140,10 +156,18 @@ enum AuroraMotion {
     // MARK: - Tokens oficiales M3E (SOLO estos tres)
 
     // ✅ FASE 2: se eliminan quick / normal / emphasized / slow / lyricLine.
-    // Cualquier animación de la app es uno de estos tres tokens:
+    // Cualquier animación de la app es uno de estos tres tokens EXPRESIVOS
+    // (el esquema por defecto de M3E):
     //  · spatialDefault → posición, tamaño y forma (rebote suave).
     //  · spatialFast    → toques rápidos (rebote más notable).
     //  · effectsDefault → opacidad y color (sin rebote).
+    //
+    // ✅ REMAKE: M3E define DOS esquemas. El expresivo (arriba) es el de la
+    // marca y el que usan cards, chips, héroes y transiciones. El ESTÁNDAR
+    // (abajo) es utilitario: misma rigidez, ζ = 1.0, sin overshoot, para
+    // elementos donde un rebote distraería (listas densas, ajustes, barras
+    // de navegación). Ambos comparten `m3eSpring`, así que la física es la
+    // misma y solo cambia la amortiguación.
     // Los pulsos continuos NO son tokens: los genera `TimelineView` con la
     // fecha de cada frame (ver `AuroraEqualizerBars`), nunca `repeatForever`.
 
@@ -174,6 +198,18 @@ enum AuroraMotion {
 
     /// ζ = 1.0 → críticamente amortiguado: opacidad y color, sin overshoot.
     static let effectsDefault = m3eSpring(stiffness: 1600, dampingRatio: 1.0)
+
+    // MARK: - Esquema ESTÁNDAR (utilitario, sin overshoot)
+
+    /// Posición/tamaño en contextos utilitarios: misma rigidez que el
+    /// expresivo pero críticamente amortiguado (ζ = 1.0).
+    static let standardSpatialDefault = m3eSpring(stiffness: 380, dampingRatio: 1.0)
+
+    /// Toques en contextos utilitarios: rápido y sin rebote.
+    static let standardSpatialFast = m3eSpring(stiffness: 800, dampingRatio: 1.0)
+
+    /// Efectos utilitarios: idéntico al expresivo (ya es ζ = 1.0).
+    static let standardEffectsDefault = effectsDefault
 }
 
 // ══════════════════════════════════════════════════════════════════════════
