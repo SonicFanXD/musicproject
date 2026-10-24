@@ -205,20 +205,24 @@ struct M3ESquircleShape: Shape {
         var path = Path()
 
         // Calcular el punto inicial en el lado derecho medio
+        // Usamos (value >= 0 ? 1 : -1) en lugar de sign() global de Swift
+        let sgn: (CGFloat) -> CGFloat = { $0 >= 0 ? 1 : -1 }
         let startAngle = -CGFloat.pi / 2
-        let startX = centerX + rx * pow(abs(cos(startAngle)), 2 / n) * sign(cos(startAngle))
-        let startY = centerY + ry * pow(abs(sin(startAngle)), 2 / n) * sign(sin(startAngle))
+        let startX = centerX + rx * pow(abs(cos(startAngle)), 2 / n) * sgn(cos(startAngle))
+        let startY = centerY + ry * pow(abs(sin(startAngle)), 2 / n) * sgn(sin(startAngle))
         path.move(to: CGPoint(x: startX, y: startY))
 
         // Dibujar los 4 cuartos en sentido antihorario
+        // Usamos la función sgn local en lugar de .sign global
+        let sgn: (CGFloat) -> CGFloat = { $0 >= 0 ? 1 : -1 }
         for quarter in 0..<4 {
             let start = quarter * CGFloat.pi / 2
             let end = (quarter + 1) * CGFloat.pi / 2
             let subSteps = 16
             for i in 0...subSteps {
                 let t = start + (end - start) * CGFloat(i) / CGFloat(subSteps)
-                let x = centerX + rx * pow(abs(cos(t)), 2 / n) * cos(t).sign
-                let y = centerY + ry * pow(abs(sin(t)), 2 / n) * sin(t).sign
+                let x = centerX + rx * pow(abs(cos(t)), 2 / n) * cos(t) * sgn(cos(t))
+                let y = centerY + ry * pow(abs(sin(t)), 2 / n) * sin(t) * sgn(sin(t))
                 path.addLine(to: CGPoint(x: x, y: y))
             }
         }
@@ -262,17 +266,22 @@ struct M3ETypography {
     /// Título grande enfatizado: usado para el título de la canción en NowPlaying
     /// y encabezados principales de sección.
     static let titleLargeEmphasized: Font = .system(size: 22, weight: .medium, design: .rounded)
-        .tracking(0)
 
     /// Título pequeño enfatizado: usado para títulos de categoría en ContentView
     /// y otros encabezados de sección medianos.
     static let headlineSmallEmphasized: Font = .system(size: 24, weight: .medium, design: .rounded)
-        .tracking(0)
 
     /// Etiqueta grande enfatizada: usado para texto de información secundaria,
     /// como artista/álbum en NowPlaying y datos de pista.
     static let labelLargeEmphasized: Font = .system(size: 14, weight: .medium, design: .rounded)
-        .tracking(0.1)
+
+    /// Subtítulo de pista: usado para información de calidad y route display.
+    static let trackSubtitle: Font = .system(size: 10, weight: .regular)
+        .monospacedDigit()
+
+    /// Texto de tiempo (formato mm:ss): siempre monospaced para alineación perfecta.
+    static let timeDisplay: Font = .system(size: 20, weight: .medium)
+        .monospacedDigit()
 
     /// Subtítulo de pista: usado para información de calidad y route display.
     static let trackSubtitle: Font = .system(size: 10, weight: .regular)
@@ -295,15 +304,3 @@ struct M3ETypography {
 ///     portada sin añadir ni un render pass (opacidad = capa del sistema).
 /// Sin haptics aquí dentro a propósito: los botones ya disparan `Haptics` en
 /// sus acciones; duplicarlo haría doble Taptic en cada toque.
-struct PressableButtonStyle: ButtonStyle {
-    let scale: CGFloat
-    /// Opacidad al presionar. 1.0 (por defecto) = solo escala, como antes.
-    var pressedOpacity: Double = 1.0
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .scaleEffect(configuration.isPressed ? scale : 1.0)
-            .opacity(configuration.isPressed ? pressedOpacity : 1.0)
-            .animation(AuroraMotion.quick, value: configuration.isPressed)
-    }
-}
