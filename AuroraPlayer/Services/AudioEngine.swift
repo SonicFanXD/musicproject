@@ -2816,7 +2816,9 @@ class AudioEngine: NSObject, ObservableObject {
             wasArmed = false
             let after = currentIndex + 1
             if after < playbackOrder.count,
-               let found = (after..<playbackOrder.count).first(where: { $0.url == url }) {
+               // ✅ FIX CI: el rango itera ÍNDICES (Int); hay que resolver
+               // `playbackOrder[$0]` antes de leer `.url`.
+               let found = (after..<playbackOrder.count).first(where: { playbackOrder[$0].url == url }) {
                 resolved = found
             } else if let found = playbackOrder.firstIndex(where: { $0.url == url }) {
                 resolved = found

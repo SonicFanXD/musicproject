@@ -357,8 +357,13 @@ struct AlbumDetailView: View {
                 shadowColor: .black,
                 isVisible: appearAnimation
             )
-            .padding(.top, 8)
+            // ✅ FIX CI: `.equatable()` ANTES del padding. `padding` devuelve un
+            // `ModifiedContent` que NO es Equatable, así que encadenarlo después
+            // hacía fallar la conformidad ("requires that 'some View' conform to
+            // 'Equatable'"). El corte del diff sigue siendo el mismo: se aplica
+            // al cuerpo de la portada.
             .equatable()
+            .padding(.top, 8)
 
             // ? Info del �lbum con mejor jerarqu�a visual
             VStack(spacing: 6) {
@@ -1068,8 +1073,9 @@ struct ArtistDetailView: View {
                 shadowColor: tintColor,
                 isVisible: appearAnimation
             )
-            .padding(.top, 20)
+            // ✅ FIX CI: `.equatable()` ANTES del padding (ver Álbum detail).
             .equatable()
+            .padding(.top, 20)
 
             // ? Info del artista con mejor jerarqu�a visual
             VStack(spacing: 10) {

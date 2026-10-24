@@ -122,29 +122,37 @@ struct DetailHeroArtwork: View, Equatable {
         }
     }
 
+    /// ✅ FIX CI: `AnyShape` NO conforma `InsettableShape`, así que no expone
+    /// `strokeBorder`. Cada rama dibuja el borde con su shape CONCRETO (que sí
+    /// lo conforma) y el `@ViewBuilder` unifica el tipo de retorno. Se mantiene
+    /// el borde HACIA DENTRO (strokeBorder, no stroke): con stroke, el 3.5pt del
+    /// avatar del artista se saldría media línea fuera de la máscara circular y
+    /// contra el fondo.
     @ViewBuilder
     private var border: some View {
         switch kind {
         case .album:
-            shape.strokeBorder(
-                LinearGradient(
-                    colors: [.white.opacity(0.35), .white.opacity(0.08), .clear],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                ),
-                lineWidth: 1.5
-            )
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .strokeBorder(
+                    LinearGradient(
+                        colors: [.white.opacity(0.35), .white.opacity(0.08), .clear],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 1.5
+                )
         case .artist:
             // ✅ Borde premium con gradiente (mismo gesto que NowPlayingView).
-            shape.strokeBorder(
-                LinearGradient(
-                    colors: [.white.opacity(0.45), accentPrimary.opacity(0.7),
-                             accentSecondary.opacity(0.55), .white.opacity(0.15)],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                ),
-                lineWidth: 3.5
-            )
+            Circle()
+                .strokeBorder(
+                    LinearGradient(
+                        colors: [.white.opacity(0.45), accentPrimary.opacity(0.7),
+                                 accentSecondary.opacity(0.55), .white.opacity(0.15)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 3.5
+                )
         }
     }
 
