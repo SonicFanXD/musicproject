@@ -98,6 +98,37 @@ struct AuroraMorphChipShape: Shape, InsettableShape {
 // Solo variables estáticas (resortes) y shapes internas.
 // ══════════════════════════════════════════════════════════════════════════
 
+
+// MARK: - Morphing shape (M3E: formas que se transforman)
+
+// ✅ Forma para chips seleccionables que interpola SOLO el radio: rectángulo
+// redondeado ↔ cápsula. El chip conserva todo su ancho (`rect`), así que el
+// morph no mueve el layout ni cambia el tamaño del texto.
+// Por qué `animatableData` y no `matchedGeometryEffect`: este último obliga a
+// compartir un `Namespace` y re-instancia la jerarquía, lo que en un
+// `ScrollView` horizontal produce el típico cross-fade entre el chip antiguo
+// y el nuevo (y en el A11 añade trabajo por frame). Aquí cada chip interpola
+// SU propia forma: cero coordinación global, cero vistas extra.
+struct AuroraMorphShape: Shape {
+    var cornerRadiusRatio: CGFloat
+    var widthRatio: CGFloat
+
+    var animatableData: AnimatablePair<CGFloat, CGFloat> {
+        get { AnimatablePair(cornerRadiusRatio, widthRatio) }
+        newValue {
+            cornerRadiusRatio = newValue.first
+            widthRatio = newValue.second
+        }
+    }
+
+    func path(in rect: CGRect) -> Path {
+        let side = min(rect.width, rect.height)
+        let width = side * widthRatio
+        let radius = min(width, side) * cornerRadiusRatio
+        return Path(roundedRect: CGRect(x: rect.midX - width / 2, y: rect.minY, width: width, height: side), cornerRadius: radius, style: .continuous)
+    }
+}
+
 enum AuroraMotion {
 
     // MARK: - Motion tokens (interpolatingSpring por defecto)
@@ -133,43 +164,42 @@ enum AuroraMotion {
 // El bucle lo arranca `AuroraEmptyState` SOLO con la app en primer plano.
     static let breathing = Animation.interpolatingSpring(mass: 1, stiffness: 50, damping: 1.0, initialVelocity: 0).repeatForever(autoreverses: true)
 
-// MARK: - Morphing shape (M3E: formas que se transforman)
-
-// Forma animable que interpola entre círculo, squircle y píldora corta.
+// MARK: - Morphing shape (M3E: formas que se transforman)// Forma animable que interpola entre círculo, squircle y píldora corta.
 // El morph se resuelve interpolando SU PROPIO `animatableData` (radio + ancho).
-    struct AuroraMorphShape: Shape {
-        var cornerRadiusRatio: CGFloat
-        var widthRatio: CGFloat
+// Esta estructura se mueve al nivel superior del archivo para estar disponible en toda la app,
+// igual que PressableButtonStyle y M3ETypography.
+// struct AuroraMorphShape: Shape {
+//     var cornerRadiusRatio: CGFloat
+//     var widthRatio: CGFloat
+// 
+//     var animatableData: AnimatablePair<CGFloat, CGFloat> {
+//         get { AnimatablePair(cornerRadiusRatio, widthRatio) }
+//         newValue {
+//             cornerRadiusRatio = newValue.first
+//             widthRatio = newValue.second
+//         }
+//     }
 
-        var animatableData: AnimatablePair<CGFloat, CGFloat> {
-            get { AnimatablePair(cornerRadiusRatio, widthRatio) }
-            set {
-                cornerRadiusRatio = newValue.first
-                widthRatio = newValue.second
-            }
-        }
-
-        func path(in rect: CGRect) -> Path {
-            let side = min(rect.width, rect.height)
-            let width = side * widthRatio
-            let radius = min(width, side) * cornerRadiusRatio
-            return Path(roundedRect: CGRect(x: rect.midX - width / 2, y: rect.minY, width: width, height: side), cornerRadius: radius, style: .continuous)
-        }
-    }
+//     func path(in rect: CGRect) -> Path {
+//         let side = min(rect.width, rect.height)
+//         let width = side * widthRatio
+//         let radius = min(width, side) * cornerRadiusRatio
+//         return Path(roundedRect: CGRect(x: rect.midX - width / 2, y: rect.minY, width: width, height: side), cornerRadius: radius, style: .continuous)
+//     }
+// }
 
 // MARK: - Squircle Shape (simplificado con RoundedRectangle)
 
 // Shape de squircle usando RoundedRectangle animable.
-    struct M3ESquircleShape: Shape {
-        var cornerRadius: CGFloat = 16
+struct M3ESquircleShape: Shape {
+    var cornerRadius: CGFloat = 16
 
-        var animatableData: CGFloat {
-            get { cornerRadius }
-            set { cornerRadius = newValue }
-        }
+    var animatableData: CGFloat {
+        get { cornerRadius }
+        set { cornerRadius = newValue }
+    }
 
-        func path(in rect: CGRect) -> Path {
-            return Path(roundedRect: rect, cornerRadius: cornerRadius, style: .continuous)
-        }
+    func path(in rect: CGRect) -> Path {
+        return Path(roundedRect: rect, cornerRadius: cornerRadius, style: .continuous)
     }
 }

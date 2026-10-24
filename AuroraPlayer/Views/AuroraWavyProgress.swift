@@ -85,7 +85,7 @@ struct AuroraWavyProgress: View {
 
                     // Dibujamos la línea de la onda con la amplitud actual
                     var line = AuroraWavyLine(amplitude: targetAmplitude, waveLength: waveLength, phase: phase)
-                    AuroraWavyLine.draw(in: &context, size: size, amplitude: targetAmplitude,
+                    AuroraWavyLine.draw(in: context, size: size, amplitude: targetAmplitude,
                                         waveLength: waveLength, phase: phase)
 
                     // Aplicamos el gradiente de acento después de dibujar
@@ -106,7 +106,7 @@ struct AuroraWavyProgress: View {
                                 radius: isScrubbing ? 5 : 3, x: 0, y: 2)
                         .scaleEffect(isScrubbing ? 1.38 : 1)
                         .animation(AuroraMotion.emphasized, value: isScrubbing)
-                        .position(x: max(0, min(CGFloat(1), CGFloat(progress)) * max(CGFloat(1), sizeThatFits(.zero).width)),
+                        .position(x: max(0, min(CGFloat(1), CGFloat(progress)) * max(CGFloat(1), 300)),
                                   y: 8)
                 }
             }
