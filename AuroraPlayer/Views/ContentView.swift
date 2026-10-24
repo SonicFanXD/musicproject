@@ -550,79 +550,70 @@ struct ContentView: View {
 
     // ✅ Buscador INLINE con look nativo (lupa + fondo secondarySystemBackground).
     // Sustituye a .searchable del NavigationStack sin pelear con la navBar.
+    // ✅ M3E (Bloque 2): el buscador es el componente base `AuroraM3TextField`
+    // (píldora, contenedor sólido, outline que cambia con el foco). Se le pasa el
+    // `@FocusState` de esta vista para no perder ni el foco programático ni el
+    // comportamiento de la búsqueda; `onClear` mantiene el clear instantáneo
+    // (antes saltaba el debounce y la lista tardaba en volver).
     private var searchFieldInline: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "magnifyingglass")
-                .font(.system(size: 15, weight: .medium))
-                .foregroundStyle(.secondary)
-            TextField(Localization.localized("search.prompt"), text: $searchText)
-                .textFieldStyle(.plain)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .focused($searchFieldFocused)
-            if !searchText.isEmpty {
-                Button {
-                    searchText = ""
-                    // ✅ FASE E: limpiar aplica al INSTANTE (sin esperar al
-                    // onChange ni al debounce): la lista vuelve a la caché ya.
-                    scheduleSearch(for: "")
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 15, weight: .medium))
-                        .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 9)
-        // ✅ AURORA DESIGN: superficie flat del sistema (radio .md, borde sutil,
-        // sin sombra) — el campo vive sobre el fondo, cero blur.
-        .auroraCard(radius: AuroraRadius.md, style: .flat, withShadow: false)
-        .contentShape(Rectangle())
-        .onTapGesture {
-            searchFieldFocused = true
-        }
+        AuroraM3TextField(
+            placeholder: Localization.localized("search.prompt"),
+            text: $searchText,
+            clearAccessibilityLabel: Localization.localized("actions.cancel"),
+            onClear: { scheduleSearch(for: "") },
+            focus: $searchFieldFocused
+        )
     }
 
+    // ✅ M3E (Bloque 2): chips con MORPH de forma. El radio se interpola con
+    // `AuroraMorphChipShape` (animatableData) entre rectángulo M3E y cápsula
+    // perfecta al seleccionar. Se descartó `matchedGeometryEffect`: con 4 chips
+    // en un ScrollView horizontal exige namespace y muestra el cross-fade entre
+    // el chip viejo y el nuevo; aquí cada chip interpola SU forma y el layout
+    // no se mueve (la shape conserva el ancho del rect).
     private var categoryPicker: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 10) {
                 ForEach(LibraryCategory.allCases, id: \.self) { category in
+                    let isSelected = selectedCategory == category
                     Button {
+                        Haptics.selection()
                         selectedCategoryRaw = category.rawValue
                     } label: {
                         HStack(spacing: 7) {
                             Image(systemName: categoryIcon(for: category))
                                 .font(.system(size: 13, weight: .semibold))
                             Text(category.title)
-                                .font(.system(size: 14, weight: .semibold, design: .rounded))
+                                // ✅ M3E label-large: 15 semibold (antes 14).
+                                .font(.system(size: 15, weight: .semibold, design: .rounded))
                         }
-                        .foregroundStyle(selectedCategory == category ? .white : .secondary)
+                        .foregroundStyle(isSelected ? .white : .secondary)
                         .padding(.horizontal, 18)
                         .padding(.vertical, 12)
                         .background {
-                            if selectedCategory == category {
-                                ZStack {
-                                    Capsule().fill(AppTheme.accentGradient)
-                                    Capsule().fill(
-                                        LinearGradient(
-                                            colors: [.white.opacity(0.2), .clear],
-                                            startPoint: .top,
-                                            endPoint: .bottom
-                                        )
-                                    )
-                                }
-                                .shadow(color: AppTheme.accent.opacity(0.35), radius: 8, x: 0, y: 4)
-                            } else {
-                                // ✅ 60fps: color OPACO (sin blur) para los chips
-                                // no seleccionados (se re-renderizan al scrollear)
-                                Capsule().fill(Color(UIColor.secondarySystemBackground))
-                                Capsule().strokeBorder(Color.secondary.opacity(0.1), lineWidth: 0.5)
+                            // ✅ Contenedor SÓLIDO (SurfaceContainer) con dos capas:
+                            // base del sistema + acento que se funde al seleccionar.
+                            ZStack {
+                                AuroraMorphChipShape(cornerRadius: isSelected ? 20 : 14)
+                                    .fill(Color(UIColor.secondarySystemBackground))
+                                AuroraMorphChipShape(cornerRadius: isSelected ? 20 : 14)
+                                    .fill(AppTheme.accentGradient)
+                                    .opacity(isSelected ? 1 : 0)
+                                AuroraMorphChipShape(cornerRadius: isSelected ? 20 : 14)
+                                    .fill(LinearGradient(colors: [.white.opacity(0.18), .clear],
+                                                         startPoint: .top, endPoint: .bottom))
+                                    .opacity(isSelected ? 1 : 0)
+                            }
+                            .overlay {
+                                AuroraMorphChipShape(cornerRadius: isSelected ? 20 : 14)
+                                    .strokeBorder(Color.secondary.opacity(isSelected ? 0 : 0.12), lineWidth: 0.5)
                             }
                         }
                     }
                     .buttonStyle(PressableButtonStyle(scale: AuroraPressScale.chip))
+                    // ✅ M3E: morph con el spring expresivo (rebote de goma).
+                    .animation(AuroraMotion.emphasized, value: isSelected)
+                    .accessibilityAddTraits(isSelected ? [.isSelected] : [])
                 }
             }
             .padding(.horizontal, 16)
@@ -635,8 +626,11 @@ struct ContentView: View {
     // sin división visual contra el AppBackground ni el buscador.
     private var headerView: some View {
         HStack {
+            // ✅ M3E (Bloque 2): headline-large. El wordmark sube a 30/heavy (antes
+            // 26/bold) con tracking negativo: es el foco tipográfico de la pantalla.
             Text(Localization.localized("app.name"))
-                .font(.system(size: 26, weight: .bold, design: .rounded))
+                .font(.system(size: 30, weight: .heavy, design: .rounded))
+                .tracking(-0.6)
                 .foregroundStyle(AppTheme.accentGradient)
                 .accessibilityLabel(Localization.localized("app.name"))
             Spacer()
@@ -779,7 +773,7 @@ struct ContentView: View {
             }
 
             Text(Localization.localized("indexing.indexingLibrary"))
-                .font(.system(size: 20, weight: .bold, design: .rounded))
+                .font(.system(size: 22, weight: .heavy, design: .rounded))
                 .foregroundStyle(.primary)
 
             VStack(spacing: 10) {

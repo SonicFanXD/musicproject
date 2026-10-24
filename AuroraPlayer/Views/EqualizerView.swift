@@ -164,19 +164,22 @@ struct EqualizerView: View {
                     .monospacedDigit()
             }
 
-            Slider(
-                value: Binding(
-                    get: { Double(currentGain) },
-                    set: { newVal in
-                        audioEngine.setEQGain(for: bandIndex, gain: Float(newVal))
-                    }
-                ),
-                in: -12...12,
-                step: 0.5
+            // ✅ M3E (Bloque 1 aplicado): slider propio. Pista de 10 pt, thumb
+            // de 26 pt con rebote elástico al agarrar y relleno DESDE 0 dB
+            // (el EQ necesita crecer desde el centro; `Slider` solo rellena
+            // desde el mínimo). Ninguna API por encima de iOS 16.
+            AuroraM3Slider(
+                value: Double(currentGain),
+                range: -12...12,
+                step: 0.5,
+                isEnabled: audioEngine.isEQEnabled,
+                fillFromCenter: true,
+                accessibilityLabel: frequencyName,
+                onChange: { newVal in
+                    audioEngine.setEQGain(for: bandIndex, gain: Float(newVal))
+                }
             )
-            .tint(AppTheme.accent)
-            .disabled(!audioEngine.isEQEnabled)
-            .padding(.vertical, 6)
+            .padding(.vertical, 4)
         }
     }
 

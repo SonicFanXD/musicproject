@@ -2504,6 +2504,50 @@ class AudioEngine: NSObject, ObservableObject {
     /// ✅ SFB: reactiva la sesión con ruta válida — los pasos 1-2 de
     /// `startEngineSafely` SIN arrancar el AVAudioEngine legacy (en el núcleo
     /// SFB ese motor no se usa; el que arranca es el de SFB).
+    /// ✅ FIX -10868 (PASO 1): prepara la sesión para la tasa del ARCHIVO antes
+    /// de abrir el decoder de SFB y devuelve la tasa REAL concedida.
+    ///
+    /// Por qué existe: `setPreferredSampleRate` sobre una sesión YA ACTIVA no
+    /// siempre re-clava la salida — iOS suele aplicar la preferencia en la
+    /// SIGUIENTE activación. Con la sesión clavada a 48 kHz y un ALAC 24/96 en
+    /// la mano, el motor podía arrancar con un formato que CoreAudio rechaza
+    /// (`kAudioUnitErr_FormatNotSupported`, -10868).
+    ///
+    /// Orden: preferencia → tasa real concedida → si NO se aplicó, ciclo
+    /// controlado de desactivación/activación (seguro aquí: el transporte SFB
+    /// se ha detenido justo antes) → activación segura.
+    ///
+    /// Nunca se piden más de 48 kHz: el adaptador Lightning oficial no acepta
+    /// más y forzarlo es la vía directa a -10868. Si la ruta no concede la tasa
+    /// del archivo se devuelve la concedida y el mixer hace SRC (degradación
+    /// honesta, documentada en la UI de calidad).
+    @discardableResult
+    private func prepareSessionForTrack(fileRate: Double) throws -> Double {
+        let session = AVAudioSession.sharedInstance()
+        let requestedRate = min(max(fileRate, 8_000), 48_000)
+        // Bluetooth/AirPlay: la tasa la decide iOS; no se toca.
+        guard !isBluetoothRoute, requestedRate > 1 else {
+            try activateAudioSessionSafely()
+            return session.sampleRate
+        }
+
+        if abs(session.sampleRate - requestedRate) > 1 {
+            try? session.setPreferredSampleRate(requestedRate)
+        }
+        try activateAudioSessionSafely()
+
+        // La preferencia no se aplicó: iOS la agenda para la próxima activación.
+        if abs(session.sampleRate - requestedRate) > 1 {
+            AppLog.info(.playback, String(format:
+                "Sesión a %.0f Hz con archivo de %.0f Hz: se reactiva la sesión para aplicar la tasa",
+                session.sampleRate, requestedRate))
+            try? session.setActive(false, options: .notifyOthersOnDeactivation)
+            try? session.setPreferredSampleRate(requestedRate)
+            try activateAudioSessionSafely()
+        }
+        return session.sampleRate
+    }
+
     private func activateAudioSessionSafely() throws {
         let session = AVAudioSession.sharedInstance()
         do {
@@ -2565,10 +2609,15 @@ class AudioEngine: NSObject, ObservableObject {
         }
 
         do {
-            try activateAudioSessionSafely()
-
-            // Cabecera del archivo (barata): duración/tasa reales para el reloj
-            // y la telemetría. Sin cabecera → metadatos del índice.
+            // ✅ FIX -10868 (FORMATO NO SOPORTADO):
+            // Orden correcto para ALAC 24/96 tras pistas a 44.1/48:
+            //  1) leer la cabecera (barata, no abre el decoder del motor);
+            //  2) fijar la tasa preferida ANTES de activar la sesión (iOS no
+            //     aplica `setPreferredSampleRate` sobre una sesión ya activa
+            //     hasta que se reactiva, así que el motor arrancaba a 48k
+            //     mientras la fuente iba a 96k → AVAudioEngine -10868);
+            //  3) activar (ahora sí la preferencia se aplica) y comprobar la
+            //     tasa REAL concedida, que es la única verdad.
             let probe = sfbBackend.probe(song.url)
             let fileRate = probe?.sampleRate ?? (song.sampleRate > 0 ? song.sampleRate : 44_100)
             sampleRate = fileRate
@@ -2576,8 +2625,16 @@ class AudioEngine: NSObject, ObservableObject {
 
             // ✅ BIT-PERFECT: preferencia de tasa NATIVA en salida cableada
             // (en BT la tasa la decide iOS — misma política que el original).
-            if !isBluetoothRoute, abs(AVAudioSession.sharedInstance().sampleRate - fileRate) > 1 {
-                try? AVAudioSession.sharedInstance().setPreferredSampleRate(fileRate)
+            // Se pide el rate del ARCHIVO solo hasta 48 kHz: los adaptadores
+            // Lightning y el DAC del iPhone no aceptan más y forzar 96k es la
+            // vía directa a -10868. Por encima, se reproduce con conversión.
+            // ✅ La tasa se pide y se RE-VERIFICA en `prepareSessionForTrack`
+            // (incluye reactivación si iOS no la aplicó en la sesión viva).
+            let grantedRate = try prepareSessionForTrack(fileRate: fileRate)
+            if abs(grantedRate - fileRate) > 1 {
+                // ✅ Honestidad: no se finge bit-perfect ni se fuerza el motor a
+                // una tasa que la ruta no concedió. El mixer interno hace SRC.
+                AppLog.info(.playback, String(format: "Sesión concedida a %.0f Hz para archivo de %.0f Hz: reproducción con conversión (no bit-perfect)", grantedRate, fileRate))
             }
 
             let startTime: TimeInterval
@@ -2596,7 +2653,21 @@ class AudioEngine: NSObject, ObservableObject {
                 mixerNode.outputVolume = 0
             }
 
-            try sfbBackend.play(song.url, startingAt: startTime)
+            do {
+                try sfbBackend.play(song.url, startingAt: startTime)
+            } catch {
+                // ✅ FIX -10868 (PASO 1c): un ÚNICO reintento sobre un motor SFB
+                // limpio. Un motor con formato/decode estado inconsistente
+                // (típico al saltar de 44.1 a 96 kHz) rechaza el arranque; tras
+                // `reset()` + reinstalar el grafo + reafirmar la sesión, el
+                // reintento vuelve a sonar con SFB y conserva el gapless, en vez
+                // de degradar toda la sesión a AVPlayer por un fallo transitorio.
+                AppLog.warning(.playback, "SFB no arrancó '\(song.displayName)' (\(error.localizedDescription)): reinicio del motor y reintento")
+                sfbBackend.reset()
+                sfbBackend.rebuildGraph()
+                _ = try prepareSessionForTrack(fileRate: fileRate)
+                try sfbBackend.play(song.url, startingAt: startTime)
+            }
 
             currentSong = song
             currentFileURL = song.url
@@ -2624,9 +2695,13 @@ class AudioEngine: NSObject, ObservableObject {
             isStopping = false
             startDisplayTimer()
             publishNowPlayingInfoImmediately()
-            // ✅ FIX TIMER CC (CAMBIO D): red de seguridad 0.3 s después.
+            // ✅ FIX TIMER CC (CAMBIO D): red de seguridad 0.3 s después, pero
+            // SOLO si el audio ya está saliendo de verdad. Publicar rate 1 con
+            // el transporte aún arrancando (o fallando) era una de las fuentes
+            // del desfase de 25-53 s entre la app y el Centro de Control.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
                 guard let self, self.scheduleGeneration == currentGeneration, !self.isStopping else { return }
+                guard self.isPlaying, self.isAudioActuallyPlaying else { return }
                 self.publishNowPlayingInfoImmediately()
             }
             updateAudioQuality()
@@ -2857,6 +2932,12 @@ class AudioEngine: NSObject, ObservableObject {
                 clock.time = pos
                 anchorPlaybackPosition(pos)
                 AppLog.info(.playback, String(format: "[CLOCK] SFB arranque: ancla corregida +%.0f ms", startOffset * 1000))
+            }
+            // ✅ PASO 2: ahora SÍ hay audio de esta pista en el motor. Es el
+            // punto correcto para publicar rate 1 con el elapsed real (la
+            // fase 1 del cambio de pista dejó rate 0).
+            if isPlaying, !isStopping {
+                publishNowPlayingInfoImmediately()
             }
             return
         } else {
@@ -5077,7 +5158,11 @@ class AudioEngine: NSObject, ObservableObject {
         // queda logueado. Es la única excepción a “solo cambios de estado”, y
         // está medida, no es un tick ciego.
         if duration > 0, let published = lastPublishedElapsed {
-            let systemElapsed = isPlaying
+            // ✅ FIX DESINCRONIZACIÓN (PASO 2): se extrapola SOLO si el sistema
+            // recibió rate 1. Con rate 0 iOS NO avanza el cronómetro; compararlo
+            // como si avanzara daba un "desfase" falso que crecía segundo a
+            // segundo (una de las fuentes del salto de 25/53 s al reanudar).
+            let systemElapsed = lastPublishedRate > 0.5
                 ? published + (now - lastNowPlayingPublishTime)
                 : published
             let ourElapsed = (isPlaying && !isAVPlayerActive) ? wallClockTime : currentTime
@@ -5086,6 +5171,41 @@ class AudioEngine: NSObject, ObservableObject {
             AppLog.info(.playback, String(format: "NowPlaying: extrapolación del sistema desfasada %.2fs → re-anclaje forzado", gap))
         }
         publishNowPlayingInfo()
+    }
+
+    /// ✅ PASO 2 — verdad FÍSICA del audio, no la intención del transporte.
+    /// `isPlaying` expresa "queremos que suene"; en SFB el motor puede tardar
+    /// (o fallar) en arrancar. Publicar rate 1 antes de que haya audio hace que
+    /// el cronómetro del sistema corra solo y quede desfasado decenas de
+    /// segundos (el bug de 25 s / 53 s).
+    private var isAudioActuallyPlaying: Bool {
+        if isAVPlayerActive {
+            return avPlayer?.timeControlStatus == .playing
+        }
+        if usesSFBCore {
+            return sfbBackend.isPlaying
+        }
+        return isPlaying && !isStopping
+    }
+
+    /// Fase 2 del cambio de pista: rate 1 + elapsed real, SOLO cuando el audio
+    /// ya está sonando. Reintenta a 40 ms durante ~0.6 s (arranque lento en BT
+    /// o reconfiguración de grafo) y, si nunca arranca, deja rate 0 (pausa
+    /// honesta): el respaldo/reintento publicará el estado real después.
+    private func publishNowPlayingPhaseTwo(attempt: Int) {
+        guard isPlaying, duration > 0, let song = currentSong,
+              lastPublishedSongID == song.id else { return }
+        if isAudioActuallyPlaying {
+            publishNowPlayingInfo()
+            return
+        }
+        guard attempt < 15 else {
+            AppLog.warning(.playback, "NowPlaying: audio sin arrancar tras 0.6 s — se mantiene rate 0 (sin extrapolación falsa)")
+            return
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.04) { [weak self] in
+            self?.publishNowPlayingPhaseTwo(attempt: attempt + 1)
+        }
     }
 
     private func publishNowPlayingInfo() {
@@ -5227,7 +5347,9 @@ class AudioEngine: NSObject, ObservableObject {
             // MISMO turno pueden quedar coalescidas y iOS se quedaría con la de
             // rate 0 (canción nueva clavada en pausa).
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.01) { [weak self] in
-                self?.publishNowPlayingInfo()
+                // ✅ No publica rate 1 a ciegas: espera al arranque REAL del
+                // audio (ver `publishNowPlayingPhaseTwo`).
+                self?.publishNowPlayingPhaseTwo(attempt: 0)
             }
             return
         }

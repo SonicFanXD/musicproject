@@ -469,7 +469,9 @@ struct NowPlayingView: View {
 
     /// ✅ Fuente del título de `songInfoView`.
     private var songTitleFont: Font {
-        .system(size: isCompactScreen ? 20 : 24, weight: .bold, design: .rounded)
+        // ✅ M3E headline: +4 pt y peso heavy (antes bold). El título es el
+        // foco tipográfico de la pantalla; el resto pierde peso a su lado.
+        .system(size: isCompactScreen ? 24 : 28, weight: .heavy, design: .rounded)
     }
 
     /// ✅ Fuentes del chip de calidad (línea de calidad y línea de ruta).
@@ -503,7 +505,7 @@ struct NowPlayingView: View {
                 .lineLimit(2)
 
             Text(audioEngine.currentSong?.displaySubtitle ?? "—")
-                .font(.system(size: isCompactScreen ? 14 : 16, weight: .medium))
+                .font(.system(size: isCompactScreen ? 15 : 17, weight: .medium))
                 .foregroundStyle(AppTheme.contrastingText(on: extractedUIColor).opacity(0.75))
                 .lineLimit(1)
                 .padding(.horizontal, 20)
@@ -733,7 +735,10 @@ struct NowPlayingView: View {
                         .fill(audioEngine.isEQEnabled
                               ? AnyShapeStyle(accentGradient(primaryOpacity: 0.25, secondaryOpacity: 0.25))
                               : AnyShapeStyle(Color.clear))
-                        .frame(width: capsuleWidth, height: capsuleHeight)
+                        .frame(width: audioEngine.isEQEnabled ? capsuleWidth : capsuleHeight, height: capsuleHeight)
+                        // ✅ M3E: la cápsula se EXPANDE desde el círculo del icono al
+                        // activarse (morph de ancho, sin mover el frame exterior).
+                        .animation(AuroraMotion.emphasized, value: audioEngine.isEQEnabled)
 
                     Image(systemName: "slider.horizontal.3")
                         .font(.system(size: iconSize, weight: audioEngine.isEQEnabled ? .bold : .semibold))
@@ -742,7 +747,8 @@ struct NowPlayingView: View {
                 .frame(width: buttonSize, height: buttonSize)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            // ✅ M3E: rebote elástico al pulsar (antes `.plain`, sin respuesta).
+            .buttonStyle(PressableButtonStyle(scale: AuroraPressScale.chip, pressedOpacity: 0.85))
             .accessibilityLabel(Localization.localized("quality.accessibility.equalizer"))
 
             // Letras
@@ -755,7 +761,8 @@ struct NowPlayingView: View {
                         .fill(audioEngine.currentSong?.lyrics.isEmpty == false
                               ? AnyShapeStyle(accentGradient(primaryOpacity: 0.25, secondaryOpacity: 0.25))
                               : AnyShapeStyle(Color.clear))
-                        .frame(width: capsuleWidth, height: capsuleHeight)
+                        .frame(width: audioEngine.currentSong?.lyrics.isEmpty == false ? capsuleWidth : capsuleHeight, height: capsuleHeight)
+                        .animation(AuroraMotion.emphasized, value: audioEngine.currentSong?.lyrics.isEmpty == false)
 
                     Image(systemName: audioEngine.currentSong?.lyrics.isEmpty == false ? "quote.bubble.fill" : "quote.bubble")
                         .font(.system(size: iconSize, weight: audioEngine.currentSong?.lyrics.isEmpty == false ? .bold : .semibold))
@@ -764,7 +771,8 @@ struct NowPlayingView: View {
                 .frame(width: buttonSize, height: buttonSize)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            // ✅ M3E: rebote elástico al pulsar (antes `.plain`, sin respuesta).
+            .buttonStyle(PressableButtonStyle(scale: AuroraPressScale.chip, pressedOpacity: 0.85))
             .accessibilityLabel(Localization.localized("quality.accessibility.lyrics"))
 
             // Cola
@@ -777,7 +785,8 @@ struct NowPlayingView: View {
                         .fill(audioEngine.nextUpQueue.isEmpty
                               ? AnyShapeStyle(Color.clear)
                               : AnyShapeStyle(accentGradient(primaryOpacity: 0.25, secondaryOpacity: 0.25)))
-                        .frame(width: capsuleWidth, height: capsuleHeight)
+                        .frame(width: audioEngine.nextUpQueue.isEmpty ? capsuleHeight : capsuleWidth, height: capsuleHeight)
+                        .animation(AuroraMotion.emphasized, value: audioEngine.nextUpQueue.isEmpty)
 
                     Image(systemName: "list.bullet")
                         .font(.system(size: iconSize, weight: .semibold))
@@ -786,7 +795,8 @@ struct NowPlayingView: View {
                 .frame(width: buttonSize, height: buttonSize)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            // ✅ M3E: rebote elástico al pulsar (antes `.plain`, sin respuesta).
+            .buttonStyle(PressableButtonStyle(scale: AuroraPressScale.chip, pressedOpacity: 0.85))
             .accessibilityLabel(Localization.localized("quality.accessibility.queue"))
 
             // ✅ AirPlay (FIX): en vez de abrir un sheet con un AVRoutePickerView
@@ -799,7 +809,8 @@ struct NowPlayingView: View {
                     .fill(audioEngine.outputPortType == AVAudioSession.Port.airPlay.rawValue
                           ? AnyShapeStyle(accentGradient(primaryOpacity: 0.25, secondaryOpacity: 0.25))
                           : AnyShapeStyle(Color.clear))
-                    .frame(width: capsuleWidth, height: capsuleHeight)
+                    .frame(width: audioEngine.outputPortType == AVAudioSession.Port.airPlay.rawValue ? capsuleWidth : capsuleHeight, height: capsuleHeight)
+                    .animation(AuroraMotion.emphasized, value: audioEngine.outputPortType == AVAudioSession.Port.airPlay.rawValue)
 
                 Image(systemName: "airplayaudio")
                     .font(.system(size: iconSize, weight: audioEngine.outputPortType == AVAudioSession.Port.airPlay.rawValue ? .bold : .semibold))
@@ -958,16 +969,14 @@ struct NowPlayingView: View {
 
     // MARK: - Helpers
     private var controlBackground: AnyShapeStyle {
-        // ✅ C1 (accesibilidad): con "Reducir transparencia" en modo claro,
-        // `secondarySystemBackground` es casi blanco y los glifos de los cuatro
-        // controles circulares son SIEMPRE blancos (AppTheme.contrastingText
-        // devuelve .white sin mirar el color) → los iconos desaparecían dentro
-        // de su círculo. Un fondo oscuro translúcido da contraste en claro y en
-        // oscuro. Es el fix de `a9ddedc` que el revert al estado de PR #6
-        // deshizo.
+        // ✅ M3E (Bloque 3): contenedor SÓLIDO, no material. `.ultraThinMaterial`
+        // sobre la carátula obliga a un pase offscreen por cada uno de los 4
+        // círculos del transporte en CADA frame del reloj/animación; en el A11 eso
+        // se paga en batería. Un negro translúcido plano da el mismo contraste
+        // (los glifos son siempre blancos) sin coste de composición.
         reduceTransparency
-            ? AnyShapeStyle(Color.black.opacity(0.35))
-            : AnyShapeStyle(.ultraThinMaterial)
+            ? AnyShapeStyle(Color.black.opacity(0.45))
+            : AnyShapeStyle(Color.black.opacity(0.3))
     }
 
     private var isCurrentLiked: Bool {
@@ -1023,40 +1032,40 @@ private struct ProgressScrubView: View {
             // progressBarWidth (actualizado por onAppear/onChange del
             // GeometryReader) para calcular el porcentaje de scrub.
             GeometryReader { geometry in
-                // ✅ Feedback táctil: la barra engrosa al hacer scrub
-                // (animación de frame → GPU, sin costo de calidad)
-                let barHeight: CGFloat = isScrubbing ? 10 : 6
-                ZStack(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: 5, style: .continuous)
-                        .fill(Color.secondary.opacity(0.2))
-                        .frame(height: barHeight)
-
-                    RoundedRectangle(cornerRadius: 5, style: .continuous)
-                        .fill(
-                            LinearGradient(
-                                colors: [extractedColor.opacity(0.85), extractedSecondaryColor ?? extractedColor],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                        )
-                        .frame(width: geometry.size.width * progress, height: barHeight)
-                        // ✅ Glow más notorio mientras se arrastra
-                        .shadow(color: isScrubbing ? extractedColor.opacity(0.6) : extractedColor.opacity(0.3), radius: isScrubbing ? 8 : 4, x: 0, y: 0)
-                    // ✅ IndicADOR CIRCULAR: posicionado con .position en vez de
-                        // .offset (el offset causaba el "punto blanco" fuera de lugar).
-                        // Solo visible cuando hay progreso intermedio.
-                        .overlay(alignment: .leading) {
-                            Circle()
-                                .fill(.white)
-                                .frame(width: isScrubbing ? 14 : 10, height: isScrubbing ? 14 : 10)
-                                .shadow(color: .black.opacity(0.2), radius: 3, x: 0, y: 1)
-                                .position(
-                                    x: geometry.size.width * progress,
-                                    y: barHeight / 2
-                                )
-                                .opacity(progress > 0.01 && progress < 0.99 ? 1 : 0)
+                // ✅ M3E (Bloque 3): barra ONDULADA. El ancho se guarda una sola
+                // vez para el gesto (no se lee por frame) y la onda la dibuja el
+                // componente con transformaciones GPU: cero Path por frame.
+                AuroraWavyProgress(
+                    progress: progress,
+                    isPlaying: audioEngine.isPlaying,
+                    isScrubbing: isScrubbing,
+                    thickness: 6,
+                    amplitude: 2.4,
+                    waveLength: 26,
+                    colors: [extractedColor.opacity(0.9), extractedSecondaryColor ?? extractedColor],
+                    thumbSize: 14,
+                    showsStopIndicator: true
+                )
+                .frame(height: 18)
+                .contentShape(Rectangle())
+                .gesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { value in
+                            guard audioEngine.duration > 0, progressBarWidth > 0 else { return }
+                            if !isScrubbing { Haptics.selection() }
+                            isScrubbing = true
+                            let percentage = max(0, min(1, value.location.x / progressBarWidth))
+                            scrubPreviewTime = audioEngine.duration * percentage
                         }
-                }
+                        .onEnded { value in
+                            guard progressBarWidth > 0 else { return }
+                            let percentage = max(0, min(1, value.location.x / progressBarWidth))
+                            let newTime = audioEngine.duration * percentage
+                            isScrubbing = false
+                            Haptics.light()
+                            audioEngine.seek(to: newTime)
+                        }
+                )
                 .onAppear {
                     progressBarWidth = geometry.size.width
                 }
@@ -1065,40 +1074,12 @@ private struct ProgressScrubView: View {
                 }
             }
             .frame(maxWidth: .infinity)
-            .frame(height: 10)
-            .padding(.vertical, 16)
-            .contentShape(Rectangle())
-            // ✅ FIX animación rara: antes había UNA animación spring sobre
-            // todo el subárbol disparada por isScrubbing, lo que hacía que el
-            // indicador circular "botara" cada vez que el reloj (0.3s) movía
-            // el progreso. Ahora: easing lineal suave para el avance normal
-            // del reloj + spring SOLO para el cambio de tamaño al arrastrar.
-            // ✅ FIX scrub: durante el arrastre `progress` se actualiza a 60 fps
-            // desde `scrubPreviewTime` y animarlo con 0.25 s lineales ponía la
-            // barra ~0.25 s por detrás del dedo (más lento cuanto más rápido se
-            // arrastra). Con isScrubbing el cambio se aplica SIN animación →
-            // seguimiento 1:1; al soltar, el spring del siguiente .animation
-            // sigue animando el indicador y el ensanchado como hasta ahora.
-            .animation(isScrubbing ? nil : .linear(duration: 0.25), value: progress)
-            .animation(.spring(response: 0.3, dampingFraction: 0.8), value: isScrubbing)
-            .gesture(
-                DragGesture(minimumDistance: 0)
-                    .onChanged { value in
-                        isScrubbing = true
-                        let percentage = max(0, min(1, value.location.x / progressBarWidth))
-                        scrubPreviewTime = audioEngine.duration * percentage
-                    }
-                    .onEnded { value in
-                        let percentage = max(0, min(1, value.location.x / progressBarWidth))
-                        let newTime = audioEngine.duration * percentage
-                        isScrubbing = false
-                        audioEngine.seek(to: newTime)
-                    }
-            )
+            .frame(height: 18)
+            .padding(.vertical, 12)
 
             HStack {
                 Text(scrubPreviewText)
-                    .font(.system(size: isCompactScreen ? 12 : 13, weight: isScrubbing ? .bold : .medium))
+                    .font(.system(size: isCompactScreen ? 13 : 14, weight: isScrubbing ? .heavy : .semibold))
                     .foregroundStyle(isScrubbing ? playIconColor : AppTheme.contrastingText(on: extractedUIColor).opacity(0.75))
                     .monospacedDigit()
                     .animation(.easeInOut(duration: 0.15), value: isScrubbing)
@@ -1106,7 +1087,7 @@ private struct ProgressScrubView: View {
                 Spacer()
 
                 Text(formatTime(audioEngine.duration))
-                    .font(.system(size: isCompactScreen ? 12 : 13, weight: .medium))
+                    .font(.system(size: isCompactScreen ? 13 : 14, weight: .semibold))
                     .foregroundStyle(AppTheme.contrastingText(on: extractedUIColor).opacity(0.75))
                     .monospacedDigit()
             }

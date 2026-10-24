@@ -406,13 +406,6 @@ private struct PlayerScrubBar: View {
         return min(max(clock.time / audioEngine.duration, 0), 1)
     }
 
-    private var artworkDominantColor: Color {
-        if theme.accentFromArtwork, let artworkColor = theme.artworkAccentColor {
-            return artworkColor
-        }
-        return theme.accent
-    }
-
     /// ✅ Par de colores del acento (SIEMPRE dos): dominante + secundario real de
     /// la carátula con "Acento desde portada"; acento manual + su segunda parada
     /// al 40% si el modo está desactivado.
@@ -423,53 +416,25 @@ private struct PlayerScrubBar: View {
         return (theme.accent, theme.accent.opacity(0.4))
     }
 
-    /// ✅ Gradiente de DOS colores (track de progreso).
-    private func accentGradient(
-        start: UnitPoint,
-        end: UnitPoint,
-        primaryOpacity: Double = 1,
-        secondaryOpacity: Double = 1
-    ) -> LinearGradient {
-        let pair = accentPair
-        return LinearGradient(
-            colors: [pair.primary.opacity(primaryOpacity), pair.secondary.opacity(secondaryOpacity)],
-            startPoint: start,
-            endPoint: end
-        )
-    }
-
     var body: some View {
         GeometryReader { geometry in
-            ZStack(alignment: .leading) {
-                // ✅ Track con material de vidrio (estilo NowPlayingView)
-                Capsule()
-                    .fill(Color.secondary.opacity(0.2))
-                    .frame(height: compactPlayerBar ? 3 : 4)
-
-                // ✅ Progreso con gradiente del color dominante del artwork
-                Capsule()
-                    .fill(
-                        accentGradient(start: .leading, end: .trailing, primaryOpacity: 0.8, secondaryOpacity: 1)
-                    )
-                    .frame(width: max(4, geometry.size.width * progress), height: compactPlayerBar ? 3 : 4)
-                    .shadow(color: artworkDominantColor.opacity(0.4), radius: 4, x: 0, y: 0)
-
-                // ✅ Indicador de posición al hacer scrub
-                if isScrubbing {
-                    Circle()
-                        .fill(artworkDominantColor)
-                        .frame(width: 12, height: 12)
-                        .offset(x: geometry.size.width * scrubPreviewProgress - 6)
-                        .shadow(color: .black.opacity(0.25), radius: 6, x: 0, y: 3)
-                }
-            }
-            .frame(height: compactPlayerBar ? 3 : 4)
-            // ✅ FIX: el área táctil era enorme (maxHeight infinity +
-            // padding 14) y robaba los toques del artwork/título,
-            // impidiendo abrir NowPlayingView tras reanudar la app.
-            // Ahora el gesto se limita a la barra (+6pt de margen)
-            // y un toque simple (sin arrastre) abre NowPlaying.
-            .padding(.vertical, 6)
+            // ✅ M3E (Bloque 2): la barra lineal se sustituye por la ONDA de
+            // `AuroraWavyProgress`. Se conserva intacto todo lo demás: preview
+            // local a 60fps durante el arrastre, seek único al soltar y el
+            // toque (sin arrastre) que abre NowPlaying. El componente solo
+            // dibuja (onda = transformación GPU; thumb con spring).
+            AuroraWavyProgress(
+                progress: progress,
+                isPlaying: audioEngine.isPlaying,
+                isScrubbing: isScrubbing,
+                thickness: compactPlayerBar ? 3 : 4,
+                amplitude: 1.2,
+                waveLength: 22,
+                colors: [accentPair.primary.opacity(0.85), accentPair.secondary],
+                thumbSize: 14,
+                showsStopIndicator: false
+            )
+            .frame(height: 16)
             .contentShape(Rectangle())
             .onTapGesture {
                 onOpenNowPlaying()
@@ -494,8 +459,9 @@ private struct PlayerScrubBar: View {
                     }
             )
         }
-        .frame(maxWidth: .infinity)
-        .frame(height: (compactPlayerBar ? 3 : 4) + 12)
+        // ✅ Mismo alto total que antes (16 + 8 pt de margen inferior): la barra no
+        // cambia de sitio ni empuja la PlayerBar al entrar el nuevo componente.
+        .frame(height: 16)
         .padding(.horizontal, 18)
         .padding(.bottom, 8)
     }

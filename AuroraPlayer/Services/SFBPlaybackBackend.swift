@@ -167,6 +167,19 @@ final class SFBPlaybackBackend: NSObject {
     func play(_ url: URL, startingAt start: TimeInterval) throws {
         seekToken += 1
         let token = seekToken
+        // ✅ FIX -10868: el transporte anterior se detiene ANTES de abrir el
+        // archivo nuevo. SFB reutiliza decoders/engine y, con una pista a otra
+        // tasa (ALAC 24/96 tras 44.1), el motor podía quedar con el formato
+        // viejo y CoreAudio respondía `kAudioUnitErr_FormatNotSupported`
+        // (-10868). `stop()` deja el transporte en un estado conocido.
+        if !player.isStopped {
+            player.stop()
+        }
+        // ✅ Validación REAL del archivo con la ruta de decodificación
+        // estándar de iOS: Float32 NO intercalado. Si esto falla, el error
+        // llega como `throw` (capturable por AudioEngine → fallback AVPlayer)
+        // en vez de estallar dentro del render de SFB, donde no hay catch.
+        _ = try validateDecodableFormat(url)
         // Llena la caché de metadatos y fija la referencia para gapless.
         activeTrackProbe = probe(url)
         try player.play(url)
@@ -176,6 +189,29 @@ final class SFBPlaybackBackend: NSObject {
         } else {
             pendingRestoreSeek = nil
         }
+    }
+
+    /// Abre el archivo con `AVAudioFile(forReading:commonFormat:interleaved:)`
+    /// forzando **Float32 no intercalado** (el formato de proceso estándar de
+    /// AVFoundation) y valida tasa/canales. No se usa para reproducir (de eso
+    /// se encarga SFB), sino como PUERTA DE ENTRADA: los contenedores que no
+    /// se pueden abrir así son exactamente los que disparan -10868 dentro del
+    /// motor, y aquí todavía podemos lanzar un error capturable.
+    @discardableResult
+    func validateDecodableFormat(_ url: URL) throws -> AVAudioFormat {
+        let file = try AVAudioFile(forReading: url,
+                                  commonFormat: .pcmFormatFloat32,
+                                  interleaved: false)
+        let format = file.processingFormat
+        guard format.sampleRate > 1, format.channelCount > 0, format.channelCount <= 64 else {
+            throw NSError(
+                domain: "AuroraSFBPlayback",
+                code: -10868,
+                userInfo: [NSLocalizedDescriptionKey:
+                    "Formato de archivo no reproducible (\(format.sampleRate) Hz · \(format.channelCount) canales) en \(url.lastPathComponent)"]
+            )
+        }
+        return format
     }
 
     /// Encola la siguiente pista para reproducción gapless. SFB la arranca
@@ -273,7 +309,12 @@ final class SFBPlaybackBackend: NSObject {
     @discardableResult
     func probe(_ url: URL) -> SFBTrackProbe? {
         if let cached = probeCache[url] { return cached }
-        guard let file = try? AVAudioFile(forReading: url) else { return nil }
+        // ✅ PASO 1: misma ruta de decodificación que la reproducción (Float32
+        // no intercalado). Si el contenedor no se puede abrir así, la sonda
+        // devuelve nil y no se arma gapless con un archivo inválido.
+        guard let file = try? AVAudioFile(forReading: url,
+                                          commonFormat: .pcmFormatFloat32,
+                                          interleaved: false) else { return nil }
         let fmt = file.processingFormat
         guard fmt.sampleRate > 1, file.length > 0 else { return nil }
         let bits = Int(file.fileFormat.streamDescription.pointee.mBitsPerChannel)

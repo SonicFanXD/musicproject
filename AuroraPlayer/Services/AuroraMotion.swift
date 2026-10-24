@@ -102,6 +102,67 @@ struct AuroraMorphShape: Shape {
     }
 }
 
+// MARK: - Morphing de chips y píldoras (M3E · Prioridad 2)
+
+/// ✅ Forma para CHIPS seleccionables que interpola SOLO el radio: rectángulo
+/// redondeado ↔ cápsula. El chip conserva todo su ancho (`rect`), así que el
+/// morph no mueve el layout ni cambia el tamaño del texto.
+///
+/// Por qué `animatableData` y no `matchedGeometryEffect`: este último obliga a
+/// compartir un `Namespace` y re-instancia la jerarquía, lo que en un
+/// `ScrollView` horizontal produce el típico cross-fade entre el chip antiguo
+/// y el nuevo (y en el A11 añade trabajo por frame). Aquí cada chip interpola
+/// SU propia forma: cero coordinación global, cero vistas extra.
+struct AuroraMorphChipShape: Shape, InsettableShape {
+    /// Radio objetivo. Se acota a `min(ancho, alto) / 2`: pidiendo el alto/2 el
+    /// chip se vuelve cápsula perfecta; con cualquier valor menor, esquinas M3E.
+    var cornerRadius: CGFloat
+    var insetAmount: CGFloat = 0
+
+    var animatableData: CGFloat {
+        get { cornerRadius }
+        set { cornerRadius = newValue }
+    }
+
+    func path(in rect: CGRect) -> Path {
+        let box = rect.insetBy(dx: insetAmount, dy: insetAmount)
+        let radius = min(cornerRadius, min(box.width, box.height) / 2)
+        return Path(roundedRect: box, cornerRadius: max(0, radius), style: .continuous)
+    }
+
+    func inset(by amount: CGFloat) -> AuroraMorphChipShape {
+        var copy = self
+        copy.insetAmount += amount
+        return copy
+    }
+}
+
+/// ✅ Píldora que se ENSANCHA/ENCOGE sin tocar el layout: dibuja dentro de
+/// `rect` un rectángulo redondeado de ancho `rect.width × widthScale`, centrado.
+/// Es el morph de los FAB / botones de acción de M3E (inactivo compacto →
+/// activo a ancho completo) sin mover a los vecinos.
+struct AuroraMorphPill: Shape {
+    var widthScale: CGFloat = 1
+    /// 0.5 = cápsula perfecta.
+    var cornerRatio: CGFloat = 0.5
+
+    var animatableData: AnimatablePair<CGFloat, CGFloat> {
+        get { AnimatablePair(widthScale, cornerRatio) }
+        set {
+            widthScale = newValue.first
+            cornerRatio = newValue.second
+        }
+    }
+
+    func path(in rect: CGRect) -> Path {
+        let width = rect.width * min(max(widthScale, 0.1), 1)
+        let radius = min(width, rect.height) * min(max(cornerRatio, 0), 0.5)
+        let box = CGRect(x: rect.midX - width / 2, y: rect.minY,
+                         width: width, height: rect.height)
+        return Path(roundedRect: box, cornerRadius: radius, style: .continuous)
+    }
+}
+
 // MARK: - Press feedback (escala + opacidad con física M3E)
 
 /// ✅ Feedback de presión elástico. Es el MISMO `PressableButtonStyle` que ya
