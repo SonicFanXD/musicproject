@@ -448,7 +448,11 @@ struct AuroraSectionHeader: View {
             Image(systemName: icon)
                 .auroraIconBadge(size: AuroraIconSize.medium, color: color, shape: .roundedRect)
             Text(title)
-                .font(.system(size: 18, weight: .bold, design: .rounded))
+                // ✅ M3E: los títulos de sección suben a title-medium/heavy
+                // (18/bold → 20/heavy con tracking negativo). Es el mismo salto que
+                // el resto de la app: el título manda, el cuerpo se apaga.
+                .font(.system(size: 20, weight: .heavy, design: .rounded))
+                .tracking(-0.3)
                 .foregroundStyle(Color.primary)
             Spacer()
         }
