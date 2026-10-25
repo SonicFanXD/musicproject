@@ -266,6 +266,7 @@ struct M3ENavigationBar<Leading: View, Trailing: View>: View {
     private let title: String
     private let subtitle: String?
     private let showsDivider: Bool
+    private let showsTitle: Bool
     private let leading: Leading
     private let trailing: Trailing
 
@@ -273,12 +274,14 @@ struct M3ENavigationBar<Leading: View, Trailing: View>: View {
         title: String,
         subtitle: String? = nil,
         showsDivider: Bool = true,
+        showsTitle: Bool = true,
         @ViewBuilder leading: () -> Leading,
         @ViewBuilder trailing: () -> Trailing
     ) {
         self.title = title
         self.subtitle = subtitle
         self.showsDivider = showsDivider
+        self.showsTitle = showsTitle
         self.leading = leading()
         self.trailing = trailing()
     }
@@ -295,6 +298,8 @@ struct M3ENavigationBar<Leading: View, Trailing: View>: View {
                     .foregroundStyle(M3EColor.onSurface)
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
+                    .opacity(showsTitle ? 1 : 0)
+                    .animation(AuroraMotion.spatialDefault, value: showsTitle)
 
                 if let subtitle = subtitle {
                     Text(subtitle)
@@ -333,6 +338,7 @@ extension M3ENavigationBar where Leading == EmptyView {
             title: title,
             subtitle: subtitle,
             showsDivider: showsDivider,
+            showsTitle: true,
             leading: { EmptyView() },
             trailing: trailing
         )
@@ -345,6 +351,7 @@ extension M3ENavigationBar where Leading == EmptyView, Trailing == EmptyView {
             title: title,
             subtitle: subtitle,
             showsDivider: showsDivider,
+            showsTitle: true,
             leading: { EmptyView() },
             trailing: { EmptyView() }
         )

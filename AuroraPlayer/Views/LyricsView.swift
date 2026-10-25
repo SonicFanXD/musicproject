@@ -36,7 +36,7 @@ struct LyricsView: View {
     @ObservedObject var viewModel: LyricsViewModel
     // ✅ Observado para que los textos se re-rendericen al cambiar de idioma en vivo.
     @ObservedObject private var localization = Localization.shared
-    @Environment(\.dismiss) private var dismiss
+    @M3EDismiss private var dismiss
     /// ✅ Fase de la escena: al abrir el Centro de Control (o cualquier overlay del
     /// sistema) la app pasa a `.inactive`. El karaoke no debe pedir frames
     /// entonces —la GPU la necesita el panel del sistema y el run loop está en
@@ -259,7 +259,6 @@ struct LyricsView: View {
             Text(Localization.localized("nowPlaying.lyrics"))
                 .font(M3ETypography.titleMediumEmphasized)
                 .foregroundStyle(.primary.opacity(0.9))
-                .shadow(color: .black.opacity(0.15), radius: 4, y: 1)
 
             Spacer()
 

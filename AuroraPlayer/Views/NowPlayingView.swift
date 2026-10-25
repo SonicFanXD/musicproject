@@ -107,11 +107,7 @@ struct NowPlayingView: View {
                 ThemeManager.shared.updateArtworkAccent(from: song)
             }
         }
-        // ✅ NOTA: LyricsView usa `@Environment(\.dismiss)` y está en la lista
-        // de archivos intocables de este PR. Sin poder cambiar su cierre a
-        // `@M3EDismiss`, presentarlo con `m3eScreen` dejaría su botón de cerrar
-        // sin efecto; se mantiene `fullScreenCover` para no romper navegación.
-        .fullScreenCover(isPresented: $showLyrics) {
+        .m3eScreen(isPresented: $showLyrics) {
             LyricsView(song: audioEngine.currentSong, viewModel: audioEngine.lyricsViewModel)
         }
         .m3eScreen(isPresented: $showEqualizer) {

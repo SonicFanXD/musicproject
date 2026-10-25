@@ -310,6 +310,7 @@ struct AlbumDetailView: View {
     private var detailTopBar: some View {
         M3ENavigationBar(
             title: album.name,
+            showsTitle: showsInlineTitle,
             leading: {
                 Button {
                     Haptics.light()
@@ -994,6 +995,7 @@ struct ArtistDetailView: View {
     private var detailTopBar: some View {
         M3ENavigationBar(
             title: artist.name,
+            showsTitle: showsInlineTitle,
             leading: {
                 Button {
                     Haptics.light()

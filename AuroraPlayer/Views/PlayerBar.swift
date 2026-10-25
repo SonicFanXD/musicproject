@@ -24,6 +24,7 @@ struct PlayerBar: View {
 
     @ObservedObject private var localization = Localization.shared
     @ObservedObject private var theme = ThemeManager.shared
+    @Environment(\.displayScale) private var displayScale
 
     @AppStorage("com.aurora.artworkCorner") private var artworkCorner: Double = 22
     @AppStorage("com.aurora.compactPlayerBar") private var compactPlayerBar = false
@@ -151,10 +152,12 @@ struct PlayerBar: View {
     // MARK: - Artwork
 
     private func artwork(for song: Song) -> some View {
-        Group {
+        let scale = max(displayScale, 1)
+        return Group {
             if let art = song.artwork {
-                // Miniatura 96 px (48 pt @2x) en vez de la 768 px completa.
-                Image(uiImage: AppTheme.thumbnail(from: art, size: CGSize(width: 96, height: 96)))
+                // Miniatura a píxeles REALES (48 pt × escala del dispositivo),
+                // no un 96 px fijo que en @3x se ve blando.
+                Image(uiImage: AppTheme.thumbnail(from: art, size: CGSize(width: artworkSide * scale, height: artworkSide * scale)))
                     .resizable()
                     .interpolation(.high)
                     .scaledToFill()
