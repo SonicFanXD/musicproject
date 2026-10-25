@@ -1012,7 +1012,9 @@ extension SettingsRowBuilding {
         .buttonStyle(
             PressableButtonStyle(
                 scale: AuroraPressScale.row,
-                pressedOpacity: 0.65
+                pressedOpacity: 0.65,
+                rippleColor: M3EColor.primaryContainer.opacity(0.22),
+                cornerRadius: 16
             )
         )
     }

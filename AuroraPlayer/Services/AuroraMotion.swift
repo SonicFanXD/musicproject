@@ -24,16 +24,62 @@ import CoreText
 struct PressableButtonStyle: ButtonStyle {
     let scale: CGFloat
     var pressedOpacity: Double = 1.0
+    /// Ripple nativo seguro: lo dibuja un overlay pasivo disparado por
+    /// `configuration.isPressed`. NO hay gesto, así que el tap del Button
+    /// nunca se secuestra (la regresión de e714dfa no puede repetirse).
+    var rippleColor: Color = M3EColor.onSurface.opacity(0.12)
+    var cornerRadius: CGFloat = 16
+    /// Deformación M3E opcional. Si se omiten, se usa `scale` uniforme.
+    var pressedScaleX: CGFloat? = nil
+    var pressedScaleY: CGFloat? = nil
+    /// Radio opcional al presionar. Permite el morph de forma de las acciones
+    /// principales (píldora → rounded rect) sin cambiar el layout.
+    var pressedCornerRadius: CGFloat? = nil
 
     func makeBody(configuration: Configuration) -> some View {
-        // ⚠️ REGRESIÓN e714dfa: NO añadir ripple aquí. Cualquier
-        // `DragGesture(minimumDistance: 0)` dentro del label de un `Button`
-        // compite con su tap interno y lo deja sin acción. El ripple queda
-        // desconectado de los botones hasta rediseñarlo como overlay pasivo.
-        configuration.label
-            .scaleEffect(configuration.isPressed ? scale : 1.0)
-            .opacity(configuration.isPressed ? pressedOpacity : 1.0)
-            .animation(AuroraMotion.spatialFast, value: configuration.isPressed)
+        styledLabel(configuration.label, isPressed: configuration.isPressed)
+            .animation(M3ESpring.spatialFast, value: configuration.isPressed)
+            .animation(M3ESpring.effectsDefault, value: configuration.isPressed)
+    }
+
+    @ViewBuilder
+    private func styledLabel<L: View>(
+        _ label: L,
+        isPressed: Bool
+    ) -> some View {
+        let x = isPressed ? (pressedScaleX ?? scale) : 1.0
+        let y = isPressed ? (pressedScaleY ?? scale) : 1.0
+        let content = label
+            .overlay { rippleLayer(isPressed: isPressed) }
+            .scaleEffect(x: x, y: y)
+            .opacity(isPressed ? pressedOpacity : 1.0)
+
+        if let pressedCornerRadius {
+            content.clipShape(
+                RoundedRectangle(
+                    cornerRadius: isPressed ? pressedCornerRadius : cornerRadius,
+                    style: .continuous
+                )
+            )
+        } else {
+            content
+        }
+    }
+
+    /// Círculo que nace en el centro y se expande con la pulsación. Es una
+    /// capa visual pura: `allowsHitTesting(false)` y ningún `DragGesture`.
+    private func rippleLayer(isPressed: Bool) -> some View {
+        GeometryReader { proxy in
+            let diameter = max(proxy.size.width, proxy.size.height) * 1.6
+            Circle()
+                .fill(rippleColor)
+                .frame(width: diameter, height: diameter)
+                .scaleEffect(isPressed ? 1.0 : 0.15)
+                .opacity(isPressed ? 1.0 : 0.0)
+                .position(x: proxy.size.width / 2, y: proxy.size.height / 2)
+        }
+        .allowsHitTesting(false)
+        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
     }
 }
 
@@ -131,6 +177,9 @@ struct M3ETypography {
 
     // Emphasized (M3E: Medium sobre el baseline Regular)
     static let displayTitle = RobotoFont.font("Roboto-Bold", size: 36, weight: .bold)
+    // ✅ M3E Expressive: los títulos grandes usan Bold real, no Medium.
+    static let displaySmallEmphasized = RobotoFont.font("Roboto-Bold", size: 36, weight: .bold)
+    static let headlineLargeBold = RobotoFont.font("Roboto-Bold", size: 32, weight: .bold)
     static let headlineLargeEmphasized = RobotoFont.font("Roboto-Medium", size: 32, weight: .medium)
     static let headlineSmallEmphasized = RobotoFont.font("Roboto-Medium", size: 24, weight: .medium)
     static let titleLargeEmphasized = RobotoFont.font("Roboto-Medium", size: 22, weight: .medium)
@@ -346,6 +395,21 @@ enum AuroraMotion {
     static func linearShort() -> Animation { .linear(duration: 0.20) }
     static func linearMedium() -> Animation { .linear(duration: 0.30) }
     static func linearLong() -> Animation { .linear(duration: 0.50) }
+}
+
+// MARK: - M3E interaction springs
+
+/// Tokens oficiales de interacción M3E. Los valores viven en `AuroraMotion`
+/// (con la conversión de razón de amortiguación a coeficiente); este enum es
+/// el punto de entrada semántico para botones, filas y feedback táctil.
+///
+/// · `spatialDefault`: ζ 0.8, k 380 → movimiento/forma con rebote suave.
+/// · `spatialFast`:    ζ 0.6, k 800 → toques rápidos y elásticos.
+/// · `effectsDefault`: ζ 1.0, k 1600 → opacidad/color sin overshoot.
+enum M3ESpring {
+    static let spatialDefault = AuroraMotion.spatialDefault
+    static let spatialFast = AuroraMotion.spatialFast
+    static let effectsDefault = AuroraMotion.effectsDefault
 }
 
 // ══════════════════════════════════════════════════════════════════════════

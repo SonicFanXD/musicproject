@@ -63,13 +63,19 @@ struct AuroraM3TextField: View {
         isEditing ? 1.5 : 0.75
     }
 
+    /// 0 = anillo invisible; 1 = perímetro completo dibujado desde el centro.
+    private var focusProgress: CGFloat {
+        isEditing ? 1 : 0
+    }
+
     var body: some View {
         HStack(spacing: 10) {
             if let icon = icon {
                 Image(systemName: icon)
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(isEditing ? resolvedAccent : Color.secondary)
-                    .animation(AuroraMotion.spatialFast, value: isEditing)
+                    .scaleEffect(isEditing ? 1.10 : 1.0)
+                    .animation(M3ESpring.spatialFast, value: isEditing)
             }
 
             field
@@ -85,9 +91,24 @@ struct AuroraM3TextField: View {
         .background {
             Capsule().fill(M3EColor.surfaceVariant)
         }
-        // ✅ Outline que cambia con el foco (M3E).
+        // ✅ Outline que cambia con el foco (M3E). El anillo de acento se
+        // dibuja con `trim` desde el centro del borde: al enfocar, la línea
+        // crece hacia ambos lados en vez de aparecer de golpe.
         .overlay {
-            Capsule().strokeBorder(borderColor, lineWidth: borderWidth)
+            ZStack {
+                Capsule().strokeBorder(borderColor, lineWidth: borderWidth)
+
+                Capsule()
+                    .trim(
+                        from: 0.5 - focusProgress / 2,
+                        to: 0.5 + focusProgress / 2
+                    )
+                    .stroke(
+                        resolvedAccent.opacity(0.95),
+                        style: StrokeStyle(lineWidth: 1.5, lineCap: .round)
+                    )
+                    .animation(M3ESpring.spatialDefault, value: isEditing)
+            }
         }
         .contentShape(Capsule())
         .onTapGesture { requestFocus() }

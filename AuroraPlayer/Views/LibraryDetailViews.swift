@@ -360,8 +360,8 @@ struct AlbumDetailView: View {
             // ? Info del �lbum con mejor jerarqu�a visual
             VStack(spacing: 6) {
                 Text(album.name)
-                    .font(M3ETypography.headlineMedium)
-                    .tracking(0)
+                    .font(M3ETypography.headlineLargeBold)
+                    .tracking(-0.5)
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.primary)
                     .lineLimit(2)
@@ -496,7 +496,17 @@ struct AlbumDetailView: View {
                 .contentShape(Capsule())
             }
             // ✅ M3E: rebote + leve apagado, coherente con el resto de transportes.
-            .buttonStyle(PressableButtonStyle(scale: AuroraPressScale.button, pressedOpacity: 0.85))
+            .buttonStyle(
+                PressableButtonStyle(
+                    scale: AuroraPressScale.button,
+                    pressedOpacity: 0.85,
+                    rippleColor: M3EColor.onPrimary.opacity(0.18),
+                    cornerRadius: 24,
+                    pressedScaleX: 1.04,
+                    pressedScaleY: 0.94,
+                    pressedCornerRadius: 16
+                )
+            )
 
             Button {
                 Haptics.medium()
@@ -539,7 +549,17 @@ struct AlbumDetailView: View {
             }
             .accessibilityLabel(Localization.localized("details.shuffle"))
             // ✅ M3E: rebote + leve apagado, coherente con el resto de transportes.
-            .buttonStyle(PressableButtonStyle(scale: AuroraPressScale.button, pressedOpacity: 0.85))
+            .buttonStyle(
+                PressableButtonStyle(
+                    scale: AuroraPressScale.button,
+                    pressedOpacity: 0.85,
+                    rippleColor: M3EColor.onPrimary.opacity(0.18),
+                    cornerRadius: 24,
+                    pressedScaleX: 1.04,
+                    pressedScaleY: 0.94,
+                    pressedCornerRadius: 16
+                )
+            )
         }
         .padding(.horizontal, 4)
     }
@@ -1028,8 +1048,8 @@ struct ArtistDetailView: View {
             // ? Info del artista con mejor jerarqu�a visual
             VStack(spacing: 10) {
                 Text(artist.name)
-                    .font(M3ETypography.headlineMedium)
-                    .tracking(0)
+                    .font(M3ETypography.headlineLargeBold)
+                    .tracking(-0.5)
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.primary)
                     .lineLimit(2)
@@ -1119,7 +1139,17 @@ struct ArtistDetailView: View {
                 .contentShape(Capsule())
             }
             // ✅ M3E: rebote + leve apagado, coherente con el resto de transportes.
-            .buttonStyle(PressableButtonStyle(scale: AuroraPressScale.button, pressedOpacity: 0.85))
+            .buttonStyle(
+                PressableButtonStyle(
+                    scale: AuroraPressScale.button,
+                    pressedOpacity: 0.85,
+                    rippleColor: M3EColor.onPrimary.opacity(0.18),
+                    cornerRadius: 24,
+                    pressedScaleX: 1.04,
+                    pressedScaleY: 0.94,
+                    pressedCornerRadius: 16
+                )
+            )
 
             Button {
                 Haptics.medium()
@@ -1162,7 +1192,17 @@ struct ArtistDetailView: View {
             }
             .accessibilityLabel(Localization.localized("details.shuffle"))
             // ✅ M3E: rebote + leve apagado, coherente con el resto de transportes.
-            .buttonStyle(PressableButtonStyle(scale: AuroraPressScale.button, pressedOpacity: 0.85))
+            .buttonStyle(
+                PressableButtonStyle(
+                    scale: AuroraPressScale.button,
+                    pressedOpacity: 0.85,
+                    rippleColor: M3EColor.onPrimary.opacity(0.18),
+                    cornerRadius: 24,
+                    pressedScaleX: 1.04,
+                    pressedScaleY: 0.94,
+                    pressedCornerRadius: 16
+                )
+            )
         }
         .padding(.horizontal, 4)
     }

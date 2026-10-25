@@ -89,6 +89,7 @@ struct NowPlayingView: View {
                     .padding(.top, 8)
                     .padding(.bottom, 28)
                 }
+                .coordinateSpace(name: "nowPlayingScroll")
             }
         }
         .onAppear {
@@ -135,7 +136,14 @@ struct NowPlayingView: View {
                     .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(
+                PressableButtonStyle(
+                    scale: 0.9,
+                    pressedOpacity: 0.7,
+                    rippleColor: playIconColor.opacity(0.14),
+                    cornerRadius: 22
+                )
+            )
             .accessibilityLabel(Localization.localized("nowPlaying.close"))
 
             Spacer(minLength: 8)
@@ -194,31 +202,45 @@ struct NowPlayingView: View {
     // MARK: - 3. Portada
 
     private var artworkView: some View {
-        Group {
-            if let artwork = currentSong?.artwork {
-                Image(uiImage: artwork)
-                    .resizable()
-                    .interpolation(.high)
-                    .scaledToFill()
-                    .frame(width: artworkSide, height: artworkSide)
-                    .clipShape(M3EShape(family: .extraLarge))
-                    .overlay(
-                        M3EShape(family: .extraLarge)
-                            .strokeBorder(playIconColor.opacity(0.14), lineWidth: 1)
-                    )
-            } else {
-                M3EShape(family: .extraLarge)
-                    .fill(M3EColor.surfaceContainerHigh)
-                    .frame(width: artworkSide, height: artworkSide)
-                    .overlay(
-                        Image(systemName: "music.note")
-                            .font(.system(size: artworkSide * 0.18, weight: .light))
-                            .foregroundStyle(M3EColor.onSurfaceVariant)
-                    )
-            }
+        GeometryReader { geometry in
+            // ✅ M3E: zoom sutil al hacer scroll hacia abajo. Es solo un
+            // transform (GPU), sin recalcular blur ni layout. Se limita a 1.08
+            // para que la portada no invada la información en el 8 Plus.
+            let minY = geometry.frame(in: .named("nowPlayingScroll")).minY
+            let zoom = min(1.08, max(1.0, 1.0 + max(0, -minY) / 900.0))
+
+            artworkContent
+                .scaleEffect(zoom)
+                .position(x: geometry.size.width / 2, y: geometry.size.height / 2)
         }
+        .frame(width: artworkSide, height: artworkSide)
         .frame(maxWidth: .infinity)
         .padding(.top, 4)
+    }
+
+    @ViewBuilder
+    private var artworkContent: some View {
+        if let artwork = currentSong?.artwork {
+            Image(uiImage: artwork)
+                .resizable()
+                .interpolation(.high)
+                .scaledToFill()
+                .frame(width: artworkSide, height: artworkSide)
+                .clipShape(M3EShape(family: .extraLarge))
+                .overlay(
+                    M3EShape(family: .extraLarge)
+                        .strokeBorder(playIconColor.opacity(0.14), lineWidth: 1)
+                )
+        } else {
+            M3EShape(family: .extraLarge)
+                .fill(M3EColor.surfaceContainerHigh)
+                .frame(width: artworkSide, height: artworkSide)
+                .overlay(
+                    Image(systemName: "music.note")
+                        .font(.system(size: artworkSide * 0.18, weight: .light))
+                        .foregroundStyle(M3EColor.onSurfaceVariant)
+                )
+        }
     }
 
     // MARK: - 4. Info (izquierda) + corazón (derecha)
@@ -227,8 +249,8 @@ struct NowPlayingView: View {
         HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(currentSong?.displayName ?? Localization.localized("quality.noSong"))
-                    .font(M3ETypography.displaySmall)
-                    .tracking(0)
+                    .font(M3ETypography.displaySmallEmphasized)
+                    .tracking(-0.5)
                     .foregroundStyle(playIconColor)
                     .multilineTextAlignment(.leading)
                     .lineLimit(2)
@@ -366,7 +388,14 @@ struct NowPlayingView: View {
                 )
                 .contentShape(Circle())
         }
-        .buttonStyle(M3ESquishButtonStyle())
+        .buttonStyle(
+            PressableButtonStyle(
+                scale: 0.92,
+                pressedOpacity: 0.82,
+                rippleColor: (active ? M3EColor.onPrimary : M3EColor.onPrimaryContainer).opacity(0.18),
+                cornerRadius: 22
+            )
+        )
         .disabled(!enabled)
         .opacity(enabled ? 1 : 0.4)
         .accessibilityLabel(accessibility)

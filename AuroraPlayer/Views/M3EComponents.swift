@@ -97,7 +97,7 @@ struct M3ESquishButtonStyle: ButtonStyle {
                 x: configuration.isPressed ? 1.04 : 1.0,
                 y: configuration.isPressed ? 0.94 : 1.0
             )
-            .animation(AuroraMotion.spatialFast, value: configuration.isPressed)
+            .animation(M3ESpring.spatialFast, value: configuration.isPressed)
     }
 }
 
@@ -138,7 +138,17 @@ struct M3EFilledButton<Label: View>: View {
                 .background(Capsule(style: .continuous).fill(tint))
                 .contentShape(Capsule(style: .continuous))
         }
-        .buttonStyle(M3ESquishButtonStyle())
+        .buttonStyle(
+            PressableButtonStyle(
+                scale: 1.0,
+                pressedOpacity: 0.94,
+                rippleColor: foreground.opacity(0.22),
+                cornerRadius: 28,
+                pressedScaleX: 1.04,
+                pressedScaleY: 0.94,
+                pressedCornerRadius: 18
+            )
+        )
     }
 }
 
@@ -183,13 +193,23 @@ struct M3ETonalButton<Label: View>: View {
                 )
                 .contentShape(Capsule(style: .continuous))
         }
-        .buttonStyle(M3ESquishButtonStyle())
+        .buttonStyle(
+            PressableButtonStyle(
+                scale: 1.0,
+                pressedOpacity: 0.94,
+                rippleColor: M3EColor.onPrimaryContainer.opacity(0.18),
+                cornerRadius: 28,
+                pressedScaleX: 1.04,
+                pressedScaleY: 0.94,
+                pressedCornerRadius: 18
+            )
+        )
     }
 }
 
 // MARK: - Filter chip
 
-/// Chip de filtro con morphing de forma (radio 8 ↔ 12) y spring finito.
+/// Chip de filtro con morphing de forma (radio 8 ↔ 16) y spring finito.
 /// No usa `matchedGeometryEffect`: cada chip interpola SU propia forma, así el
 /// layout no se mueve y no hay namespace compartido en el ScrollView.
 struct M3EFilterChip: View {
@@ -213,10 +233,11 @@ struct M3EFilterChip: View {
         self.action = action
     }
 
-    // ✅ M3E: radio small (8) en reposo → medium (12) al seleccionar,
-    // interpolado por `animatableData` con `spatialDefault`.
+    // ✅ M3E Expressive: radio small (8) en reposo → large (16) al seleccionar,
+    // interpolado por `animatableData` con el spring espacial. El chip también
+    // crece un 4 % al quedar seleccionado.
     private var shapeRadius: CGFloat {
-        isSelected ? M3EShapeFamily.medium.radius : M3EShapeFamily.small.radius
+        isSelected ? M3EShapeFamily.large.radius : M3EShapeFamily.small.radius
     }
 
     var body: some View {
@@ -235,13 +256,13 @@ struct M3EFilterChip: View {
             // `surfaceContainerHigh`. NO texto blanco ni gris del sistema.
             .foregroundStyle(isSelected ? M3EColor.onPrimaryContainer : M3EColor.onSurfaceVariant)
             // ✅ FASE 2: el COLOR es un efecto (sin rebote) → effectsDefault.
-            .animation(AuroraMotion.effectsDefault, value: isSelected)
+            .animation(M3ESpring.effectsDefault, value: isSelected)
             .padding(.horizontal, 16)
             .frame(height: 36)
             .background {
                 AuroraMorphChipShape(cornerRadius: shapeRadius)
                     .fill(isSelected ? M3EColor.primaryContainer : M3EColor.surfaceContainerHigh)
-                    .animation(AuroraMotion.spatialDefault, value: isSelected)
+                    .animation(M3ESpring.spatialDefault, value: isSelected)
             }
             .overlay(
                 AuroraMorphChipShape(cornerRadius: shapeRadius)
@@ -249,11 +270,22 @@ struct M3EFilterChip: View {
                         isSelected ? tint.opacity(0.35) : M3EColor.outline.opacity(0.2),
                         lineWidth: 1
                     )
-                    .animation(AuroraMotion.spatialDefault, value: isSelected)
+                    .animation(M3ESpring.spatialDefault, value: isSelected)
             )
             .contentShape(AuroraMorphChipShape(cornerRadius: shapeRadius))
+            .scaleEffect(isSelected ? 1.04 : 1.0)
+            .animation(M3ESpring.spatialDefault, value: isSelected)
         }
-        .buttonStyle(PressableButtonStyle(scale: 0.96, pressedOpacity: 0.9))
+        .buttonStyle(
+            PressableButtonStyle(
+                scale: 0.96,
+                pressedOpacity: 0.9,
+                rippleColor: isSelected
+                    ? M3EColor.onPrimaryContainer.opacity(0.18)
+                    : M3EColor.onSurfaceVariant.opacity(0.12),
+                cornerRadius: shapeRadius
+            )
+        )
         .accessibilityAddTraits(isSelected ? .isSelected : AccessibilityTraits())
     }
 }

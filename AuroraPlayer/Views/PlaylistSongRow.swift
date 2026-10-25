@@ -116,7 +116,14 @@ struct PlaylistSongRow: View, Equatable {
             // `.contextMenu` con pulsación larga: con el apagado profundo el
             // sistema levantaba la preview sobre una fila ya casi gris y el
             // gesto se sentía "roto".
-            .buttonStyle(PressableButtonStyle(scale: AuroraPressScale.row, pressedOpacity: 0.9))
+            .buttonStyle(
+                PressableButtonStyle(
+                    scale: AuroraPressScale.row,
+                    pressedOpacity: 0.9,
+                    rippleColor: M3EColor.onSurface.opacity(0.09),
+                    cornerRadius: 12
+                )
+            )
 
             Button {
                 Haptics.light()
@@ -128,7 +135,13 @@ struct PlaylistSongRow: View, Equatable {
                     .frame(width: 44, height: 44) // Área táctil amplia
                     .contentShape(Rectangle())
             }
-            .buttonStyle(PressableButtonStyle(scale: AuroraPressScale.chip))
+            .buttonStyle(
+                PressableButtonStyle(
+                    scale: AuroraPressScale.chip,
+                    rippleColor: M3EColor.onSurface.opacity(0.10),
+                    cornerRadius: 22
+                )
+            )
             .accessibilityLabel(Localization.localized("queue.remove"))
         }
         .padding(.horizontal, 14)

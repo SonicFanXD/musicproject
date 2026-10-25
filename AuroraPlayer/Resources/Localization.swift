@@ -264,6 +264,7 @@ final class Localization: ObservableObject {
 
         // Actions
         "actions.addFolder": [.spanish: "Agregar carpeta de música", .english: "Add music folder"],
+        "actions.addMusic": [.spanish: "Añadir música", .english: "Add music"],
         "actions.done": [.spanish: "Listo", .english: "Done"],
         "actions.clearQueue": [.spanish: "Limpiar cola", .english: "Clear queue"],
         "actions.play": [.spanish: "Reproducir", .english: "Play"],
@@ -272,6 +273,15 @@ final class Localization: ObservableObject {
         "actions.unlike": [.spanish: "Quitar de Me Gusta", .english: "Remove from Likes"],
         "actions.addToQueue": [.spanish: "Añadir a cola", .english: "Add to Queue"],
         "actions.addToPlaylist": [.spanish: "Añadir a lista", .english: "Add to Playlist"],
+
+        // Snackbar
+        "snackbar.addedToQueue": [.spanish: "Añadido a la cola", .english: "Added to queue"],
+        "snackbar.playNext": [.spanish: "Se reproducirá a continuación", .english: "Playing next"],
+        "snackbar.addedToLikes": [.spanish: "Añadido a favoritos", .english: "Added to favorites"],
+        "snackbar.removedFromLikes": [.spanish: "Eliminado de favoritos", .english: "Removed from favorites"],
+        "snackbar.addedToPlaylist": [.spanish: "Añadido a la lista", .english: "Added to playlist"],
+        "snackbar.importing": [.spanish: "Añadiendo música…", .english: "Adding music…"],
+        "snackbar.importFailed": [.spanish: "No se pudo importar", .english: "Import failed"],
 
         // Queue
         "queue.title": [.spanish: "Cola de Reproducción", .english: "Play Queue"],

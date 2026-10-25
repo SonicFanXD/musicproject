@@ -136,7 +136,14 @@ struct LibrarySongRow: View, Equatable {
             // se sentía roto; así la fila se "hunde" lo justo y la preview del
             // menú se ve con el contenido intacto. Mismo criterio que
             // `PlaylistSongRow` (coherencia entre listas con menú).
-            .buttonStyle(PressableButtonStyle(scale: AuroraPressScale.row, pressedOpacity: 0.9))
+            .buttonStyle(
+                PressableButtonStyle(
+                    scale: AuroraPressScale.row,
+                    pressedOpacity: 0.9,
+                    rippleColor: M3EColor.onSurface.opacity(0.09),
+                    cornerRadius: 12
+                )
+            )
 
             Button {
                 Haptics.light()
@@ -148,7 +155,13 @@ struct LibrarySongRow: View, Equatable {
                     .frame(width: 36, height: 36)
                     .contentShape(Rectangle())
             }
-            .buttonStyle(PressableButtonStyle(scale: AuroraPressScale.chip))
+            .buttonStyle(
+                PressableButtonStyle(
+                    scale: AuroraPressScale.chip,
+                    rippleColor: M3EColor.onSurface.opacity(0.10),
+                    cornerRadius: 18
+                )
+            )
         }
         // ✅ GOLPE FINAL: fila PLANA de Android, no una tarjeta gris.
         .padding(.horizontal, 16)

@@ -48,8 +48,14 @@ struct AuroraWavyProgress: View {
         return min(max(CGFloat(value), 0), 1)
     }
 
-    private var isActive: Bool {
-        isPlaying && scenePhase == .active && !reduceMotion
+    private var isInteracting: Bool {
+        isScrubbing || dragStarted || dragPreview != nil
+    }
+
+    /// La onda también vive mientras el usuario arrastra, aunque la pista esté
+    /// en pausa: el scrub se siente vivo y no como una barra estática.
+    private var waveActive: Bool {
+        (isPlaying || isInteracting) && scenePhase == .active && !reduceMotion
     }
 
     var body: some View {
@@ -64,14 +70,19 @@ struct AuroraWavyProgress: View {
                     .fill(trackColor)
                     .frame(width: width, height: thickness)
 
-                TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: !isActive)) { timeline in
+                TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: !waveActive)) { timeline in
                     Canvas { context, _ in
                         guard activeWidth > 0.5 else { return }
 
                         let seconds = timeline.date.timeIntervalSinceReferenceDate
-                        let phase = CGFloat(seconds.truncatingRemainder(dividingBy: 1_000)) * (2 * .pi)
-                        let frequency = 2 * CGFloat.pi / max(waveLength, 1)
-                        let waveAmplitude = isActive ? amplitude * displayedProgress : 0
+                        // Al arrastrar la onda acelera y gana amplitud; al
+                        // soltar vuelve a su ritmo normal.
+                        let speed: CGFloat = isInteracting ? 1.65 : 1.0
+                        let phase = CGFloat(seconds.truncatingRemainder(dividingBy: 1_000)) * (2 * .pi) * speed
+                        let currentWaveLength = isInteracting ? max(waveLength * 0.65, 8) : waveLength
+                        let frequency = 2 * CGFloat.pi / max(currentWaveLength, 1)
+                        let amplitudeFactor = isInteracting ? 1.75 : max(displayedProgress, 0.25)
+                        let waveAmplitude = waveActive ? amplitude * amplitudeFactor : 0
 
                         var path = Path()
                         path.move(to: CGPoint(x: 0, y: midY + sin(phase) * waveAmplitude))

@@ -5,7 +5,7 @@ struct FolderPickerView: View {
     @ObservedObject var fileAccessService: FileAccessService
     // ✅ Observado para que los textos se re-rendericen al cambiar de idioma en vivo.
     @ObservedObject private var localization = Localization.shared
-    @Environment(\.dismiss) private var dismiss
+    @M3EDismiss private var dismiss
 
     @State private var showImporter = false
     @State private var importMode: ImportMode = .both

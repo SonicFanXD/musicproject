@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 // ✅ REMAKE M3E: ContentView ya no usa NavigationStack ni empuja detalles.
 // El header flotante con el nombre de la app es parte del layout y la
@@ -20,6 +21,7 @@ struct ContentView: View {
     @State private var showSettings = false
     @State private var showPlaylists = false
     @State private var showFolderPicker = false
+    @State private var showAddMusicImporter = false
     // ✅ REMAKE: NowPlaying ya no es un sheet. Vive como overlay a pantalla
     // completa en el ZStack raíz y comparte la geometría de la portada con la
     // PlayerBar (hero animation). Un `.fullScreenCover` NO comparte jerarquía
@@ -111,6 +113,26 @@ struct ContentView: View {
     private var albumSort: AlbumSortOption { AlbumSortOption(rawValue: albumSortRaw) ?? .title }
     private var artistSort: ArtistSortOption { ArtistSortOption(rawValue: artistSortRaw) ?? .name }
     @State private var showSortMenu = false
+
+    // ✅ Snackbar M3E: mensaje efímero con acción opcional. El work item
+    // cancela el auto-cierre anterior para que dos acciones seguidas no se
+    // pisen.
+    @State private var snackbar: SnackbarState?
+    @State private var snackbarDismissWorkItem: DispatchWorkItem?
+
+    private struct SnackbarState: Identifiable {
+        let id: UUID
+        let message: String
+        let actionTitle: String?
+        let action: (() -> Void)?
+
+        init(message: String, actionTitle: String? = nil, action: (() -> Void)? = nil) {
+            self.id = UUID()
+            self.message = message
+            self.actionTitle = actionTitle
+            self.action = action
+        }
+    }
 
     var body: some View {
         ZStack {
@@ -344,8 +366,15 @@ struct ContentView: View {
                     try? await Task.sleep(nanoseconds: 6_800_000_000)
                     dismissSplashIfReady(force: true)
                 }
-                .sheet(isPresented: $showFolderPicker) {
+                .m3eScreen(isPresented: $showFolderPicker, style: .sharedAxisZ) {
                     FolderPickerView(fileAccessService: fileAccessService)
+                }
+                .fileImporter(
+                    isPresented: $showAddMusicImporter,
+                    allowedContentTypes: [.folder, .audio],
+                    allowsMultipleSelection: true
+                ) { result in
+                    handleAddMusicImport(result)
                 }
                 .onChange(of: fileAccessService.isInitialLibraryLoaded) { loaded in
                     if loaded {
@@ -409,6 +438,31 @@ struct ContentView: View {
                 )
                 .padding(.horizontal, 14)
                 .padding(.bottom, 8)
+            }
+        }
+        // ✅ Snackbar M3E: flota por encima de la PlayerBar y del FAB. Se
+        // oculta debajo del overlay de NowPlaying, que se añade después.
+        .overlay(alignment: .bottom) {
+            if let snackbar, !isAnyScreenPresented {
+                M3ESnackbar(
+                    message: snackbar.message,
+                    actionTitle: snackbar.actionTitle,
+                    action: snackbar.action
+                )
+                .padding(.bottom, snackbarBottomPadding)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .zIndex(30)
+            }
+        }
+        // ✅ FAB M3E: acción principal de biblioteca. Vive antes de los
+        // `m3eScreen` para que Ajustes/Listas/Detalles lo tapen al abrirse.
+        .overlay(alignment: .bottomTrailing) {
+            if !showNowPlaying && !isInitialLoad && !isAnyScreenPresented {
+                addMusicFAB
+                    .padding(.trailing, 18)
+                    .padding(.bottom, fabBottomPadding)
+                    .transition(.scale(scale: 0.9).combined(with: .opacity))
+                    .zIndex(25)
             }
         }
         // ✅ FIX ORDEN SPLASH: el splash sale del ZStack raíz y pasa a ser un
@@ -670,6 +724,104 @@ struct ContentView: View {
         }
         .buttonStyle(M3ESquishButtonStyle())
         .accessibilityLabel(label)
+    }
+
+    // MARK: - FAB / Snackbar
+
+    /// FAB tonal M3E: cápsula con icono + texto, elevación por sombra suave
+    /// (permitida solo en FAB) y acción directa al fileImporter de audio.
+    private var addMusicFAB: some View {
+        Button {
+            Haptics.light()
+            showAddMusicImporter = true
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "plus")
+                    .font(.system(size: 16, weight: .bold))
+                Text(Localization.localized("actions.addMusic"))
+                    .font(M3ETypography.labelLargeEmphasized)
+                    .lineLimit(1)
+            }
+            .foregroundStyle(M3EColor.onPrimaryContainer)
+            .padding(.horizontal, 20)
+            .frame(height: 56)
+            .background(Capsule(style: .continuous).fill(M3EColor.primaryContainer))
+            .overlay(
+                Capsule(style: .continuous)
+                    .strokeBorder(M3EColor.outline.opacity(0.2), lineWidth: 1)
+            )
+            .contentShape(Capsule(style: .continuous))
+        }
+        .buttonStyle(
+            PressableButtonStyle(
+                scale: 0.94,
+                pressedOpacity: 0.9,
+                rippleColor: M3EColor.onPrimaryContainer.opacity(0.16),
+                cornerRadius: 28,
+                pressedScaleX: 1.04,
+                pressedScaleY: 0.94,
+                pressedCornerRadius: 20
+            )
+        )
+        // ✅ Sombra FUERA del clip del press morph para que no la recorte.
+        .shadow(color: .black.opacity(0.18), radius: 10, x: 0, y: 6)
+        .accessibilityLabel(Localization.localized("actions.addMusic"))
+    }
+
+    private var isAnyScreenPresented: Bool {
+        showSettings
+            || showPlaylists
+            || showFolderPicker
+            || selectedAlbum != nil
+            || selectedArtist != nil
+            || selectedPlaylist != nil
+    }
+
+    private var fabBottomPadding: CGFloat {
+        audioEngine.currentSong == nil ? 18 : 104
+    }
+
+    private var snackbarBottomPadding: CGFloat {
+        audioEngine.currentSong == nil ? 84 : 164
+    }
+
+    private func handleAddMusicImport(_ result: Result<[URL], Error>) {
+        switch result {
+        case .success(let urls):
+            guard !urls.isEmpty else { return }
+            let folders = urls.filter { $0.hasDirectoryPath }
+            let files = urls.filter { !$0.hasDirectoryPath }
+            folders.forEach { fileAccessService.addFolder(url: $0) }
+            if !files.isEmpty {
+                fileAccessService.addFiles(urls: files)
+            }
+            Haptics.light()
+            showSnackbar(Localization.localized("snackbar.importing"))
+        case .failure:
+            showSnackbar(Localization.localized("snackbar.importFailed"))
+        }
+    }
+
+    private func showSnackbar(
+        _ message: String,
+        actionTitle: String? = nil,
+        action: (() -> Void)? = nil
+    ) {
+        snackbarDismissWorkItem?.cancel()
+        let state = SnackbarState(message: message, actionTitle: actionTitle, action: action)
+        withAnimation(AuroraMotion.emphasizedDecelerateMedium()) {
+            snackbar = state
+        }
+
+        let dismiss = DispatchWorkItem {
+            withAnimation(AuroraMotion.emphasizedAccelerateMedium()) {
+                if snackbar?.id == state.id {
+                    snackbar = nil
+                }
+            }
+        }
+        snackbarDismissWorkItem = dismiss
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.8, execute: dismiss)
     }
 
     private func openNowPlaying() {
@@ -1364,11 +1516,26 @@ struct ContentView: View {
             isLiked: fileAccessService.isLiked(song),
             playlists: fileAccessService.playlists,
             onPlay: { playSong(song) },
-            onPlayNext: { audioEngine.playNext(song) },
-            onAddToQueue: { audioEngine.addToQueue(song) },
-            onToggleLike: { fileAccessService.toggleLike(song) },
+            onPlayNext: {
+                audioEngine.playNext(song)
+                showSnackbar(Localization.localized("snackbar.playNext"))
+            },
+            onAddToQueue: {
+                audioEngine.addToQueue(song)
+                showSnackbar(Localization.localized("snackbar.addedToQueue"))
+            },
+            onToggleLike: {
+                let wasLiked = fileAccessService.isLiked(song)
+                fileAccessService.toggleLike(song)
+                showSnackbar(
+                    Localization.localized(
+                        wasLiked ? "snackbar.removedFromLikes" : "snackbar.addedToLikes"
+                    )
+                )
+            },
             onAddToPlaylist: { playlist in
                 fileAccessService.addSongToPlaylist(song, playlist: playlist)
+                showSnackbar(Localization.localized("snackbar.addedToPlaylist"))
             }
         )
         .equatable()
