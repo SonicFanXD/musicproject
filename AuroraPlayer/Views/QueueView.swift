@@ -13,7 +13,6 @@ struct QueueView: View {
     @State private var selectedTab: QueueTab = .nextUp
     // ✅ M3E: namespace del morph del selector de pestañas (la cápsula activa
     // se DESLIZA entre pestañas en vez de aparecer/desaparecer dos veces).
-    @Namespace private var tabNamespace
     // ✅ E3.2: modo edición EXPLÍCITO para el arrastre de "En cola". Con el menú
     // contextual en cada fila, el toque sostenido abre el menú y el arrastre
     // (que sin edición necesita ESE mismo gesto) no llega a arrancar. En edición
@@ -123,24 +122,23 @@ struct QueueView: View {
                     }
                     // ✅ FASE 2/3: segmento seleccionado tonal (texto en el
                     // acento), no píldora de gradiente con texto blanco.
-                    .foregroundStyle(selectedTab == tab ? AppTheme.accent : Color.secondary)
+                    .foregroundStyle(selectedTab == tab ? AppTheme.accent : M3EColor.onSurfaceVariant)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 12)
                     .background {
                         if selectedTab == tab {
+                            // ✅ M3E sin namespace: el segmento seleccionado es
+                            // una superficie tonal propia y el cambio se anima
+                            // con el spring finito. No hay geometría compartida
+                            // que pueda desincronizarse en el 8 Plus.
                             Capsule().fill(AppTheme.accent.opacity(0.2))
                                 .overlay(Capsule().strokeBorder(AppTheme.accent.opacity(0.3), lineWidth: 1))
-                                // ✅ M3E MORPH: la misma cápsula viaja entre
-                                // pestañas con `matchedGeometryEffect` (una sola
-                                // geometría animada). Antes eran dos cápsulas
-                                // distintas que se apagaban/encendían: el ojo
-                                // leía “parpadeo”, no movimiento.
-                                .matchedGeometryEffect(id: "queue.tab.selection", in: tabNamespace)
+                                .transition(.opacity)
                         } else {
-                            // ✅ 60fps: color OPACO (sin blur) para el selector
                             Capsule().fill(M3EColor.surfaceContainerHigh)
                         }
                     }
+                    .animation(AuroraMotion.spatialDefault, value: selectedTab)
                 }
                 .buttonStyle(PressableButtonStyle(scale: AuroraPressScale.chip, pressedOpacity: 0.7))
             }

@@ -82,22 +82,22 @@ struct LibrarySongRow: View, Equatable {
                         // álbum/artista) para separarse del subtítulo de 12.
                         Text(song.displayName)
                             .font(M3ETypography.titleMediumEmphasized)
-                            .foregroundStyle(isCurrent ? AppTheme.accent : .primary)
+                            .foregroundStyle(isCurrent ? M3EColor.primary : M3EColor.onSurface)
                             .lineLimit(1)
 
                         Text(song.displaySubtitle)
                             .font(M3ETypography.bodyMedium)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(M3EColor.onSurfaceVariant)
                             .lineLimit(1)
 
                         if !song.album.isEmpty {
                             HStack(spacing: 4) {
                                 Image(systemName: "opticaldisc")
                                     .font(.system(size: 9))
-                                    .foregroundStyle(.tertiary)
+                                    .foregroundStyle(M3EColor.onSurfaceVariant.opacity(0.7))
                                 Text(song.album)
                                     .font(M3ETypography.bodySmall)
-                                    .foregroundStyle(.tertiary)
+                                    .foregroundStyle(M3EColor.onSurfaceVariant.opacity(0.7))
                                     .lineLimit(1)
                             }
                         }
@@ -121,7 +121,7 @@ struct LibrarySongRow: View, Equatable {
                         } else {
                             Text(Self.durationLabel(song.duration))
                                 .font(M3ETypography.labelMedium)
-                                .foregroundStyle(.tertiary)
+                                .foregroundStyle(M3EColor.onSurfaceVariant.opacity(0.7))
                         }
                     }
                     .frame(minWidth: 30, alignment: .trailing)
@@ -142,7 +142,7 @@ struct LibrarySongRow: View, Equatable {
             } label: {
                 Image(systemName: isLiked ? "heart.fill" : "heart")
                     .font(.system(size: 16, weight: .medium))
-                    .foregroundStyle(isLiked ? Color.red : (isCurrent ? AppTheme.accent : Color.secondary.opacity(0.7)))
+                    .foregroundStyle(isLiked ? Color.red : (isCurrent ? M3EColor.primary : M3EColor.onSurfaceVariant))
                     .frame(width: 36, height: 36)
                     .contentShape(Rectangle())
             }
@@ -151,7 +151,7 @@ struct LibrarySongRow: View, Equatable {
         // ✅ GOLPE FINAL: fila PLANA de Android, no una tarjeta gris.
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
-        .background(isCurrent ? AppTheme.accent.opacity(0.07) : Color.clear)
+        .background(isCurrent ? M3EColor.secondaryContainer : Color.clear)
         .overlay(alignment: .bottom) {
             Rectangle()
                 .fill(M3EColor.outlineVariant.opacity(0.35))
@@ -261,15 +261,15 @@ struct AlbumRow: View, Equatable {
             VStack(alignment: .leading, spacing: 3) {
                 Text(album.name)
                     .font(M3ETypography.titleMediumEmphasized)
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(M3EColor.onSurface)
                     .lineLimit(1)
                 Text(album.artist)
                     .font(M3ETypography.bodyMedium)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(M3EColor.onSurfaceVariant)
                     .lineLimit(1)
                 Text(localizedSongCount(album.songs.count))
                     .font(M3ETypography.labelMedium)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(M3EColor.onSurfaceVariant.opacity(0.7))
             }
 
             Spacer()
@@ -296,12 +296,12 @@ struct AlbumRow: View, Equatable {
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         } else {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color.secondary.opacity(0.12))
+                .fill(M3EColor.surfaceContainerHigh)
                 .frame(width: 52, height: 52)
                 .overlay {
                     Image(systemName: "square.stack")
                         .font(.system(size: 18))
-                        .foregroundStyle(.secondary.opacity(0.6))
+                        .foregroundStyle(M3EColor.onSurfaceVariant.opacity(0.6))
                 }
         }
     }
@@ -326,12 +326,12 @@ struct ArtistRow: View, Equatable {
             VStack(alignment: .leading, spacing: 3) {
                 Text(artist.name)
                     .font(M3ETypography.titleMediumEmphasized)
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(M3EColor.onSurface)
                     .lineLimit(1)
                 // ✅ Solo canciones: `artist.albums` agrupa discos y es caro por fila.
                 Text(localizedSongCount(artist.songs.count))
                     .font(M3ETypography.bodyMedium)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(M3EColor.onSurfaceVariant)
                     .lineLimit(1)
             }
 
@@ -358,12 +358,12 @@ struct ArtistRow: View, Equatable {
                 .clipShape(Circle())
         } else {
             Circle()
-                .fill(Color.secondary.opacity(0.12))
+                .fill(M3EColor.surfaceContainerHigh)
                 .frame(width: 52, height: 52)
                 .overlay {
                     Image(systemName: "person.fill")
                         .font(.system(size: 18))
-                        .foregroundStyle(.secondary.opacity(0.6))
+                        .foregroundStyle(M3EColor.onSurfaceVariant.opacity(0.6))
                 }
         }
     }

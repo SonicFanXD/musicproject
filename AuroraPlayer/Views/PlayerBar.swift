@@ -31,56 +31,6 @@ struct PlayerBar: View {
 
     private var artworkSide: CGFloat { compactPlayerBar ? 44 : 48 }
 
-    // MARK: - Acento
-
-    private var accentPair: (primary: Color, secondary: Color) {
-        if theme.accentFromArtwork, let artworkColor = theme.artworkAccentColor {
-            return (artworkColor, theme.artworkSecondaryColor ?? artworkColor.opacity(0.7))
-        }
-        return (theme.accent, theme.accent.opacity(0.4))
-    }
-
-    private func accentGradient(
-        start: UnitPoint = .topLeading,
-        end: UnitPoint = .bottomTrailing,
-        primaryOpacity: Double = 1,
-        secondaryOpacity: Double = 1
-    ) -> LinearGradient {
-        let pair = accentPair
-        return LinearGradient(
-            colors: [pair.primary.opacity(primaryOpacity), pair.secondary.opacity(secondaryOpacity)],
-            startPoint: start,
-            endPoint: end
-        )
-    }
-
-    /// Si el secundario de la carátula difiere MUCHO en brillo del primario, se
-    /// conserva su TONO pero se ancla su brillo al del primario: el glifo del
-    /// play mantiene contraste sin perder el color real de la portada.
-    private func textSafeAccentGradient() -> LinearGradient {
-        let pair = accentPair
-        var secondaryStop = pair.secondary
-        var h1: CGFloat = 0, s1: CGFloat = 0, b1: CGFloat = 0, a1: CGFloat = 1
-        var h2: CGFloat = 0, s2: CGFloat = 0, b2: CGFloat = 0, a2: CGFloat = 1
-        if UIColor(pair.primary).getHue(&h1, saturation: &s1, brightness: &b1, alpha: &a1),
-           UIColor(pair.secondary).getHue(&h2, saturation: &s2, brightness: &b2, alpha: &a2),
-           abs(b1 - b2) > 0.3 {
-            secondaryStop = Color(UIColor(hue: h2, saturation: s2, brightness: b1, alpha: a2))
-        }
-        return LinearGradient(
-            colors: [pair.primary, secondaryStop],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
-    }
-
-    private var playGlyphColor: Color {
-        if theme.accentFromArtwork, let accent = theme.artworkAccentUIColor {
-            return AppTheme.contrastingText(on: accent)
-        }
-        return AppTheme.contrastingText(on: AppTheme.accentUIColor)
-    }
-
     // MARK: - Body
 
     var body: some View {
@@ -135,7 +85,8 @@ struct PlayerBar: View {
                 .background(
                     M3ETonalSurface(
                         cornerRadius: 28,
-                        tint: theme.accent
+                        tint: M3EColor.primary,
+                        base: M3EColor.surfaceContainerHigh
                     )
                 )
                 .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
@@ -165,16 +116,12 @@ struct PlayerBar: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
             }
-            .foregroundStyle(playGlyphColor)
-            .padding(.horizontal, 12)
+            .foregroundStyle(M3EColor.onPrimary)
+            .padding(.horizontal, 14)
             .frame(height: 40)
             .background(
                 Capsule(style: .continuous)
-                    .fill(textSafeAccentGradient())
-            )
-            .overlay(
-                Capsule(style: .continuous)
-                    .strokeBorder(playGlyphColor.opacity(0.12), lineWidth: 1)
+                    .fill(M3EColor.primary)
             )
             .contentShape(Capsule(style: .continuous))
         }
@@ -213,28 +160,21 @@ struct PlayerBar: View {
                     .scaledToFill()
                     .frame(width: artworkSide, height: artworkSide)
                     .clipShape(RoundedRectangle(cornerRadius: CGFloat(artworkCorner * (14.0 / 22.0)), style: .continuous))
-                    .shadow(color: .black.opacity(0.18), radius: 6, x: 0, y: 3)
                     .overlay(
                         RoundedRectangle(cornerRadius: CGFloat(artworkCorner * (14.0 / 22.0)), style: .continuous)
-                            .stroke(
-                                accentGradient(primaryOpacity: 0.6, secondaryOpacity: 0.45)
-                                    .opacity(audioEngine.isPlaying ? 1.0 : 0.0),
-                                lineWidth: 2
-                            )
-                            .animation(AuroraMotion.spatialFast, value: audioEngine.isPlaying)
+                            .strokeBorder(M3EColor.outline.opacity(0.2), lineWidth: 1)
                     )
                     .contentShape(Rectangle())
                     .onTapGesture { openNowPlaying() }
             } else {
                 ZStack {
                     RoundedRectangle(cornerRadius: CGFloat(artworkCorner * (14.0 / 22.0)), style: .continuous)
-                        .fill(accentGradient(primaryOpacity: 0.32, secondaryOpacity: 0.18))
+                        .fill(M3EColor.surfaceContainerHigh)
                         .frame(width: artworkSide, height: artworkSide)
 
-                    Image(systemName: audioEngine.isPlaying ? "waveform" : "music.note")
+                    Image(systemName: "music.note")
                         .font(.system(size: 20, weight: .medium))
-                        .foregroundStyle(theme.accent)
-                        .animation(AuroraMotion.spatialFast, value: audioEngine.isPlaying)
+                        .foregroundStyle(M3EColor.primary)
                 }
                 .contentShape(Rectangle())
                 .onTapGesture { openNowPlaying() }

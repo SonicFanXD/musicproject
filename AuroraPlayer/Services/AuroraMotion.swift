@@ -68,11 +68,20 @@ struct AuroraMorphShape: Shape, Animatable {
 /// `font(_:size:weight:)` cae a `Font.system` SIN `.rounded`, que es el
 /// fallback que pide el contrato visual.
 private enum RobotoFont {
+    /// ✅ GOLPE FINAL: registrar TODOS los .ttf del bundle recorriendo sus
+    /// recursos, sin asumir si Xcode los copia a la raíz o dentro de una
+    /// subcarpeta. Esto elimina la causa real de que Roboto no se viera: el
+    /// archivo existía, pero iOS no lo encontraba en la ruta esperada.
     private static let registration: Void = {
-        for file in ["Roboto-Regular", "Roboto-Medium", "Roboto-Bold"] {
-            let url = Bundle.main.url(forResource: file, withExtension: "ttf")
-                ?? Bundle.main.url(forResource: file, withExtension: "ttf", subdirectory: "Fonts")
-            guard let url else { continue }
+        guard let resourceURL = Bundle.main.resourceURL,
+              let enumerator = FileManager.default.enumerator(
+                at: resourceURL,
+                includingPropertiesForKeys: nil
+              )
+        else { return }
+
+        for case let url as URL in enumerator {
+            guard url.pathExtension.lowercased() == "ttf" else { continue }
             _ = CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
         }
     }()
@@ -82,6 +91,8 @@ private enum RobotoFont {
         if UIFont(name: name, size: size) != nil {
             return .custom(name, size: size)
         }
+        // Fallback explícito: fuente del sistema SIN `.rounded`, que es el
+        // último recurso si el .ttf no llegó al bundle.
         return .system(size: size, weight: weight)
     }
 }
@@ -101,6 +112,10 @@ struct M3ETypography {
 
     /// Título editorial de 24 pt en Roboto Bold (portada de NowPlaying).
     static let displayTitle: Font = RobotoFont.font("Roboto-Bold", size: 24, weight: .bold)
+
+    /// Título de la pantalla principal (30 pt Roboto Bold, alineado a la
+    /// izquierda, como el large top app bar de Android).
+    static let headlineLargeEmphasized: Font = RobotoFont.font("Roboto-Bold", size: 30, weight: .bold)
 
     // Título pequeño enfatizado: usado para títulos de categoría en ContentView
     // y otros encabezados de sección medianos.

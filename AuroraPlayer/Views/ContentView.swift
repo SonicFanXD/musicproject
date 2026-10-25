@@ -128,7 +128,7 @@ struct ContentView: View {
                     // y se veía invertido (los filtros encima del campo de
                     // búsqueda).
                     searchFieldInline
-                        .padding(.horizontal, 12)
+                        .padding(.horizontal, 16)
                         .padding(.top, 8)
                         .padding(.bottom, 4)
 
@@ -379,9 +379,8 @@ struct ContentView: View {
                                 // ✅ M3E: cápsula SÓLIDA (SurfaceContainer) sobre la
                                 // lista. Mismo tamaño y misma sombra; sin muestreo de
                                 // material encima de las filas que se desplazan.
-                                Capsule()
-                                    .fill(M3EColor.surfaceContainerHigh)
-                                    .shadow(color: .black.opacity(0.1), radius: 8, y: 4)
+                            Capsule()
+                                .fill(M3EColor.surfaceContainerHigh)
                             }
                             .padding(.bottom, 80)
                         }
@@ -621,10 +620,13 @@ struct ContentView: View {
     // sin división visual contra el AppBackground ni el buscador.
     private var headerView: some View {
         HStack(spacing: 10) {
-            // ✅ REMAKE: headline-small enfatizado del catálogo M3E.
+            // ✅ M3E large top app bar: Roboto Bold 30 pt, alineado a la
+            // izquierda y en `onSurface` (nada de degradados de texto iOS).
             Text(Localization.localized("app.name"))
-                .font(M3ETypography.headlineSmallEmphasized)
-                .foregroundStyle(AppTheme.accentGradient)
+                .font(M3ETypography.headlineLargeEmphasized)
+                .foregroundStyle(M3EColor.onSurface)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
                 .accessibilityLabel(Localization.localized("app.name"))
 
             Spacer()
@@ -786,44 +788,31 @@ struct ContentView: View {
                 // de calor/BCM del dispositivo. Fondo opaco = mismo look, cero
                 // re-computo de blur.
                 Circle()
-                    .fill(M3EColor.surfaceContainerHigh)
+                    .fill(M3EColor.primaryContainer)
                     .frame(width: 80, height: 80)
                     .overlay {
                         Circle()
-                            .stroke(
-                                LinearGradient(
-                                    colors: [AppTheme.accent.opacity(0.4), AppTheme.accent.opacity(0.1)],
-                                    startPoint: .topLeading, endPoint: .bottomTrailing
-                                ),
-                                lineWidth: 2
-                            )
+                            .strokeBorder(M3EColor.outline.opacity(0.2), lineWidth: 1.5)
                     }
-                    .shadow(color: AppTheme.accent.opacity(0.15), radius: 10, y: 5)
 
                 Image(systemName: "square.stack.3d.up")
                     .font(.system(size: 34, weight: .semibold))
-                    .foregroundStyle(AppTheme.accentGradient)
+                    .foregroundStyle(M3EColor.primary)
             }
 
             Text(Localization.localized("indexing.indexingLibrary"))
                 .font(M3ETypography.headlineSmallEmphasized)
                 .tracking(-0.2)
-                .foregroundStyle(.primary)
+                .foregroundStyle(M3EColor.onSurface)
 
             VStack(spacing: 10) {
                 GeometryReader { geo in
                     ZStack(alignment: .leading) {
-                        Capsule().fill(Color.secondary.opacity(0.18))
+                        Capsule().fill(M3EColor.surfaceContainerHighest)
                         Capsule()
-                            .fill(
-                                LinearGradient(
-                                    colors: [AppTheme.accent.opacity(0.8), AppTheme.accent],
-                                    startPoint: .leading, endPoint: .trailing
-                                )
-                            )
+                            .fill(M3EColor.primary)
                             .frame(width: geo.size.width * indexingProgress)
                             .animation(AuroraMotion.spatialFast, value: indexingProgress)
-                            .shadow(color: AppTheme.accent.opacity(0.3), radius: 4, y: 0)
                     }
                 }
                 .frame(height: 10)
@@ -831,18 +820,18 @@ struct ContentView: View {
                 HStack {
                     Text("\(fileAccessService.scanProcessed) \(Localization.localized("indexing.progress")) \(fileAccessService.scanTotal)")
                         .font(M3ETypography.labelMedium)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(M3EColor.onSurfaceVariant)
                     Spacer()
                     Text("\(Int(indexingProgress * 100))%")
                         .font(M3ETypography.labelMedium)
-                        .foregroundStyle(AppTheme.accentGradient)
+                        .foregroundStyle(M3EColor.primary)
                 }
             }
             .padding(.horizontal, 8)
 
             Text(Localization.localized("indexing.preparing"))
                 .font(M3ETypography.bodyMedium)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(M3EColor.onSurfaceVariant)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 32)
@@ -852,7 +841,7 @@ struct ContentView: View {
         // = calor. Fondo opaco + borde sutil = mismo look premium, cero costo.
         // ✅ AURORA DESIGN: card del sistema en variante flat (radio .xl, borde
         // y sombra single soft unificados). Sigue SIN blur.
-        .auroraCard(radius: AuroraRadius.xl, style: .flat, withShadow: true)
+        .auroraCard(radius: AuroraRadius.xl, style: .flat, withShadow: false)
     }
 
     private var compactIndexingRow: some View {
@@ -865,17 +854,11 @@ struct ContentView: View {
                 .foregroundStyle(.secondary)
             Spacer()
             GeometryReader { geo in
-                ZStack(alignment: .leading) {
-                    Capsule().fill(Color.secondary.opacity(0.18))
-                    Capsule()
-                        .fill(
-                            LinearGradient(
-                                colors: [AppTheme.accent.opacity(0.8), AppTheme.accent],
-                                startPoint: .leading, endPoint: .trailing
-                            )
-                        )
-                        .frame(width: max(0, geo.size.width * indexingProgress))
-                        .animation(AuroraMotion.spatialFast, value: indexingProgress)
+                ZStack(alignment: .leading) {                        Capsule().fill(M3EColor.surfaceContainerHighest)
+                        Capsule()
+                            .fill(M3EColor.primary)
+                            .frame(width: max(0, geo.size.width * indexingProgress))
+                            .animation(AuroraMotion.spatialFast, value: indexingProgress)
                 }
             }
             .frame(width: 70, height: 5)
@@ -885,7 +868,6 @@ struct ContentView: View {
         .background {
             Capsule()
                 .fill(M3EColor.surfaceContainerHigh)
-                .shadow(color: .black.opacity(0.08), radius: 6, y: 2)
         }
         .padding(.horizontal, 12)
         .opacity(compactIndexingVisible ? 1 : 0)

@@ -50,6 +50,16 @@ enum M3EColor {
         )
     }
 
+    /// Contenedor secundario: fondo tonal de la fila que está sonando.
+    /// Sólido, más suave que `primaryContainer` (M3E no tiñe una fila entera
+    /// con el acento puro).
+    static var secondaryContainer: Color {
+        tone(
+            light: (brightness: 0.91, chroma: 0.22),
+            dark: (brightness: 0.19, chroma: 0.30)
+        )
+    }
+
     // MARK: - Superficies (tonal elevation)
 
     static var surface: Color {

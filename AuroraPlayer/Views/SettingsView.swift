@@ -60,7 +60,7 @@ struct SettingsView: View, SettingsRowBuilding {
                             Button { dismiss() } label: {
                                 Image(systemName: "chevron.down")
                                     .font(.system(size: 16, weight: .semibold))
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(M3EColor.onSurfaceVariant)
                                     .frame(width: 44, height: 44)
                                     .contentShape(Rectangle())
                             }
@@ -179,68 +179,47 @@ struct SettingsView: View, SettingsRowBuilding {
     private var headerSection: some View {
         VStack(spacing: 16) {
             ZStack {
-                // ✅ Círculo con tinte suave (sin blur: cero re-muestreo en scroll)
+                // ✅ M3E: contenedor tonal sólido, sin degradados ni sombras.
                 Circle()
-                    .fill(theme.resolvedAccentGradient(opacity: 0.12))
+                    .fill(M3EColor.primaryContainer)
                     .frame(width: 88, height: 88)
                     .overlay {
                         Circle()
-                            .stroke(
-                                LinearGradient(
-                                    colors: [theme.resolvedAccent.opacity(0.5), theme.resolvedAccent.opacity(0.1), .clear],
-                                    startPoint: .topLeading, endPoint: .bottomTrailing
-                                ),
-                                lineWidth: 2
-                            )
+                            .strokeBorder(M3EColor.outline.opacity(0.2), lineWidth: 1.5)
                     }
-                    .shadow(color: theme.resolvedAccent.opacity(0.2), radius: 12, x: 0, y: 6)
 
                 Image(systemName: "gearshape.fill")
                     .font(.system(size: 36, weight: .medium))
-                    .foregroundStyle(
-                        LinearGradient(
-                            colors: [theme.resolvedAccent, theme.resolvedAccent.opacity(0.7)],
-                            startPoint: .top, endPoint: .bottom
-                        )
-                    )
+                    .foregroundStyle(M3EColor.primary)
             }
 
             VStack(spacing: 6) {
                 Text(Localization.localized("settings.title"))
-                    // ✅ REMAKE: rol del catálogo M3E, sin 30/heavy ad-hoc.
                     .font(M3ETypography.headlineSmallEmphasized)
                     .tracking(-0.2)
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(M3EColor.onSurface)
 
                 Text(Localization.localized("settings.subtitle"))
                     .font(M3ETypography.bodyMedium)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(M3EColor.onSurfaceVariant)
 
                 // ✅ Versión visible en el header (los números de versión no se
                 // traducen, así que no hace falta una key de Localización).
                 Text(appVersionLabel)
                     .font(M3ETypography.labelMedium)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(M3EColor.onSurfaceVariant.opacity(0.7))
                     .padding(.top, 2)
             }
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 18)
         .background {
-            // ✅ Fondo opaco + borde gradiente sutil (look vidrio sin blur)
             RoundedRectangle(cornerRadius: 24, style: .continuous)
                 .fill(M3EColor.surfaceContainerLow)
-                .shadow(color: .black.opacity(0.06), radius: 10, x: 0, y: 4)
         }
         .overlay {
             RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .strokeBorder(
-                    LinearGradient(
-                        colors: [.white.opacity(0.14), .clear, .white.opacity(0.06)],
-                        startPoint: .topLeading, endPoint: .bottomTrailing
-                    ),
-                    lineWidth: 1
-                )
+                .strokeBorder(M3EColor.outline.opacity(0.2), lineWidth: 1.5)
         }
     }
 
@@ -780,12 +759,11 @@ private struct ArtworkAccentSettingsSection: View, SettingsRowBuilding {
                     .frame(width: 28, height: 28)
                     .overlay(
                         Circle()
-                            .stroke(Color.primary.opacity(0.15), lineWidth: 1)
+                            .strokeBorder(M3EColor.outline.opacity(0.2), lineWidth: 1.5)
                     )
-                    .shadow(color: (theme.artworkAccentColor ?? theme.accent).opacity(0.4), radius: 4, y: 2)
                 Text(Localization.localized("settings.artworkAccentActive"))
                     .font(M3ETypography.bodyMedium)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(M3EColor.onSurfaceVariant)
                 Spacer()
             }
             .padding(.vertical, 4)

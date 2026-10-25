@@ -20,13 +20,19 @@ targets:
     dependencies:
       - package: SFBAudioEngine
     sources:
+      # ✅ Fonts se excluye del árbol general y se añade aparte como recurso:
+      # así XcodeGen copia los .ttf a la raíz del bundle y `UIAppFonts`
+      # (Roboto-Regular.ttf, etc.) los encuentra sin depender de un folder
+      # reference que iOS no registra.
       - path: AuroraPlayer
+        excludes:
+          - Resources/Fonts
       - path: AuroraPlayerApp.swift
       - path: Assets.xcassets   # ✅ Así, sin guión extra
-      # ✅ Roboto: fuera del árbol de fuentes para que XcodeGen la copie
-      # SIEMPRE como recurso (un .ttf incluido a través de `AuroraPlayer`
-      # podía quedarse fuera del bundle y la app caía a la fuente del sistema).
-      - path: Fonts
+      # ✅ Roboto (Resources/Fonts): explícito como recurso para que XcodeGen
+      # copie SIEMPRE los .ttf a la raíz del bundle (un .ttf incluido a través
+      # del árbol `AuroraPlayer` podía quedarse fuera y la app caía al sistema).
+      - path: AuroraPlayer/Resources/Fonts
         buildPhase: resources
     settings:
       base:
