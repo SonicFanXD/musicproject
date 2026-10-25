@@ -595,10 +595,13 @@ struct QueueView: View {
                 .scaledToFill()
                 .frame(width: size, height: size)
                 .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
-                .shadow(color: .black.opacity(0.1), radius: 2, x: 0, y: 1)
+                .overlay(
+                    RoundedRectangle(cornerRadius: corner, style: .continuous)
+                        .strokeBorder(M3EColor.outline.opacity(0.2), lineWidth: 1)
+                )
         } else {
             RoundedRectangle(cornerRadius: corner, style: .continuous)
-                .fill(Color.secondary.opacity(0.12))
+                .fill(M3EColor.surfaceContainerHigh)
                 .frame(width: size, height: size)
                 .overlay {
                     Image(systemName: "music.note")

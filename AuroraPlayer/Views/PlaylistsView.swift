@@ -86,17 +86,16 @@ struct PlaylistsView: View {
                 // mismo tamaño; el borde de acento conserva la jerarquía
                 // tonal que antes daba el material.
                 Circle()
-                    .fill(M3EColor.surfaceContainerHigh)
+                    .fill(M3EColor.primaryContainer)
                     .frame(width: 88, height: 88)
                     .overlay {
                         Circle()
-                            .stroke(AppTheme.accentGradient, lineWidth: 2)
+                            .strokeBorder(M3EColor.outline.opacity(0.2), lineWidth: 1.5)
                     }
-                    .shadow(color: AppTheme.accent.opacity(0.15), radius: 12, y: 6)
 
                 Image(systemName: "music.note.list")
                     .font(.system(size: 38, weight: .semibold))
-                    .foregroundStyle(AppTheme.accentGradient)
+                    .foregroundStyle(M3EColor.primary)
             }
 
             Text(Localization.localized("playlists.yourPlaylists"))
@@ -466,29 +465,22 @@ struct PlaylistDetailView: View {
                         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
                         .overlay {
                             RoundedRectangle(cornerRadius: 20, style: .continuous)
-                                .strokeBorder(.white.opacity(0.12), lineWidth: 1)
+                                .strokeBorder(M3EColor.outline.opacity(0.2), lineWidth: 1.5)
                         }
-                        .shadow(color: .black.opacity(0.3), radius: 22, x: 0, y: 12)
                 } else {
                     ZStack {
                         RoundedRectangle(cornerRadius: 20, style: .continuous)
-                            .fill(
-                                LinearGradient(
-                                    colors: [
-                                        AppTheme.accent.opacity(0.3),
-                                        AppTheme.accent.opacity(0.15)
-                                    ],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                            )
+                            .fill(M3EColor.surfaceContainerHigh)
                             .frame(width: 220, height: 220)
 
                         Image(systemName: "music.note.list")
                             .font(.system(size: 52))
-                            .foregroundStyle(.white.opacity(0.8))
+                            .foregroundStyle(M3EColor.primary)
                     }
-                    .shadow(color: .black.opacity(0.2), radius: 18, x: 0, y: 9)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 20, style: .continuous)
+                            .strokeBorder(M3EColor.outline.opacity(0.2), lineWidth: 1.5)
+                    )
                 }
             }
             .padding(.top, 16)
@@ -541,14 +533,9 @@ struct PlaylistDetailView: View {
                         .padding(.vertical, 18) // Expanded touch target (15→18)
                         .background {
                             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                .fill(LinearGradient(
-                                    colors: [AppTheme.accent, AppTheme.accent.opacity(0.7)],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                ))
+                                .fill(M3EColor.primary)
                         }
                         .contentShape(Rectangle())
-                        .shadow(color: AppTheme.accent.opacity(0.35), radius: 10, x: 0, y: 5)
                     }
                     // ✅ M3E: rebote elástico al toque (antes: `.plain`, cero feedback).
                     .buttonStyle(PressableButtonStyle(scale: AuroraPressScale.button, pressedOpacity: 0.85))
