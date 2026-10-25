@@ -137,7 +137,6 @@ struct M3EFilledButton<Label: View>: View {
                 .padding(.vertical, verticalPadding)
                 .background(Capsule(style: .continuous).fill(tint))
                 .contentShape(Capsule(style: .continuous))
-                .auroraRipple(cornerRadius: 28, color: foreground.opacity(0.18))
         }
         .buttonStyle(M3ESquishButtonStyle())
     }
@@ -183,7 +182,6 @@ struct M3ETonalButton<Label: View>: View {
                         .strokeBorder(tint.opacity(0.28), lineWidth: 1)
                 )
                 .contentShape(Capsule(style: .continuous))
-                .auroraRipple(cornerRadius: 28, color: M3EColor.onPrimaryContainer.opacity(0.14))
         }
         .buttonStyle(M3ESquishButtonStyle())
     }

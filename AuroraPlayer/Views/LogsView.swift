@@ -179,7 +179,6 @@ struct LogsView: View {
                 .foregroundStyle(AppTheme.accent)
                 .frame(width: 44, height: 44) // Bigger invisible touch target
                 .contentShape(Rectangle())
-                .auroraRipple(cornerRadius: 22)
         }
     }
 
@@ -215,7 +214,6 @@ struct LogsView: View {
                     Image(systemName: "xmark.circle.fill")
                         .font(.system(size: 15, weight: .medium))
                         .foregroundStyle(.secondary)
-                        .auroraRipple(cornerRadius: 16)
                 }
                 .buttonStyle(.plain)
             }

@@ -24,25 +24,16 @@ import CoreText
 struct PressableButtonStyle: ButtonStyle {
     let scale: CGFloat
     var pressedOpacity: Double = 1.0
-    /// El ripple se puede desactivar en controles donde el scale ya basta.
-    var showsRipple: Bool = true
-    var rippleColor: Color = M3EColor.onSurface.opacity(0.12)
 
     func makeBody(configuration: Configuration) -> some View {
-        rippleLabel(configuration)
+        // ⚠️ REGRESIÓN e714dfa: NO añadir ripple aquí. Cualquier
+        // `DragGesture(minimumDistance: 0)` dentro del label de un `Button`
+        // compite con su tap interno y lo deja sin acción. El ripple queda
+        // desconectado de los botones hasta rediseñarlo como overlay pasivo.
+        configuration.label
             .scaleEffect(configuration.isPressed ? scale : 1.0)
             .opacity(configuration.isPressed ? pressedOpacity : 1.0)
             .animation(AuroraMotion.spatialFast, value: configuration.isPressed)
-    }
-
-    @ViewBuilder
-    private func rippleLabel(_ configuration: ButtonStyleConfiguration) -> some View {
-        if showsRipple {
-            configuration.label
-                .auroraRipple(cornerRadius: 16, color: rippleColor)
-        } else {
-            configuration.label
-        }
     }
 }
 

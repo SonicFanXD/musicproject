@@ -195,9 +195,7 @@ struct AuroraM3Slider: View {
                     Haptics.light()
                 }
         )
-        // ✅ Ripple M3E del thumb: va DESPUÉS del gesto para que su
-        // `simultaneousGesture` no compita con el arrastre del slider.
-        .auroraRipple(cornerRadius: 22)
+        // ⚠️ Sin ripple en el thumb: su DragGesture competiría con el arrastre.
     }
 
     // MARK: Cálculo del valor

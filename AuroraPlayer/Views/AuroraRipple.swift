@@ -10,6 +10,11 @@ import SwiftUI
 //
 // Con `accessibilityReduceMotion` no se dibuja ninguno; queda solo el scale
 // que ya aportan los button styles.
+//
+// ⚠️ DESCONECTADO TEMPORALMENTE (regresión e714dfa): NO aplicar este modifier
+// al label de un `Button` ni dentro de un `ButtonStyle`. El DragGesture de
+// `onChanged` compite con el tap interno del botón y lo deja sin acción. Se
+// conserva el código para rediseñarlo como overlay pasivo (sin gesto).
 // ══════════════════════════════════════════════════════════════════════════
 
 struct RippleState: Identifiable {

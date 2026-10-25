@@ -134,7 +134,6 @@ struct NowPlayingView: View {
                     .foregroundStyle(playIconColor)
                     .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
-                    .auroraRipple(cornerRadius: 22)
             }
             .buttonStyle(.plain)
             .accessibilityLabel(Localization.localized("nowPlaying.close"))
@@ -366,7 +365,6 @@ struct NowPlayingView: View {
                     Circle().fill(active ? M3EColor.primary : M3EColor.primaryContainer)
                 )
                 .contentShape(Circle())
-                .auroraRipple(cornerRadius: 22)
         }
         .buttonStyle(M3ESquishButtonStyle())
         .disabled(!enabled)
