@@ -32,6 +32,11 @@ struct PlayerBar: View {
 
     private var artworkSide: CGFloat { compactPlayerBar ? 44 : 48 }
 
+    /// Forma M3 media, respetando el ajuste de esquinas del artwork (0…44).
+    private var artworkShape: M3EShape {
+        M3EShape(family: .medium, cornerRadius: CGFloat(artworkCorner) * 0.55)
+    }
+
     // MARK: - Body
 
     var body: some View {
@@ -44,12 +49,14 @@ struct PlayerBar: View {
                         HStack(spacing: 8) {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(song.title)
-                                    .font(M3ETypography.titleMediumEmphasized)
+                                    .font(M3ETypography.titleMedium)
+                                    .tracking(0.15)
                                     .foregroundStyle(M3EColor.onSurface)
                                     .lineLimit(1)
 
                                 Text(song.artist.isEmpty ? Localization.localized("details.unknownArtist") : song.artist)
                                     .font(M3ETypography.bodyMedium)
+                                    .tracking(0.25)
                                     .foregroundStyle(M3EColor.onSurfaceVariant)
                                     .lineLimit(1)
                             }
@@ -90,7 +97,7 @@ struct PlayerBar: View {
                         base: M3EColor.surfaceContainerHigh
                     )
                 )
-                .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+                .clipShape(M3EShape(family: .extraLarge))
             }
         }
     }
@@ -98,7 +105,7 @@ struct PlayerBar: View {
     // MARK: - Play (píldora Android)
 
     private var playPill: some View {
-        Button {
+        M3EFilledButton(horizontalPadding: 14, verticalPadding: 0) {
             Haptics.light()
             if audioEngine.isPlaying {
                 audioEngine.pause()
@@ -113,20 +120,11 @@ struct PlayerBar: View {
                 Text(audioEngine.isPlaying
                      ? Localization.localized("actions.pause")
                      : Localization.localized("actions.play"))
-                    .font(M3ETypography.labelLargeEmphasized)
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
             }
-            .foregroundStyle(M3EColor.onPrimary)
-            .padding(.horizontal, 14)
             .frame(height: 40)
-            .background(
-                Capsule(style: .continuous)
-                    .fill(M3EColor.primary)
-            )
-            .contentShape(Capsule(style: .continuous))
         }
-        .buttonStyle(M3ESquishButtonStyle())
         .accessibilityLabel(Localization.localized("accessibility.playPause"))
     }
 
@@ -162,16 +160,16 @@ struct PlayerBar: View {
                     .interpolation(.high)
                     .scaledToFill()
                     .frame(width: artworkSide, height: artworkSide)
-                    .clipShape(RoundedRectangle(cornerRadius: CGFloat(artworkCorner * (14.0 / 22.0)), style: .continuous))
+                    .clipShape(artworkShape)
                     .overlay(
-                        RoundedRectangle(cornerRadius: CGFloat(artworkCorner * (14.0 / 22.0)), style: .continuous)
+                        artworkShape
                             .strokeBorder(M3EColor.outline.opacity(0.2), lineWidth: 1)
                     )
                     .contentShape(Rectangle())
                     .onTapGesture { openNowPlaying() }
             } else {
                 ZStack {
-                    RoundedRectangle(cornerRadius: CGFloat(artworkCorner * (14.0 / 22.0)), style: .continuous)
+                    artworkShape
                         .fill(M3EColor.surfaceContainerHigh)
                         .frame(width: artworkSide, height: artworkSide)
 

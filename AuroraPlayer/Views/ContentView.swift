@@ -164,7 +164,7 @@ struct ContentView: View {
                     }
                     // ✅ FASE 1/2: transición FINITA con el token oficial de
                     // M3E (antes un spring ad-hoc con otra física).
-                    .animation(AuroraMotion.spatialDefault, value: selectedCategory)
+                    .animation(AuroraMotion.emphasizedDecelerateMedium(), value: selectedCategory)
                     .refreshable {
                         fileAccessService.refreshAllFolders()
                         try? await Task.sleep(nanoseconds: 600_000_000)
@@ -626,10 +626,11 @@ struct ContentView: View {
     // sin división visual contra el AppBackground ni el buscador.
     private var headerView: some View {
         HStack(spacing: 10) {
-            // ✅ M3E large top app bar: Roboto Bold 30 pt, alineado a la
+            // ✅ M3E large top app bar: Roboto Medium 32 pt, alineado a la
             // izquierda y en `onSurface` (nada de degradados de texto iOS).
             Text(Localization.localized("app.name"))
                 .font(M3ETypography.headlineLargeEmphasized)
+                .tracking(0)
                 .foregroundStyle(M3EColor.onSurface)
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)

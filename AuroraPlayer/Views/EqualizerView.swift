@@ -108,12 +108,24 @@ struct EqualizerView: View {
                         } label: {
                             Text(preset.displayName)
                                 .font(M3ETypography.labelLargeEmphasized)
-                                .foregroundStyle(audioEngine.eqPreset == preset && audioEngine.isEQEnabled ? .white : .primary)
+                                .foregroundStyle(
+                                    audioEngine.eqPreset == preset && audioEngine.isEQEnabled
+                                        ? M3EColor.onPrimaryContainer
+                                        : M3EColor.onSurfaceVariant
+                                )
                                 .padding(.horizontal, 16)
                                 .padding(.vertical, 10)
                                 .background {
-                                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                        .fill(AnyShapeStyle(audioEngine.eqPreset == preset && audioEngine.isEQEnabled ? AnyShapeStyle(AppTheme.accentGradient) : AnyShapeStyle(Color.secondary.opacity(0.12))))
+                                    M3EShape(family: .medium)
+                                        .fill(
+                                            audioEngine.eqPreset == preset && audioEngine.isEQEnabled
+                                                ? M3EColor.primaryContainer
+                                                : M3EColor.surfaceContainerHigh
+                                        )
+                                }
+                                .overlay {
+                                    M3EShape(family: .medium)
+                                        .strokeBorder(M3EColor.outline.opacity(0.2), lineWidth: 1)
                                 }
                         }
                         .buttonStyle(PressableButtonStyle(scale: 0.92))

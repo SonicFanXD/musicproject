@@ -69,7 +69,7 @@ struct QueueView: View {
 
                     tabSelector
 
-                    Divider().background(Color.secondary.opacity(0.2))
+                    Divider().background(M3EColor.outlineVariant)
 
                     // ✅ FIX iOS 16: era ScrollView → .swipeActions y .onMove eran
                     // inertes (solo funcionan en List). Al no poder eliminar la
@@ -100,7 +100,7 @@ struct QueueView: View {
     private var headerTrailingButtons: some View {
         HStack(spacing: 8) {
             Button(Localization.localized("actions.done")) { dismiss() }
-                .foregroundStyle(AppTheme.accent)
+                .foregroundStyle(M3EColor.primary)
                 .frame(width: 44, height: 44)
                 .contentShape(Rectangle())
         }
@@ -110,7 +110,7 @@ struct QueueView: View {
         HStack(spacing: 6) {
             ForEach(QueueTab.allCases, id: \.self) { tab in
                 Button {
-                    withAnimation(AuroraMotion.spatialFast) {
+                    withAnimation(AuroraMotion.emphasizedDecelerateMedium()) {
                         selectedTab = tab
                     }
                 } label: {
@@ -120,25 +120,27 @@ struct QueueView: View {
                         Text(tab.localizedTitle)
                             .font(M3ETypography.labelLargeEmphasized)
                     }
-                    // ✅ FASE 2/3: segmento seleccionado tonal (texto en el
-                    // acento), no píldora de gradiente con texto blanco.
-                    .foregroundStyle(selectedTab == tab ? AppTheme.accent : M3EColor.onSurfaceVariant)
+                    // ✅ M3E: segmento seleccionado tonal, texto en
+                    // `onSecondaryContainer`; el no seleccionado usa la
+                    // superficie alta. Forma medium (12) de la escala M3.
+                    .foregroundStyle(selectedTab == tab ? M3EColor.onSecondaryContainer : M3EColor.onSurfaceVariant)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 12)
                     .background {
                         if selectedTab == tab {
-                            // ✅ M3E sin namespace: el segmento seleccionado es
-                            // una superficie tonal propia y el cambio se anima
-                            // con el spring finito. No hay geometría compartida
-                            // que pueda desincronizarse en el 8 Plus.
-                            Capsule().fill(AppTheme.accent.opacity(0.2))
-                                .overlay(Capsule().strokeBorder(AppTheme.accent.opacity(0.3), lineWidth: 1))
+                            M3EShape(family: .medium)
+                                .fill(M3EColor.secondaryContainer)
+                                .overlay(
+                                    M3EShape(family: .medium)
+                                        .strokeBorder(M3EColor.outline.opacity(0.2), lineWidth: 1)
+                                )
                                 .transition(.opacity)
                         } else {
-                            Capsule().fill(M3EColor.surfaceContainerHigh)
+                            M3EShape(family: .medium)
+                                .fill(M3EColor.surfaceContainerHigh)
                         }
                     }
-                    .animation(AuroraMotion.spatialDefault, value: selectedTab)
+                    .animation(AuroraMotion.emphasizedDecelerateMedium(), value: selectedTab)
                 }
                 .buttonStyle(PressableButtonStyle(scale: AuroraPressScale.chip, pressedOpacity: 0.7))
             }
@@ -161,7 +163,7 @@ struct QueueView: View {
                         VStack(alignment: .leading, spacing: 3) {
                             Text(current.title)
                                 .font(M3ETypography.titleMediumEmphasized)
-                                .foregroundStyle(AppTheme.accentGradient).lineLimit(1)
+                                .foregroundStyle(M3EColor.primary).lineLimit(1)
                             Text(current.displaySubtitle)
                                 .font(M3ETypography.bodyMedium).foregroundStyle(.secondary).lineLimit(1)
                         }
@@ -191,7 +193,7 @@ struct QueueView: View {
                             .fill(M3EColor.surfaceContainerLow)
                             .overlay(
                                 RoundedRectangle(cornerRadius: 20, style: .continuous)
-                                    .strokeBorder(AppTheme.accent.opacity(0.18), lineWidth: 1)
+                                    .strokeBorder(M3EColor.primary.opacity(0.18), lineWidth: 1)
                             )
                     }
                 }
@@ -372,7 +374,7 @@ struct QueueView: View {
                 } label: {
                     Text(Localization.localized("queue.clear"))
                         .font(M3ETypography.labelLargeEmphasized)
-                        .foregroundStyle(AppTheme.accent)
+                        .foregroundStyle(M3EColor.primary)
                         .contentShape(Rectangle())
                 }
                 // ✅ M3E: feedback de presión también en las acciones de texto
@@ -395,14 +397,14 @@ struct QueueView: View {
             } label: {
                 Text(Localization.localized(editMode == .active ? "queue.doneEditing" : "queue.edit"))
                     .font(M3ETypography.labelLargeEmphasized)
-                    .foregroundStyle(AppTheme.accent)
+                    .foregroundStyle(M3EColor.primary)
                     .contentTransition(.opacity)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 5)
                     .background {
                         if editMode == .active {
                             Capsule()
-                                .fill(AppTheme.accent.opacity(0.14))
+                                .fill(M3EColor.primary.opacity(0.14))
                                 .transition(.scale(scale: 0.8).combined(with: .opacity))
                         }
                     }
@@ -526,7 +528,7 @@ struct QueueView: View {
                                 Circle()
                                     .fill(
                                         LinearGradient(
-                                            colors: [AppTheme.accent, AppTheme.accent.opacity(0.85)],
+                                            colors: [M3EColor.primary, M3EColor.primary.opacity(0.85)],
                                             startPoint: .topLeading, endPoint: .bottomTrailing
                                         )
                                     )
@@ -546,7 +548,7 @@ struct QueueView: View {
 
                 Image(systemName: "play.circle.fill")
                     .font(.system(size: 26))
-                    .foregroundStyle(AppTheme.accentGradient)
+                    .foregroundStyle(M3EColor.primary)
             }
             .padding(.horizontal, 14).padding(.vertical, 12)
             .background {
@@ -568,7 +570,7 @@ struct QueueView: View {
     @ViewBuilder
     private func equalizerBars(animated: Bool) -> some View {
         AuroraEqualizerBars(
-            color: AppTheme.accent,
+            color: M3EColor.primary,
             isPlaying: animated,
             barWidth: 3,
             spacing: 2.5,

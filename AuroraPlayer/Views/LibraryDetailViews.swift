@@ -203,9 +203,6 @@ struct AlbumDetailView: View {
         return audioEngine.isBitPerfect && songs.contains { $0.id == current.id }
     }
 
-    private var tintUIColor: UIColor { theme.artworkAccentUIColor ?? AppTheme.accentUIColor }
-    // ? Contraste: blanco o negro seg�n luminancia del color de la portada
-    private var onTintColor: Color { AppTheme.contrastingText(on: tintUIColor) }
 
     var body: some View {
         ScrollView {
@@ -363,8 +360,8 @@ struct AlbumDetailView: View {
             // ? Info del �lbum con mejor jerarqu�a visual
             VStack(spacing: 6) {
                 Text(album.name)
-                    .font(M3ETypography.headlineSmallEmphasized)
-                    .tracking(-0.2)
+                    .font(M3ETypography.headlineMedium)
+                    .tracking(0)
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.primary)
                     .lineLimit(2)
@@ -486,7 +483,7 @@ struct AlbumDetailView: View {
                     Image(systemName: "play.fill").font(.system(size: 15, weight: .bold))
                     Text(Localization.localized("details.play")).font(M3ETypography.labelLargeEmphasized)
                 }
-                .foregroundStyle(onTintColor).frame(maxWidth: .infinity).frame(height: 48)
+                .foregroundStyle(M3EColor.onPrimary).frame(maxWidth: .infinity).frame(height: 48)
                 // ✅ AURORA DESIGN (excepción justificada): el botón de Play NO
                 // se migra a `auroraPrimaryAction()`. Su relleno es el gradiente
                 // text-safe de ESTA vista (dos colores REALES de DetailAccent,
@@ -494,9 +491,7 @@ struct AlbumDetailView: View {
                 // `onTintColor` (blanco o negro según luminancia), no con el
                 // blanco fijo del sistema.
                 .background {
-                    Capsule().fill(
-                        accent.textSafeGradient()
-                    )
+                    Capsule().fill(M3EColor.primary)
                 }
                 .contentShape(Capsule())
             }
@@ -514,7 +509,7 @@ struct AlbumDetailView: View {
                     Image(systemName: "shuffle").font(.system(size: 15, weight: .bold))
                     Text(Localization.localized("details.shuffle")).font(M3ETypography.labelLargeEmphasized)
                 }
-                .foregroundStyle(tintColor)
+                .foregroundStyle(M3EColor.onPrimaryContainer)
                 // ✅ GEMELO del botón de reproducir: misma altura (48) y mismo eje
                 // que el primario, con jerarquía secundaria (relleno suave +
                 // borde de acento en vez del sólido). Antes era un círculo de
@@ -536,12 +531,9 @@ struct AlbumDetailView: View {
                 // ignoraba el ajuste y no reaccionaba): con el ajuste activo cae
                 // a opaco, igual que el resto de la app. El velo y el borde de
                 // abajo (que no son vidrio) no cambian.
-                .nativeGlassCapsule()
+                .background { Capsule().fill(M3EColor.primaryContainer) }
                 .overlay {
-                    Capsule().fill(accent.gradient(primaryOpacity: 0.22, secondaryOpacity: 0.12))
-                }
-                .overlay {
-                    Capsule().strokeBorder(tintColor.opacity(0.35), lineWidth: 1)
+                    Capsule().strokeBorder(M3EColor.outline.opacity(0.2), lineWidth: 1)
                 }
                 .contentShape(Capsule())
             }
@@ -736,7 +728,7 @@ struct AlbumSongRow: View, Equatable {
             }
             // ✅ GOLPE FINAL: fila plana Android, sin card ni borde redondeado.
             .padding(.horizontal, 16).padding(.vertical, 12)
-            .background(isCurrent ? tintColor.opacity(0.10) : Color.clear)
+            .background(isCurrent ? M3EColor.secondaryContainer : Color.clear)
             .contentShape(Rectangle())
             .overlay(alignment: .bottom) {
                 Rectangle()
@@ -885,9 +877,6 @@ struct ArtistDetailView: View {
     // ✅ El secundario ya no se carga aquí: ThemeManager lo publica (fuente
     // unificada, una sola pasada) y `accent` lo lee. Sin extracción local ni
     // pop de color al entrar.
-    private var tintUIColor: UIColor { theme.artworkAccentUIColor ?? AppTheme.accentUIColor }
-    // ? Contraste para botones (igual que AlbumDetailView)
-    private var onTintColor: Color { AppTheme.contrastingText(on: tintUIColor) }
 
     var body: some View {
         ScrollView {
@@ -1039,8 +1028,8 @@ struct ArtistDetailView: View {
             // ? Info del artista con mejor jerarqu�a visual
             VStack(spacing: 10) {
                 Text(artist.name)
-                    .font(M3ETypography.headlineSmallEmphasized)
-                    .tracking(-0.3)
+                    .font(M3ETypography.headlineMedium)
+                    .tracking(0)
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.primary)
                     .lineLimit(2)
@@ -1117,7 +1106,7 @@ struct ArtistDetailView: View {
                     Image(systemName: "play.fill").font(.system(size: 15, weight: .bold))
                     Text(Localization.localized("details.play")).font(M3ETypography.labelLargeEmphasized)
                 }
-                .foregroundStyle(onTintColor).frame(maxWidth: .infinity).frame(height: 48)
+                .foregroundStyle(M3EColor.onPrimary).frame(maxWidth: .infinity).frame(height: 48)
                 // ✅ AURORA DESIGN (excepción justificada): el botón de Play NO
                 // se migra a `auroraPrimaryAction()`. Su relleno es el gradiente
                 // text-safe de ESTA vista (dos colores REALES de DetailAccent,
@@ -1125,9 +1114,7 @@ struct ArtistDetailView: View {
                 // `onTintColor` (blanco o negro según luminancia), no con el
                 // blanco fijo del sistema.
                 .background {
-                    Capsule().fill(
-                        accent.textSafeGradient()
-                    )
+                    Capsule().fill(M3EColor.primary)
                 }
                 .contentShape(Capsule())
             }
@@ -1145,7 +1132,7 @@ struct ArtistDetailView: View {
                     Image(systemName: "shuffle").font(.system(size: 15, weight: .bold))
                     Text(Localization.localized("details.shuffle")).font(M3ETypography.labelLargeEmphasized)
                 }
-                .foregroundStyle(tintColor)
+                .foregroundStyle(M3EColor.onPrimaryContainer)
                 // ✅ GEMELO del botón de reproducir: misma altura (48) y mismo eje
                 // que el primario, con jerarquía secundaria (relleno suave +
                 // borde de acento en vez del sólido). Antes era un círculo de
@@ -1167,12 +1154,9 @@ struct ArtistDetailView: View {
                 // ignoraba el ajuste y no reaccionaba): con el ajuste activo cae
                 // a opaco, igual que el resto de la app. El velo y el borde de
                 // abajo (que no son vidrio) no cambian.
-                .nativeGlassCapsule()
+                .background { Capsule().fill(M3EColor.primaryContainer) }
                 .overlay {
-                    Capsule().fill(accent.gradient(primaryOpacity: 0.22, secondaryOpacity: 0.12))
-                }
-                .overlay {
-                    Capsule().strokeBorder(tintColor.opacity(0.35), lineWidth: 1)
+                    Capsule().strokeBorder(M3EColor.outline.opacity(0.2), lineWidth: 1)
                 }
                 .contentShape(Capsule())
             }
@@ -1353,7 +1337,7 @@ struct ArtistSongRow: View, Equatable {
             }
             // ✅ GOLPE FINAL: fila plana Android, sin card ni borde redondeado.
             .padding(.horizontal, 16).padding(.vertical, 12)
-            .background(isCurrent ? tintColor.opacity(0.10) : Color.clear)
+            .background(isCurrent ? M3EColor.secondaryContainer : Color.clear)
             .contentShape(Rectangle())
             .overlay(alignment: .bottom) {
                 Rectangle()

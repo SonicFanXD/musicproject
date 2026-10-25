@@ -78,15 +78,16 @@ struct LibrarySongRow: View, Equatable {
                     artworkView
 
                     VStack(alignment: .leading, spacing: 3) {
-                        // ✅ Jerarquía: título 16 (igual que las filas de
-                        // álbum/artista) para separarse del subtítulo de 12.
+                        // ✅ Jerarquía M3: title-medium 16 sobre body-medium 14.
                         Text(song.displayName)
-                            .font(M3ETypography.titleMediumEmphasized)
+                            .font(M3ETypography.titleMedium)
+                            .tracking(0.15)
                             .foregroundStyle(isCurrent ? M3EColor.primary : M3EColor.onSurface)
                             .lineLimit(1)
 
                         Text(song.displaySubtitle)
                             .font(M3ETypography.bodyMedium)
+                            .tracking(0.25)
                             .foregroundStyle(M3EColor.onSurfaceVariant)
                             .lineLimit(1)
 
@@ -97,6 +98,7 @@ struct LibrarySongRow: View, Equatable {
                                     .foregroundStyle(M3EColor.onSurfaceVariant.opacity(0.7))
                                 Text(song.album)
                                     .font(M3ETypography.bodySmall)
+                                    .tracking(0.4)
                                     .foregroundStyle(M3EColor.onSurfaceVariant.opacity(0.7))
                                     .lineLimit(1)
                             }
@@ -117,7 +119,7 @@ struct LibrarySongRow: View, Equatable {
                             // TimelineView + Canvas. Sin `repeatForever` (no
                             // hay transacción que rearmar en cada re-render de
                             // la lista) y sin pedir frames en pausa.
-                            AuroraEqualizerBars(color: AppTheme.accent, isPlaying: isPlaying)
+                            AuroraEqualizerBars(color: M3EColor.primary, isPlaying: isPlaying)
                         } else {
                             Text(Self.durationLabel(song.duration))
                                 .font(M3ETypography.labelMedium)
@@ -218,9 +220,9 @@ struct LibrarySongRow: View, Equatable {
                 .interpolation(.high)
                 .scaledToFill()
                 .frame(width: 48, height: 48)
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .clipShape(M3EShape(family: .medium))
         } else {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            M3EShape(family: .medium)
                 .fill(AppTheme.accentGradient(opacity: 0.15))
                 .frame(width: 48, height: 48)
                 .overlay {
@@ -260,11 +262,13 @@ struct AlbumRow: View, Equatable {
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(album.name)
-                    .font(M3ETypography.titleMediumEmphasized)
+                    .font(M3ETypography.titleMedium)
+                    .tracking(0.15)
                     .foregroundStyle(M3EColor.onSurface)
                     .lineLimit(1)
                 Text(album.artist)
                     .font(M3ETypography.bodyMedium)
+                    .tracking(0.25)
                     .foregroundStyle(M3EColor.onSurfaceVariant)
                     .lineLimit(1)
                 Text(localizedSongCount(album.songs.count))
@@ -293,9 +297,9 @@ struct AlbumRow: View, Equatable {
             Image(uiImage: image)
                 .resizable().interpolation(.high).scaledToFill()
                 .frame(width: 52, height: 52)
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .clipShape(M3EShape(family: .medium))
         } else {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            M3EShape(family: .medium)
                 .fill(M3EColor.surfaceContainerHigh)
                 .frame(width: 52, height: 52)
                 .overlay {
@@ -325,12 +329,14 @@ struct ArtistRow: View, Equatable {
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(artist.name)
-                    .font(M3ETypography.titleMediumEmphasized)
+                    .font(M3ETypography.titleMedium)
+                    .tracking(0.15)
                     .foregroundStyle(M3EColor.onSurface)
                     .lineLimit(1)
                 // ✅ Solo canciones: `artist.albums` agrupa discos y es caro por fila.
                 Text(localizedSongCount(artist.songs.count))
                     .font(M3ETypography.bodyMedium)
+                    .tracking(0.25)
                     .foregroundStyle(M3EColor.onSurfaceVariant)
                     .lineLimit(1)
             }

@@ -62,9 +62,9 @@ struct LogEntryRow: View, Equatable {
 
             VStack(alignment: .leading, spacing: 6) {
                 // ✅ Mensaje expandible: 3 líneas por defecto, tap para desplegar.
-                // ✅ M3E: el despliegue usa el spring rápido de AuroraMotion
-                // (antes `.easeOut` lineal); el `lineLimit` cambia con la misma
-                // curva, así que la fila crece de forma elástica y no "salta".
+                // ✅ M3E: el despliegue usa `emphasizedDecelerateShort`
+                // (antes `.easeOut` genérico); el `lineLimit` cambia con la
+                // misma curva, así que la fila crece sin saltos.
                 Text(entry.message)
                     .font(M3ETypography.bodyMedium)
                     .foregroundStyle(.primary)
@@ -72,7 +72,7 @@ struct LogEntryRow: View, Equatable {
                     .contentShape(Rectangle())
                     .onTapGesture {
                         Haptics.light()
-                        withAnimation(AuroraMotion.spatialFast) {
+                        withAnimation(AuroraMotion.emphasizedDecelerateShort()) {
                             onToggleExpanded()
                         }
                     }

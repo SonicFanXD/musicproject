@@ -179,6 +179,7 @@ struct LogsView: View {
                 .foregroundStyle(AppTheme.accent)
                 .frame(width: 44, height: 44) // Bigger invisible touch target
                 .contentShape(Rectangle())
+                .auroraRipple(cornerRadius: 22)
         }
     }
 
@@ -214,6 +215,7 @@ struct LogsView: View {
                     Image(systemName: "xmark.circle.fill")
                         .font(.system(size: 15, weight: .medium))
                         .foregroundStyle(.secondary)
+                        .auroraRipple(cornerRadius: 16)
                 }
                 .buttonStyle(.plain)
             }
@@ -339,57 +341,30 @@ struct LogsView: View {
         .padding(.vertical, 8)
     }
 
-    /// ✅ Superficie con TEXTO BLANCO encima: el secundario conserva su tono pero
-    /// ancla su brillo al del primario si la diferencia es grande, para que la
-    /// pastilla seleccionada no quede a medio legible con paletas de contraste.
-    private func textSafeAccentGradient() -> LinearGradient {
-        let primary = AppTheme.accent
-        // ⚠️ El secundario solo es válido con el modo "acento desde portada"
-        // activo: si no, sería el de una canción anterior (hue equivocado).
-        let manager = ThemeManager.shared
-        let candidate = manager.accentFromArtwork ? manager.artworkSecondaryColor : nil
-        let secondary = candidate ?? primary.opacity(0.85)
-        var h1: CGFloat = 0, s1: CGFloat = 0, b1: CGFloat = 0, a1: CGFloat = 1
-        var h2: CGFloat = 0, s2: CGFloat = 0, b2: CGFloat = 0, a2: CGFloat = 1
-        var stop = secondary
-        if UIColor(primary).getHue(&h1, saturation: &s1, brightness: &b1, alpha: &a1),
-           UIColor(secondary).getHue(&h2, saturation: &s2, brightness: &b2, alpha: &a2),
-           abs(b1 - b2) > 0.3 {
-            stop = Color(UIColor(hue: h2, saturation: s2, brightness: b1, alpha: a2))
-        }
-        return LinearGradient(
-            colors: [primary, stop],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
-    }
-
     private func filterChip(title: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(title)
-                .font(M3ETypography.labelLargeEmphasized)
-                .foregroundStyle(isSelected ? M3EColor.onPrimary : M3EColor.onSurfaceVariant)
+                .font(M3ETypography.labelLarge)
+                .tracking(0.1)
+                .foregroundStyle(isSelected ? M3EColor.onPrimaryContainer : M3EColor.onSurfaceVariant)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
-                // ✅ Selección ANIMADA: el fondo ya no cambia de tipo de vista entre
-                // estados (antes saltaba); ahora se funde el relleno de acento sobre
-                // el material, con una transición suave de 0,22 s.
+                // ✅ M3E: chip de filtro con forma medium y contenedores
+                // tonales sólidos. Nada de gradientes de texto.
                 .background {
-                    ZStack {
-                        // ✅ M3E: base SÓLIDA del chip (SurfaceContainer). El acento
-                        // seleccionado se funde encima, igual que en la Biblioteca.
-                        Capsule().fill(M3EColor.surfaceContainerHigh)
-
-                        Capsule()
-                            .fill(textSafeAccentGradient())
-                            .opacity(isSelected ? 1 : 0)
-                    }
+                    M3EShape(family: .medium)
+                        .fill(isSelected ? M3EColor.primaryContainer : M3EColor.surfaceContainerHigh)
                 }
-                // ✅ M3E: el fundido de selección usa el spring rápido (antes
-                // `.easeInOut` lineal, la única curva que quedaba en la vista).
-                .animation(AuroraMotion.spatialFast, value: isSelected)
+                .overlay {
+                    M3EShape(family: .medium)
+                        .strokeBorder(
+                            isSelected ? M3EColor.primary.opacity(0.3) : M3EColor.outline.opacity(0.2),
+                            lineWidth: 1
+                        )
+                }
+                .animation(AuroraMotion.effectsDefault, value: isSelected)
         }
-        // ✅ M3E: feedback al tocar el chip (antes solo escala, sin apagado).
+        // ✅ El ripple lo aporta el button style compartido.
         .buttonStyle(PressableButtonStyle(scale: AuroraPressScale.chip, pressedOpacity: 0.7))
     }
 

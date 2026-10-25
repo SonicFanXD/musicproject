@@ -214,11 +214,11 @@ struct SettingsView: View, SettingsRowBuilding {
         .frame(maxWidth: .infinity)
         .padding(.vertical, 18)
         .background {
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
+            M3EShape(family: .extraLarge)
                 .fill(M3EColor.surfaceContainerLow)
         }
         .overlay {
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
+            M3EShape(family: .extraLarge)
                 .strokeBorder(M3EColor.outline.opacity(0.2), lineWidth: 1.5)
         }
     }
@@ -949,38 +949,27 @@ extension SettingsRowBuilding {
                     .foregroundStyle(color)
                     .frame(width: 30, height: 30)
                     .background {
-                        // ✅ Micro-gradiente del MISMO tono de la sección: da
-                        // profundidad sin cambiar el color identificativo de cada
-                        // grupo (Biblioteca/Audio/Apariencia/...).
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .fill(
-                                LinearGradient(
-                                    colors: [color.opacity(0.22), color.opacity(0.08)],
-                                    startPoint: .topLeading, endPoint: .bottomTrailing
-                                )
-                            )
+                        // ✅ M3E: contenedor tonal sólido del icono de sección.
+                        M3EShape(family: .small)
+                            .fill(M3EColor.secondaryContainer)
                     }
                     .overlay {
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .strokeBorder(color.opacity(0.1), lineWidth: 0.5)
+                        M3EShape(family: .small)
+                            .strokeBorder(M3EColor.outline.opacity(0.2), lineWidth: 1)
                     }
 
-                // ✅ FASE 4: título de sección con el rol enfático de M3E
-                // (title-large, 22/medium). `minimumScaleFactor` + lineLimit
-                // protegen las traducciones largas sin cambiar la jerarquía.
+                // ✅ M3E: título de sección `title-large` (22/28 regular).
                 Text(title)
-                    .font(M3ETypography.titleLargeEmphasized)
+                    .font(M3ETypography.titleLarge)
                     .foregroundStyle(.primary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
             }
             .padding(.horizontal, 4)
 
-            // ✅ FASE 3 (M3E): card del catálogo — superficie sólida, radio
-            // 24, elevación TONAL (borde 1 pt al 10 % del acento de la
-            // sección) y CERO sombra/blur. Settings tiene 10+ secciones
-            // apiladas: las sombras se acumulaban en cada pasada de scroll.
-            M3ECard(cornerRadius: 24, padding: 0, tint: color) {
+            // ✅ M3E: card del catálogo — superficie sólida, radio large (16),
+            // elevación TONAL y CERO sombra/blur.
+            M3ECard(cornerRadius: M3EShapeFamily.large.radius, padding: 0, tint: color) {
                 VStack(spacing: 0) {
                     content()
                 }
@@ -1020,7 +1009,13 @@ extension SettingsRowBuilding {
         // ✅ M3E (Prioridad 4): la fila de ajustes reacciona al toque con el
         // rebote elástico del sistema (antes `.plain`: no había NINGUNA
         // respuesta visual al pulsar, la pantalla se sentía “de solo lectura”).
-        .buttonStyle(PressableButtonStyle(scale: AuroraPressScale.row, pressedOpacity: 0.65))
+        .buttonStyle(
+            PressableButtonStyle(
+                scale: AuroraPressScale.row,
+                pressedOpacity: 0.65,
+                rippleColor: M3EColor.primaryContainer
+            )
+        )
     }
 
     // MARK: - Toggle Row
@@ -1112,18 +1107,12 @@ extension SettingsRowBuilding {
             .foregroundStyle(color)
             .frame(width: 32, height: 32)
             .background {
-                // ✅ Mismo micro-gradiente que los iconos de sección.
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: [color.opacity(0.18), color.opacity(0.07)],
-                            startPoint: .topLeading, endPoint: .bottomTrailing
-                        )
-                    )
+                M3EShape(family: .small)
+                    .fill(M3EColor.secondaryContainer)
             }
             .overlay {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .strokeBorder(color.opacity(0.08), lineWidth: 0.5)
+                M3EShape(family: .small)
+                    .strokeBorder(M3EColor.outline.opacity(0.2), lineWidth: 1)
             }
     }
 
@@ -1203,8 +1192,9 @@ extension SettingsRowBuilding {
 
     // MARK: - Divider
     var settingsDivider: some View {
-        Divider()
-            .opacity(0.1)
+        Rectangle()
+            .fill(M3EColor.outlineVariant)
+            .frame(height: 1)
             .padding(.leading, 60)
     }
 }

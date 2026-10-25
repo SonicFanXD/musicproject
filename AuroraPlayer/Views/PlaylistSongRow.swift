@@ -71,7 +71,7 @@ struct PlaylistSongRow: View, Equatable {
                     // las filas de álbum/artista: mismo aspecto y misma gestión
                     // de batería — el latido se retira en pausa).
                     if isCurrent {
-                        EqualizerBars(color: AppTheme.accent, isPlaying: isPlaying)
+                        EqualizerBars(color: M3EColor.primary, isPlaying: isPlaying)
                             .frame(width: 26)
                     } else {
                         Text("\(index + 1)")
@@ -82,12 +82,14 @@ struct PlaylistSongRow: View, Equatable {
 
                     VStack(alignment: .leading, spacing: 3) {
                         Text(song.title)
-                            .font(M3ETypography.titleMediumEmphasized)
-                            .foregroundStyle(isCurrent ? AppTheme.accent : .primary)
+                            .font(M3ETypography.titleMedium)
+                            .tracking(0.15)
+                            .foregroundStyle(isCurrent ? M3EColor.primary : M3EColor.onSurface)
                             .lineLimit(1)
 
                         Text(song.displaySubtitle)
                             .font(M3ETypography.bodyMedium)
+                            .tracking(0.25)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                     }
@@ -99,7 +101,7 @@ struct PlaylistSongRow: View, Equatable {
                     // no cambia de ancho al empezar a sonar la fila.
                     Group {
                         if isCurrent {
-                            EqualizerBars(color: AppTheme.accent, isPlaying: isPlaying)
+                            EqualizerBars(color: M3EColor.primary, isPlaying: isPlaying)
                         } else {
                             Text(Self.durationLabel(song.duration))
                                 .font(M3ETypography.timeDisplayCompact)
@@ -132,17 +134,17 @@ struct PlaylistSongRow: View, Equatable {
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
         .background {
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
+            M3EShape(family: .medium)
                 .fill(
                     isCurrent
-                        ? AnyShapeStyle(AppTheme.accentGradient(opacity: 0.1))
-                        : AnyShapeStyle(Color.secondary.opacity(0.05))
+                        ? AnyShapeStyle(M3EColor.secondaryContainer)
+                        : AnyShapeStyle(M3EColor.surfaceContainerLow)
                 )
         }
         .overlay {
             if isCurrent {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .strokeBorder(AppTheme.accent.opacity(0.25), lineWidth: 1)
+                M3EShape(family: .medium)
+                    .strokeBorder(M3EColor.primary.opacity(0.3), lineWidth: 1)
             }
         }
         .contextMenu {

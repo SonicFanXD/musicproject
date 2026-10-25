@@ -2,187 +2,279 @@ import SwiftUI
 import UIKit
 
 // ══════════════════════════════════════════════════════════════════════════
-// M3E COLOR — paleta TONAL de Material 3 Expressive.
+// M3E COLOR — sistema tonal Material 3 real.
 //
-// M3 no usa grises neutros del sistema para las superficies: cada rol se
-// deriva del color de acento (hue + una fracción de su saturación) y de un
-// nivel de luminosidad fijo. Eso es lo que hace que una card se lea como
-// "Material" y no como una celda de iOS, incluso cuando el acento cambia
-// desde la carátula.
+// Cada rol de color apunta a un TONO concreto (0…100) de una paleta generada
+// desde el acento. En M3 el tono es una luminosidad ABSOLUTA: las superficies
+// claras usan tonos altos (98/96/94…) y las oscuras tonos bajos (6/10/12…).
+// Por eso no se invierte el tono en modo oscuro: el rol ya elige otro tono.
 //
-// · `surface`            → fondo de pantalla (casi blanco / casi negro).
-// · `surfaceContainer*`  → cards y contenedores; más claro = más bajo,
-//                          más oscuro = más elevado (tonal elevation).
-// · `outline`            → bordes de 1.5 pt al 20 %.
-// · `primaryContainer`   → relleno tonal de acciones secundarias.
+// · `M3ETone`           → escala de tonos oficial.
+// · `M3ETonalPalette`   → hue + croma del seed, con caída de croma en extremos.
+// · `M3EColor`          → roles light/dark dinámicos (trait collection).
 //
-// Todos los valores son `Color` dinámicos: se resuelven con el trait de
-// interfaz activo, así el modo claro/oscuro no exige dos paletas en código.
+// El seed se lee en RGB y se convierte a HSL a mano (no se usa
+// getHue/getSaturation/getBrightness, que pierden precisión con P3).
 // ══════════════════════════════════════════════════════════════════════════
+
+// MARK: - Escala de tonos
+
+enum M3ETone: Double {
+    case t0 = 0
+    case t4 = 4
+    case t6 = 6
+    case t10 = 10
+    case t12 = 12
+    case t17 = 17
+    case t20 = 20
+    case t22 = 22
+    case t24 = 24
+    case t30 = 30
+    case t40 = 40
+    case t50 = 50
+    case t60 = 60
+    case t70 = 70
+    case t80 = 80
+    case t87 = 87
+    case t90 = 90
+    case t92 = 92
+    case t94 = 94
+    case t95 = 95
+    case t96 = 96
+    case t98 = 98
+    case t99 = 99
+    case t100 = 100
+}
+
+// MARK: - Paleta tonal
+
+/// Paleta derivada del seed. `hue` y `chroma` están normalizados a 0…1.
+struct M3ETonalPalette {
+    let hue: CGFloat
+    let chroma: CGFloat
+
+    init(hue: CGFloat, chroma: CGFloat) {
+        self.hue = Self.normalizedHue(hue)
+        self.chroma = min(max(chroma, 0), 1)
+    }
+
+    init(seed: Color) {
+        self.init(uiColor: UIColor(seed))
+    }
+
+    init(uiColor: UIColor) {
+        var red: CGFloat = 0
+        var green: CGFloat = 0
+        var blue: CGFloat = 0
+        var alpha: CGFloat = 1
+
+        if uiColor.getRed(&red, green: &green, blue: &blue, alpha: &alpha) {
+            let hsl = Self.rgbToHSL(red: red, green: green, blue: blue)
+            self.hue = Self.normalizedHue(hsl.hue)
+            self.chroma = min(max(hsl.saturation, 0), 1)
+        } else {
+            // Fallback: violeta neutro si el seed no se puede leer.
+            self.hue = 0.75
+            self.chroma = 0.45
+        }
+    }
+
+    /// Color HSL para un tono absoluto. El tono 100 es blanco y el 0 negro;
+    /// los roles oscuros usan tonos bajos, no una inversión de luminosidad.
+    func tone(_ tone: M3ETone) -> Color {
+        Color(uiColor: uiColor(tone))
+    }
+
+    private static func normalizedHue(_ hue: CGFloat) -> CGFloat {
+        var value = hue.truncatingRemainder(dividingBy: 1)
+        if value < 0 { value += 1 }
+        return value
+    }
+
+    /// Variante UIColor para el proveedor dinámico de `M3EColor` (evita el
+    /// viaje Color → UIColor dentro del closure de traits).
+    func uiColor(_ tone: M3ETone) -> UIColor {
+        let toneValue = CGFloat(tone.rawValue)
+        let lightness = min(max(toneValue / 100, 0), 1)
+        let chromaFactor = Self.chromaFactor(for: toneValue)
+        let saturation = min(max(chroma * chromaFactor, 0), 1)
+        let rgb = Self.hslToRGB(hue: hue, saturation: saturation, lightness: lightness)
+        return UIColor(red: rgb.red, green: rgb.green, blue: rgb.blue, alpha: 1)
+    }
+
+    // MARK: Derivación
+
+    /// Caída de croma en los extremos: el tono 40 conserva el color, los
+    /// tonos 90+ y 0-10 se acercan al neutro para que las superficies y los
+    /// textos no parezcan pintura fluorescente.
+    private static func chromaFactor(for tone: CGFloat) -> CGFloat {
+        let stops: [(tone: CGFloat, factor: CGFloat)] = [
+            (0, 0.10),
+            (10, 0.30),
+            (20, 0.54),
+            (30, 0.78),
+            (40, 1.00),
+            (50, 0.94),
+            (60, 0.84),
+            (70, 0.70),
+            (80, 0.54),
+            (90, 0.36),
+            (95, 0.24),
+            (99, 0.10),
+            (100, 0.05)
+        ]
+
+        for index in 0..<(stops.count - 1) {
+            let lower = stops[index]
+            let upper = stops[index + 1]
+            guard tone >= lower.tone, tone <= upper.tone else { continue }
+            let span = upper.tone - lower.tone
+            guard span > 0 else { return lower.factor }
+            let progress = (tone - lower.tone) / span
+            return lower.factor + (upper.factor - lower.factor) * progress
+        }
+        return 0.10
+    }
+
+    private static func rgbToHSL(
+        red: CGFloat,
+        green: CGFloat,
+        blue: CGFloat
+    ) -> (hue: CGFloat, saturation: CGFloat) {
+        let maximum = max(red, green, blue)
+        let minimum = min(red, green, blue)
+        let lightness = (maximum + minimum) / 2
+        let delta = maximum - minimum
+
+        guard delta > 0 else { return (0, 0) }
+
+        let saturation = lightness > 0.5
+            ? delta / max(0.0001, 2 - maximum - minimum)
+            : delta / max(0.0001, maximum + minimum)
+
+        var hue: CGFloat
+        if maximum == red {
+            hue = (green - blue) / delta + (green < blue ? 6 : 0)
+        } else if maximum == green {
+            hue = (blue - red) / delta + 2
+        } else {
+            hue = (red - green) / delta + 4
+        }
+        hue /= 6
+        return (hue, saturation)
+    }
+
+    private static func hslToRGB(
+        hue: CGFloat,
+        saturation: CGFloat,
+        lightness: CGFloat
+    ) -> (red: CGFloat, green: CGFloat, blue: CGFloat) {
+        guard saturation > 0 else {
+            return (lightness, lightness, lightness)
+        }
+
+        let q = lightness < 0.5
+            ? lightness * (1 + saturation)
+            : lightness + saturation - lightness * saturation
+        let p = 2 * lightness - q
+
+        func channel(_ value: CGFloat) -> CGFloat {
+            var t = value
+            if t < 0 { t += 1 }
+            if t > 1 { t -= 1 }
+            if t < 1.0 / 6.0 { return p + (q - p) * 6 * t }
+            if t < 1.0 / 2.0 { return q }
+            if t < 2.0 / 3.0 { return p + (q - p) * (2.0 / 3.0 - t) * 6 }
+            return p
+        }
+
+        return (
+            channel(hue + 1.0 / 3.0),
+            channel(hue),
+            channel(hue - 1.0 / 3.0)
+        )
+    }
+}
+
+// MARK: - Roles M3
 
 enum M3EColor {
 
-    // MARK: - Acento
+    /// Seed: acento manual o color extraído de la portada.
+    static var seed: Color { AppTheme.accent }
 
-    static var primary: Color { AppTheme.accent }
+    /// Paleta activa. Se reconstruye cuando cambia el seed.
+    static var palette: M3ETonalPalette { M3ETonalPalette(uiColor: AppTheme.accentUIColor) }
 
-    /// Texto/icono sobre `primary`. Se elige por brillo real del acento para
-    /// no dejar texto blanco sobre un amarillo claro.
-    static var onPrimary: Color {
-        var hue: CGFloat = 0, saturation: CGFloat = 0, brightness: CGFloat = 0, alpha: CGFloat = 1
-        if UIColor(AppTheme.accent).getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha) {
-            return brightness > 0.76 ? Color(white: 0.10) : .white
-        }
-        return .white
-    }
+    // MARK: Acento y contenedores
 
-    static var primaryContainer: Color {
-        tone(
-            light: (brightness: 0.88, chroma: 0.42),
-            dark: (brightness: 0.30, chroma: 0.50)
-        )
-    }
+    static var primary: Color { role(.t40, .t80) }
+    static var onPrimary: Color { role(.t100, .t20) }
+    static var primaryContainer: Color { role(.t90, .t30) }
+    static var onPrimaryContainer: Color { role(.t10, .t90) }
 
-    static var onPrimaryContainer: Color {
-        tone(
-            light: (brightness: 0.20, chroma: 0.55),
-            dark: (brightness: 0.94, chroma: 0.08)
-        )
-    }
+    static var secondary: Color { role(.t40, .t80) }
+    static var onSecondary: Color { role(.t100, .t20) }
+    static var secondaryContainer: Color { role(.t90, .t30) }
+    static var onSecondaryContainer: Color { role(.t10, .t90) }
 
-    /// Contenedor secundario: fondo tonal de la fila que está sonando.
-    /// Sólido, más suave que `primaryContainer` (M3E no tiñe una fila entera
-    /// con el acento puro).
-    static var secondaryContainer: Color {
-        tone(
-            light: (brightness: 0.91, chroma: 0.22),
-            dark: (brightness: 0.19, chroma: 0.30)
-        )
-    }
+    /// Tercera paleta: hue del seed + 60°.
+    static var tertiary: Color { role(.t40, .t80, hueShift: 60.0 / 360.0) }
+    static var onTertiary: Color { role(.t100, .t20, hueShift: 60.0 / 360.0) }
+    static var tertiaryContainer: Color { role(.t90, .t30, hueShift: 60.0 / 360.0) }
+    static var onTertiaryContainer: Color { role(.t10, .t90, hueShift: 60.0 / 360.0) }
 
-    // MARK: - Superficies (tonal elevation)
+    /// Error: hue fijo de 25°, independiente del acento.
+    static var error: Color { role(.t40, .t80, hueOverride: 25.0 / 360.0, chromaOverride: 0.72) }
+    static var onError: Color { role(.t100, .t20, hueOverride: 25.0 / 360.0, chromaOverride: 0.72) }
+    static var errorContainer: Color { role(.t90, .t30, hueOverride: 25.0 / 360.0, chromaOverride: 0.72) }
+    static var onErrorContainer: Color { role(.t10, .t90, hueOverride: 25.0 / 360.0, chromaOverride: 0.72) }
 
-    static var surface: Color {
-        tone(
-            light: (brightness: 0.985, chroma: 0.030),
-            dark: (brightness: 0.055, chroma: 0.100)
-        )
-    }
+    // MARK: Superficies tonales
 
-    static var surfaceContainerLowest: Color {
-        tone(
-            light: (brightness: 1.000, chroma: 0.020),
-            dark: (brightness: 0.035, chroma: 0.080)
-        )
-    }
+    static var surface: Color { role(.t98, .t6) }
+    static var surfaceDim: Color { role(.t87, .t6) }
+    static var surfaceBright: Color { role(.t98, .t24) }
 
-    static var surfaceContainerLow: Color {
-        tone(
-            light: (brightness: 0.958, chroma: 0.035),
-            dark: (brightness: 0.085, chroma: 0.110)
-        )
-    }
+    static var surfaceContainerLowest: Color { role(.t100, .t4) }
+    static var surfaceContainerLow: Color { role(.t96, .t10) }
+    static var surfaceContainer: Color { role(.t94, .t12) }
+    static var surfaceContainerHigh: Color { role(.t92, .t17) }
+    static var surfaceContainerHighest: Color { role(.t90, .t22) }
 
-    static var surfaceContainer: Color {
-        tone(
-            light: (brightness: 0.935, chroma: 0.045),
-            dark: (brightness: 0.105, chroma: 0.120)
-        )
-    }
+    static var onSurface: Color { role(.t10, .t90) }
+    static var onSurfaceVariant: Color { role(.t30, .t80) }
+    static var surfaceVariant: Color { role(.t90, .t30) }
 
-    static var surfaceContainerHigh: Color {
-        tone(
-            light: (brightness: 0.905, chroma: 0.055),
-            dark: (brightness: 0.135, chroma: 0.130)
-        )
-    }
+    // MARK: Bordes e inversos
 
-    static var surfaceContainerHighest: Color {
-        tone(
-            light: (brightness: 0.875, chroma: 0.065),
-            dark: (brightness: 0.170, chroma: 0.140)
-        )
-    }
+    static var outline: Color { role(.t50, .t60) }
+    static var outlineVariant: Color { role(.t80, .t30) }
 
-    /// Superficie de chips no seleccionados y campos de texto.
-    static var surfaceVariant: Color {
-        tone(
-            light: (brightness: 0.900, chroma: 0.060),
-            dark: (brightness: 0.200, chroma: 0.140)
-        )
-    }
+    static var inverseSurface: Color { role(.t20, .t90) }
+    static var inverseOnSurface: Color { role(.t95, .t20) }
+    static var inversePrimary: Color { role(.t80, .t40) }
 
-    // MARK: - Bordes y texto secundario
+    static var scrim: Color { Color.black }
 
-    /// `outline` de M3: neutro tintado, suficientemente oscuro para que al
-    /// 20 % de opacidad siga leyéndose como borde y no desaparezca.
-    static var outline: Color {
-        tone(
-            light: (brightness: 0.500, chroma: 0.140),
-            dark: (brightness: 0.620, chroma: 0.140)
-        )
-    }
+    // MARK: Dinamismo light/dark
 
-    static var outlineVariant: Color {
-        tone(
-            light: (brightness: 0.800, chroma: 0.080),
-            dark: (brightness: 0.300, chroma: 0.100)
-        )
-    }
-
-    /// Texto principal sobre cualquier superficie tonal.
-    static var onSurface: Color {
-        tone(
-            light: (brightness: 0.100, chroma: 0.140),
-            dark: (brightness: 0.950, chroma: 0.040)
-        )
-    }
-
-    static var onSurfaceVariant: Color {
-        tone(
-            light: (brightness: 0.420, chroma: 0.120),
-            dark: (brightness: 0.780, chroma: 0.080)
-        )
-    }
-
-    // MARK: - Derivación tonal
-
-    /// Genera un `Color` dinámico a partir del hue del acento y dos tuplas
-    /// (brillo, fracción de saturación) para claro/oscuro.
-    ///
-    /// La saturación se escala MUY por debajo del acento: una superficie M3
-    /// tiene croma 4-8, no el croma de un botón filled. Con `chroma: 0.04`
-    /// un acento al 80 % de saturación deja la superficie al 3.2 %.
-    private static func tone(
-        light: (brightness: CGFloat, chroma: CGFloat),
-        dark: (brightness: CGFloat, chroma: CGFloat)
+    private static func role(
+        _ light: M3ETone,
+        _ dark: M3ETone,
+        hueShift: CGFloat = 0,
+        hueOverride: CGFloat? = nil,
+        chromaOverride: CGFloat? = nil,
+        chromaScale: CGFloat = 1
     ) -> Color {
-        var hue: CGFloat = 0.75
-        var saturation: CGFloat = 0.45
-        var brightness: CGFloat = 0.8
-        var alpha: CGFloat = 1
-        if !UIColor(AppTheme.accent).getHue(
-            &hue,
-            saturation: &saturation,
-            brightness: &brightness,
-            alpha: &alpha
-        ) {
-            hue = 0.75
-            saturation = 0.45
-        }
-
-        let accentHue = hue
-        let accentSaturation = saturation
-
+        let base = palette
         return Color(uiColor: UIColor { traits in
-            let config = traits.userInterfaceStyle == .dark ? dark : light
-            let resolvedSaturation = min(0.90, max(0.0, accentSaturation * config.chroma))
-            return UIColor(
-                hue: accentHue,
-                saturation: resolvedSaturation,
-                brightness: min(max(config.brightness, 0.0), 1.0),
-                alpha: 1.0
+            let tone = traits.userInterfaceStyle == .dark ? dark : light
+            let shifted = M3ETonalPalette(
+                hue: hueOverride ?? (base.hue + hueShift),
+                chroma: min(1, chromaOverride ?? (base.chroma * chromaScale))
             )
+            return shifted.uiColor(tone)
         })
     }
 }

@@ -24,12 +24,25 @@ import CoreText
 struct PressableButtonStyle: ButtonStyle {
     let scale: CGFloat
     var pressedOpacity: Double = 1.0
+    /// El ripple se puede desactivar en controles donde el scale ya basta.
+    var showsRipple: Bool = true
+    var rippleColor: Color = M3EColor.onSurface.opacity(0.12)
 
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label
+        rippleLabel(configuration)
             .scaleEffect(configuration.isPressed ? scale : 1.0)
             .opacity(configuration.isPressed ? pressedOpacity : 1.0)
             .animation(AuroraMotion.spatialFast, value: configuration.isPressed)
+    }
+
+    @ViewBuilder
+    private func rippleLabel(_ configuration: ButtonStyleConfiguration) -> some View {
+        if showsRipple {
+            configuration.label
+                .auroraRipple(cornerRadius: 16, color: rippleColor)
+        } else {
+            configuration.label
+        }
     }
 }
 
@@ -97,68 +110,79 @@ private enum RobotoFont {
     }
 }
 
-// ✅ Tokens de tipografía enfática Material 3 Expressive.
-// Cada rol define tamaño (pt), peso y tracking para iOS 16 en hardware limitado.
-// Estos valores están calibrados al vocabulario oficial de M3E y no deben
-// modificarse sin consultar las guías de diseño de Google.
+// ✅ Escala tipográfica Material 3 (15 roles) + variantes emphasized.
+// Roboto es la fuente de Android; el énfasis usa Medium (500), no Bold.
 struct M3ETypography {
-    // Título grande enfatizado: usado para el título de la canción en NowPlaying
-    // y encabezados principales de sección.
-    // ✅ GOLPE FINAL: la app usa Roboto (la fuente de Android) empaquetada
-    // desde Fonts y registrada en Info.plist + CoreText. Roboto clásico no tiene
-    // un corte 600 estático: el rol "emphasized" usa Roboto Medium (500),
-    // que es el peso de énfasis real de Android. El tamaño no cambia.
-    static let titleLargeEmphasized: Font = RobotoFont.font("Roboto-Medium", size: 22, weight: .semibold)
+    // Display
+    static let displayLarge = RobotoFont.font("Roboto-Regular", size: 57, weight: .regular)
+    static let displayMedium = RobotoFont.font("Roboto-Regular", size: 45, weight: .regular)
+    static let displaySmall = RobotoFont.font("Roboto-Regular", size: 36, weight: .regular)
 
-    /// Título editorial de 24 pt en Roboto Bold (portada de NowPlaying).
-    static let displayTitle: Font = RobotoFont.font("Roboto-Bold", size: 24, weight: .bold)
+    // Headline
+    static let headlineLarge = RobotoFont.font("Roboto-Regular", size: 32, weight: .regular)
+    static let headlineMedium = RobotoFont.font("Roboto-Regular", size: 28, weight: .regular)
+    static let headlineSmall = RobotoFont.font("Roboto-Regular", size: 24, weight: .regular)
 
-    /// Título de la pantalla principal (30 pt Roboto Bold, alineado a la
-    /// izquierda, como el large top app bar de Android).
-    static let headlineLargeEmphasized: Font = RobotoFont.font("Roboto-Bold", size: 30, weight: .bold)
+    // Title
+    static let titleLarge = RobotoFont.font("Roboto-Regular", size: 22, weight: .regular)
+    static let titleMedium = RobotoFont.font("Roboto-Medium", size: 16, weight: .medium)
+    static let titleSmall = RobotoFont.font("Roboto-Medium", size: 14, weight: .medium)
 
-    // Título pequeño enfatizado: usado para títulos de categoría en ContentView
-    // y otros encabezados de sección medianos.
-    static let headlineSmallEmphasized: Font = RobotoFont.font("Roboto-Medium", size: 24, weight: .semibold)
+    // Body
+    static let bodyLarge = RobotoFont.font("Roboto-Regular", size: 16, weight: .regular)
+    static let bodyMedium = RobotoFont.font("Roboto-Regular", size: 14, weight: .regular)
+    static let bodySmall = RobotoFont.font("Roboto-Regular", size: 12, weight: .regular)
 
-    // Etiqueta grande enfatizada: usado para texto de información secundaria,
-    // como artista/álbum en NowPlaying y datos de pista.
-    static let labelLargeEmphasized: Font = RobotoFont.font("Roboto-Medium", size: 14, weight: .semibold)
+    // Label
+    static let labelLarge = RobotoFont.font("Roboto-Medium", size: 14, weight: .medium)
+    static let labelMedium = RobotoFont.font("Roboto-Medium", size: 12, weight: .medium).monospacedDigit()
+    static let labelSmall = RobotoFont.font("Roboto-Medium", size: 11, weight: .medium).monospacedDigit()
 
-    // ✅ FASE 3 (remake): rol de fila. M3E no tiene un "16 semibold" ad-hoc;
-    // es el title-medium de la escala, un paso por encima del body.
-    static let titleMediumEmphasized: Font = RobotoFont.font("Roboto-Medium", size: 16, weight: .semibold)
+    // Emphasized (M3E: Medium sobre el baseline Regular)
+    static let displayTitle = RobotoFont.font("Roboto-Bold", size: 36, weight: .bold)
+    static let headlineLargeEmphasized = RobotoFont.font("Roboto-Medium", size: 32, weight: .medium)
+    static let headlineSmallEmphasized = RobotoFont.font("Roboto-Medium", size: 24, weight: .medium)
+    static let titleLargeEmphasized = RobotoFont.font("Roboto-Medium", size: 22, weight: .medium)
+    static let titleMediumEmphasized = RobotoFont.font("Roboto-Medium", size: 16, weight: .medium)
+    static let labelLargeEmphasized = RobotoFont.font("Roboto-Medium", size: 14, weight: .medium)
 
-    // Cuerpo grande: entradas de texto y párrafos.
-    static let bodyLarge: Font = RobotoFont.font("Roboto-Regular", size: 16, weight: .regular)
-
-    // Cuerpo medio: subtítulos de fila y metadatos.
-    static let bodyMedium: Font = RobotoFont.font("Roboto-Regular", size: 12, weight: .regular)
-
-    // Cuerpo pequeño: ruta de audio, notas al pie.
-    static let bodySmall: Font = RobotoFont.font("Roboto-Regular", size: 11, weight: .regular)
-
-    // Etiqueta pequeña: duración, contadores y datos numéricos.
-    static let labelMedium: Font = RobotoFont.font("Roboto-Medium", size: 11, weight: .medium).monospacedDigit()
-
-    // Etiqueta mínima: chips de calidad y datos numéricos muy compactos.
-    static let labelSmall: Font = RobotoFont.font("Roboto-Medium", size: 9, weight: .medium).monospacedDigit()
-
-    // Número de fila / índice de pista (14 pt) con dígitos tabulares.
-    static let labelLargeNumeric: Font = RobotoFont.font("Roboto-Medium", size: 14, weight: .medium).monospacedDigit()
-
-    // Subtítulo de pista: usado para información de calidad y route display.
-    static let trackSubtitle: Font = RobotoFont.font("Roboto-Regular", size: 10, weight: .regular)
+    // Datos numéricos y tiempos
+    static let labelLargeNumeric = RobotoFont.font("Roboto-Medium", size: 14, weight: .medium).monospacedDigit()
+    static let trackSubtitle = RobotoFont.font("Roboto-Regular", size: 10, weight: .regular)
         .monospacedDigit()
-
-    // Texto de tiempo (formato mm:ss): siempre monospaced para alineación perfecta.
-    static let timeDisplay: Font = RobotoFont.font("Roboto-Medium", size: 20, weight: .medium)
+    static let timeDisplay = RobotoFont.font("Roboto-Medium", size: 20, weight: .medium)
         .monospacedDigit()
-
-    // Tiempo compacto de la barra de scrub (13 pt) con dígitos tabulares.
-    static let timeDisplayCompact: Font = RobotoFont.font("Roboto-Medium", size: 13, weight: .medium)
+    static let timeDisplayCompact = RobotoFont.font("Roboto-Medium", size: 13, weight: .medium)
         .monospacedDigit()
 }
+
+/// Un rol M3 completo: fuente + altura de línea + tracking. Las vistas que
+/// necesitan la especificación completa usan estos tokens; las que solo
+/// necesitan el `Font` siguen usando `M3ETypography`.
+struct M3ETextStyle {
+    let font: Font
+    let lineHeight: CGFloat
+    let tracking: CGFloat
+}
+
+extension M3ETextStyle {
+    static let displayLarge = M3ETextStyle(font: M3ETypography.displayLarge, lineHeight: 64, tracking: -0.25)
+    static let displayMedium = M3ETextStyle(font: M3ETypography.displayMedium, lineHeight: 52, tracking: 0)
+    static let displaySmall = M3ETextStyle(font: M3ETypography.displaySmall, lineHeight: 44, tracking: 0)
+    static let headlineLarge = M3ETextStyle(font: M3ETypography.headlineLarge, lineHeight: 40, tracking: 0)
+    static let headlineMedium = M3ETextStyle(font: M3ETypography.headlineMedium, lineHeight: 36, tracking: 0)
+    static let headlineSmall = M3ETextStyle(font: M3ETypography.headlineSmall, lineHeight: 32, tracking: 0)
+    static let titleLarge = M3ETextStyle(font: M3ETypography.titleLarge, lineHeight: 28, tracking: 0)
+    static let titleMedium = M3ETextStyle(font: M3ETypography.titleMedium, lineHeight: 24, tracking: 0.15)
+    static let titleSmall = M3ETextStyle(font: M3ETypography.titleSmall, lineHeight: 20, tracking: 0.1)
+    static let bodyLarge = M3ETextStyle(font: M3ETypography.bodyLarge, lineHeight: 24, tracking: 0.5)
+    static let bodyMedium = M3ETextStyle(font: M3ETypography.bodyMedium, lineHeight: 20, tracking: 0.25)
+    static let bodySmall = M3ETextStyle(font: M3ETypography.bodySmall, lineHeight: 16, tracking: 0.4)
+    static let labelLarge = M3ETextStyle(font: M3ETypography.labelLarge, lineHeight: 20, tracking: 0.1)
+    static let labelMedium = M3ETextStyle(font: M3ETypography.labelMedium, lineHeight: 16, tracking: 0.5)
+    static let labelSmall = M3ETextStyle(font: M3ETypography.labelSmall, lineHeight: 16, tracking: 0.5)
+}
+
 
 // MARK: - Morphing shape (M3E: formas que se transforman)
 
@@ -201,7 +225,7 @@ struct AuroraMorphChipShape: Shape, InsettableShape {
 
 enum AuroraMotion {
 
-    // MARK: - Tokens oficiales M3E (SOLO estos tres)
+    // MARK: - Resortes oficiales M3E
 
     // ✅ FASE 2: se eliminan quick / normal / emphasized / slow / lyricLine.
     // Cualquier animación de la app es uno de estos tres tokens EXPRESIVOS
@@ -258,6 +282,79 @@ enum AuroraMotion {
 
     /// Efectos utilitarios: idéntico al expresivo (ya es ζ = 1.0).
     static let standardEffectsDefault = effectsDefault
+
+    // MARK: - Curvas M3 (5 familias × 3 duraciones)
+
+    // M3 combina curvas de easing con duraciones cortas/medias/largas. Las
+    // funciones devuelven una `Animation` nueva en cada llamada para que el
+    // llamador pueda encadenar `.delay` sin compartir estado.
+    private static func m3Curve(
+        _ x1: Double,
+        _ y1: Double,
+        _ x2: Double,
+        _ y2: Double,
+        duration: Double
+    ) -> Animation {
+        .timingCurve(x1, y1, x2, y2, duration: duration)
+    }
+
+    static let emphasizedDecelerate = m3Curve(0.05, 0.7, 0.1, 1.0, duration: 0.30)
+    static let emphasizedAccelerate = m3Curve(0.3, 0.0, 0.8, 0.15, duration: 0.30)
+    static let decelerate = m3Curve(0.0, 0.0, 0.0, 1.0, duration: 0.30)
+    static let accelerate = m3Curve(0.3, 0.0, 1.0, 1.0, duration: 0.30)
+    static let linear = Animation.linear(duration: 0.30)
+
+    static func emphasizedDecelerateShort() -> Animation {
+        m3Curve(0.05, 0.7, 0.1, 1.0, duration: 0.20)
+    }
+
+    static func emphasizedDecelerateMedium() -> Animation {
+        m3Curve(0.05, 0.7, 0.1, 1.0, duration: 0.30)
+    }
+
+    static func emphasizedDecelerateLong() -> Animation {
+        m3Curve(0.05, 0.7, 0.1, 1.0, duration: 0.50)
+    }
+
+    static func emphasizedAccelerateShort() -> Animation {
+        m3Curve(0.3, 0.0, 0.8, 0.15, duration: 0.20)
+    }
+
+    static func emphasizedAccelerateMedium() -> Animation {
+        m3Curve(0.3, 0.0, 0.8, 0.15, duration: 0.30)
+    }
+
+    static func emphasizedAccelerateLong() -> Animation {
+        m3Curve(0.3, 0.0, 0.8, 0.15, duration: 0.50)
+    }
+
+    static func decelerateShort() -> Animation {
+        m3Curve(0.0, 0.0, 0.0, 1.0, duration: 0.20)
+    }
+
+    static func decelerateMedium() -> Animation {
+        m3Curve(0.0, 0.0, 0.0, 1.0, duration: 0.30)
+    }
+
+    static func decelerateLong() -> Animation {
+        m3Curve(0.0, 0.0, 0.0, 1.0, duration: 0.50)
+    }
+
+    static func accelerateShort() -> Animation {
+        m3Curve(0.3, 0.0, 1.0, 1.0, duration: 0.20)
+    }
+
+    static func accelerateMedium() -> Animation {
+        m3Curve(0.3, 0.0, 1.0, 1.0, duration: 0.30)
+    }
+
+    static func accelerateLong() -> Animation {
+        m3Curve(0.3, 0.0, 1.0, 1.0, duration: 0.50)
+    }
+
+    static func linearShort() -> Animation { .linear(duration: 0.20) }
+    static func linearMedium() -> Animation { .linear(duration: 0.30) }
+    static func linearLong() -> Animation { .linear(duration: 0.50) }
 }
 
 // ══════════════════════════════════════════════════════════════════════════

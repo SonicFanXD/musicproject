@@ -137,6 +137,7 @@ struct M3EFilledButton<Label: View>: View {
                 .padding(.vertical, verticalPadding)
                 .background(Capsule(style: .continuous).fill(tint))
                 .contentShape(Capsule(style: .continuous))
+                .auroraRipple(cornerRadius: 28, color: foreground.opacity(0.18))
         }
         .buttonStyle(M3ESquishButtonStyle())
     }
@@ -144,7 +145,7 @@ struct M3EFilledButton<Label: View>: View {
 
 // MARK: - Tonal button
 
-/// Botón secundario: relleno tonal (acento al 15 %) y texto en acento.
+/// Botón secundario: relleno `primaryContainer` y texto `onPrimaryContainer`.
 struct M3ETonalButton<Label: View>: View {
     private let tint: Color
     private let horizontalPadding: CGFloat
@@ -182,6 +183,7 @@ struct M3ETonalButton<Label: View>: View {
                         .strokeBorder(tint.opacity(0.28), lineWidth: 1)
                 )
                 .contentShape(Capsule(style: .continuous))
+                .auroraRipple(cornerRadius: 28, color: M3EColor.onPrimaryContainer.opacity(0.14))
         }
         .buttonStyle(M3ESquishButtonStyle())
     }
@@ -189,7 +191,7 @@ struct M3ETonalButton<Label: View>: View {
 
 // MARK: - Filter chip
 
-/// Chip de filtro con morphing de forma (radio 14 ↔ 20) y spring finito.
+/// Chip de filtro con morphing de forma (radio 8 ↔ 12) y spring finito.
 /// No usa `matchedGeometryEffect`: cada chip interpola SU propia forma, así el
 /// layout no se mueve y no hay namespace compartido en el ScrollView.
 struct M3EFilterChip: View {
@@ -213,10 +215,10 @@ struct M3EFilterChip: View {
         self.action = action
     }
 
-    // ✅ FASE 2: radio 14 (reposo) → 20 (seleccionado), interpolado por
-    // `animatableData` con `spatialDefault`.
+    // ✅ M3E: radio small (8) en reposo → medium (12) al seleccionar,
+    // interpolado por `animatableData` con `spatialDefault`.
     private var shapeRadius: CGFloat {
-        isSelected ? 20 : 14
+        isSelected ? M3EShapeFamily.medium.radius : M3EShapeFamily.small.radius
     }
 
     var body: some View {
@@ -251,7 +253,7 @@ struct M3EFilterChip: View {
                     )
                     .animation(AuroraMotion.spatialDefault, value: isSelected)
             )
-            .contentShape(Capsule(style: .continuous))
+            .contentShape(AuroraMorphChipShape(cornerRadius: shapeRadius))
         }
         .buttonStyle(PressableButtonStyle(scale: 0.96, pressedOpacity: 0.9))
         .accessibilityAddTraits(isSelected ? .isSelected : AccessibilityTraits())
@@ -295,6 +297,7 @@ struct M3ENavigationBar<Leading: View, Trailing: View>: View {
                     // ✅ M3E top app bar: `title-large` enfatizado (22/semibold)
                     // y `onSurface` (no el `.primary` del sistema iOS).
                     .font(M3ETypography.titleLargeEmphasized)
+                    .tracking(0)
                     .foregroundStyle(M3EColor.onSurface)
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
@@ -304,7 +307,7 @@ struct M3ENavigationBar<Leading: View, Trailing: View>: View {
                 if let subtitle = subtitle {
                     Text(subtitle)
                         .font(M3ETypography.labelLargeEmphasized)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(M3EColor.onSurfaceVariant)
                         .lineLimit(1)
                 }
             }

@@ -27,7 +27,7 @@ struct AuroraWavyProgress: View {
     var amplitude: CGFloat = 3.2
     var waveLength: CGFloat = 24
     var trackColor: Color = M3EColor.outlineVariant.opacity(0.55)
-    var colors: [Color] = [AppTheme.accent, AppTheme.accent]
+    var colors: [Color] = [M3EColor.primary, M3EColor.primary]
     var showsThumb: Bool = true
     var thumbSize: CGFloat = 12
 
@@ -39,7 +39,7 @@ struct AuroraWavyProgress: View {
     @State private var dragMoved = false
 
     private var activeColor: Color {
-        colors.first ?? AppTheme.accent
+        colors.first ?? M3EColor.primary
     }
 
     private var displayedProgress: CGFloat {

@@ -134,6 +134,7 @@ struct NowPlayingView: View {
                     .foregroundStyle(playIconColor)
                     .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
+                    .auroraRipple(cornerRadius: 22)
             }
             .buttonStyle(.plain)
             .accessibilityLabel(Localization.localized("nowPlaying.close"))
@@ -141,7 +142,8 @@ struct NowPlayingView: View {
             Spacer(minLength: 8)
 
             Text(Localization.localized("nowPlaying.title"))
-                .font(M3ETypography.titleMediumEmphasized)
+                .font(M3ETypography.titleMedium)
+                .tracking(0.15)
                 .foregroundStyle(playIconColor.opacity(0.9))
                 .lineLimit(1)
 
@@ -178,9 +180,9 @@ struct NowPlayingView: View {
 
             LinearGradient(
                 colors: [
-                    extractedColor.opacity(0.30),
-                    extractedColor.opacity(0.16),
-                    M3EColor.surface.opacity(0.94)
+                    M3EColor.primary.opacity(0.55),
+                    M3EColor.primary.opacity(0.22),
+                    M3EColor.surface
                 ],
                 startPoint: .top,
                 endPoint: .bottom
@@ -200,13 +202,13 @@ struct NowPlayingView: View {
                     .interpolation(.high)
                     .scaledToFill()
                     .frame(width: artworkSide, height: artworkSide)
-                    .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+                    .clipShape(M3EShape(family: .extraLarge))
                     .overlay(
-                        RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        M3EShape(family: .extraLarge)
                             .strokeBorder(playIconColor.opacity(0.14), lineWidth: 1)
                     )
             } else {
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                M3EShape(family: .extraLarge)
                     .fill(M3EColor.surfaceContainerHigh)
                     .frame(width: artworkSide, height: artworkSide)
                     .overlay(
@@ -226,14 +228,17 @@ struct NowPlayingView: View {
         HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(currentSong?.displayName ?? Localization.localized("quality.noSong"))
-                    .font(M3ETypography.displayTitle)
+                    .font(M3ETypography.displaySmall)
+                    .tracking(0)
                     .foregroundStyle(playIconColor)
                     .multilineTextAlignment(.leading)
                     .lineLimit(2)
+                    .minimumScaleFactor(0.7)
                     .frame(maxWidth: .infinity, alignment: .leading)
 
                 Text(currentSong?.displaySubtitle ?? "—")
                     .font(M3ETypography.bodyLarge)
+                    .tracking(0.5)
                     .foregroundStyle(playIconColor.opacity(0.72))
                     .lineLimit(1)
             }
@@ -316,7 +321,10 @@ struct NowPlayingView: View {
     }
 
     private var playPill: some View {
-        Button {
+        M3EFilledButton(
+            horizontalPadding: isNarrow ? 12 : 18,
+            verticalPadding: 0
+        ) {
             Haptics.medium()
             if audioEngine.isPlaying {
                 audioEngine.pause()
@@ -331,20 +339,11 @@ struct NowPlayingView: View {
                 Text(audioEngine.isPlaying
                      ? Localization.localized("actions.pause")
                      : Localization.localized("actions.play"))
-                    .font(M3ETypography.labelLargeEmphasized)
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
             }
-            .foregroundStyle(M3EColor.onPrimary)
-            .padding(.horizontal, isNarrow ? 12 : 18)
             .frame(height: isNarrow ? 48 : 52)
-            .background(
-                Capsule(style: .continuous)
-                    .fill(M3EColor.primary)
-            )
-            .contentShape(Capsule(style: .continuous))
         }
-        .buttonStyle(M3ESquishButtonStyle())
         .accessibilityLabel(Localization.localized("accessibility.playPause"))
     }
 
@@ -361,12 +360,13 @@ struct NowPlayingView: View {
         } label: {
             Image(systemName: icon)
                 .font(.system(size: isNarrow ? 14 : 16, weight: active ? .bold : .semibold))
-                .foregroundStyle(active ? M3EColor.onPrimaryContainer : M3EColor.onSurfaceVariant)
+                .foregroundStyle(active ? M3EColor.onPrimary : M3EColor.onPrimaryContainer)
                 .frame(width: isNarrow ? 38 : 44, height: isNarrow ? 38 : 44)
                 .background(
-                    Circle().fill(active ? M3EColor.primaryContainer : M3EColor.surfaceContainerHigh)
+                    Circle().fill(active ? M3EColor.primary : M3EColor.primaryContainer)
                 )
                 .contentShape(Circle())
+                .auroraRipple(cornerRadius: 22)
         }
         .buttonStyle(M3ESquishButtonStyle())
         .disabled(!enabled)
@@ -445,16 +445,21 @@ struct NowPlayingView: View {
         VStack(spacing: 5) {
             Image(systemName: icon)
                 .font(.system(size: 19, weight: .semibold))
-                .foregroundStyle(playIconColor.opacity(0.9))
+                .foregroundStyle(M3EColor.onSecondaryContainer)
 
             Text(title)
                 .font(M3ETypography.labelSmall)
-                .foregroundStyle(playIconColor.opacity(0.68))
+                .foregroundStyle(M3EColor.onSecondaryContainer.opacity(0.78))
                 .lineLimit(1)
                 .minimumScaleFactor(0.75)
         }
         .frame(maxWidth: .infinity, minHeight: 56)
-        .contentShape(Rectangle())
+        .background(M3EShape(family: .large).fill(M3EColor.secondaryContainer))
+        .overlay(
+            M3EShape(family: .large)
+                .strokeBorder(M3EColor.outline.opacity(0.2), lineWidth: 1)
+        )
+        .contentShape(M3EShape(family: .large))
     }
 }
 

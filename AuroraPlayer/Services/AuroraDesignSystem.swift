@@ -234,8 +234,8 @@ extension View {
     /// ✅ AURORA DESIGN: card estándar del sistema. `style` decide la superficie
     /// (glass solo en containers/features; flat en filas por rendimiento en
     /// A11) y `radius` la escala de AuroraRadius. Con "Reducir transparencia"
-    /// cualquier `.glass` cae a `.opaque` automáticamente. Sombra SIEMPRE
-    /// single (soft): la fuerte queda reservada a containers de nivel 1.
+    /// cualquier `.glass` cae a `.opaque` automáticamente. La elevación es
+    /// TONAL + borde de 1.5 pt: cero sombras.
     func auroraCard(
         radius: CGFloat = AuroraRadius.lg,
         style: AuroraSurface = .flat,
@@ -320,19 +320,16 @@ private struct AuroraChipModifier: ViewModifier {
             // Seleccionado = gradiente text-safe + texto blanco; sin
             // seleccionar = superficie flat neutra. Mismo vocabulario que
             // los filtros de LogsView y las cápsulas de NowPlaying.
-            .font(M3ETypography.labelLargeEmphasized)
-            .foregroundStyle(isSelected ? accent : M3EColor.onSurfaceVariant)
+            .font(M3ETypography.labelLarge)
+            .foregroundStyle(isSelected ? M3EColor.onPrimaryContainer : M3EColor.onSurfaceVariant)
             .padding(.horizontal, AuroraSpacing.lg)
             .padding(.vertical, AuroraSpacing.sm)
             .background {
-                ZStack {
-                    Capsule().fill(M3EColor.surfaceVariant)
-                    Capsule().fill(isSelected ? accent.opacity(0.2) : Color.clear)
-                }
+                Capsule().fill(isSelected ? M3EColor.primaryContainer : M3EColor.surfaceContainerHigh)
             }
             .overlay(
                 Capsule().strokeBorder(
-                    isSelected ? accent.opacity(0.4) : M3EColor.outline.opacity(0.16),
+                    isSelected ? accent.opacity(0.3) : M3EColor.outline.opacity(0.2),
                     lineWidth: 1
                 )
             )
@@ -344,12 +341,12 @@ private struct AuroraPrimaryActionModifier: ViewModifier {
         content
             // ✅ AURORA DESIGN: acción primaria = relleno de acento completo
             // text-safe + texto blanco. Consume la regla 2.7 centralizada.
-            .font(M3ETypography.titleMediumEmphasized)
+            .font(M3ETypography.labelLargeEmphasized)
             .foregroundStyle(M3EColor.onPrimary)
             .padding(.horizontal, AuroraSpacing.xl)
             .padding(.vertical, AuroraSpacing.md)
             .background(
-                Capsule().fill(AnyShapeStyle(AuroraDesignSystem.textSafeAccentGradient()))
+                Capsule().fill(M3EColor.primary)
             )
     }
 }
@@ -446,12 +443,10 @@ struct AuroraSectionHeader: View {
             Image(systemName: icon)
                 .auroraIconBadge(size: AuroraIconSize.medium, color: color, shape: .roundedRect)
             Text(title)
-                // ✅ REMAKE: `headlineSmallEmphasized` (24/semibold) con
-                // tracking negativo. Es el rol de M3E para el encabezado de
-                // sección; ya no hay un 20/heavy ad-hoc.
-                .font(M3ETypography.headlineSmallEmphasized)
-                .tracking(-0.2)
-                .foregroundStyle(Color.primary)
+                // ✅ M3E: encabezado de sección `title-large` (22/28 regular).
+                .font(M3ETypography.titleLarge)
+                .tracking(0)
+                .foregroundStyle(M3EColor.onSurface)
             Spacer()
         }
     }

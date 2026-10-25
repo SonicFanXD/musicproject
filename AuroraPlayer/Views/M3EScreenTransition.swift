@@ -64,14 +64,19 @@ struct M3EDismiss: DynamicProperty {
 // MARK: - Transición shared-axis X
 
 private extension AnyTransition {
-    /// Entra desde la derecha y retrocede hacia la derecha (atrás). El
-    /// desplazamiento se combina con opacidad para que el cambio no sea un
-    /// corte seco incluso si el frame tarda en asentarse.
-    static var m3eSharedAxisX: AnyTransition {
-        .asymmetric(
-            insertion: .move(edge: .trailing).combined(with: .opacity),
-            removal: .move(edge: .trailing).combined(with: .opacity)
-        )
+    /// Entrada shared-axis X: llega desde la derecha con la curva
+    /// `emphasizedDecelerate` larga.
+    static var m3eSharedAxisXIn: AnyTransition {
+        .move(edge: .trailing)
+            .combined(with: .opacity)
+            .animation(AuroraMotion.emphasizedDecelerateLong())
+    }
+
+    /// Salida shared-axis X: retrocede hacia la derecha acelerando.
+    static var m3eSharedAxisXOut: AnyTransition {
+        .move(edge: .trailing)
+            .combined(with: .opacity)
+            .animation(AuroraMotion.emphasizedAccelerateMedium())
     }
 }
 
@@ -109,11 +114,13 @@ private struct M3EScreenModifier<Destination: View>: ViewModifier {
 
             if isPresented {
                 M3EScreenContainer(onDismiss: { isPresented = false }, content: destination)
-                    .transition(.m3eSharedAxisX)
+                    .transition(.asymmetric(
+                        insertion: .m3eSharedAxisXIn,
+                        removal: .m3eSharedAxisXOut
+                    ))
                     .zIndex(1000)
             }
         }
-        .animation(AuroraMotion.spatialDefault, value: isPresented)
     }
 }
 
@@ -132,11 +139,13 @@ private struct M3EScreenItemModifier<Item: Identifiable, Destination: View>: Vie
                     onDismiss: { self.item = nil },
                     content: { destination(item) }
                 )
-                .transition(.m3eSharedAxisX)
+                .transition(.asymmetric(
+                    insertion: .m3eSharedAxisXIn,
+                    removal: .m3eSharedAxisXOut
+                ))
                 .zIndex(1000)
             }
         }
-        .animation(AuroraMotion.spatialDefault, value: item?.id)
     }
 }
 

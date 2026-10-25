@@ -110,7 +110,7 @@ struct DetailHeroArtwork: View, Equatable {
     private var shape: AnyShape {
         switch kind {
         case .album:
-            return AnyShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+            return AnyShape(M3EShape(family: .extraLarge))
         case .artist:
             return AnyShape(Circle())
         }
@@ -126,7 +126,7 @@ struct DetailHeroArtwork: View, Equatable {
     private var border: some View {
         switch kind {
         case .album:
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
+            M3EShape(family: .extraLarge)
                 .strokeBorder(
                     LinearGradient(
                         colors: [.white.opacity(0.35), .white.opacity(0.08), .clear],

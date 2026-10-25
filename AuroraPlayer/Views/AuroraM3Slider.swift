@@ -50,7 +50,7 @@ struct AuroraM3Slider: View {
     /// Dos paradas de acento. `nil` = par de `AppTheme` (reactivo al tema).
     var tintColors: [Color]? = nil
     /// `SurfaceVariant` tonal: pista inactiva sólida.
-    var trackColor: Color = Color.secondary.opacity(0.16)
+    var trackColor: Color = M3EColor.outlineVariant.opacity(0.55)
 
     var accessibilityLabel: String = ""
 
@@ -75,7 +75,7 @@ struct AuroraM3Slider: View {
     // MARK: Derivados
 
     private var resolvedTint: [Color] {
-        tintColors ?? [AppTheme.accent, AppTheme.accent.opacity(0.55)]
+        tintColors ?? [M3EColor.primary, M3EColor.primaryContainer]
     }
 
     private var displayValue: Double {
@@ -195,6 +195,9 @@ struct AuroraM3Slider: View {
                     Haptics.light()
                 }
         )
+        // ✅ Ripple M3E del thumb: va DESPUÉS del gesto para que su
+        // `simultaneousGesture` no compita con el arrastre del slider.
+        .auroraRipple(cornerRadius: 22)
     }
 
     // MARK: Cálculo del valor
