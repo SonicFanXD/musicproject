@@ -276,7 +276,13 @@ final class LibrarySearchIndex {
         return scored.map(\.song)
     }
 
-    func searchAlbums(_ albums: [Album], query: String) -> [Album] {
+    /// ✅ Paridad con canciones: función PURA con snapshot de `entries` para
+    /// ejecutarla en background sin competir con `update(...)` en main.
+    static func searchAlbums(
+        _ albums: [Album],
+        query: String,
+        entries: [String: AlbumEntry]
+    ) -> [Album] {
         let words = Self.queryWords(query)
         guard !words.isEmpty else { return albums }
         var scored: [(album: Album, score: Int)] = []
@@ -285,7 +291,7 @@ final class LibrarySearchIndex {
             // ✅ Fallback si la entrada del índice no existe (índice desactualizado):
             // se calcula al vuelo en vez de DESCARTAR el álbum silenciosamente —
             // esa era otra causa de "álbumes que existen y no aparecen".
-            let e = albumEntries[album.id] ?? AlbumEntry(
+            let e = entries[album.id] ?? AlbumEntry(
                 name: Self.fold(album.name),
                 artist: Self.fold(album.artist),
                 songTitles: album.songs.map { Self.fold($0.title) }
@@ -302,14 +308,23 @@ final class LibrarySearchIndex {
         return scored.map(\.album)
     }
 
-    func searchArtists(_ artists: [Artist], query: String) -> [Artist] {
+    func searchAlbums(_ albums: [Album], query: String) -> [Album] {
+        Self.searchAlbums(albums, query: query, entries: albumEntries)
+    }
+
+    /// ✅ Paridad con canciones: función PURA con snapshot de `entries`.
+    static func searchArtists(
+        _ artists: [Artist],
+        query: String,
+        entries: [String: ArtistEntry]
+    ) -> [Artist] {
         let words = Self.queryWords(query)
         guard !words.isEmpty else { return artists }
         var scored: [(artist: Artist, score: Int)] = []
         scored.reserveCapacity(min(artists.count, 32))
         for artist in artists {
             // ✅ Fallback al vuelo si la entrada no existe en el índice.
-            let e = artistEntries[artist.id] ?? ArtistEntry(name: Self.fold(artist.name))
+            let e = entries[artist.id] ?? ArtistEntry(name: Self.fold(artist.name))
             // ✅ SOLO el nombre del artista decide si aparece. Si buscas por el
             // título de una canción, usa la pestaña de Canciones.
             let fields = [e.name]
@@ -321,5 +336,9 @@ final class LibrarySearchIndex {
         }
         scored.sort { $0.score > $1.score }
         return scored.map(\.artist)
+    }
+
+    func searchArtists(_ artists: [Artist], query: String) -> [Artist] {
+        Self.searchArtists(artists, query: query, entries: artistEntries)
     }
 }

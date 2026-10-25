@@ -498,7 +498,6 @@ struct AlbumDetailView: View {
                     )
                 }
                 .contentShape(Capsule())
-                .shadow(color: tintColor.opacity(0.5), radius: 10, x: 0, y: 5)
             }
             // ✅ M3E: rebote + leve apagado, coherente con el resto de transportes.
             .buttonStyle(PressableButtonStyle(scale: AuroraPressScale.button, pressedOpacity: 0.85))
@@ -1129,7 +1128,6 @@ struct ArtistDetailView: View {
                     )
                 }
                 .contentShape(Capsule())
-                .shadow(color: tintColor.opacity(0.5), radius: 10, x: 0, y: 5)
             }
             // ✅ M3E: rebote + leve apagado, coherente con el resto de transportes.
             .buttonStyle(PressableButtonStyle(scale: AuroraPressScale.button, pressedOpacity: 0.85))
@@ -1250,7 +1248,6 @@ struct ArtistAlbumCard: View {
                             RoundedRectangle(cornerRadius: AuroraRadius.md, style: .continuous)
                                 .strokeBorder(.white.opacity(0.15), lineWidth: 1)
                         }
-                        .shadow(color: .black.opacity(0.25), radius: 14, x: 0, y: 7)
                 } else {
                     ZStack {
                         RoundedRectangle(cornerRadius: AuroraRadius.md, style: .continuous)
@@ -1260,7 +1257,6 @@ struct ArtistAlbumCard: View {
                             .frame(width: 150, height: 150)
                         Image(systemName: "square.stack").font(.system(size: 36)).foregroundStyle(.secondary.opacity(0.7))
                     }
-                    .shadow(color: .black.opacity(0.2), radius: 12, x: 0, y: 6)
                 }
             }
 

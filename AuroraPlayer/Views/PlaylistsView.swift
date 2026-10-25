@@ -59,7 +59,7 @@ struct PlaylistsView: View {
                 audioEngine: audioEngine
             )
         }
-        .fullScreenCover(isPresented: $showCreatePlaylist) {
+        .m3eScreen(isPresented: $showCreatePlaylist) {
             createPlaylistSheet
         }
     }
@@ -435,7 +435,7 @@ struct PlaylistDetailView: View {
                 }
             )
         }
-        .fullScreenCover(isPresented: $showEditPlaylist) {
+        .m3eScreen(isPresented: $showEditPlaylist) {
             editPlaylistSheet
         }
         .alert(String(format: Localization.localized("playlists.deleteConfirm"), playlist.name), isPresented: $showDeleteConfirmation) {

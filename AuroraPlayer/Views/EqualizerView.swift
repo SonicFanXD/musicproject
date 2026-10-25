@@ -2,7 +2,7 @@ import SwiftUI
 
 struct EqualizerView: View {
     @ObservedObject var audioEngine: AudioEngine
-    @Environment(\.dismiss) private var dismiss
+    @M3EDismiss private var dismiss
 
     var body: some View {
         ZStack {

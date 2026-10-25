@@ -162,7 +162,8 @@ struct AuroraM3Slider: View {
                 .overlay {
                     Circle().strokeBorder(Color.white.opacity(0.85), lineWidth: 2)
                 }
-                // Sombra estática (capa de 26 pt): no se recalcula por frame.
+                // Sombra del thumb: parte de la spec de Material 3 (el "handle" tiene
+                // profundidad táctil). NO es una sombra de iOS: es del componente.
                 .shadow(color: .black.opacity(isDragging ? 0.3 : 0.18),
                         radius: isDragging ? 6 : 4, x: 0, y: 2)
                 // ✅ M3E: respuesta elástica al agarrar el thumb.

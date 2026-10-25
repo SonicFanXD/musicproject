@@ -80,11 +80,7 @@ struct AudioVisualizer: View {
                 drawBars(in: &context, size: size, time: timeline.date.timeIntervalSinceReferenceDate)
             }
         }
-        // ✅ El shadow se aplica UNA vez al Canvas entero (antes, uno por barra).
-        // Sin .drawingGroup(): el Canvas ya se rasteriza solo y envolverlo añadía
-        // una pasada offscreen extra sin quitar el coste de SwiftUI, que era el
-        // que importaba.
-        .shadow(color: tintColor.opacity(0.1), radius: 4, y: 1)
+        // ✅ M3E: el indicador no lleva sombra (elevación tonal, no iOS).
         .opacity(audioEngine.isPlaying ? 1.0 : 0.4)
         .animation(.easeInOut(duration: 0.3), value: audioEngine.isPlaying)
     }

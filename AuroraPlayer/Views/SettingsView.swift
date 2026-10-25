@@ -137,10 +137,10 @@ struct SettingsView: View, SettingsRowBuilding {
             // ✅ REMAKE: pantalla completa M3E; fuera el NavigationStack y sus
             // sheets. Los registros y el ecualizador también son pantallas
             // completas, no hojas.
-            .fullScreenCover(isPresented: $showLogs) {
+            .m3eScreen(isPresented: $showLogs) {
                 LogsView()
             }
-            .fullScreenCover(isPresented: $showEqualizerSheet) {
+            .m3eScreen(isPresented: $showEqualizerSheet) {
                 EqualizerView(audioEngine: audioEngine)
             }
             .fileImporter(

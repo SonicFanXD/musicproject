@@ -47,7 +47,13 @@ struct ContentView: View {
     /// no un "sin resultados" prematuro). Al cambiar de consulta se CONSERVA el
     /// anterior hasta que llega el nuevo → sin parpadeo.
     @State private var searchResults: [Song]?
-    /// Token generacional: descarta respuestas de consultas ya reemplazadas.
+    // ✅ PARIDAD DE BÚSQUEDA: álbumes y artistas también publican resultados
+    // asíncronos. `nil` = todavía no hay respuesta para la consulta vigente
+    // (se conserva la lista cacheada anterior, igual que canciones).
+    @State private var searchAlbumResults: [Album]?
+    @State private var searchArtistResults: [Artist]?
+    /// Token generacional compartido por las tres búsquedas: un cambio de query
+    /// invalida canciones, álbumes y artistas a la vez.
     @State private var searchGeneration = 0
     /// Debounce cancelable del campo (mismo patrón que `sortWorkItem` de
     /// FileAccessService: una tecla nueva cancela el trabajo pendiente).
@@ -1050,10 +1056,15 @@ struct ContentView: View {
         searchDebounceWorkItem = nil
         // Ya en el estado "sin búsqueda": no hace falta repetir el trabajo
         // (el botón de limpiar y el onChange con "" llaman ambos aquí).
-        guard !appliedSearchQuery.isEmpty || searchResults != nil else { return }
+        guard !appliedSearchQuery.isEmpty
+                || searchResults != nil
+                || searchAlbumResults != nil
+                || searchArtistResults != nil else { return }
         searchGeneration += 1
         appliedSearchQuery = ""
         searchResults = nil
+        searchAlbumResults = nil
+        searchArtistResults = nil
         if selectedCategory == .songs, orderedSongsCacheDirty {
             recomputeOrderedSongs()
         }
@@ -1077,12 +1088,38 @@ struct ContentView: View {
         appliedSearchQuery = query
         let songs = fileAccessService.songs
         let entries = LibrarySearchIndex.shared.songEntries
+        let albums = fileAccessService.albums
+        let albumEntries = LibrarySearchIndex.shared.albumEntries
+        let artists = fileAccessService.artists
+        let artistEntries = LibrarySearchIndex.shared.artistEntries
+
         DispatchQueue.global(qos: .userInitiated).async { [self] in
             let results = LibrarySearchIndex.searchSongs(songs, query: query, entries: entries)
             DispatchQueue.main.async {
                 guard generation == self.searchGeneration,
                       query == self.appliedSearchQuery else { return }
                 self.searchResults = results
+            }
+        }
+
+        // ✅ PARIDAD: mismos snapshots inmutables y mismo token generacional
+        // que canciones, para que álbumes/artistas no vuelvan a hacer matching
+        // sincrónico en el body.
+        DispatchQueue.global(qos: .userInitiated).async { [self] in
+            let results = LibrarySearchIndex.searchAlbums(albums, query: query, entries: albumEntries)
+            DispatchQueue.main.async {
+                guard generation == self.searchGeneration,
+                      query == self.appliedSearchQuery else { return }
+                self.searchAlbumResults = results
+            }
+        }
+
+        DispatchQueue.global(qos: .userInitiated).async { [self] in
+            let results = LibrarySearchIndex.searchArtists(artists, query: query, entries: artistEntries)
+            DispatchQueue.main.async {
+                guard generation == self.searchGeneration,
+                      query == self.appliedSearchQuery else { return }
+                self.searchArtistResults = results
             }
         }
     }
@@ -1214,7 +1251,9 @@ struct ContentView: View {
             }
             return orderedAlbumsCache
         }
-        return LibrarySearchIndex.shared.searchAlbums(albums, query: query)
+        // ✅ PARIDAD: el matching ya corre en background; el body solo lee el
+        // último resultado publicado (o la caché anterior mientras llega).
+        return searchAlbumResults ?? orderedAlbumsCache
     }
 
     private func sortAlbums(_ albums: [Album]) -> [Album] {
@@ -1269,7 +1308,9 @@ struct ContentView: View {
             }
             return orderedArtistsCache
         }
-        return LibrarySearchIndex.shared.searchArtists(artists, query: query)
+        // ✅ PARIDAD: el matching ya corre en background; el body solo lee el
+        // último resultado publicado (o la caché anterior mientras llega).
+        return searchArtistResults ?? orderedArtistsCache
     }
 
     // ✅ Orden de artistas con opciones propias de la categoría.

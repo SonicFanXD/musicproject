@@ -3,23 +3,18 @@ import UIKit
 
 // ═══════════════════════════════════════════════════════════════════════════
 // DETAIL HERO ARTWORK — la carátula grande de Álbum/Artista como VIEW VALOR
-// (Equatable), con una sola pasada de composición para la sombra.
+// (Equatable).
 //
 // POR QUÉ EXISTE (Prioridad 4/5, tanda 4):
 // 1. RENDIMIENTO. `AlbumDetailView`/`ArtistDetailView` observan `AudioEngine`
 //    y publican `scrollOffset` (se actualiza cada 1pt de scroll). Eso hace que
 //    el body del detalle se reevalúe decenas de veces por segundo y arrastre
-//    el subtree de la portada: `Image` + `clipShape` + `overlay` de borde +
-//    `shadow`. La sombra de una imagen clipada por un shape es una pasada
-//    offscreen; repetirla 60 veces por segundo en un A11 con una imagen de
-//    200/170pt es exactamente el tipo de trabajo que produce el micro-tirón al
-//    empezar a scrollear. Aquí el subtree se corta con `.equatable()`: en
-//    scroll los valores no cambian, así que SwiftUI ni lo reevalúa.
-// 2. UNA SOLA PASADA DE SOMBRA. `.compositingGroup()` se aplica ANTES del
-//    `.shadow()`, de modo que imagen + borde se rasterizan juntos y la sombra
-//    se calcula UNA vez sobre el resultado (mismo look, la mitad de trabajo).
-//    Sin él, `Image` y el `overlay` del borde generan cada uno su propia capa
-//    y la sombra se aplica dos veces.
+//    el subtree de la portada: `Image` + `clipShape` + `overlay` de borde.
+//    Aquí el subtree se corta con `.equatable()`: en scroll los valores no
+//    cambian, así que SwiftUI ni lo reevalúa.
+// 2. M3E: la elevación es TONAL (borde de 1.5 pt), no una sombra. La carátula
+//    conserva `.compositingGroup()` para rasterizar imagen + borde en una sola
+//    capa, pero ya no hay ninguna pasada de sombra por frame.
 //
 // DELIBERADAMENTE NO usa `matchedGeometryEffect`: la portada no viaja entre
 // pantallas, solo entra con un spring al aparecer el hero.
@@ -47,8 +42,10 @@ struct DetailHeroArtwork: View, Equatable {
     let isVisible: Bool
 
     /// ✅ Igualdad = "¿pinta lo mismo?". Los colores del acento entran porque
-    /// tiñen borde y sombra del placeholder; si el usuario cambia de tema con
-    /// la vista abierta, la portada debe seguir al acento.
+    /// tiñen el borde y el placeholder; si el usuario cambia de tema con la
+    /// vista abierta, la portada debe seguir al acento. `shadowColor` se
+    /// conserva en la igualdad (y en el init) para no tocar los dos call sites,
+    /// aunque M3E ya no dibuja sombra.
     static func == (lhs: DetailHeroArtwork, rhs: DetailHeroArtwork) -> Bool {
         lhs.kind == rhs.kind
             && lhs.identity == rhs.identity
@@ -81,13 +78,10 @@ struct DetailHeroArtwork: View, Equatable {
                 .frame(width: size, height: size)
                 .clipShape(shape)
                 .overlay { border }
-                // ✅ Una sola capa: imagen + borde se rasterizan juntos y la
-                // sombra se calcula una vez sobre el compuesto.
+                // ✅ Una sola capa: imagen + borde se rasterizan juntos.
                 .compositingGroup()
-                .shadow(color: shadowColor.opacity(imageShadowOpacity), radius: imageShadowRadius, x: 0, y: 10)
         } else {
             placeholder
-                .shadow(color: shadowColor.opacity(0.25), radius: placeholderShadowRadius, x: 0, y: placeholderShadowY)
         }
     }
 
@@ -154,24 +148,6 @@ struct DetailHeroArtwork: View, Equatable {
                     lineWidth: 3.5
                 )
         }
-    }
-
-    // Sombra de la portada real (valores originales de cada hero).
-    private var imageShadowOpacity: Double {
-        kind == .album ? 0.4 : 0.3
-    }
-
-    private var imageShadowRadius: CGFloat {
-        kind == .album ? 16 : 22
-    }
-
-    // Sombra del placeholder (más contenida: no hay imagen que separar).
-    private var placeholderShadowRadius: CGFloat {
-        kind == .album ? 14 : 18
-    }
-
-    private var placeholderShadowY: CGFloat {
-        kind == .album ? 8 : 10
     }
 
     private var placeholderPrimaryOpacity: Double {

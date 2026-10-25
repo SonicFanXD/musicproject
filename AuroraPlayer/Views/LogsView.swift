@@ -19,7 +19,7 @@ struct ShareItem: Identifiable {
 }
 
 struct LogsView: View {
-    @Environment(\.dismiss) private var dismiss
+    @M3EDismiss private var dismiss
 
     @State private var selectedCategory: LogCategory? = nil
     @State private var showOnlyErrors = false
@@ -382,7 +382,6 @@ struct LogsView: View {
 
                         Capsule()
                             .fill(textSafeAccentGradient())
-                            .shadow(color: AppTheme.accent.opacity(0.3), radius: 6, x: 0, y: 3)
                             .opacity(isSelected ? 1 : 0)
                     }
                 }
